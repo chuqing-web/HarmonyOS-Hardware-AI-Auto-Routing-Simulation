@@ -49,6 +49,12 @@ export interface ProteusHomeNewsItem {
   releaseDate: string;
   uscValid: string;
   actionLabel: string;
+  /** GitHub asset 直链；Download/Update 时有值 */
+  downloadUrl?: string;
+  hapFileName?: string;
+  tagName?: string;
+  /** 最新可更新行高亮 */
+  highlightUpdate?: boolean;
 }
 
 export interface ProteusHomeLinkItem {
@@ -113,6 +119,8 @@ export struct ProteusHomePanel {
   @Prop subtitle: string = '';
   @Prop panelWeight: number = 1;
   @Prop highlighted: boolean = false;
+  /** 标题旁小红点（如有可用更新） */
+  @Prop showBadge: boolean = false;
   @BuilderParam body: () => void;
 
   build() {
@@ -123,8 +131,16 @@ export struct ProteusHomePanel {
           .fontColor(ProteusHomeColors.PANEL_HEAD_TEXT)
           .fontWeight(FontWeight.Bold)
           .padding({ left: 8, top: 4, bottom: 4 })
+        if (this.showBadge) {
+          Circle()
+            .width(7)
+            .height(7)
+            .fill(ProteusHomeColors.RED)
+            .margin({ left: 6 })
+        }
       }
       .width('100%')
+      .alignItems(VerticalAlign.Center)
       .backgroundColor(ProteusHomeColors.PANEL_HEAD_BG)
       .border({
         width: { bottom: 1 },
@@ -156,6 +172,8 @@ export struct ProteusHomeTopBar {
   @StorageProp(PROTEUS_THEME_REV_KEY) themeRev: number = 0;
   @Prop titleLine: string = 'Design Suite';
   @Prop versionLabel: string = '';
+  /** 版本旁小红点（有可更新 Release） */
+  @Prop showUpdateBadge: boolean = false;
 
   build() {
     Row() {
@@ -177,9 +195,19 @@ export struct ProteusHomeTopBar {
       .alignItems(HorizontalAlign.Start)
       Blank()
       if (this.versionLabel.length > 0) {
-        Text(this.versionLabel)
-          .fontSize(9)
-          .fontColor(ProteusHomeColors.TOP_BAR_SUB)
+        Row() {
+          Text(this.versionLabel)
+            .fontSize(9)
+            .fontColor(ProteusHomeColors.TOP_BAR_SUB)
+          if (this.showUpdateBadge) {
+            Circle()
+              .width(7)
+              .height(7)
+              .fill(ProteusHomeColors.RED)
+              .margin({ left: 6 })
+          }
+        }
+        .alignItems(VerticalAlign.Center)
       }
     }
     .width('100%')
@@ -426,17 +454,19 @@ export struct ProteusHomeNewsRow {
   @Prop actionLabel: string = 'Download';
   @Prop showButton: boolean = true;
   @Prop isCurrent: boolean = false;
+  @Prop highlightUpdate: boolean = false;
+  @Prop btnEnabled: boolean = true;
   onAction: () => void = () => {};
 
   build() {
     Row() {
       Text(this.description)
         .fontSize(10)
-        .fontColor(this.isCurrent ? ProteusHomeColors.TEXT : ProteusHomeColors.LINK)
-        .fontWeight(this.isCurrent ? FontWeight.Medium : FontWeight.Normal)
+        .fontColor(this.rowTextColor())
+        .fontWeight(this.isCurrent || this.highlightUpdate ? FontWeight.Medium : FontWeight.Normal)
         .decoration({
           type: this.isCurrent ? TextDecorationType.None : TextDecorationType.Underline,
-          color: ProteusHomeColors.LINK
+          color: this.highlightUpdate ? ProteusHomeColors.HIGHLIGHT : ProteusHomeColors.LINK
         })
         .layoutWeight(1)
         .maxLines(1)
@@ -455,7 +485,8 @@ export struct ProteusHomeNewsRow {
       if (this.showButton) {
         ProteusHomeDownloadBtn({
           label: this.actionLabel,
-          primary: false,
+          primary: this.highlightUpdate,
+          btnEnabled: this.btnEnabled,
           onAction: () => this.onAction()
         })
           .margin({ right: 4 })
@@ -471,8 +502,28 @@ export struct ProteusHomeNewsRow {
     .width('100%')
     .height(26)
     .alignItems(VerticalAlign.Center)
-    .backgroundColor(this.isCurrent ? ProteusHomeColors.ACCENT_SOFT : '#00000000')
+    .backgroundColor(this.rowBg())
     .border({ width: { bottom: 1 }, color: ProteusHomeColors.ROW_BORDER })
+  }
+
+  private rowTextColor(): string {
+    if (this.isCurrent) {
+      return ProteusHomeColors.TEXT;
+    }
+    if (this.highlightUpdate) {
+      return ProteusHomeColors.HIGHLIGHT;
+    }
+    return ProteusHomeColors.LINK;
+  }
+
+  private rowBg(): string {
+    if (this.highlightUpdate) {
+      return '#2A3548';
+    }
+    if (this.isCurrent) {
+      return ProteusHomeColors.ACCENT_SOFT;
+    }
+    return '#00000000';
   }
 }
 

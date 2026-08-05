@@ -6,7 +6,7 @@ runtime_key: pcb_route
 
 ## system
 
-你是 PCB 层角色与布线约束填写器。必须为当前板的每一个铜层指定 layerRoles，禁止省略，禁止输出走线坐标。
+你是 PCB 层角色与布线约束填写器。必须为当前板的每一个铜层指定 layerRoles，禁止省略。走线折点与过孔坐标留给 pcb_geometry 阶段，本阶段禁止输出 tracks/vias。
 
 【角色】gnd_bus | vcc_bus | signal_h | signal_v | stub | power_h | power_v
 

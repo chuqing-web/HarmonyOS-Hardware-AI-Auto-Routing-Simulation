@@ -1,5 +1,5 @@
 import type { IPcbEditor, DiffRouteState, DiffPairPreview } from "@bundle:com.elecdraw.aischsim/entry@pcb_editor/ets/api/IPcbEditor";
-import { PcbLayerId, PcbDrcSeverity, PcbDrcRuleType, PcbEditorSelectionData, EventBus, ModuleEvent, IdUtil, createDefaultPcbViewport, createEmptyPcbDocument, forwardAnnotatePcb, reverseAnnotatePcb, getGlobalPcbFootprintLibrary, autoRoutePcb, rebuildZoneCutouts, pointInPolygon, makeRectCutout, normalizeZoneFields, defaultZoneFields, ResultHelper, ErrCode, normalizePcbDocument, isCopperLayer, applyCopperLayerCount, copperLayersFromStack, PcbSelectionKind, pcbSelectionEmpty, padWorldPosition, collectFootprintPadPositions, updateTracksForFootprintTransform, padSnapTolerance, snapTrackEndpointsToPads, snapTrackEndpointsNearFootprints, syncMovedTrackJunctions, lockTrackEndpointsToPads, doglegPadToPadSelectedTracks, shoveForeignTracksByLReroute, tracePcbAutoRoute, tracePcbManualRoute, tracePcbManualRouteReject, tracePcbTrackAdded, tracePcbDrc, tracePcbNetRoutingSummary, tracePcbUi, tracePcb3d, PcbAppearanceMode, defaultPcbAppearance, normalizePcbAppearance, PcbViaKind, PcbRouteCornerMode, rebuildPcbNets, buildRatsnest, routeByCornerMode, findNetClass, sumTrackLengthForNet, PcbSpatialIndex, PcbSpatialKind, matchDiffPairLengths } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
+import { PcbLayerId, PcbDrcSeverity, PcbDrcRuleType, PcbEditorSelectionData, EventBus, ModuleEvent, IdUtil, createDefaultPcbViewport, createEmptyPcbDocument, forwardAnnotatePcb, reverseAnnotatePcb, getGlobalPcbFootprintLibrary, autoRoutePcb, rebuildZoneCutouts, pointInPolygon, makeRectCutout, normalizeZoneFields, defaultZoneFields, ResultHelper, ErrCode, normalizePcbDocument, isCopperLayer, applyCopperLayerCount, copperLayersFromStack, PcbSelectionKind, pcbSelectionEmpty, padWorldPosition, collectFootprintPadPositions, updateTracksForFootprintTransform, padSnapTolerance, snapTrackEndpointsToPads, snapTrackEndpointsNearFootprints, syncMovedTrackJunctions, lockTrackEndpointsToPads, doglegPadToPadSelectedTracks, shoveForeignTracksByLReroute, tracePcbAutoRoute, tracePcbManualRoute, tracePcbManualRouteReject, tracePcbTrackAdded, tracePcbDrc, tracePcbNetRoutingSummary, tracePcbUi, tracePcb3d, PcbAppearanceMode, defaultPcbAppearance, normalizePcbAppearance, PcbViaKind, PcbRouteCornerMode, rebuildPcbNets, buildRatsnest, routeByCornerMode, findNetClass, sumTrackLengthForNet, PcbSpatialIndex, PcbSpatialKind, matchDiffPairLengths, netCopperConnectsPads } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
 import type { PcbDocument, PcbFootprintInst, PcbTrack, PcbVia, PcbZone, PcbPad, PcbDrcViolation, PcbNetRef, PcbPadHit, Point2D, ViewportState, AutoRouteResult, AccessoryNetHint, SchematicDocument, ApiResult, PcbSelectionState, PcbHistorySnapshot, PcbSelectionRect, TrackEndpointSnapshot, PcbAppearance, PcbRatsnestEdge, PcbSpatialItem, PcbSpatialRect, Pcb3dDisplayMode } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
 export { PcbToolMode } from "@bundle:com.elecdraw.aischsim/entry@pcb_editor/ets/api/IPcbEditor";
 const MAX_HISTORY = 80;
@@ -1753,30 +1753,51 @@ export class PcbEditorImpl implements IPcbEditor {
             return violations;
         const rules = this.document.metadata.designRules;
         this.refreshConnectivity();
-        const routedNets: Set<string> = new Set();
-        for (const trk of this.document.tracks) {
-            if (trk.netId.length > 0)
-                routedNets.add(trk.netId);
-        }
-        for (const via of this.document.vias) {
-            if (via.netId.length > 0)
-                routedNets.add(via.netId);
-        }
         const reportedUnrouted: Set<string> = new Set();
-        for (const fp of this.document.footprints) {
-            for (const pad of fp.pads) {
-                if (!pad.netName || pad.netName.length === 0)
-                    continue;
-                const nid = pad.netId ?? '';
-                if (nid.length > 0 && !routedNets.has(nid) && !reportedUnrouted.has(nid)) {
-                    reportedUnrouted.add(nid);
-                    violations.push({
-                        id: IdUtil.generate('drc'), severity: PcbDrcSeverity.WARNING,
-                        ruleType: PcbDrcRuleType.UNROUTED_NET,
-                        message: `未布线网络: ${pad.netName}`, position: fp.position,
-                        netId: nid, footprintId: fp.id
-                    });
+        for (const net of this.document.nets) {
+            const nid = net.id;
+            if (nid.length === 0 || reportedUnrouted.has(nid)) {
+                continue;
+            }
+            let padCount = 0;
+            for (const fp of this.document.footprints) {
+                for (const pad of fp.pads) {
+                    if ((pad.netId ?? '') === nid) {
+                        padCount++;
+                    }
                 }
+            }
+            if (padCount < 2) {
+                continue;
+            }
+            if (!netCopperConnectsPads(this.document, nid, this.document.tracks, this.document.vias)) {
+                reportedUnrouted.add(nid);
+                let hasCu = false;
+                for (const trk of this.document.tracks) {
+                    if (trk.netId === nid) {
+                        hasCu = true;
+                        break;
+                    }
+                }
+                if (!hasCu) {
+                    for (const via of this.document.vias) {
+                        if (via.netId === nid) {
+                            hasCu = true;
+                            break;
+                        }
+                    }
+                }
+                // orphan 铜按 ERROR，纯未布按 WARNING（AI QA 另有连通门禁）
+                violations.push({
+                    id: IdUtil.generate('drc'),
+                    severity: hasCu ? PcbDrcSeverity.ERROR : PcbDrcSeverity.WARNING,
+                    ruleType: PcbDrcRuleType.UNROUTED_NET,
+                    message: hasCu
+                        ? `网络未连通(有孤儿铜): ${net.name}`
+                        : `未布线网络: ${net.name}`,
+                    position: undefined,
+                    netId: nid
+                });
             }
         }
         for (let i = 0; i < this.document.tracks.length; i++) {

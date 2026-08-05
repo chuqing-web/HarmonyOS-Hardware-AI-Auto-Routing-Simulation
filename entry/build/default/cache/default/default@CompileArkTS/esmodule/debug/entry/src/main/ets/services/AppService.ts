@@ -9,7 +9,7 @@ import type { SimFramePlain } from './sim/SimProtocol';
 import { HexDebuggerImpl, McuBehaviorSimulator } from "@bundle:com.elecdraw.aischsim/entry@hex_debugger/Index";
 import type { IHexDebugger } from "@bundle:com.elecdraw.aischsim/entry@hex_debugger/Index";
 import { AiApiManagerImpl } from "@bundle:com.elecdraw.aischsim/entry@ai_api_manager/Index";
-import type { IAiApiManager } from "@bundle:com.elecdraw.aischsim/entry@ai_api_manager/Index";
+import type { IAiApiManager, StickyTransportSnapshot } from "@bundle:com.elecdraw.aischsim/entry@ai_api_manager/Index";
 import { AiEngineImpl, FaultDiagnoser, classifyCircuitIntent, resolveHysteresisSafeAmplitude, schematicLikelyHysteresisComparator, parseSignalAmplitudeVolts } from "@bundle:com.elecdraw.aischsim/entry@ai_engine/Index";
 import type { IAiEngine, TeachingService, LabTemplate, PcbLabTemplate, ChatHistoryEntry } from "@bundle:com.elecdraw.aischsim/entry@ai_engine/Index";
 import { FilePersistenceImpl, CrashGuard } from "@bundle:com.elecdraw.aischsim/entry@file_persistence/Index";
@@ -32,6 +32,8 @@ import { ThemeManager } from "@bundle:com.elecdraw.aischsim/entry/ets/theme/Them
 import { ProteusFonts } from "@bundle:com.elecdraw.aischsim/entry/ets/theme/ProteusTheme";
 import { PlatformPrefsStore } from "@bundle:com.elecdraw.aischsim/entry/ets/utils/PlatformPrefsStore";
 import { AiApiVaultStore } from "@bundle:com.elecdraw.aischsim/entry/ets/utils/AiApiVaultStore";
+import { AiTransportStickyStore } from "@bundle:com.elecdraw.aischsim/entry/ets/utils/AiTransportStickyStore";
+import type { StickyTransportEntry } from "@bundle:com.elecdraw.aischsim/entry/ets/utils/AiTransportStickyStore";
 import { EventBus, ModuleEvent, CallbackRegistry, AiTaskType, defaultSimConfig, Logger, ExportPostProcessor, ResultHelper, ErrCode, LicenseManager, FeatureGate, GitHubStarVerifier, SchematicAnnotationType, SchematicAnnotationStatus, IdUtil, calcSymbolBounds, paramMapGet, PrivacyConsentStore, McuFamily, SimulationState, getPinNetMap, findNetForPinLabel, TopologyAdapter, traceInteractiveInstrumentLive, traceBindingRefresh, traceActiveComponentChanged, traceReloadSchematic, traceSimStep, tracePinNetEmpty, INSTR_TRACE_TAG, traceMeasure, formatPinNetMap, ensureNetPinConnectivity, traceProjectOpenAudit, traceSimStartupAudit, traceDataFlow, traceErcErrorList, traceBurn, traceUart, formatUartBytesHex, traceUartTxDrain, tracePerPinConnectivity, emptySchTopology, traceAiPayload, traceAiOp, traceAiDiag, AiErcGateUtil, mapAwareStringify, mapAwareParse, SignalWaveform, UnitParser, MainThreadYield, MultimeterMode, createEmptyPcbDocument, normalizePcbDocument, tracePcb, tracePcbFullState } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
 import type { ProjectFile, ModuleEventPayload, SchTopology, WaveData, ErcError, AiApiConfig, ProgressInfo, FaultType, FaultInjection, FaultScanResult, AccessibilityConfig, ApiResult, LicenseStatus, UsageDashboard, SnapshotMeta, VersionCompareReport, SymbolBounds, Pin, SchematicDocument, PowerMeterConfig, InteractiveMeterSnap, BindingTraceInfo, PinGeometryResolver, PinGeometry, ComponentInstance, ClarificationQuestion, ClarificationAnswer, PcbDocument, PcbCanvasTraceSnapshot } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
 import { CollabSyncClient } from "@bundle:com.elecdraw.aischsim/entry@file_persistence/Index";
@@ -240,6 +242,7 @@ export class AppService {
         ThemeManager.getInstance().init(baseDir);
         PlatformPrefsStore.getInstance().init(baseDir);
         AiApiVaultStore.getInstance().init(baseDir);
+        this.initAiTransportSticky(baseDir);
         this.applyPlatformPrefsFromStore();
         (this.filePersistence as FilePersistenceImpl).setAppBaseDir(baseDir);
         this.filePersistence.initCollaboration(baseDir);
@@ -1696,6 +1699,41 @@ export class AppService {
         }
         Logger.info(INSTR_TRACE_TAG, `[AI_API] vault startup restored ${okCount}/${configs.length} configs` +
             ` path=${vault.getVaultPath()}`);
+        // 金库重载后再次注入 sticky（clearAllConfigs 已保留内存 sticky；此处兜底磁盘）
+        this.rehydrateAiTransportSticky();
+    }
+    /** 跨进程粘性传输：上次测试成功的 proxy/DNS 档落盘，启动后优先复用 */
+    private initAiTransportSticky(baseDir: string): void {
+        const store = AiTransportStickyStore.getInstance();
+        store.init(baseDir);
+        const mgr = this.aiApiManager as AiApiManagerImpl;
+        mgr.setStickyPersistHandler((entries: StickyTransportSnapshot[]) => {
+            const disk: StickyTransportEntry[] = [];
+            for (let i = 0; i < entries.length; i++) {
+                disk.push({
+                    apiId: entries[i].apiId,
+                    usingProxy: entries[i].usingProxy,
+                    usePublicDns: entries[i].usePublicDns
+                });
+            }
+            store.saveAll(disk);
+        });
+        this.rehydrateAiTransportSticky();
+    }
+    private rehydrateAiTransportSticky(): void {
+        const loaded = AiTransportStickyStore.getInstance().loadAll();
+        if (loaded.length === 0) {
+            return;
+        }
+        const snap: StickyTransportSnapshot[] = [];
+        for (let i = 0; i < loaded.length; i++) {
+            snap.push({
+                apiId: loaded[i].apiId,
+                usingProxy: loaded[i].usingProxy,
+                usePublicDns: loaded[i].usePublicDns
+            });
+        }
+        (this.aiApiManager as AiApiManagerImpl).importStickyTransports(snap);
     }
     /**
      * 旧工程内仍带 aiConfigs 时：金库为空则迁入；否则忽略工程内 Key。
@@ -2422,7 +2460,7 @@ export class AppService {
         }
         this.beginPcbAiRoute(doc);
         try {
-            const api = await this.aiEngine.aiPcbAutoRoute(doc, (d) => editor.runDrcForDoc(d), (p) => this.handlePcbAiProgress(p));
+            const api = await this.aiEngine.aiPcbAutoRoute(doc, (d) => editor.runDrcForDoc(d), (p) => this.handlePcbAiProgress(p), this.aiEnableReasoning);
             if (this.aiGenCancelRequested) {
                 this.onStatusMessage('PCB AI 布线已取消');
                 this.appendAiGenLog('system', 'PCB AI 布线已取消');

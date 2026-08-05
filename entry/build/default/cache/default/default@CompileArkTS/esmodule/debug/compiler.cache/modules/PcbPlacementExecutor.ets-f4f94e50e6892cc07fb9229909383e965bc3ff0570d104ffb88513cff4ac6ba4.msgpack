@@ -1,4 +1,4 @@
-Ôr@Ÿªassertions¤code´customTransformCache¬dependencies¢id¤meta±moduleSideEffects¬originalCode±originalSourcemap«resolvedIds®sourcemapChainµsyntheticNamedExportsµtransformDependencies®transformFiles¨cacheAstÔrAÚ ,import { collectFootprintPadPositions, updateTracksForFootprintTransform } from '../PcbTrackBindUtil';
+Ôr@Ÿªassertions¤code´customTransformCache¬dependencies¢id¤meta±moduleSideEffects¬originalCode±originalSourcemap«resolvedIds®sourcemapChainµsyntheticNamedExportsµtransformDependencies®transformFiles¨cacheAstÔrAÚ1Timport { collectFootprintPadPositions, updateTracksForFootprintTransform } from '../PcbTrackBindUtil';
 import { tracePcb } from '../PcbTraceLog';
 function boardBounds(doc) {
     const pts = doc.boardOutline?.points ?? [];
@@ -64,15 +64,29 @@ function isMountHole(fp) {
     }
     return false;
 }
+/** å®‰è£…å­”/è§’å­”åˆ†ç»„åï¼šå››è§’è·¨æ¿ï¼Œä¸åšèšé›†æ ¡éªŒ */
+function isMountOnlyGroupName(name) {
+    const n = name.toLowerCase();
+    return n.indexOf('mount') >= 0
+        || n === 'holes'
+        || n === 'hole'
+        || n === 'mh'
+        || n.indexOf('corner') >= 0;
+}
 function validateGroups(plan, byId, pendingById, bounds) {
     const groups = plan.groups ?? [];
     if (groups.length === 0) {
         return '';
     }
     const boardDiag = Math.sqrt(Math.pow(bounds.maxX - bounds.minX, 2) + Math.pow(bounds.maxY - bounds.minY, 2));
-    const maxSpan = Math.max(boardDiag * 0.55, 200);
+    // 0.55 è¿‡ä¸¥ï¼šç»§ç”µå™¨æ’ç­‰åˆæ³•åŠŸèƒ½ç»„å¸¸å·®å‡  mil è¢«å¦ï¼ˆå¦‚ 1414>1409ï¼‰
+    const maxSpan = Math.max(boardDiag * 0.72, 400);
     for (let gi = 0; gi < groups.length; gi++) {
         const g = groups[gi];
+        // å®‰è£…å­”ç”±ç³»ç»Ÿé’‰å››è§’ï¼Œå¯¹è§’è·¨åº¦â‰ˆæ¿å¯¹è§’çº¿ï¼Œç¦æ­¢æŒ‰åŠŸèƒ½ç»„èšé›†è§„åˆ™å¦å†³
+        if (isMountOnlyGroupName(g.name ?? '')) {
+            continue;
+        }
         const ids = g.footprintIds ?? [];
         if (ids.length < 2) {
             continue;
@@ -81,16 +95,25 @@ function validateGroups(plan, byId, pendingById, bounds) {
         for (let i = 0; i < ids.length; i++) {
             const id = ids[i];
             if (!byId.has(id)) {
-                return `group ${g.name} unknown footprintId ${id}`;
+                // ç»„å†…æœªçŸ¥ idï¼ˆLLM ç¼–é€ ï¼‰ç›´æ¥å¿½ç•¥ï¼Œä¸å¦å†³æ•´è½®å¸ƒå±€
+                continue;
+            }
+            const fp = byId.get(id);
+            // å®‰è£…å­”ä¸è®¡å…¥ spanï¼ˆå³ä¾¿æ··å…¥ power ç­‰åŠŸèƒ½ç»„ï¼‰
+            if (fp && isMountHole(fp)) {
+                continue;
             }
             const pend = pendingById.get(id);
-            const fp = byId.get(id);
             if (pend) {
                 pts.push({ x: pend.x, y: pend.y });
             }
             else if (fp) {
                 pts.push({ x: fp.position.x, y: fp.position.y });
             }
+        }
+        // è¿‡æ»¤å®‰è£…å­”åä¸è¶³ 2 ç‚¹ â†’ æ— éœ€èšé›†æ ¡éªŒ
+        if (pts.length < 2) {
+            continue;
         }
         let maxD = 0;
         for (let i = 0; i < pts.length; i++) {
@@ -109,12 +132,70 @@ function validateGroups(plan, byId, pendingById, bounds) {
     }
     return '';
 }
+/** å°† LLM æ¿æ¡†è½åˆ°çŸ©å½¢ outlineï¼Œå¹¶é‡é’‰å®‰è£…å­”åˆ°å››è§’ */
+function applyLlmBoardSize(doc, widthMil, heightMil) {
+    const w = Math.round(widthMil);
+    const h = Math.round(heightMil);
+    const MIN = 400;
+    const MAX = 8000;
+    if (w < MIN || h < MIN) {
+        return `board size too small ${w}x${h} (min ${MIN})`;
+    }
+    if (w > MAX || h > MAX) {
+        return `board size too large ${w}x${h} (max ${MAX})`;
+    }
+    const prev = boardBounds(doc);
+    doc.boardOutline = {
+        points: [
+            { x: 0, y: 0 },
+            { x: w, y: 0 },
+            { x: w, y: h },
+            { x: 0, y: h }
+        ],
+        width: doc.boardOutline?.width ?? 10
+    };
+    // å®‰è£…å­”è´´æ–°æ¿å››è§’ï¼ˆinset 20milï¼‰
+    const inset = 20;
+    const corners = [
+        { x: inset, y: inset },
+        { x: w - inset, y: inset },
+        { x: inset, y: h - inset },
+        { x: w - inset, y: h - inset }
+    ];
+    const mounts = [];
+    for (const fp of doc.footprints) {
+        if (isMountHole(fp)) {
+            mounts.push(fp);
+        }
+    }
+    mounts.sort((a, b) => (a.refDes < b.refDes ? -1 : (a.refDes > b.refDes ? 1 : 0)));
+    for (let i = 0; i < mounts.length && i < corners.length; i++) {
+        mounts[i].position = { x: corners[i].x, y: corners[i].y };
+        mounts[i].rotation = 0;
+    }
+    tracePcb('AI_BOARD', `size ${Math.round(prev.maxX - prev.minX)}x${Math.round(prev.maxY - prev.minY)}â†’${w}x${h}` +
+        ` mounts=${Math.min(mounts.length, corners.length)}`);
+    return '';
+}
 export function applyPcbPlacementPlan(doc, plan) {
     if (!plan.fromLlm) {
         return { ok: false, placedCount: 0, reason: 'placement plan not from LLM' };
     }
     if (!plan.placements || plan.placements.length === 0) {
         return { ok: false, placedCount: 0, reason: 'empty placement plan from LLM' };
+    }
+    // æ¿æ¡†å¿…é¡»ç”± LLM ç»™å‡ºï¼ˆå…è®¸ç•¥å†™å®¹å·®ï¼šç¼ºçœåˆ™å¤±è´¥ï¼Œé€¼æ¨¡å‹å®šå°ºå¯¸ï¼‰
+    const bw = plan.boardWidthMil;
+    const bh = plan.boardHeightMil;
+    if (bw === undefined || bh === undefined || !(bw > 0) || !(bh > 0)) {
+        return {
+            ok: false, placedCount: 0,
+            reason: 'LLM placement missing boardWidthMil/boardHeightMil â€” board size must come from model'
+        };
+    }
+    const boardErr = applyLlmBoardSize(doc, bw, bh);
+    if (boardErr.length > 0) {
+        return { ok: false, placedCount: 0, reason: boardErr };
     }
     const locked = new Set(plan.lockedIds ?? []);
     // å®‰è£…å­”æœªåœ¨ placements æ—¶è‡ªåŠ¨è§†ä¸ºé”å®šï¼ˆé¿å…å¼ºè¿« LLM æŠ„è§’ç‚¹ï¼‰
@@ -124,12 +205,32 @@ export function applyPcbPlacementPlan(doc, plan) {
         }
     }
     const bounds = boardBounds(doc);
+    const ejected = [];
+    for (const fp of doc.footprints) {
+        if (isMountHole(fp)) {
+            continue; // å·²é‡é’‰å››è§’
+        }
+        if (locked.has(fp.id) || fp.locked) {
+            if (fp.position.x < bounds.minX || fp.position.x > bounds.maxX ||
+                fp.position.y < bounds.minY || fp.position.y > bounds.maxY) {
+                ejected.push(fp.refDes || fp.id);
+            }
+        }
+    }
+    if (ejected.length > 0) {
+        return {
+            ok: false, placedCount: 0,
+            reason: `board shrink would eject locked footprints: ${ejected.slice(0, 6).join(',')}` +
+                `${ejected.length > 6 ? 'â€¦' : ''} â€” enlarge boardWidthMil/Height or rePlace them`
+        };
+    }
     const byId = new Map();
     for (const fp of doc.footprints) {
         byId.set(fp.id, fp);
     }
     const pending = [];
     const pendingById = new Map();
+    const skippedUnknown = [];
     for (let i = 0; i < plan.placements.length; i++) {
         const item = plan.placements[i];
         if (locked.has(item.footprintId)) {
@@ -137,7 +238,9 @@ export function applyPcbPlacementPlan(doc, plan) {
         }
         const fp = byId.get(item.footprintId);
         if (!fp) {
-            return { ok: false, placedCount: 0, reason: `unknown footprintId ${item.footprintId}` };
+            // LLM å¸¸ç¼–é€ /æ”¹å†™ id åç¼€ï¼›è·³è¿‡æœªçŸ¥é¡¹ï¼Œç”¨ coverage é—¨ç¦é€¼å…¶è¡¥å…¨çœŸå® id
+            skippedUnknown.push(item.footprintId);
+            continue;
         }
         if (fp.locked) {
             continue;
@@ -158,6 +261,9 @@ export function applyPcbPlacementPlan(doc, plan) {
         pending.push(pend);
         pendingById.set(fp.id, pend);
     }
+    if (skippedUnknown.length > 0) {
+        tracePcb('AI_PLACE_SKIP', `unknownIds=${skippedUnknown.length} sample=${skippedUnknown.slice(0, 3).join(',')}`);
+    }
     let unlocked = 0;
     for (const fp of doc.footprints) {
         if (!fp.locked && !locked.has(fp.id)) {
@@ -165,9 +271,13 @@ export function applyPcbPlacementPlan(doc, plan) {
         }
     }
     if (unlocked > 0 && pending.length < unlocked) {
+        const unkHint = skippedUnknown.length > 0
+            ? `; skippedUnknown=${skippedUnknown.slice(0, 5).join(',')}` +
+                `${skippedUnknown.length > 5 ? 'â€¦' : ''} â€” footprintId å¿…é¡»é€å­—å¤åˆ¶åˆ—è¡¨ï¼Œç¦æ­¢ç¼–é€ `
+            : '';
         return {
             ok: false, placedCount: pending.length,
-            reason: `placement coverage ${pending.length}/${unlocked} unlocked footprints`
+            reason: `placement coverage ${pending.length}/${unlocked} unlocked footprints${unkHint}`
         };
     }
     // é˜²åŸä½å¤è¯»ï¼šéå®‰è£…å­”ä¸­ â‰¥85% åæ ‡+æ—‹è½¬æœªå˜ â†’ æ‹’ç»
@@ -234,7 +344,7 @@ export function applyPcbPlacementPlan(doc, plan) {
     plan.lockedIds = Array.from(locked);
     return { ok: true, placedCount: pending.length, reason: 'ok' };
 }
-//# sourceMappingURL=PcbPlacementExecutor.js.mapÂ’ÙKC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\PcbTrackBindUtil.etsÙFC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\PcbTraceLog.etsÙYC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\pcb_route\PcbPlacementExecutor.etsÔrB›ªmoduleName±isLocalDependency¯isNodeEntryFile§pkgPath±belongProjectPath§pkgNameªpkgVersion±dependencyPkgInfo¯hostModulesInfo°belongModulePath¬shouldEmitJs¦commonÃÂÙ#C:\Projects\ElecDraw_Harmony\common¼C:\Projects\ElecDraw_Harmony¦common¥1.0.0ÔrC’§pkgNameªpkgVersion¦common¥1.0.0‘ÔrD’²hostDependencyName®hostModuleNameÙ3./src/main/ets/utils/pcb_route/PcbPlacementExecutor¦commonÙ#C:\Projects\ElecDraw_Harmony\commonÃÃÚ!!/**
+//# sourceMappingURL=PcbPlacementExecutor.js.mapÂ’ÙKC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\PcbTrackBindUtil.etsÙFC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\PcbTraceLog.etsÙYC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\pcb_route\PcbPlacementExecutor.etsÔrB›ªmoduleName±isLocalDependency¯isNodeEntryFile§pkgPath±belongProjectPath§pkgNameªpkgVersion±dependencyPkgInfo¯hostModulesInfo°belongModulePath¬shouldEmitJs¦commonÃÂÙ#C:\Projects\ElecDraw_Harmony\common¼C:\Projects\ElecDraw_Harmony¦common¥1.0.0ÔrC’§pkgNameªpkgVersion¦common¥1.0.0‘ÔrD’²hostDependencyName®hostModuleNameÙ3./src/main/ets/utils/pcb_route/PcbPlacementExecutor¦commonÙ#C:\Projects\ElecDraw_Harmony\commonÃÃÚ/¥/**
  * Apply LLM placement only â€” no auto-nudge; out-of-board / overlap / echo / group fail.
  */
 import { PcbDocument, PcbFootprintInst } from '../../types/PcbTypes';
@@ -334,6 +444,16 @@ function isMountHole(fp: PcbFootprintInst): boolean {
   return false;
 }
 
+/** å®‰è£…å­”/è§’å­”åˆ†ç»„åï¼šå››è§’è·¨æ¿ï¼Œä¸åšèšé›†æ ¡éªŒ */
+function isMountOnlyGroupName(name: string): boolean {
+  const n = name.toLowerCase();
+  return n.indexOf('mount') >= 0
+    || n === 'holes'
+    || n === 'hole'
+    || n === 'mh'
+    || n.indexOf('corner') >= 0;
+}
+
 function validateGroups(
   plan: PcbPlacementPlan,
   byId: Map<string, PcbFootprintInst>,
@@ -346,10 +466,15 @@ function validateGroups(
   }
   const boardDiag = Math.sqrt(
     Math.pow(bounds.maxX - bounds.minX, 2) + Math.pow(bounds.maxY - bounds.minY, 2));
-  const maxSpan = Math.max(boardDiag * 0.55, 200);
+  // 0.55 è¿‡ä¸¥ï¼šç»§ç”µå™¨æ’ç­‰åˆæ³•åŠŸèƒ½ç»„å¸¸å·®å‡  mil è¢«å¦ï¼ˆå¦‚ 1414>1409ï¼‰
+  const maxSpan = Math.max(boardDiag * 0.72, 400);
 
   for (let gi = 0; gi < groups.length; gi++) {
     const g: PcbPlacementGroup = groups[gi];
+    // å®‰è£…å­”ç”±ç³»ç»Ÿé’‰å››è§’ï¼Œå¯¹è§’è·¨åº¦â‰ˆæ¿å¯¹è§’çº¿ï¼Œç¦æ­¢æŒ‰åŠŸèƒ½ç»„èšé›†è§„åˆ™å¦å†³
+    if (isMountOnlyGroupName(g.name ?? '')) {
+      continue;
+    }
     const ids = g.footprintIds ?? [];
     if (ids.length < 2) {
       continue;
@@ -358,15 +483,24 @@ function validateGroups(
     for (let i = 0; i < ids.length; i++) {
       const id = ids[i];
       if (!byId.has(id)) {
-        return `group ${g.name} unknown footprintId ${id}`;
+        // ç»„å†…æœªçŸ¥ idï¼ˆLLM ç¼–é€ ï¼‰ç›´æ¥å¿½ç•¥ï¼Œä¸å¦å†³æ•´è½®å¸ƒå±€
+        continue;
+      }
+      const fp = byId.get(id);
+      // å®‰è£…å­”ä¸è®¡å…¥ spanï¼ˆå³ä¾¿æ··å…¥ power ç­‰åŠŸèƒ½ç»„ï¼‰
+      if (fp && isMountHole(fp)) {
+        continue;
       }
       const pend = pendingById.get(id);
-      const fp = byId.get(id);
       if (pend) {
         pts.push({ x: pend.x, y: pend.y });
       } else if (fp) {
         pts.push({ x: fp.position.x, y: fp.position.y });
       }
+    }
+    // è¿‡æ»¤å®‰è£…å­”åä¸è¶³ 2 ç‚¹ â†’ æ— éœ€èšé›†æ ¡éªŒ
+    if (pts.length < 2) {
+      continue;
     }
     let maxD = 0;
     for (let i = 0; i < pts.length; i++) {
@@ -386,12 +520,73 @@ function validateGroups(
   return '';
 }
 
+/** å°† LLM æ¿æ¡†è½åˆ°çŸ©å½¢ outlineï¼Œå¹¶é‡é’‰å®‰è£…å­”åˆ°å››è§’ */
+function applyLlmBoardSize(doc: PcbDocument, widthMil: number, heightMil: number): string {
+  const w = Math.round(widthMil);
+  const h = Math.round(heightMil);
+  const MIN = 400;
+  const MAX = 8000;
+  if (w < MIN || h < MIN) {
+    return `board size too small ${w}x${h} (min ${MIN})`;
+  }
+  if (w > MAX || h > MAX) {
+    return `board size too large ${w}x${h} (max ${MAX})`;
+  }
+  const prev = boardBounds(doc);
+  doc.boardOutline = {
+    points: [
+      { x: 0, y: 0 },
+      { x: w, y: 0 },
+      { x: w, y: h },
+      { x: 0, y: h }
+    ],
+    width: doc.boardOutline?.width ?? 10
+  };
+  // å®‰è£…å­”è´´æ–°æ¿å››è§’ï¼ˆinset 20milï¼‰
+  const inset = 20;
+  const corners: Point2D[] = [
+    { x: inset, y: inset },
+    { x: w - inset, y: inset },
+    { x: inset, y: h - inset },
+    { x: w - inset, y: h - inset }
+  ];
+  const mounts: PcbFootprintInst[] = [];
+  for (const fp of doc.footprints) {
+    if (isMountHole(fp)) {
+      mounts.push(fp);
+    }
+  }
+  mounts.sort((a, b) => (a.refDes < b.refDes ? -1 : (a.refDes > b.refDes ? 1 : 0)));
+  for (let i = 0; i < mounts.length && i < corners.length; i++) {
+    mounts[i].position = { x: corners[i].x, y: corners[i].y };
+    mounts[i].rotation = 0;
+  }
+  tracePcb('AI_BOARD',
+    `size ${Math.round(prev.maxX - prev.minX)}x${Math.round(prev.maxY - prev.minY)}â†’${w}x${h}` +
+    ` mounts=${Math.min(mounts.length, corners.length)}`);
+  return '';
+}
+
 export function applyPcbPlacementPlan(doc: PcbDocument, plan: PcbPlacementPlan): PlacementApplyResult {
   if (!plan.fromLlm) {
     return { ok: false, placedCount: 0, reason: 'placement plan not from LLM' };
   }
   if (!plan.placements || plan.placements.length === 0) {
     return { ok: false, placedCount: 0, reason: 'empty placement plan from LLM' };
+  }
+
+  // æ¿æ¡†å¿…é¡»ç”± LLM ç»™å‡ºï¼ˆå…è®¸ç•¥å†™å®¹å·®ï¼šç¼ºçœåˆ™å¤±è´¥ï¼Œé€¼æ¨¡å‹å®šå°ºå¯¸ï¼‰
+  const bw = plan.boardWidthMil;
+  const bh = plan.boardHeightMil;
+  if (bw === undefined || bh === undefined || !(bw > 0) || !(bh > 0)) {
+    return {
+      ok: false, placedCount: 0,
+      reason: 'LLM placement missing boardWidthMil/boardHeightMil â€” board size must come from model'
+    };
+  }
+  const boardErr = applyLlmBoardSize(doc, bw, bh);
+  if (boardErr.length > 0) {
+    return { ok: false, placedCount: 0, reason: boardErr };
   }
 
   const locked: Set<string> = new Set(plan.lockedIds ?? []);
@@ -403,6 +598,26 @@ export function applyPcbPlacementPlan(doc: PcbDocument, plan: PcbPlacementPlan):
   }
 
   const bounds = boardBounds(doc);
+  const ejected: string[] = [];
+  for (const fp of doc.footprints) {
+    if (isMountHole(fp)) {
+      continue; // å·²é‡é’‰å››è§’
+    }
+    if (locked.has(fp.id) || fp.locked) {
+      if (fp.position.x < bounds.minX || fp.position.x > bounds.maxX ||
+        fp.position.y < bounds.minY || fp.position.y > bounds.maxY) {
+        ejected.push(fp.refDes || fp.id);
+      }
+    }
+  }
+  if (ejected.length > 0) {
+    return {
+      ok: false, placedCount: 0,
+      reason: `board shrink would eject locked footprints: ${ejected.slice(0, 6).join(',')}` +
+        `${ejected.length > 6 ? 'â€¦' : ''} â€” enlarge boardWidthMil/Height or rePlace them`
+    };
+  }
+
   const byId: Map<string, PcbFootprintInst> = new Map();
   for (const fp of doc.footprints) {
     byId.set(fp.id, fp);
@@ -410,6 +625,7 @@ export function applyPcbPlacementPlan(doc: PcbDocument, plan: PcbPlacementPlan):
 
   const pending: PendingPlacement[] = [];
   const pendingById: Map<string, PendingPlacement> = new Map();
+  const skippedUnknown: string[] = [];
   for (let i = 0; i < plan.placements.length; i++) {
     const item = plan.placements[i];
     if (locked.has(item.footprintId)) {
@@ -417,7 +633,9 @@ export function applyPcbPlacementPlan(doc: PcbDocument, plan: PcbPlacementPlan):
     }
     const fp = byId.get(item.footprintId);
     if (!fp) {
-      return { ok: false, placedCount: 0, reason: `unknown footprintId ${item.footprintId}` };
+      // LLM å¸¸ç¼–é€ /æ”¹å†™ id åç¼€ï¼›è·³è¿‡æœªçŸ¥é¡¹ï¼Œç”¨ coverage é—¨ç¦é€¼å…¶è¡¥å…¨çœŸå® id
+      skippedUnknown.push(item.footprintId);
+      continue;
     }
     if (fp.locked) {
       continue;
@@ -438,6 +656,10 @@ export function applyPcbPlacementPlan(doc: PcbDocument, plan: PcbPlacementPlan):
     pending.push(pend);
     pendingById.set(fp.id, pend);
   }
+  if (skippedUnknown.length > 0) {
+    tracePcb('AI_PLACE_SKIP',
+      `unknownIds=${skippedUnknown.length} sample=${skippedUnknown.slice(0, 3).join(',')}`);
+  }
 
   let unlocked = 0;
   for (const fp of doc.footprints) {
@@ -446,9 +668,13 @@ export function applyPcbPlacementPlan(doc: PcbDocument, plan: PcbPlacementPlan):
     }
   }
   if (unlocked > 0 && pending.length < unlocked) {
+    const unkHint = skippedUnknown.length > 0
+      ? `; skippedUnknown=${skippedUnknown.slice(0, 5).join(',')}` +
+        `${skippedUnknown.length > 5 ? 'â€¦' : ''} â€” footprintId å¿…é¡»é€å­—å¤åˆ¶åˆ—è¡¨ï¼Œç¦æ­¢ç¼–é€ `
+      : '';
     return {
       ok: false, placedCount: pending.length,
-      reason: `placement coverage ${pending.length}/${unlocked} unlocked footprints`
+      reason: `placement coverage ${pending.length}/${unlocked} unlocked footprints${unkHint}`
     };
   }
 
@@ -521,7 +747,7 @@ export function applyPcbPlacementPlan(doc: PcbDocument, plan: PcbPlacementPlan):
 
   return { ok: true, placedCount: pending.length, reason: 'ok' };
 }
-ÀÔrE’³../PcbTrackBindUtil®../PcbTraceLogÔrF—ªassertions¨external¢id¤meta±moduleSideEffectsªresolvedByµsyntheticNamedExportsAÂÙKC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\PcbTrackBindUtil.etsAÃªoh-resolveÂFAÂÙFC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\PcbTraceLog.etsAÃªoh-resolveÂ“ÔrG–§version¤fileªsourceRoot§sources¥names¨mappings·PcbPlacementExecutor.js ‘¸PcbPlacementExecutor.etsÜ ìš”   ” ”	 ”% ”'  ”ÌH ÌA”ÌJ ”ÌP ”Ìe ”Ìf ˜”  	 ” 	”	 		” 	” 	” 	”) 	)”* 	*•”    ”	  	”  ”  ”  %œ” !”
+ÀÔrE’®../PcbTraceLog³../PcbTrackBindUtilÔrF—ªassertions¨external¢id¤meta±moduleSideEffectsªresolvedByµsyntheticNamedExportsAÂÙFC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\PcbTraceLog.etsAÃªoh-resolveÂFAÂÙKC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\PcbTrackBindUtil.etsAÃªoh-resolveÂ“ÔrG–§version¤fileªsourceRoot§sources¥names¨mappings·PcbPlacementExecutor.js ‘¸PcbPlacementExecutor.etsÜZš”   ” ”	 ”% ”'  ”ÌH ÌA”ÌJ ”ÌP ”Ìe ”Ìf ˜”  	 ” 	”	 		” 	” 	” 	”) 	)”* 	*•”    ”	  	”  ”  ”  %œ” !”
  !” !” !” !” !”  !”" ! ”( !&”, !*”. !,”/ !-˜” "” "” "	” "
 ” "” "” "” "Ü ” #” #” #” #” #” #” #” #”! #”# #”$ # ”' ##”) #%”- #)”/ #+”2 #.”4 #0”8 #4”: #6”= #9”? #;”Ì@ #<‘” $›” %” %” %
 ” %” %” %” %” %” %” %” %›” &” &” &
@@ -542,76 +768,104 @@ export function applyPcbPlacementPlan(doc: PcbDocument, plan: PcbPlacementPlan):
  ÌQ” ÌQ” ÌQ” ÌQ” ÌQ” ÌQ” ÌQ”! ÌQ”” ÌR” ÌR” ÌR” ÌR‘” ÌSŸ” ÌT”
  ÌT” ÌT	” ÌT” ÌT” ÌT” ÌT” ÌT” ÌT” ÌT” ÌT”  ÌT”+ ÌT)”- ÌT+”. ÌT,’” ÌU” ÌUÜ ” ÌV” ÌV”	 ÌV”
  ÌV” ÌV” ÌV” ÌV” ÌV” ÌV” ÌV”! ÌV”" ÌV ”# ÌV!”$ ÌV"”) ÌV'”, ÌV*”0 ÌV.”1 ÌV/”2 ÌV0”9 ÌV7”: ÌV8”ÌB ÌVÌ@”ÌC ÌVÌA”ÌF ÌVÌD”ÌG ÌVÌE”ÌI ÌVÌG–” ÌW” ÌW” ÌW” ÌW” ÌW” ÌWÜ ” ÌX” ÌX	” ÌX” ÌX” ÌX” ÌX” ÌX” ÌX” ÌX” ÌX” ÌX”$ ÌX ”& ÌX"”' ÌX#”) ÌX%”+ ÌX'›” ÌY” ÌY” ÌY” ÌY” ÌY” ÌY”" ÌY”# ÌY”$ ÌY”% ÌY”& ÌY š” ÌZ” ÌZ
-” ÌZ” ÌZ” ÌZ” ÌZ” ÌZ” ÌZ”  ÌZ”" ÌZ•” Ì[” Ì[” Ì[”  Ì[”! Ì[’” Ì\” Ì\‘” Ì]‘”	 Ì^”” Ì_” Ì_” Ì_” Ì_‘” Ì`”” Ìa” Ìa	” Ìa” Ìa’”  Ìb ” Ìb›”  Ìd ”	 Ìd	” Ìd” Ìe” Ìe” Ìf”" Ìf%”$ Ìg”/ Ìg,”1 Ìh”7 Ìhš” Ìj”
- Ìj” Ìj” Ìj” Ìj” Ìj” Ìj”" Ìj ”$ Ìj"”% Ìj#˜” Ìk” Ìk” Ìk” Ìk” Ìk” Ìk” Ìk” Ìk”” Ìl” Ìl” Ìl” Ìl‘” ÌmÜ '” Ìn”
- Ìn” Ìn” Ìn” Ìn” Ìn” Ìn”  Ìo”$ Ìo”% Ìo	”( Ìo”) Ìo”/ Ìo”0 Ìo”4 Ìo”7 Ìo”= Ìo!”> Ìo"”ÌB Ìo&”ÌD Ìo(”ÌE Ìo)”ÌF Ìo*”ÌI Ìo-”ÌM Ìo1”ÌN Ìo2”ÌQ Ìo5”ÌR Ìo6”ÌX Ìo<”ÌY Ìo=”Ì] ÌoÌA”Ì` ÌoÌD”Ìf ÌoÌJ”Ìg ÌoÌK”Ìk ÌoÌO”Ìm ÌoÌQ”Ìn ÌoÌR”Ìo ÌoÌS”Ìp ÌoÌT”Ìq ÌoÌUŸ” Ìp”
- Ìp” Ìp” Ìp” Ìp” Ìp” Ìp” Ìp”& Ìp$”) Ìp'”- Ìp+”/ Ìp-”2 Ìp0”3 Ìp1”4 Ìp2Ü ” Ìr”	 Ìr” Ìr” Ìr” Ìr” Ìr” Ìr” Ìr” Ìr”  Ìr”! Ìr”' Ìr%”) Ìr'”+ Ìr)”- Ìr+”/ Ìr-™” Ìs” Ìs
-” Ìs” Ìs!” Ìs'” Ìs(” Ìs*” Ìs+” Ìs,š” Ìt” Ìt
-” Ìt” Ìt” Ìt” Ìt”" Ìt”& Ìt"”( Ìt$”) Ìt%˜” Ìu” Ìu” Ìu” Ìu” Ìu” Ìu” Ìu” Ìu’” Ìv” Ìv‘”	 Ìw–” Ìx” Ìx
-” Ìx” Ìx” Ìx” ÌxÜ ” Ìy” Ìy	” Ìy” Ìy” Ìy” Ìy” Ìy” Ìy” Ìy” Ìy”  Ìy”& Ìy"”( Ìy$”) Ìy%”+ Ìy'”- Ìy)™” Ìz” Ìz” Ìz” Ìz” Ìz” Ìz” Ìz” Ìz” Ìzš” Ì{” Ì{
-” Ì{” Ì{” Ì{” Ì{” Ì{” Ì{” Ì{” Ì{š” Ì|” Ì|”  Ì|”! Ì|”" Ì|”& Ì|”> Ì|6”Ì@ Ì|8”ÌB Ì|:”ÌC Ì|;‘” Ì}›” Ì~” Ì~” Ì~” Ì~”$ Ì~”% Ì~”( Ì~"”) Ì~#”+ Ì~%”, Ì~&”- Ì~'›” Ì” Ì” Ì” Ì” Ì” Ì” Ì”  Ì”" Ì”# Ì”$ Ì”” Ì€” Ì€
-” Ì€” Ì€Ü ” Ì” Ì” Ì” Ì” Ì” Ì” Ì” Ì”" Ì”# Ì”$ Ì”& Ì”' Ì”) Ì!”- Ì%”. Ì&”/ Ì'”1 Ì)”2 Ì*”3 Ì+‘” Ì‚”” Ì‚” Ì‚” Ì‚” Ì‚Ü ” Ìƒ” Ìƒ” Ìƒ” Ìƒ” Ìƒ” Ìƒ” Ìƒ” Ìƒ”  Ìƒ”! Ìƒ”) Ìƒ!”* Ìƒ"”+ Ìƒ#”- Ìƒ%”. Ìƒ&”0 Ìƒ(”2 Ìƒ*”3 Ìƒ+”; Ìƒ3”< Ìƒ4”= Ìƒ5”? Ìƒ7”Ì@ Ìƒ8”ÌA Ìƒ9‘” Ì„‘”	 Ì…–” Ì†” Ì†” Ì†” Ì†” Ì†” Ì†Ü ” Ì‡” Ì‡	” Ì‡” Ì‡” Ì‡” Ì‡” Ì‡” Ì‡” Ì‡” Ì‡”  Ì‡”& Ì‡"”( Ì‡$”) Ì‡%”+ Ì‡'”- Ì‡)Ü ” Ìˆ” Ìˆ” Ìˆ” Ìˆ” Ìˆ” Ìˆ” Ìˆ” Ìˆ”  Ìˆ”! Ìˆ”$ Ìˆ”' Ìˆ!”( Ìˆ"”. Ìˆ(”0 Ìˆ*”1 Ìˆ+”3 Ìˆ-”5 Ìˆ/Ü ” Ì‰” Ì‰” Ì‰” Ì‰” Ì‰” Ì‰”  Ì‰”! Ì‰”" Ì‰”# Ì‰”& Ì‰”) Ì‰!”* Ì‰"”+ Ì‰#”, Ì‰$”- Ì‰%”. Ì‰&”/ Ì‰'Ü ” ÌŠ” ÌŠ” ÌŠ” ÌŠ” ÌŠ” ÌŠ”  ÌŠ”! ÌŠ”" ÌŠ”# ÌŠ”& ÌŠ”) ÌŠ!”* ÌŠ"”+ ÌŠ#”, ÌŠ$”- ÌŠ%”. ÌŠ&”/ ÌŠ'Ü ” Ì‹” Ì‹” Ì‹” Ì‹” Ì‹” Ì‹”# Ì‹”$ Ì‹”& Ì‹”) Ì‹!”+ Ì‹#”. Ì‹&”0 Ì‹(”3 Ì‹+”5 Ì‹-”6 Ì‹.”7 Ì‹/–” ÌŒ” ÌŒ” ÌŒ” ÌŒ” ÌŒ” ÌŒ•” Ì
-” Ì” Ì” Ì” Ì‘” Ì	‘” Ì‘”	 Ì–” Ì‘” Ì‘” Ì‘” Ì‘” Ì‘” Ì‘Ü ” Ì’” Ì’” Ì’” Ì’” Ì’”" Ì’”& Ì’ ”( Ì’"”< Ì’6”Ì@ Ì’:”ÌA Ì’;”ÌF Ì’Ì@”ÌG Ì’ÌA”ÌK Ì’ÌE”ÌL Ì’ÌF”ÌP Ì’ÌJ”ÌT Ì’ÌN”ÌU Ì’ÌO”ÌZ Ì’ÌT”Ì[ Ì’ÌU”Ìb Ì’Ì\”Ìc Ì’Ì]”Ìe Ì’Ì_”Ìf Ì’Ì`‘”	 Ì“‘” Ì””” Ì•” Ì•	” Ì•” Ì•’”  Ì– ” Ì–˜”  Ì˜ ” Ì˜” Ì˜”% Ì˜%”& Ì˜&”) Ì˜6”+ Ì˜8”/ Ì˜ÌN—” Ì™” Ì™”	 Ì™” Ì™” Ì™” Ì™” Ì™Ü ” Ìš” Ìš” Ìš” Ìš” Ìš” Ìš” Ìš”' Ìš#”) Ìš%”* Ìš&”, Ìš(”2 Ìš.”4 Ìš0”ÌQ ÌšÌM”ÌS ÌšÌO”ÌT ÌšÌP‘” Ì›Ÿ” Ìœ” Ìœ”	 Ìœ” Ìœ” Ìœ” Ìœ” Ìœ”  Ìœ”! Ìœ”+ Ìœ)”, Ìœ*”2 Ìœ0”7 Ìœ5”8 Ìœ6”: Ìœ8Ü ” Ì” Ì” Ì” Ì” Ì” Ì” Ì”' Ì#”) Ì%”* Ì&”, Ì(”2 Ì.”4 Ì0”ÌS ÌÌO”ÌU ÌÌQ”ÌV ÌÌR‘” Ì” Ì ”
- Ì ” Ì ” Ì ” Ì "” Ì %” Ì &” Ì *”  Ì +”) Ì 4”- Ì 8”/ Ì :”0 Ì ;”1 Ì <’” Ì¡”- Ì¡+™” Ì¢”	 Ì¢” Ì¢” Ì¢” Ì¢” Ì¢” Ì¢”# Ì¢!”% Ì¢#œ” Ì£” Ì£” Ì£” Ì£” Ì£” Ì£” Ì£”  Ì£”" Ì£”# Ì£”) Ì£%”+ Ì£'š” Ì¤” Ì¤” Ì¤” Ì¤” Ì¤” Ì¤” Ì¤” Ì¤” Ì¤” Ì¤‘”	 Ì¥‘” Ì¦™” Ì¨”
- Ì¨” Ì¨” Ì¨” Ì¨” Ì¨”" Ì¨ ”# Ì¨!”$ Ì¨"˜” Ì©”
- Ì©” Ì©” Ì©.” Ì©2” Ì©5” Ì©7” Ì©8™” Ìª”	 Ìª” Ìª” Ìª” Ìª” Ìª” Ìª”# Ìª!”% Ìª#œ” Ì«” Ì«” Ì«	” Ì«” Ì«” Ì«” Ì«” Ì«” Ì«” Ì«” Ì«” Ì«‘” Ì¬–” Ì®”
- Ì®” Ì®” Ì®&” Ì®(” Ì®)˜” Ì¯”
- Ì¯” Ì¯” Ì¯5” Ì¯9” Ì¯<”! Ì¯>”" Ì¯?Ü ” Ì°”	 Ì°” Ì°” Ì°” Ì°” Ì°” Ì°” Ì°” Ì°” Ì°” Ì°”' Ì°%”( Ì°&”. Ì°,”0 Ì°.”1 Ì°/”3 Ì°1”5 Ì°3›” Ì±” Ì±
-” Ì±” Ì±” Ì±” Ì±”$ Ì± ”% Ì±!”& Ì±"”' Ì±#”( Ì±$›” Ì²” Ì²” Ì²” Ì²” Ì²” Ì²” Ì²” Ì²”' Ì²#”( Ì²$”* Ì²&’” Ì³” Ì³‘”	 Ì´” Ìµ” Ìµ
-” Ìµ” Ìµ” Ìµ” Ìµ” Ìµ” Ìµ”  Ìµ”! Ìµ”, Ìµ(”- Ìµ)”. Ìµ*•” Ì¶” Ì¶” Ì¶	” Ì¶” Ì¶Ü ” Ì·” Ì·” Ì·” Ì·” Ì·” Ì·”  Ì·”+ Ì·%”- Ì·'”. Ì·(”0 Ì·*”6 Ì·0”8 Ì·2”ÌO Ì·ÌI”ÌS Ì·ÌM”ÌT Ì·ÌN”Ì_ Ì·ÌY”Ìa Ì·Ì[”Ìc Ì·Ì]”Ìd Ì·Ì^‘”	 Ì¸–” Ì¹” Ì¹” Ì¹
-” Ì¹” Ì¹” Ì¹’” Ìº” Ìº‘”	 Ì»Ü "” Ì¼” Ì¼” Ì¼” Ì¼” Ì¼” Ì¼” Ì¼” Ì¼”  Ì¼”$ Ì¼ ”( Ì¼$”) Ì¼%”* Ì¼&”- Ì¼)”3 Ì¼/”4 Ì¼0”8 Ì¼4”< Ì¼8”Ì@ Ì¼<”ÌA Ì¼=”ÌB Ì¼>”ÌE Ì¼ÌA”ÌK Ì¼ÌG”ÌL Ì¼ÌH”ÌP Ì¼ÌL”ÌT Ì¼ÌP”ÌX Ì¼ÌT”ÌY Ì¼ÌU”ÌZ Ì¼ÌV”Ì] Ì¼ÌY”Ìc Ì¼Ì_”Ìd Ì¼Ì`”Ìh Ì¼Ìd”Ìj Ì¼Ìf’” Ì½” Ì½˜” Ì¾” Ì¾
-” Ì¾” Ì¾” Ì¾”& Ì¾”( Ì¾ ”) Ì¾!Ü ” Ì¿” Ì¿” Ì¿”7 Ì¿/”9 Ì¿1”: Ì¿2”Ì@ Ì¿8”ÌE Ì¿=”ÌI Ì¿ÌA”ÌJ Ì¿ÌB”ÌK Ì¿ÌC”ÌO Ì¿ÌG”ÌS Ì¿ÌK”ÌT Ì¿ÌL”ÌU Ì¿ÌM”ÌX Ì¿ÌP’” ÌÀ” ÌÀ‘”	 ÌÁ”” ÌÂ” ÌÂ
-” ÌÂ” ÌÂ#”” ÌÃ” ÌÃ” ÌÃ
-” ÌÃ–” ÌÄ” ÌÄ” ÌÄ	” ÌÄ” ÌÄ” ÌÄ–” ÌÅ” ÌÅ” ÌÅ	” ÌÅ” ÌÅ” ÌÅ™” ÌÆ” ÌÆ	” ÌÆ” ÌÆ” ÌÆ”" ÌÆ”# ÌÆ”. ÌÆ(”/ ÌÆ)˜” ÌÇ” ÌÇ	” ÌÇ” ÌÇ” ÌÇ” ÌÇ”# ÌÇ”' ÌÇ!’”	 ÌÈ”
- ÌÈ˜” ÌÉ” ÌÉ” ÌÉ” ÌÉ” ÌÉ” ÌÉ” ÌÉ” ÌÉœ” ÌÊ” ÌÊ” ÌÊ” ÌÊ” ÌÊ” ÌÊ” ÌÊ” ÌÊ” ÌÊ”# ÌÊ”$ ÌÊ ”% ÌÊ!‘” ÌË–” ÌÍ” ÌÍ” ÌÍ” ÌÍ” ÌÍ” ÌÍ™” ÌÎ”	 ÌÎ” ÌÎ” ÌÎ” ÌÎ” ÌÎ” ÌÎ”# ÌÎ!”% ÌÎ#Ü ” ÌÏ” ÌÏ” ÌÏ	” ÌÏ” ÌÏ” ÌÏ” ÌÏ” ÌÏ”! ÌÏ”" ÌÏ”% ÌÏ!”& ÌÏ"”( ÌÏ$”) ÌÏ%”+ ÌÏ'”, ÌÏ(”. ÌÏ*”” ÌĞ” ÌĞ” ÌĞ” ÌĞ‘”	 ÌÑ‘” ÌÒœ” ÌÓ” ÌÓ” ÌÓ” ÌÓ” ÌÓ” ÌÓ” ÌÓ”  ÌÓ”& ÌÓ$”) ÌÓ'”1 ÌÓ/”3 ÌÓ1’” ÌÔ” ÌÔš” ÌÕ” ÌÕ” ÌÕ
-” ÌÕ” ÌÕ”" ÌÕ”$ ÌÕ”+ ÌÕ%”, ÌÕ&”2 ÌÕ,š” ÌÖ” ÌÖ” ÌÖ”* ÌÖ$”1 ÌÖ+”2 ÌÖ,”8 ÌÖ2”< ÌÖ6”ÌD ÌÖ>”ÌZ ÌÖÌT’”	 Ì×”
- Ì×‘” ÌØ’” ÌÚ”$ ÌÚ"œ” ÌÛ”
- ÌÛ” ÌÛ” ÌÛ” ÌÛ” ÌÛ” ÌÛ” ÌÛ”& ÌÛ$”* ÌÛ(”+ ÌÛ)”, ÌÛ*–” ÌÜ” ÌÜ” ÌÜ” ÌÜ” ÌÜ” ÌÜ–” Ìİ” Ìİ” Ìİ” Ìİ” Ìİ” ÌİÜ ” ÌŞ”	 ÌŞ” ÌŞ” ÌŞ” ÌŞ” ÌŞ” ÌŞ” ÌŞ” ÌŞ” ÌŞ”  ÌŞ”& ÌŞ$”( ÌŞ&”) ÌŞ'”+ ÌŞ)”- ÌŞ+™” Ìß” Ìß
-” Ìß” Ìß” Ìß” Ìß” Ìß” Ìß” Ìß™” Ìà” Ìà” Ìà” Ìà” Ìà” Ìà” Ìà” Ìà” Ìà’” Ìá” Ìá‘”	 Ìâ”” Ìã” Ìã” Ìã” ÌãÜ ” Ìä” Ìä
-” Ìä” Ìä” Ìä” Ìä” Ìä” Ìä” Ìä” Ìä” Ìä”" Ìä”# Ìä”$ Ìä ”& Ìä"”' Ìä#”/ Ìä+”0 Ìä,”1 Ìä-”2 Ìä.”3 Ìä/Ü ” Ìå” Ìå
-” Ìå” Ìå” Ìå” Ìå” Ìå” Ìå” Ìå” Ìå” Ìå”" Ìå”# Ìå”$ Ìå ”& Ìå"”' Ìå#”/ Ìå+”0 Ìå,”1 Ìå-”2 Ìå.”3 Ìå/Ü ” Ìæ” Ìæ
-” Ìæ” Ìæ”$ Ìæ ”% Ìæ!”& Ìæ"”' Ìæ#”) Ìæ%”* Ìæ&”2 Ìæ.”3 Ìæ/”8 Ìæ4”9 Ìæ5”: Ìæ6”= Ìæ9”> Ìæ:œ” Ìç” Ìç” Ìç
-” Ìç” Ìç” Ìç” Ìç”  Ìç”$ Ìç ”( Ìç$”/ Ìç+”1 Ìç-”” Ìè” Ìè” Ìè” Ìè‘”	 Ìé‘” Ìêœ” Ìë” Ìë” Ìë” Ìë” Ìë” Ìë” Ìë”" Ìë ”* Ìë(”. Ìë,”2 Ìë0”4 Ìë2’” Ìì” Ìì˜” Ìí” Ìí” Ìí
-” Ìí” Ìí”" Ìí”$ Ìí”% Ìíš” Ìî” Ìî” Ìî”& Ìî ”' Ìî!”- Ìî'”. Ìî(”2 Ìî,”: Ìî4”Ì| ÌîÌv’”	 Ìï”
- Ìï‘” ÌğŸ” Ìò”
- Ìò” Ìò” Ìò”# Ìò!”$ Ìò"”( Ìò&”* Ìò(”. Ìò,”0 Ìò.”; Ìò9”= Ìò;”ÌC ÌòÌA”ÌD ÌòÌB”ÌE ÌòÌC˜” Ìó” Ìó” Ìó” Ìó” Ìó” Ìó” Ìó” ÌóÜ ” Ìô” Ìô” Ìô” Ìô” Ìô” Ìô” Ìô”' Ìô#”) Ìô%”* Ìô&”, Ìô(”2 Ìô.”4 Ìô0”< Ìô8”> Ìô:”? Ìô;‘” Ìõ” Ìö” Ìö”	 Ìö” Ìö” Ìö” Ìö” Ìö” Ìö”  Ìö”! Ìö”" Ìö ”% Ìö#”& Ìö$”( Ìö&” Ì÷” Ì÷” Ì÷”" Ì÷”$ Ì÷ ”) Ì÷%”- Ì÷)”. Ì÷*”4 Ì÷1”5 Ì÷2”; Ì÷8”= Ì÷:”> Ì÷;”? Ì÷<‘” ÌøŸ” Ìú”
- Ìú” Ìú” Ìú” Ìú” Ìú” Ìú” Ìú”! Ìú”$ Ìú"”% Ìú#”' Ìú%”) Ìú'”* Ìú(”+ Ìú)Ü ” Ìû”	 Ìû” Ìû” Ìû” Ìû” Ìû” Ìû” Ìû” Ìû” Ìû”  Ìû”& Ìû$”( Ìû&”) Ìû'”+ Ìû)”- Ìû+Ü ” Ìü” Ìü	” Ìü” Ìü” Ìü” Ìü” Ìü” Ìü” Ìü” Ìü”  Ìü”' Ìü#”( Ìü$”. Ìü*”0 Ìü,”1 Ìü-”3 Ìü/”5 Ìü1Ü ” Ìı” Ìı” Ìı” Ìı” Ìı” Ìı” Ìı”" Ìı%”# Ìı&”$ Ìı'”% Ìı(”& Ìı)”' Ìı*”) Ìı,”* Ìı-”, Ìı/”3 Ìı6”4 Ìı7”5 Ìı8”6 Ìı9”7 Ìı:”8 Ìı;”: Ìı=”; Ìı>Ü ” Ìş” Ìş” Ìş” Ìş” Ìş” Ìş” Ìş”" Ìş%”# Ìş&”$ Ìş'”% Ìş(”& Ìş)”' Ìş*”) Ìş,”* Ìş-”, Ìş/”3 Ìş6”4 Ìş7”5 Ìş8”6 Ìş9”7 Ìş:”8 Ìş;”: Ìş=”; Ìş>›” Ìÿ” Ìÿ
-” Ìÿ”  Ìÿ”! Ìÿ”# Ìÿ”$ Ìÿ”& Ìÿ ”- Ìÿ'”. Ìÿ(”0 Ìÿ*’” Í ” Í ˜” Í
-” Í” Í” Í” Í”* Í ”, Í"”- Í#Ü ” Í
-” Í” Í”7 Í-”> Í4”? Í5”Ì@ Í6”ÌA Í7”ÌB Í8”ÌD Í:”ÌE Í;”ÌK ÍÌA”ÌQ ÍÌG”ÌX ÍÌN”ÌY ÍÌO”ÌZ ÍÌP”Ì[ ÍÌQ”Ì\ ÍÌR”Ì^ ÍÌT”Ì_ ÍÌU”Ìe ÍÌ[”Ìg ÍÌ]’” Í	” Í
-‘” Í‘”	 Í‘” Í˜” Í”
- Í” Í” Í-” Í1”  Í4”" Í6”# Í7˜” Í	”
- Í	” Í	” Í	 ” Í	$” Í	'” Í	)” Í	*Ü ” Í
-”	 Í
-” Í
-” Í
-” Í
-” Í
-” Í
-” Í
-” Í
-” Í
-”  Í
-”& Í
-$”( Í
-&”) Í
-'”+ Í
-)”- Í
-+™” Í” Í
-” Í” Í” Í” Í” Í” Í” Í›” Í” Í
-” Í” Í”3 Í/”4 Í0”5 Í1”6 Í2”8 Í4”9 Í5”: Í6›” Í” Í
-” Í” Í” Í” Í” Í ” Í"”  Í-”" Í/”$ Í1Ü ” Í” Í” Í” Í” Í”  Í”" Í”$ Í”% Í”' Í!”* Í$”+ Í%”, Í&”. Í(”/ Í)”1 Í+”4 Í.”5 Í/”6 Í0”8 Í2”9 Í3”: Í4”” Í”	 Í”
- Í” ÍÜ ” Í”	 Í”
- Í” Í” Í	” Í” Í” Í” Í” Í” Í” Í”  Í”" Í”# Í”% Í!”& Í"”' Í#”( Í$”* Í&”+ Í'›” Í”	 Í”
- Í” Í” Í	” Í” Í” Í” Í” Í” Í›” Í”	 Í”
- Í” Í” Í	” Í” Í” Í” Í” Í” Íœ” Í” Í” Í” Í” Í” Í” Í” Í” Í” Í” Í” ÍÜ ” Í” Í” Í” Í” Í”  Í”! Í”" Í”$ Í ”% Í!”+ Í'”3 Í/”4 Í0”5 Í1”6 Í2”: Í6”; Í7”< Í8”= Í9”ÌD ÍÌ@”ÌE ÍÌA”ÌF ÍÌB”ÌI ÍÌE”ÌK ÍÌG”ÌL ÍÌH”ÌM ÍÌI‘” Í˜” Í” Í” Í” Í” Í” Í” Í” Íš” Í”) Í%”* Í&”- Í)”/ Í+”7 Í3”9 Í5”ÌE ÍÌA”ÌF ÍÌB”ÌG ÍÌC‘” Í’” Í” Íœ” Í” Í”	 Í” Í” Í” Í” Í” Í”  Í”& Í$”' Í%”( Í&Ü ” Í” Í	” Í” Í” Í” Í” Í”" Í ”$ Í"”+ Í)”, Í*”2 Í0”4 Í2”: Í8”< Í:”Ì@ Í>”ÌB ÍÌ@”ÌC ÍÌA’”  Í ” ÍÔrH–§version¤file§sources®sourcesContent¥names¨mappingsÀ‘À‘ÀÜ í‘”    ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”  	 ‘”  
- ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”    ‘”  ! ‘”  " ‘”  # ‘”  $ ‘”  % ‘”  & ‘”  ' ‘”  ( ‘”  ) ‘”  * ‘”  + ‘”  , ‘”  - ‘”  . ‘”  / ‘”  0 ‘”  1 ‘”  2 ‘”  3 ‘”  4 ‘”  5 ‘”  6 ‘”  7 ‘”  8 ‘”  9 ‘”  : ‘”  ; ‘”  < ‘”  = ‘”  > ‘”  ? ‘”  Ì@ ‘”  ÌA ‘”  ÌB ‘”  ÌC ‘”  ÌD ‘”  ÌE ‘”  ÌF ‘”  ÌG ‘”  ÌH ‘”  ÌI ‘”  ÌJ ‘”  ÌK ‘”  ÌL ‘”  ÌM ‘”  ÌN ‘”  ÌO ‘”  ÌP ‘”  ÌQ ‘”  ÌR ‘”  ÌS ‘”  ÌT ‘”  ÌU ‘”  ÌV ‘”  ÌW ‘”  ÌX ‘”  ÌY ‘”  ÌZ ‘”  Ì[ ‘”  Ì\ ‘”  Ì] ‘”  Ì^ ‘”  Ì_ ‘”  Ì` ‘”  Ìa ‘”  Ìb ‘”  Ìc ‘”  Ìd ‘”  Ìe ‘”  Ìf ‘”  Ìg ‘”  Ìh ‘”  Ìi ‘”  Ìj ‘”  Ìk ‘”  Ìl ‘”  Ìm ‘”  Ìn ‘”  Ìo ‘”  Ìp ‘”  Ìq ‘”  Ìr ‘”  Ìs ‘”  Ìt ‘”  Ìu ‘”  Ìv ‘”  Ìw ‘”  Ìx ‘”  Ìy ‘”  Ìz ‘”  Ì{ ‘”  Ì| ‘”  Ì} ‘”  Ì~ ‘”  Ì ‘”  Ì€ ‘”  Ì ‘”  Ì‚ ‘”  Ìƒ ‘”  Ì„ ‘”  Ì… ‘”  Ì† ‘”  Ì‡ ‘”  Ìˆ ‘”  Ì‰ ‘”  ÌŠ ‘”  Ì‹ ‘”  ÌŒ ‘”  Ì ‘”  Ì ‘”  Ì ‘”  Ì ‘”  Ì‘ ‘”  Ì’ ‘”  Ì“ ‘”  Ì” ‘”  Ì• ‘”  Ì– ‘”  Ì— ‘”  Ì˜ ‘”  Ì™ ‘”  Ìš ‘”  Ì› ‘”  Ìœ ‘”  Ì ‘”  Ì ‘”  ÌŸ ‘”  Ì  ‘”  Ì¡ ‘”  Ì¢ ‘”  Ì£ ‘”  Ì¤ ‘”  Ì¥ ‘”  Ì¦ ‘”  Ì§ ‘”  Ì¨ ‘”  Ì© ‘”  Ìª ‘”  Ì« ‘”  Ì¬ ‘”  Ì­ ‘”  Ì® ‘”  Ì¯ ‘”  Ì° ‘”  Ì± ‘”  Ì² ‘”  Ì³ ‘”  Ì´ ‘”  Ìµ ‘”  Ì¶ ‘”  Ì· ‘”  Ì¸ ‘”  Ì¹ ‘”  Ìº ‘”  Ì» ‘”  Ì¼ ‘”  Ì½ ‘”  Ì¾ ‘”  Ì¿ ‘”  ÌÀ ‘”  ÌÁ ‘”  ÌÂ ‘”  ÌÃ ‘”  ÌÄ ‘”  ÌÅ ‘”  ÌÆ ‘”  ÌÇ ‘”  ÌÈ ‘”  ÌÉ ‘”  ÌÊ ‘”  ÌË ‘”  ÌÌ ‘”  ÌÍ ‘”  ÌÎ ‘”  ÌÏ ‘”  ÌĞ ‘”  ÌÑ ‘”  ÌÒ ‘”  ÌÓ ‘”  ÌÔ ‘”  ÌÕ ‘”  ÌÖ ‘”  Ì× ‘”  ÌØ ‘”  ÌÙ ‘”  ÌÚ ‘”  ÌÛ ‘”  ÌÜ ‘”  Ìİ ‘”  ÌŞ ‘”  Ìß ‘”  Ìà ‘”  Ìá ‘”  Ìâ ‘”  Ìã ‘”  Ìä ‘”  Ìå ‘”  Ìæ ‘”  Ìç ‘”  Ìè ‘”  Ìé ‘”  Ìê ‘”  Ìë ‘”  Ìì ÔrI’§missing¦pluginÃ¦genAbcÂÔ  ÔrJ”²dynamicImportCache¹exportAllDeclarationCache»exportNamedDeclarationCache«importCache‘ÔrK–¤type¥start£end«declarationªspecifiers¦source¶ExportNamedDeclarationÍiÍbÔrL™¤type¥start£end¢idªexpression©generator¥async¦params¤body³FunctionDeclarationÍpÍbÔrM”¤type¥start£end¤nameªIdentifierÍyÍµapplyPcbPlacementPlanÂÂÂ’MªIdentifierÍÍ’£docMªIdentifierÍ”Í˜¤planÔrN”¤type¥start£end¤body®BlockStatementÍšÍbÜ ÔrO–¤type¥start£end¤testªconsequent©alternate«IfStatementÍ¡ÍÔrP–¤type¥start£end¨operator¦prefix¨argument¯UnaryExpressionÍ¥Í²¡!ÃÔrQ—¤type¥start£end¦object¨property¨computed¨optional°MemberExpressionÍ¦Í²MªIdentifierÍ¦Íª¤planMªIdentifierÍ«Í²§fromLlmÂÂN®BlockStatementÍ´Í‘ÔrR”¤type¥start£end¨argument¯ReturnStatementÍ¿ÍÔrS”¤type¥start£endªproperties°ObjectExpressionÍÆÍ
-“ÔrT™¤type¥start£end¦method©shorthand¨computed£key¥value¤kind¨PropertyÍÈÍÑÂÂÂMªIdentifierÍÈÍÊ¢okÔrU•¤type¥start£end¥value£raw§LiteralÍÌÍÑÂ¥false¤initT¨PropertyÍÓÍáÂÂÂMªIdentifierÍÓÍŞ«placedCountU§LiteralÍàÍá ¡0¤initT¨PropertyÍãÍÂÂÂMªIdentifierÍãÍé¦reasonU§LiteralÍëÍ»placement plan not from LLM½'placement plan not from LLM'¤initÀO«IfStatementÍÍ®ÔrV–¤type¥start£end¤left¨operator¥right±LogicalExpressionÍÍLP¯UnaryExpressionÍÍ,¡!ÃQ°MemberExpressionÍÍ,MªIdentifierÍÍ!¤planMªIdentifierÍ"Í,ªplacementsÂÂ¢||V°BinaryExpressionÍ0ÍLQ°MemberExpressionÍ0ÍFQ°MemberExpressionÍ0Í?MªIdentifierÍ0Í4¤planMªIdentifierÍ5Í?ªplacementsÂÂMªIdentifierÍ@ÍF¦lengthÂÂ£===U§LiteralÍKÍL ¡0N®BlockStatementÍNÍ®‘R¯ReturnStatementÍYÍ§S°ObjectExpressionÍ`Í¦“T¨PropertyÍbÍkÂÂÂMªIdentifierÍbÍd¢okU§LiteralÍfÍkÂ¥false¤initT¨PropertyÍmÍ{ÂÂÂMªIdentifierÍmÍx«placedCountU§LiteralÍzÍ{ ¡0¤initT¨PropertyÍ}Í¤ÂÂÂMªIdentifierÍ}Íƒ¦reasonU§LiteralÍ…Í¤½empty placement plan from LLM¿'empty placement plan from LLM'¤initÀÔrW•¤type¥start£end¬declarations¤kind³VariableDeclarationÍ´Íá‘ÔrX•¤type¥start£end¢id¤init²VariableDeclaratorÍºÍàMªIdentifierÍºÍÀ¦lockedÔrY•¤type¥start£end¦callee©arguments­NewExpressionÍÃÍàMªIdentifierÍÇÍÊ£Set‘V±LogicalExpressionÍËÍßQ°MemberExpressionÍËÍÙMªIdentifierÍËÍÏ¤planMªIdentifierÍĞÍÙ©lockedIdsÂÂ¢??ÔrZ”¤type¥start£end¨elements¯ArrayExpressionÍİÍß¥constÔr[—¤type¥start£end¥await¤left¥right¤body®ForOfStatementÍÍ˜ÂW³VariableDeclarationÍÍ#‘X²VariableDeclaratorÍ!Í#MªIdentifierÍ!Í#¢fpÀ¥constQ°MemberExpressionÍ'Í5MªIdentifierÍ'Í*£docMªIdentifierÍ+Í5ªfootprintsÂÂN®BlockStatementÍ7Í˜‘O«IfStatementÍBÍ‘V±LogicalExpressionÍFÍcÔr\–¤type¥start£end¦callee©arguments¨optional®CallExpressionÍFÍUMªIdentifierÍFÍQ«isMountHole‘MªIdentifierÍRÍT¢fpÂ¢&&P¯UnaryExpressionÍYÍc¡!ÃQ°MemberExpressionÍZÍcMªIdentifierÍZÍ\¢fpMªIdentifierÍ]Íc¦lockedÂÂN®BlockStatementÍeÍ‘‘Ôr]”¤type¥start£endªexpression³ExpressionStatementÍtÍ†\®CallExpressionÍtÍ…Q°MemberExpressionÍtÍ~MªIdentifierÍtÍz¦lockedMªIdentifierÍ{Í~£addÂÂ‘Q°MemberExpressionÍÍ„MªIdentifierÍÍ¢fpMªIdentifierÍ‚Í„¢idÂÂÂÀW³VariableDeclarationÍÍ¾‘X²VariableDeclaratorÍ¤Í½MªIdentifierÍ¤Íª¦bounds\®CallExpressionÍ­Í½MªIdentifierÍ­Í¸«boardBounds‘MªIdentifierÍ¹Í¼£docÂ¥constW³VariableDeclarationÍÄÍÛ‘X²VariableDeclaratorÍÊÍÚMªIdentifierÍÊÍÎ¤byIdY­NewExpressionÍÑÍÚMªIdentifierÍÕÍØ£Map¥const[®ForOfStatementÍáÍ(ÂW³VariableDeclarationÍæÍî‘X²VariableDeclaratorÍìÍîMªIdentifierÍìÍî¢fpÀ¥constQ°MemberExpressionÍòÍ MªIdentifierÍòÍõ£docMªIdentifierÍöÍ ªfootprintsÂÂN®BlockStatementÍÍ(‘]³ExpressionStatementÍÍ!\®CallExpressionÍÍ Q°MemberExpressionÍÍMªIdentifierÍÍ¤byIdMªIdentifierÍÍ£setÂÂ’Q°MemberExpressionÍÍMªIdentifierÍÍ¢fpMªIdentifierÍÍ¢idÂÂMªIdentifierÍÍ¢fpÂW³VariableDeclarationÍ.ÍA‘X²VariableDeclaratorÍ4Í@MªIdentifierÍ4Í;§pendingZ¯ArrayExpressionÍ>Í@¥constW³VariableDeclarationÍGÍe‘X²VariableDeclaratorÍMÍdMªIdentifierÍMÍX«pendingByIdY­NewExpressionÍ[ÍdMªIdentifierÍ_Íb£Map¥constÔr^—¤type¥start£end¤init¤test¦update¤body¬ForStatementÍkÍ:W³VariableDeclarationÍpÍy‘X²VariableDeclaratorÍtÍyMªIdentifierÍtÍu¡iU§LiteralÍxÍy ¡0£letV°BinaryExpressionÍ{Í•MªIdentifierÍ{Í|¡i¡<Q°MemberExpressionÍÍ•Q°MemberExpressionÍÍMªIdentifierÍÍƒ¤planMªIdentifierÍ„ÍªplacementsÂÂMªIdentifierÍÍ•¦lengthÂÂP°UpdateExpressionÍ—Íš¢++ÂMªIdentifierÍ—Í˜¡iN®BlockStatementÍœÍ:™W³VariableDeclarationÍ§ÍÇ‘X²VariableDeclaratorÍ­ÍÆMªIdentifierÍ­Í±¤itemQ°MemberExpressionÍ´ÍÆQ°MemberExpressionÍ´ÍÃMªIdentifierÍ´Í¸¤planMªIdentifierÍ¹ÍÃªplacementsÂÂMªIdentifierÍÄÍÅ¡iÃÂ¥constO«IfStatementÍÑÍ\®CallExpressionÍÕÍñQ°MemberExpressionÍÕÍßMªIdentifierÍÕÍÛ¦lockedMªIdentifierÍÜÍß£hasÂÂ‘Q°MemberExpressionÍàÍğMªIdentifierÍàÍä¤itemMªIdentifierÍåÍğ«footprintIdÂÂÂN®BlockStatementÍóÍ‘Ôr_”¤type¥start£end¥label±ContinueStatementÍÍÀÀW³VariableDeclarationÍ ÍF‘X²VariableDeclaratorÍ&ÍEMªIdentifierÍ&Í(¢fp\®CallExpressionÍ+ÍEQ°MemberExpressionÍ+Í3MªIdentifierÍ+Í/¤byIdMªIdentifierÍ0Í3£getÂÂ‘Q°MemberExpressionÍ4ÍDMªIdentifierÍ4Í8¤itemMªIdentifierÍ9ÍD«footprintIdÂÂÂ¥constO«IfStatementÍPÍËP¯UnaryExpressionÍTÍW¡!ÃMªIdentifierÍUÍW¢fpN®BlockStatementÍYÍË‘R¯ReturnStatementÍhÍÀS°ObjectExpressionÍoÍ¿“T¨PropertyÍqÍzÂÂÂMªIdentifierÍqÍs¢okU§LiteralÍuÍzÂ¥false¤initT¨PropertyÍ|ÍŠÂÂÂMªIdentifierÍ|Í‡«placedCountU§LiteralÍ‰ÍŠ ¡0¤initT¨PropertyÍŒÍ½ÂÂÂMªIdentifierÍŒÍ’¦reasonÔr`•¤type¥start£end«expressions¦quasis¯TemplateLiteralÍ”Í½‘Q°MemberExpressionÍ«Í»MªIdentifierÍ«Í¯¤itemMªIdentifierÍ°Í»«footprintIdÂÂ’Ôra•¤type¥start£end¥value¤tail¯TemplateElementÍ•Í©Ôrb’£raw¦cooked´unknown footprintId ´unknown footprintId Âa¯TemplateElementÍ¼Í¼b  Ã¤initÀO«IfStatementÍÕÍQ°MemberExpressionÍÙÍâMªIdentifierÍÙÍÛ¢fpMªIdentifierÍÜÍâ¦lockedÂÂN®BlockStatementÍäÍ‘_±ContinueStatementÍóÍüÀÀO«IfStatementÍÍ+V±LogicalExpressionÍÍqV±LogicalExpressionÍÍYV±LogicalExpressionÍÍAV°BinaryExpressionÍÍ)Q°MemberExpressionÍÍMªIdentifierÍÍ¤itemMªIdentifierÍÍ¡xÂÂ¡<Q°MemberExpressionÍÍ)MªIdentifierÍÍ$¦boundsMªIdentifierÍ%Í)¤minXÂÂ¢||V°BinaryExpressionÍ-ÍAQ°MemberExpressionÍ-Í3MªIdentifierÍ-Í1¤itemMªIdentifierÍ2Í3¡xÂÂ¡>Q°MemberExpressionÍ6ÍAMªIdentifierÍ6Í<¦boundsMªIdentifierÍ=ÍA¤maxXÂÂ¢||V°BinaryExpressionÍEÍYQ°MemberExpressionÍEÍKMªIdentifierÍEÍI¤itemMªIdentifierÍJÍK¡yÂÂ¡<Q°MemberExpressionÍNÍYMªIdentifierÍNÍT¦boundsMªIdentifierÍUÍY¤minYÂÂ¢||V°BinaryExpressionÍ]ÍqQ°MemberExpressionÍ]ÍcMªIdentifierÍ]Ía¤itemMªIdentifierÍbÍc¡yÂÂ¡>Q°MemberExpressionÍfÍqMªIdentifierÍfÍl¦boundsMªIdentifierÍmÍq¤maxYÂÂN®BlockStatementÍsÍ+‘R¯ReturnStatementÍ‚Í S°ObjectExpressionÍ‰Í“T¨PropertyÍœÍ¥ÂÂÂMªIdentifierÍœÍ¢okU§LiteralÍ Í¥Â¥false¤initT¨PropertyÍ§ÍµÂÂÂMªIdentifierÍ§Í²«placedCountU§LiteralÍ´Íµ ¡0¤initT¨PropertyÍÈÍÂÂÂMªIdentifierÍÈÍÎ¦reason`¯TemplateLiteralÍĞÍ“Q°MemberExpressionÍïÍøMªIdentifierÍïÍñ¢fpMªIdentifierÍòÍø¦refDesÂÂQ°MemberExpressionÍıÍMªIdentifierÍıÍ¤itemMªIdentifierÍÍ¡xÂÂQ°MemberExpressionÍÍMªIdentifierÍÍ¤itemMªIdentifierÍÍ¡yÂÂ”a¯TemplateElementÍÑÍíb¼LLM placement out of board: ¼LLM placement out of board: Âa¯TemplateElementÍùÍûb¢ (¢ (Âa¯TemplateElementÍÍb¡,¡,Âa¯TemplateElementÍÍb¡)¡)Ã¤initÀW³VariableDeclarationÍ5Íï‘X²VariableDeclaratorÍ;ÍîMªIdentifierÍ;Í?¤pendS°ObjectExpressionÍBÍî•T¨PropertyÍQÍWÂÂÂMªIdentifierÍQÍS¢fpMªIdentifierÍUÍW¢fp¤initT¨PropertyÍfÍoÂÂÂMªIdentifierÍfÍg¡xQ°MemberExpressionÍiÍoMªIdentifierÍiÍm¤itemMªIdentifierÍnÍo¡xÂÂ¤initT¨PropertyÍ~Í‡ÂÂÂMªIdentifierÍ~Í¡yQ°MemberExpressionÍÍ‡MªIdentifierÍÍ…¤itemMªIdentifierÍ†Í‡¡yÂÂ¤initT¨PropertyÍ–Í¹ÂÂÂMªIdentifierÍ–Í™£rot\®CallExpressionÍ›Í¹MªIdentifierÍ›Í§¬snapRotation‘Q°MemberExpressionÍ¨Í¸MªIdentifierÍ¨Í¬¤itemMªIdentifierÍ­Í¸«rotationDegÂÂÂ¤initT¨PropertyÍÈÍãÂÂÂMªIdentifierÍÈÍË£mirV°BinaryExpressionÍÍÍãQ°MemberExpressionÍÍÍÚMªIdentifierÍÍÍÑ¤itemMªIdentifierÍÒÍÚ¨mirroredÂÂ£===U§LiteralÍßÍãÃ¤true¤init¥const]³ExpressionStatementÍùÍ\®CallExpressionÍùÍQ°MemberExpressionÍùÍMªIdentifierÍùÍ §pendingMªIdentifierÍÍ¤pushÂÂ‘MªIdentifierÍÍ
-¤pendÂ]³ExpressionStatementÍÍ3\®CallExpressionÍÍ2Q°MemberExpressionÍÍ%MªIdentifierÍÍ!«pendingByIdMªIdentifierÍ"Í%£setÂÂ’Q°MemberExpressionÍ&Í+MªIdentifierÍ&Í(¢fpMªIdentifierÍ)Í+¢idÂÂMªIdentifierÍ-Í1¤pendÂW³VariableDeclarationÍ@ÍQ‘X²VariableDeclaratorÍDÍPMªIdentifierÍDÍL¨unlockedU§LiteralÍOÍP ¡0£let[®ForOfStatementÍWÍÕÂW³VariableDeclarationÍ\Íd‘X²VariableDeclaratorÍbÍdMªIdentifierÍbÍd¢fpÀ¥constQ°MemberExpressionÍhÍvMªIdentifierÍhÍk£docMªIdentifierÍlÍvªfootprintsÂÂN®BlockStatementÍxÍÕ‘O«IfStatementÍƒÍÎV±LogicalExpressionÍ‡Í§P¯UnaryExpressionÍ‡Í‘¡!ÃQ°MemberExpressionÍˆÍ‘MªIdentifierÍˆÍŠ¢fpMªIdentifierÍ‹Í‘¦lockedÂÂ¢&&P¯UnaryExpressionÍ•Í§¡!Ã\®CallExpressionÍ–Í§Q°MemberExpressionÍ–Í MªIdentifierÍ–Íœ¦lockedMªIdentifierÍÍ £hasÂÂ‘Q°MemberExpressionÍ¡Í¦MªIdentifierÍ¡Í£¢fpMªIdentifierÍ¤Í¦¢idÂÂÂN®BlockStatementÍ©ÍÎ‘]³ExpressionStatementÍ¸ÍÃP°UpdateExpressionÍ¸ÍÂ¢++ÂMªIdentifierÍ¸ÍÀ¨unlockedÀO«IfStatementÍÛÍÁV±LogicalExpressionÍßÍV°BinaryExpressionÍßÍëMªIdentifierÍßÍç¨unlocked¡>U§LiteralÍêÍë ¡0¢&&V°BinaryExpressionÍïÍQ°MemberExpressionÍïÍıMªIdentifierÍïÍö§pendingMªIdentifierÍ÷Íı¦lengthÂÂ¡<MªIdentifierÍ Í¨unlockedN®BlockStatementÍ
-ÍÁ‘R¯ReturnStatementÍÍºS°ObjectExpressionÍÍ¹“T¨PropertyÍ+Í4ÂÂÂMªIdentifierÍ+Í-¢okU§LiteralÍ/Í4Â¥false¤initT¨PropertyÍ6ÍQÂÂÂMªIdentifierÍ6ÍA«placedCountQ°MemberExpressionÍCÍQMªIdentifierÍCÍJ§pendingMªIdentifierÍKÍQ¦lengthÂÂ¤initT¨PropertyÍ`Í®ÂÂÂMªIdentifierÍ`Íf¦reason`¯TemplateLiteralÍhÍ®’Q°MemberExpressionÍ~ÍŒMªIdentifierÍ~Í…§pendingMªIdentifierÍ†ÍŒ¦lengthÂÂMªIdentifierÍÍ˜¨unlocked“a¯TemplateElementÍiÍ|b³placement coverage ³placement coverage Âa¯TemplateElementÍÍb¡/¡/Âa¯TemplateElementÍ™Í­b´ unlocked footprints´ unlocked footprintsÃ¤initÀW³VariableDeclarationÍíÍ‘X²VariableDeclaratorÍóÍMªIdentifierÍóÍ÷¤gridV±LogicalExpressionÍúÍQ°MemberExpressionÍúÍQ°MemberExpressionÍúÍMªIdentifierÍúÍı£docMªIdentifierÍşÍ¨metadataÂÂMªIdentifierÍÍ¨gridSizeÂÂ¢??U§LiteralÍÍ¡5¥constW³VariableDeclarationÍÍ,‘X²VariableDeclaratorÍÍ+MªIdentifierÍÍ'¨echoableU§LiteralÍ*Í+ ¡0£letW³VariableDeclarationÍ2ÍA‘X²VariableDeclaratorÍ6Í@MªIdentifierÍ6Í<¦echoedU§LiteralÍ?Í@ ¡0£let^¬ForStatementÍGÍğW³VariableDeclarationÍLÍU‘X²VariableDeclaratorÍPÍUMªIdentifierÍPÍQ¡iU§LiteralÍTÍU ¡0£letV°BinaryExpressionÍWÍiMªIdentifierÍWÍX¡i¡<Q°MemberExpressionÍ[ÍiMªIdentifierÍ[Íb§pendingMªIdentifierÍcÍi¦lengthÂÂP°UpdateExpressionÍkÍn¢++ÂMªIdentifierÍkÍl¡iN®BlockStatementÍpÍğ—W³VariableDeclarationÍ{Í‘X²VariableDeclaratorÍÍMªIdentifierÍÍ‚¡pQ°MemberExpressionÍ…ÍMªIdentifierÍ…ÍŒ§pendingMªIdentifierÍÍ¡iÃÂ¥constO«IfStatementÍšÍÔ\®CallExpressionÍÍ¯MªIdentifierÍÍ©«isMountHole‘Q°MemberExpressionÍªÍ®MªIdentifierÍªÍ«¡pMªIdentifierÍ¬Í®¢fpÂÂÂN®BlockStatementÍ±ÍÔ‘_±ContinueStatementÍÀÍÉÀÀ]³ExpressionStatementÍŞÍéP°UpdateExpressionÍŞÍè¢++ÂMªIdentifierÍŞÍæ¨echoableW³VariableDeclarationÍóÍ‘X²VariableDeclaratorÍùÍMªIdentifierÍùÍû¢dx\®CallExpressionÍşÍQ°MemberExpressionÍşÍMªIdentifierÍşÍ¤MathMªIdentifierÍÍ£absÂÂ‘V°BinaryExpressionÍÍQ°MemberExpressionÍÍ
-MªIdentifierÍÍ¡pMªIdentifierÍ	Í
-¡xÂÂ¡-Q°MemberExpressionÍÍQ°MemberExpressionÍÍQ°MemberExpressionÍÍMªIdentifierÍÍ¡pMªIdentifierÍÍ¢fpÂÂMªIdentifierÍÍ¨positionÂÂMªIdentifierÍÍ¡xÂÂÂ¥constW³VariableDeclarationÍ(ÍS‘X²VariableDeclaratorÍ.ÍRMªIdentifierÍ.Í0¢dy\®CallExpressionÍ3ÍRQ°MemberExpressionÍ3Í;MªIdentifierÍ3Í7¤MathMªIdentifierÍ8Í;£absÂÂ‘V°BinaryExpressionÍ<ÍQQ°MemberExpressionÍ<Í?MªIdentifierÍ<Í=¡pMªIdentifierÍ>Í?¡yÂÂ¡-Q°MemberExpressionÍBÍQQ°MemberExpressionÍBÍOQ°MemberExpressionÍBÍFMªIdentifierÍBÍC¡pMªIdentifierÍDÍF¢fpÂÂMªIdentifierÍGÍO¨positionÂÂMªIdentifierÍPÍQ¡yÂÂÂ¥constW³VariableDeclarationÍ]Í“‘X²VariableDeclaratorÍcÍ’MªIdentifierÍcÍj§sameRotV°BinaryExpressionÍmÍ’\®CallExpressionÍmÍˆMªIdentifierÍmÍy¬snapRotation‘Q°MemberExpressionÍzÍ‡Q°MemberExpressionÍzÍ~MªIdentifierÍzÍ{¡pMªIdentifierÍ|Í~¢fpÂÂMªIdentifierÍÍ‡¨rotationÂÂÂ£===Q°MemberExpressionÍÍ’MªIdentifierÍÍ¡pMªIdentifierÍÍ’£rotÂÂ¥constO«IfStatementÍÍéV±LogicalExpressionÍ¡ÍÄV±LogicalExpressionÍ¡Í¹V°BinaryExpressionÍ¡Í«MªIdentifierÍ¡Í£¢dx¢<=MªIdentifierÍ§Í«¤grid¢&&V°BinaryExpressionÍ¯Í¹MªIdentifierÍ¯Í±¢dy¢<=MªIdentifierÍµÍ¹¤grid¢&&MªIdentifierÍ½ÍÄ§sameRotN®BlockStatementÍÆÍé‘]³ExpressionStatementÍÕÍŞP°UpdateExpressionÍÕÍİ¢++ÂMªIdentifierÍÕÍÛ¦echoedÀO«IfStatementÍöÍòV±LogicalExpressionÍúÍ$V°BinaryExpressionÍúÍMªIdentifierÍúÍ¨echoable¢>=U§LiteralÍÍ¡3¢&&V°BinaryExpressionÍÍ$V°BinaryExpressionÍÍMªIdentifierÍÍ¦echoed¡/MªIdentifierÍÍ¨echoable¢>=U§LiteralÍ Í$Ë?ë333333¤0.85N®BlockStatementÍ&Íò‘R¯ReturnStatementÍ1ÍëS°ObjectExpressionÍ8Íê“T¨PropertyÍGÍPÂÂÂMªIdentifierÍGÍI¢okU§LiteralÍKÍPÂ¥false¤initT¨PropertyÍRÍ`ÂÂÂMªIdentifierÍRÍ]«placedCountU§LiteralÍ_Í` ¡0¤initT¨PropertyÍoÍßÂÂÂMªIdentifierÍoÍu¦reason`¯TemplateLiteralÍwÍß’MªIdentifierÍŠÍ¦echoedMªIdentifierÍ•Í¨echoable“a¯TemplateElementÍxÍ‡b¯placement echo ¯placement echo Âa¯TemplateElementÍ’Í“b¡/¡/Âa¯TemplateElementÍÍŞbÙB â€” refuse copy of current poses; rearrange functional footprintsÙB â€” refuse copy of current poses; rearrange functional footprintsÃ¤initÀW³VariableDeclarationÍøÍ9‘X²VariableDeclaratorÍşÍ8MªIdentifierÍşÍ¨groupErr\®CallExpressionÍ	Í8MªIdentifierÍ	Í®validateGroups”MªIdentifierÍÍ¤planMªIdentifierÍÍ"¤byIdMªIdentifierÍ$Í/«pendingByIdMªIdentifierÍ1Í7¦boundsÂ¥constO«IfStatementÍ?Í¡V°BinaryExpressionÍCÍVQ°MemberExpressionÍCÍRMªIdentifierÍCÍK¨groupErrMªIdentifierÍLÍR¦lengthÂÂ¡>U§LiteralÍUÍV ¡0N®BlockStatementÍXÍ¡‘R¯ReturnStatementÍcÍšS°ObjectExpressionÍjÍ™“T¨PropertyÍlÍuÂÂÂMªIdentifierÍlÍn¢okU§LiteralÍpÍuÂ¥false¤initT¨PropertyÍwÍ…ÂÂÂMªIdentifierÍwÍ‚«placedCountU§LiteralÍ„Í… ¡0¤initT¨PropertyÍ‡Í—ÂÂÂMªIdentifierÍ‡Í¦reasonMªIdentifierÍÍ—¨groupErr¤initÀO«IfStatementÍ§ÍV°BinaryExpressionÍ«ÍÉV±LogicalExpressionÍ¬ÍÄ]¯ChainExpressionÍ¬Í¿Q°MemberExpressionÍ¬Í¿Q°MemberExpressionÍ¬Í·MªIdentifierÍ¬Í°¤planMªIdentifierÍ±Í·¦groupsÂÂMªIdentifierÍ¹Í¿¦lengthÂÃ¢??U§LiteralÍÃÍÄ ¡0¡>U§LiteralÍÈÍÉ ¡0N®BlockStatementÍËÍ‘]³ExpressionStatementÍÖÍ\®CallExpressionÍÖÍMªIdentifierÍÖÍŞ¨tracePcb’U§LiteralÍßÍğ¯AI_PLACE_GROUPS±'AI_PLACE_GROUPS'`¯TemplateLiteralÍòÍ‘Q°MemberExpressionÍ÷Í	Q°MemberExpressionÍ÷ÍMªIdentifierÍ÷Íû¤planMªIdentifierÍüÍ¦groupsÂÂMªIdentifierÍÍ	¦lengthÂÂ’a¯TemplateElementÍóÍõb¢n=¢n=Âa¯TemplateElementÍ
-Í
-b  ÃÂÀW³VariableDeclarationÍÍA‘X²VariableDeclaratorÍ Í@MªIdentifierÍ Í'§minDist\®CallExpressionÍ*Í@Q°MemberExpressionÍ*Í2MªIdentifierÍ*Í.¤MathMªIdentifierÍ/Í2£maxÂÂ’V°BinaryExpressionÍ3Í;MªIdentifierÍ3Í7¤grid¡*U§LiteralÍ:Í;¡8U§LiteralÍ=Í?(¢40Â¥const^¬ForStatementÍGÍ>W³VariableDeclarationÍLÍU‘X²VariableDeclaratorÍPÍUMªIdentifierÍPÍQ¡iU§LiteralÍTÍU ¡0£letV°BinaryExpressionÍWÍiMªIdentifierÍWÍX¡i¡<Q°MemberExpressionÍ[ÍiMªIdentifierÍ[Íb§pendingMªIdentifierÍcÍi¦lengthÂÂP°UpdateExpressionÍkÍn¢++ÂMªIdentifierÍkÍl¡iN®BlockStatementÍpÍ>‘^¬ForStatementÍ{Í7W³VariableDeclarationÍ€Í‘X²VariableDeclaratorÍ„ÍMªIdentifierÍ„Í…¡jV°BinaryExpressionÍˆÍMªIdentifierÍˆÍ‰¡i¡+U§LiteralÍŒÍ¡1£letV°BinaryExpressionÍÍ¡MªIdentifierÍÍ¡j¡<Q°MemberExpressionÍ“Í¡MªIdentifierÍ“Íš§pendingMªIdentifierÍ›Í¡¦lengthÂÂP°UpdateExpressionÍ£Í¦¢++ÂMªIdentifierÍ£Í¤¡jN®BlockStatementÍ¨Í7“W³VariableDeclarationÍ·Íæ‘X²VariableDeclaratorÍ½ÍåMªIdentifierÍ½Í¾¡aS°ObjectExpressionÍÁÍå’T¨PropertyÍÃÍÒÂÂÂMªIdentifierÍÃÍÄ¡xQ°MemberExpressionÍÆÍÒQ°MemberExpressionÍÆÍĞMªIdentifierÍÆÍÍ§pendingMªIdentifierÍÎÍÏ¡iÃÂMªIdentifierÍÑÍÒ¡xÂÂ¤initT¨PropertyÍÔÍãÂÂÂMªIdentifierÍÔÍÕ¡yQ°MemberExpressionÍ×ÍãQ°MemberExpressionÍ×ÍáMªIdentifierÍ×ÍŞ§pendingMªIdentifierÍßÍà¡iÃÂMªIdentifierÍâÍã¡yÂÂ¤init¥constW³VariableDeclarationÍôÍ#‘X²VariableDeclaratorÍúÍ"MªIdentifierÍúÍû¡bS°ObjectExpressionÍşÍ"’T¨PropertyÍ ÍÂÂÂMªIdentifierÍ Í¡xQ°MemberExpressionÍÍQ°MemberExpressionÍÍMªIdentifierÍÍ
-§pendingMªIdentifierÍÍ¡jÃÂMªIdentifierÍÍ¡xÂÂ¤initT¨PropertyÍÍ ÂÂÂMªIdentifierÍÍ¡yQ°MemberExpressionÍÍ Q°MemberExpressionÍÍMªIdentifierÍÍ§pendingMªIdentifierÍÍ¡jÃÂMªIdentifierÍÍ ¡yÂÂ¤init¥constO«IfStatementÍ1Í,\®CallExpressionÍ5ÍSMªIdentifierÍ5ÍD¯centersTooClose“MªIdentifierÍEÍF¡aMªIdentifierÍHÍI¡bMªIdentifierÍKÍR§minDistÂN®BlockStatementÍUÍ,‘R¯ReturnStatementÍhÍS°ObjectExpressionÍoÍ“T¨PropertyÍ†ÍÂÂÂMªIdentifierÍ†Íˆ¢okU§LiteralÍŠÍÂ¥false¤initT¨PropertyÍ‘ÍŸÂÂÂMªIdentifierÍ‘Íœ«placedCountU§LiteralÍÍŸ ¡0¤initT¨PropertyÍ¶Í	ÂÂÂMªIdentifierÍ¶Í¼¦reason`¯TemplateLiteralÍ¾Í	’Q°MemberExpressionÍÙÍíQ°MemberExpressionÍÙÍæQ°MemberExpressionÍÙÍãMªIdentifierÍÙÍà§pendingMªIdentifierÍáÍâ¡iÃÂMªIdentifierÍäÍæ¢fpÂÂMªIdentifierÍçÍí¦refDesÂÂQ°MemberExpressionÍóÍQ°MemberExpressionÍóÍ Q°MemberExpressionÍóÍıMªIdentifierÍóÍú§pendingMªIdentifierÍûÍü¡jÃÂMªIdentifierÍşÍ ¢fpÂÂMªIdentifierÍÍ¦refDesÂÂ“a¯TemplateElementÍ¿Í×b¸LLM placements overlap: ¸LLM placements overlap: Âa¯TemplateElementÍîÍñb£ / £ / Âa¯TemplateElementÍÍb  Ã¤initÀW³VariableDeclarationÍDÍc‘X²VariableDeclaratorÍJÍbMªIdentifierÍJÍV¬oldPositionsY­NewExpressionÍYÍbMªIdentifierÍ]Í`£Map¥constW³VariableDeclarationÍiÍ„‘X²VariableDeclaratorÍoÍƒMªIdentifierÍoÍw¨movedIdsY­NewExpressionÍzÍƒMªIdentifierÍ~Í£Set¥const^¬ForStatementÍŠÍcW³VariableDeclarationÍÍ˜‘X²VariableDeclaratorÍ“Í˜MªIdentifierÍ“Í”¡iU§LiteralÍ—Í˜ ¡0£letV°BinaryExpressionÍšÍ¬MªIdentifierÍšÍ›¡i¡<Q°MemberExpressionÍÍ¬MªIdentifierÍÍ¥§pendingMªIdentifierÍ¦Í¬¦lengthÂÂP°UpdateExpressionÍ®Í±¢++ÂMªIdentifierÍ®Í¯¡iN®BlockStatementÍ³Íc˜W³VariableDeclarationÍ¾ÍÓ‘X²VariableDeclaratorÍÄÍÒMªIdentifierÍÄÍÅ¡pQ°MemberExpressionÍÈÍÒMªIdentifierÍÈÍÏ§pendingMªIdentifierÍĞÍÑ¡iÃÂ¥constW³VariableDeclarationÍİÍ‘X²VariableDeclaratorÍãÍMªIdentifierÍãÍé¦before\®CallExpressionÍìÍMªIdentifierÍìÍ¼collectFootprintPadPositions‘Q°MemberExpressionÍ	ÍMªIdentifierÍ	Í
-¡pMªIdentifierÍÍ¢fpÂÂÂ¥const]³ExpressionStatementÍÍ€\®CallExpressionÍÍQ°MemberExpressionÍÍ'MªIdentifierÍÍ¦beforeMªIdentifierÍ Í'§forEachÂÂ‘L·ArrowFunctionExpressionÍ(Í~ÀÂÂÂ’MªIdentifierÍ)Í,£posMªIdentifierÍ.Í1£keyN®BlockStatementÍ6Í~‘]³ExpressionStatementÍEÍs\®CallExpressionÍEÍrQ°MemberExpressionÍEÍUMªIdentifierÍEÍQ¬oldPositionsMªIdentifierÍRÍU£setÂÂ’MªIdentifierÍVÍY£keyS°ObjectExpressionÍ[Íq’T¨PropertyÍ]ÍeÂÂÂMªIdentifierÍ]Í^¡xQ°MemberExpressionÍ`ÍeMªIdentifierÍ`Íc£posMªIdentifierÍdÍe¡xÂÂ¤initT¨PropertyÍgÍoÂÂÂMªIdentifierÍgÍh¡yQ°MemberExpressionÍjÍoMªIdentifierÍjÍm£posMªIdentifierÍnÍo¡yÂÂ¤initÂÂ]³ExpressionStatementÍŠÍ­Ôrc–¤type¥start£end¨operator¤left¥right´AssignmentExpressionÍŠÍ¬¡=Q°MemberExpressionÍŠÍ—Q°MemberExpressionÍŠÍMªIdentifierÍŠÍ‹¡pMªIdentifierÍŒÍ¢fpÂÂMªIdentifierÍÍ—¨positionÂÂS°ObjectExpressionÍšÍ¬’T¨PropertyÍœÍ¢ÂÂÂMªIdentifierÍœÍ¡xQ°MemberExpressionÍŸÍ¢MªIdentifierÍŸÍ ¡pMªIdentifierÍ¡Í¢¡xÂÂ¤initT¨PropertyÍ¤ÍªÂÂÂMªIdentifierÍ¤Í¥¡yQ°MemberExpressionÍ§ÍªMªIdentifierÍ§Í¨¡pMªIdentifierÍ©Íª¡yÂÂ¤init]³ExpressionStatementÍ·ÍÍc´AssignmentExpressionÍ·ÍÌ¡=Q°MemberExpressionÍ·ÍÄQ°MemberExpressionÍ·Í»MªIdentifierÍ·Í¸¡pMªIdentifierÍ¹Í»¢fpÂÂMªIdentifierÍ¼ÍÄ¨rotationÂÂQ°MemberExpressionÍÇÍÌMªIdentifierÍÇÍÈ¡pMªIdentifierÍÉÍÌ£rotÂÂ]³ExpressionStatementÍ×Ííc´AssignmentExpressionÍ×Íì¡=Q°MemberExpressionÍ×ÍäQ°MemberExpressionÍ×ÍÛMªIdentifierÍ×ÍØ¡pMªIdentifierÍÙÍÛ¢fpÂÂMªIdentifierÍÜÍä¨mirroredÂÂQ°MemberExpressionÍçÍìMªIdentifierÍçÍè¡pMªIdentifierÍéÍì£mirÂÂ]³ExpressionStatementÍ÷Í\®CallExpressionÍ÷ÍQ°MemberExpressionÍ÷ÍMªIdentifierÍ÷Íÿ¨movedIdsMªIdentifierÍ Í£addÂÂ‘Q°MemberExpressionÍÍQ°MemberExpressionÍÍMªIdentifierÍÍ¡pMªIdentifierÍÍ¢fpÂÂMªIdentifierÍ	Í¢idÂÂÂ]³ExpressionStatementÍÍ\\®CallExpressionÍÍ[MªIdentifierÍÍ¨tracePcb’U§LiteralÍ Í*¨AI_PLACEª'AI_PLACE'`¯TemplateLiteralÍ,ÍZ”Q°MemberExpressionÍ/Í:Q°MemberExpressionÍ/Í3MªIdentifierÍ/Í0¡pMªIdentifierÍ1Í3¢fpÂÂMªIdentifierÍ4Í:¦refDesÂÂQ°MemberExpressionÍBÍEMªIdentifierÍBÍC¡pMªIdentifierÍDÍE¡xÂÂQ°MemberExpressionÍIÍLMªIdentifierÍIÍJ¡pMªIdentifierÍKÍL¡yÂÂQ°MemberExpressionÍSÍXMªIdentifierÍSÍT¡pMªIdentifierÍUÍX£rotÂÂ•a¯TemplateElementÍ-Í-b  Âa¯TemplateElementÍ;Í@b¥ -> (¥ -> (Âa¯TemplateElementÍFÍGb¡,¡,Âa¯TemplateElementÍMÍQb¤) r=¤) r=Âa¯TemplateElementÍYÍYb  ÃÂO«IfStatementÍiÍÑV°BinaryExpressionÍmÍ~Q°MemberExpressionÍmÍzMªIdentifierÍmÍu¨movedIdsMªIdentifierÍvÍz¤sizeÂÂ¡>U§LiteralÍ}Í~ ¡0N®BlockStatementÍ€ÍÑ‘]³ExpressionStatementÍ‹ÍÊ\®CallExpressionÍ‹ÍÉMªIdentifierÍ‹Í¬Ù!updateTracksForFootprintTransform“MªIdentifierÍ­Í°£docMªIdentifierÍ²Íº¨movedIdsMªIdentifierÍ¼ÍÈ¬oldPositionsÂÀ]³ExpressionStatementÍöÍc´AssignmentExpressionÍöÍ¡=Q°MemberExpressionÍöÍMªIdentifierÍöÍú¤planMªIdentifierÍûÍ©lockedIdsÂÂ\®CallExpressionÍÍQ°MemberExpressionÍÍMªIdentifierÍÍ¥ArrayMªIdentifierÍÍ¤fromÂÂ‘MªIdentifierÍÍ¦lockedÂR¯ReturnStatementÍ Í_S°ObjectExpressionÍ'Í^“T¨PropertyÍ)Í1ÂÂÂMªIdentifierÍ)Í+¢okU§LiteralÍ-Í1Ã¤true¤initT¨PropertyÍ3ÍNÂÂÂMªIdentifierÍ3Í>«placedCountQ°MemberExpressionÍ@ÍNMªIdentifierÍ@ÍG§pendingMªIdentifierÍHÍN¦lengthÂÂ¤initT¨PropertyÍPÍ\ÂÂÂMªIdentifierÍPÍV¦reasonU§LiteralÍXÍ\¢ok¤'ok'¤initÀ’Ôrd•¤type¥start£endªspecifiers¦source±ImportDeclaration Ìf’Ôre•¤type¥start£end¨imported¥local¯ImportSpecifier	%MªIdentifier	%¼collectFootprintPadPositionsMªIdentifier	%¼collectFootprintPadPositionse¯ImportSpecifier'ÌHMªIdentifier'ÌHÙ!updateTracksForFootprintTransformMªIdentifier'ÌHÙ!updateTracksForFootprintTransformU§LiteralÌPÌe³../PcbTrackBindUtilµ'../PcbTrackBindUtil'd±ImportDeclarationÌhÌ’‘e¯ImportSpecifierÌqÌyMªIdentifierÌqÌy¨tracePcbMªIdentifierÌqÌy¨tracePcbU§LiteralÌÌ‘®../PcbTraceLog°'../PcbTraceLog'
+” ÌZ” ÌZ” ÌZ” ÌZ” ÌZ” ÌZ”  ÌZ”" ÌZ•” Ì[” Ì[” Ì[”  Ì[”! Ì[’” Ì\” Ì\‘” Ì]‘”	 Ì^”” Ì_” Ì_” Ì_” Ì_‘” Ì`”” Ìa” Ìa	” Ìa” Ìa’”  Ìb ” Ìb’”  Ìd ” Ìd•”  Ìe ”	 Ìe	” Ìe” Ìe”" Ìe*™” Ìf”
+ Ìf” Ìf	” Ìf” Ìf” Ìf” Ìf”  Ìf”! Ìfš” Ìg” Ìg	” Ìg
+” Ìg” Ìg” Ìg” Ìg” Ìg”! Ìg”" Ìg ”” Ìh” Ìh” Ìh” Ìh”” Ìi” Ìi” Ìi” Ìi”” Ìj” Ìj” Ìj” Ìjš” Ìk” Ìk” Ìk	” Ìk” Ìk” Ìk” Ìk”" Ìk”# Ìk”$ Ìk ’”  Ìl ” Ìl›”  Ìn ”	 Ìn	” Ìn” Ìo” Ìo” Ìp”" Ìp%”$ Ìq”/ Ìq,”1 Ìr”7 Ìrš” Ìt”
+ Ìt” Ìt” Ìt” Ìt” Ìt” Ìt”" Ìt ”$ Ìt"”% Ìt#˜” Ìu” Ìu” Ìu” Ìu” Ìu” Ìu” Ìu” Ìu”” Ìv” Ìv” Ìv” Ìv‘” ÌwÜ '” Ìx”
+ Ìx” Ìx” Ìx” Ìx” Ìx” Ìx”  Ìy”$ Ìy”% Ìy	”( Ìy”) Ìy”/ Ìy”0 Ìy”4 Ìy”7 Ìy”= Ìy!”> Ìy"”ÌB Ìy&”ÌD Ìy(”ÌE Ìy)”ÌF Ìy*”ÌI Ìy-”ÌM Ìy1”ÌN Ìy2”ÌQ Ìy5”ÌR Ìy6”ÌX Ìy<”ÌY Ìy=”Ì] ÌyÌA”Ì` ÌyÌD”Ìf ÌyÌJ”Ìg ÌyÌK”Ìk ÌyÌO”Ìm ÌyÌQ”Ìn ÌyÌR”Ìo ÌyÌS”Ìp ÌyÌT”Ìq ÌyÌU’” Ìz”0 Ìz.Ÿ” Ì{”
+ Ì{” Ì{” Ì{” Ì{” Ì{” Ì{” Ì{”& Ì{$”) Ì{'”- Ì{+”/ Ì{-”2 Ì{0”3 Ì{1”4 Ì{2Ü ” Ì}”	 Ì}” Ì}” Ì}” Ì}” Ì}” Ì}” Ì}” Ì}”  Ì}”! Ì}”' Ì}%”) Ì}'”+ Ì})”- Ì}+”/ Ì}-™” Ì~” Ì~
+” Ì~” Ì~!” Ì~'” Ì~(” Ì~*” Ì~+” Ì~,’” Ì”+ Ì'›” Ì€” Ì€”  Ì€”! Ì€”" Ì€”# Ì€”' Ì€#”+ Ì€'”- Ì€)”. Ì€*”0 Ì€,’” Ì” Ì‘”	 Ì‚š” Ìƒ” Ìƒ
+” Ìƒ” Ìƒ” Ìƒ” Ìƒ”" Ìƒ”& Ìƒ"”( Ìƒ$”) Ìƒ%˜” Ì„” Ì„” Ì„” Ì„” Ì„” Ì„” Ì„” Ì„’” Ì…” Ì…‘”	 Ì†–” Ì‡” Ì‡
+” Ì‡” Ì‡” Ì‡” Ì‡Ü ” Ìˆ” Ìˆ	” Ìˆ” Ìˆ” Ìˆ” Ìˆ” Ìˆ” Ìˆ” Ìˆ” Ìˆ”  Ìˆ”& Ìˆ"”( Ìˆ$”) Ìˆ%”+ Ìˆ'”- Ìˆ)™” Ì‰” Ì‰” Ì‰” Ì‰” Ì‰” Ì‰” Ì‰” Ì‰” Ì‰š” ÌŠ” ÌŠ
+” ÌŠ” ÌŠ” ÌŠ” ÌŠ” ÌŠ” ÌŠ” ÌŠ” ÌŠ’” Ì‹”. Ì‹&’” ÌŒ” ÌŒ‘” Ì›” Ì” Ì” Ì” Ì” Ì” Ì” Ì”  Ì”" Ì”# Ì”$ Ì’” Ì”+ Ì%™” Ì” Ì
+” Ì” Ì”! Ì”" Ì”$ Ì”% Ì”' Ì!’” Ì‘” Ì‘‘” Ì’›” Ì“” Ì“” Ì“” Ì“”$ Ì“”% Ì“”( Ì“"”) Ì“#”+ Ì“%”, Ì“&”- Ì“'”” Ì”” Ì”
+” Ì”” Ì”Ü ” Ì•” Ì•” Ì•” Ì•” Ì•” Ì•” Ì•” Ì•”" Ì•”# Ì•”$ Ì•”& Ì•”' Ì•”) Ì•!”- Ì•%”. Ì•&”/ Ì•'”1 Ì•)”2 Ì•*”3 Ì•+‘” Ì–”” Ì–” Ì–” Ì–” Ì–Ü ” Ì—” Ì—” Ì—” Ì—” Ì—” Ì—” Ì—” Ì—”  Ì—”! Ì—”) Ì—!”* Ì—"”+ Ì—#”- Ì—%”. Ì—&”0 Ì—(”2 Ì—*”3 Ì—+”; Ì—3”< Ì—4”= Ì—5”? Ì—7”Ì@ Ì—8”ÌA Ì—9‘” Ì˜‘”	 Ì™’” Ìš”  Ìš˜” Ì›” Ì›” Ì›” Ì›” Ì›” Ì›” Ì›” Ì›’” Ìœ” Ìœ‘”	 Ì–” Ì” Ì” Ì” Ì” Ì” ÌÜ ” ÌŸ” ÌŸ	” ÌŸ” ÌŸ” ÌŸ” ÌŸ” ÌŸ” ÌŸ” ÌŸ” ÌŸ”  ÌŸ”& ÌŸ"”( ÌŸ$”) ÌŸ%”+ ÌŸ'”- ÌŸ)Ü ” Ì ” Ì ” Ì ” Ì ” Ì ” Ì ” Ì ” Ì ”  Ì ”! Ì ”$ Ì ”' Ì !”( Ì "”. Ì (”0 Ì *”1 Ì +”3 Ì -”5 Ì /Ü ” Ì¡” Ì¡” Ì¡” Ì¡” Ì¡” Ì¡”  Ì¡”! Ì¡”" Ì¡”# Ì¡”& Ì¡”) Ì¡!”* Ì¡"”+ Ì¡#”, Ì¡$”- Ì¡%”. Ì¡&”/ Ì¡'Ü ” Ì¢” Ì¢” Ì¢” Ì¢” Ì¢” Ì¢”  Ì¢”! Ì¢”" Ì¢”# Ì¢”& Ì¢”) Ì¢!”* Ì¢"”+ Ì¢#”, Ì¢$”- Ì¢%”. Ì¢&”/ Ì¢'Ü ” Ì£” Ì£” Ì£” Ì£” Ì£” Ì£”# Ì£”$ Ì£”& Ì£”) Ì£!”+ Ì£#”. Ì£&”0 Ì£(”3 Ì£+”5 Ì£-”6 Ì£.”7 Ì£/–” Ì¤” Ì¤” Ì¤” Ì¤” Ì¤” Ì¤•” Ì¥
+” Ì¥” Ì¥” Ì¥” Ì¥‘” Ì¦	‘” Ì§‘”	 Ì¨–” Ì©” Ì©” Ì©” Ì©” Ì©” Ì©Ü ” Ìª” Ìª” Ìª” Ìª” Ìª”" Ìª”& Ìª ”( Ìª"”< Ìª6”Ì@ Ìª:”ÌA Ìª;”ÌF ÌªÌ@”ÌG ÌªÌA”ÌK ÌªÌE”ÌL ÌªÌF”ÌP ÌªÌJ”ÌT ÌªÌN”ÌU ÌªÌO”ÌZ ÌªÌT”Ì[ ÌªÌU”Ìb ÌªÌ\”Ìc ÌªÌ]”Ìe ÌªÌ_”Ìf ÌªÌ`‘”	 Ì«‘” Ì¬”” Ì­” Ì­	” Ì­” Ì­’”  Ì® ” Ì®’”  Ì° ”% Ì°%™”  Ì± ”	 Ì±	” Ì±” Ì±” Ì±+”  Ì±-”( Ì±=”* Ì±?”3 Ì±ÌP›” Ì²”
+ Ì²” Ì²	” Ì²” Ì²” Ì²” Ì²” Ì²”! Ì²”" Ì² ”# Ì²!›” Ì³”
+ Ì³” Ì³	” Ì³” Ì³” Ì³” Ì³” Ì³”" Ì³ ”# Ì³!”$ Ì³"–” Ì´”
+ Ì´” Ì´” Ì´” Ì´” Ì´–” Ìµ”
+ Ìµ” Ìµ” Ìµ” Ìµ” Ìµš” Ì¶” Ì¶”	 Ì¶” Ì¶
+” Ì¶” Ì¶” Ì¶” Ì¶” Ì¶” Ì¶š” Ì·” Ì·”' Ì·#”( Ì·$”, Ì·(”- Ì·)”6 Ì·2”9 Ì·5”< Ì·8”= Ì·9‘” Ì¸š” Ì¹” Ì¹”	 Ì¹” Ì¹
+” Ì¹” Ì¹” Ì¹” Ì¹” Ì¹” Ì¹š” Ìº” Ìº”' Ìº#”( Ìº$”, Ìº(”- Ìº)”6 Ìº2”9 Ìº5”< Ìº8”= Ìº9‘” Ì»™” Ì¼”
+ Ì¼” Ì¼” Ì¼” Ì¼” Ì¼”  Ì¼”! Ì¼”" Ì¼ •” Ì½” Ì½” Ì½” Ì½” Ì½“” Ì¾” Ì¾
+” Ì¾š” Ì¿” Ì¿” Ì¿	” Ì¿” Ì¿” Ì¿” Ì¿” Ì¿” Ì¿” Ì¿š” ÌÀ” ÌÀ” ÌÀ	” ÌÀ” ÌÀ” ÌÀ” ÌÀ” ÌÀ” ÌÀ” ÌÀš” ÌÁ” ÌÁ” ÌÁ	” ÌÁ” ÌÁ” ÌÁ” ÌÁ” ÌÁ” ÌÁ” ÌÁš” ÌÂ” ÌÂ” ÌÂ	” ÌÂ” ÌÂ” ÌÂ” ÌÂ” ÌÂ” ÌÂ” ÌÂ‘”	 ÌÃš” ÌÄ” ÌÄ	” ÌÄ” ÌÄ” ÌÄ” ÌÄ”! ÌÄ”& ÌÄ"”* ÌÄ&”, ÌÄ(’” ÌÅ” ÌÅ’” ÌÆ” ÌÆ–” ÌÇ”
+ ÌÇ” ÌÇ” ÌÇ” ÌÇ” ÌÇ”” ÌÈ”
+ ÌÈ” ÌÈ” ÌÈš” ÌÉ”
+ ÌÉ” ÌÉ” ÌÉ	” ÌÉ” ÌÉ” ÌÉ” ÌÉ” ÌÉ” ÌÉœ” ÌÊ”
+ ÌÊ” ÌÊ” ÌÊ	” ÌÊ
+” ÌÊ” ÌÊ” ÌÊ” ÌÊ” ÌÊ”  ÌÊ”" ÌÊœ” ÌË”
+ ÌË” ÌË” ÌË	” ÌË” ÌË” ÌË” ÌË” ÌË” ÌË”  ÌË”" ÌË” ÌÌ”
+ ÌÌ” ÌÌ” ÌÌ	” ÌÌ
+” ÌÌ” ÌÌ” ÌÌ” ÌÌ” ÌÌ” ÌÌ” ÌÌ”$ ÌÌ ”& ÌÌ"’” ÌÍ” ÌÍ–” ÌÎ”
+ ÌÎ” ÌÎ” ÌÎ%” ÌÎ'” ÌÎ(™” ÌÏ”	 ÌÏ” ÌÏ” ÌÏ” ÌÏ” ÌÏ” ÌÏ”# ÌÏ!”% ÌÏ#—” ÌĞ” ÌĞ” ÌĞ” ÌĞ” ÌĞ” ÌĞ” ÌĞ˜” ÌÑ” ÌÑ” ÌÑ” ÌÑ” ÌÑ” ÌÑ” ÌÑ” ÌÑ‘”	 ÌÒ‘” ÌÓÜ 0” ÌÔ”
+ ÌÔ” ÌÔ	” ÌÔ” ÌÔ” ÌÔ” ÌÔ” ÌÔ” ÌÔ” ÌÔ” ÌÔ” ÌÔ” ÌÔ” ÌÔ” ÌÔ”# ÌÔ!”& ÌÔ$”' ÌÔ%”( ÌÔ&”. ÌÔ,”/ ÌÔ-”0 ÌÔ.”1 ÌÔ/”2 ÌÔ0”3 ÌÔ1”4 ÌÔ2”5 ÌÔ3”6 ÌÔ4”7 ÌÔ5”8 ÌÔ6”9 ÌÔ7”? ÌÔ=”ÌB ÌÔÌ@”ÌC ÌÔÌA”ÌD ÌÔÌB”ÌJ ÌÔÌH”ÌK ÌÔÌI”ÌL ÌÔÌJ”ÌM ÌÔÌK”ÌN ÌÔÌL”ÌO ÌÔÌM”ÌP ÌÔÌN”ÌQ ÌÔÌO”ÌR ÌÔÌP”ÌS ÌÔÌQ”ÌT ÌÔÌR”ÌU ÌÔÌS”ÌV ÌÔÌTÜ ” ÌÕ”	 ÌÕ” ÌÕ” ÌÕ” ÌÕ” ÌÕ” ÌÕ” ÌÕ” ÌÕ” ÌÕ” ÌÕ”% ÌÕ#”) ÌÕ'”* ÌÕ(”- ÌÕ+”4 ÌÕ2”5 ÌÕ3”; ÌÕ9”= ÌÕ;”> ÌÕ<”Ì@ ÌÕ>”ÌB ÌÕÌ@Ü ” ÌÖ” ÌÖ
+” ÌÖ” ÌÖ” ÌÖ” ÌÖ” ÌÖ” ÌÖ” ÌÖ”  ÌÖ”" ÌÖ”) ÌÖ%”* ÌÖ&”+ ÌÖ'”, ÌÖ(”- ÌÖ)”. ÌÖ*”0 ÌÖ,”1 ÌÖ-”3 ÌÖ/”: ÌÖ6”; ÌÖ7”< ÌÖ8”= ÌÖ9”> ÌÖ:”? ÌÖ;”ÌA ÌÖ=”ÌB ÌÖ>š” Ì×” Ì×
+” Ì×” Ì×” Ì×” Ì×” Ì×” Ì×” Ì×” Ì×‘” ÌØÜ $” ÌÙ” ÌÙ
+” ÌÙ” ÌÙ” ÌÚ”! ÌÚ”% ÌÚ”& ÌÚ”+ ÌÚ”, ÌÚ”0 ÌÚ”1 ÌÚ”5 ÌÚ ”8 ÌÚ#”< ÌÚ'”= ÌÚ(”ÌA ÌÚ,”ÌB ÌÚ-”ÌF ÌÚ1”ÌJ ÌÚ5”ÌK ÌÚ6”ÌP ÌÚ;”ÌQ ÌÚ<”ÌU ÌÚÌ@”ÌV ÌÚÌA”ÌZ ÌÚÌE”Ì] ÌÚÌH”Ìa ÌÚÌL”Ìb ÌÚÌM”Ìf ÌÚÌQ”Ìg ÌÚÌR”Ìk ÌÚÌV”Ìl ÌÚÌW”Ìp ÌÚÌ[”Ìq ÌÚÌ\”Ìs ÌÚÌ^Ü ” ÌÛ” ÌÛ” ÌÛ” ÌÛ” ÌÛ” ÌÛ”" ÌÛ”# ÌÛ”) ÌÛ%”+ ÌÛ'”2 ÌÛ.”3 ÌÛ/”9 ÌÛ5”: ÌÛ6”< ÌÛ8”= ÌÛ9”> ÌÛ:”” ÌÜ” ÌÜ	” ÌÜ” ÌÜ’”  Ìİ ” Ìİ˜”  Ìß ” Ìß” Ìß”% Ìß%”& Ìß&”) Ìß6”+ Ìß8”/ ÌßÌN—” Ìà” Ìà”	 Ìà” Ìà” Ìà” Ìà” ÌàÜ ” Ìá” Ìá” Ìá” Ìá” Ìá” Ìá” Ìá”' Ìá#”) Ìá%”* Ìá&”, Ìá(”2 Ìá.”4 Ìá0”ÌQ ÌáÌM”ÌS ÌáÌO”ÌT ÌáÌP‘” ÌâŸ” Ìã” Ìã”	 Ìã” Ìã” Ìã” Ìã” Ìã”  Ìã”! Ìã”+ Ìã)”, Ìã*”2 Ìã0”7 Ìã5”8 Ìã6”: Ìã8Ü ” Ìä” Ìä” Ìä” Ìä” Ìä” Ìä” Ìä”' Ìä#”) Ìä%”* Ìä&”, Ìä(”2 Ìä.”4 Ìä0”ÌS ÌäÌO”ÌU ÌäÌQ”ÌV ÌäÌR‘” Ìå’” Ìç”( Ìç&˜” Ìè”
+ Ìè” Ìè
+” Ìè” Ìè” Ìè”! Ìè”" Ìè ˜” Ìé”
+ Ìé” Ìé
+” Ìé” Ìé” Ìé”" Ìé ”# Ìé!Ü ” Ìê” Ìê”
+ Ìê” Ìê” Ìê” Ìê” Ìê”# Ìê!”, Ìê*”0 Ìê.”1 Ìê/”2 Ìê0”4 Ìê2”7 Ìê5”8 Ìê6”9 Ìê7”= Ìê;”> Ìê<”? Ìê=”ÌA Ìê?”ÌD ÌêÌB”ÌE ÌêÌC”ÌF ÌêÌD”ÌH ÌêÌF’” Ìë” Ìë˜” Ìì” Ìì” Ìì
+” Ìì” Ìì”" Ìì”$ Ìì”% Ìì”” Ìí” Ìí” Ìí”Ìj ÌíÌd’”	 Ìî”
+ Ìî‘” Ìï” Ìğ”
+ Ìğ” Ìğ” Ìğ”& Ìğ$”' Ìğ%”* Ìğ(”, Ìğ*”. Ìğ,”0 Ìğ.”2 Ìğ0”3 Ìğ1”4 Ìğ2˜” Ìñ” Ìñ” Ìñ” Ìñ” Ìñ” Ìñ” Ìñ” ÌñÜ ” Ìò” Ìò” Ìò” Ìò” Ìò” Ìò” Ìò”' Ìò#”) Ìò%”* Ìò&”, Ìò(”2 Ìò.”4 Ìò0”< Ìò8”> Ìò:”? Ìò;‘” Ìó” Ìõ”
+ Ìõ” Ìõ” Ìõ” Ìõ"” Ìõ%” Ìõ&” Ìõ*”  Ìõ+”) Ìõ4”- Ìõ8”/ Ìõ:”0 Ìõ;”1 Ìõ<’” Ìö”- Ìö+™” Ì÷”	 Ì÷” Ì÷” Ì÷” Ì÷” Ì÷” Ì÷”# Ì÷!”% Ì÷#œ” Ìø” Ìø” Ìø” Ìø” Ìø” Ìø” Ìø”  Ìø”" Ìø”# Ìø”) Ìø%”+ Ìø'š” Ìù” Ìù” Ìù” Ìù” Ìù” Ìù” Ìù” Ìù” Ìù” Ìù‘”	 Ìú‘” Ìû™” Ìı”
+ Ìı” Ìı” Ìı” Ìı” Ìı”" Ìı ”# Ìı!”$ Ìı"–” Ìş”
+ Ìş” Ìş” Ìş” Ìş” Ìş™” Ìÿ”	 Ìÿ” Ìÿ” Ìÿ” Ìÿ” Ìÿ” Ìÿ”# Ìÿ!”% Ìÿ#—” Í ” Í ” Í ” Í ” Í ” Í ” Í ”” Í” Í” Í” Í‘”	 ÍŸ” Í” Í” Í” Í” Í” Í” Í” Í” Í” Í”! Í”# Í”$ Í ”* Í&”, Í(Ü ” Í” Í
+” Í” Í” Í” Í” Í”  Í”& Í ”' Í!”+ Í%”/ Í)”1 Í+”2 Í,”: Í4”; Í5”< Í6”? Í9”ÌE Í?”ÌF ÍÌ@”ÌJ ÍÌDÜ ” Í” Í
+” Í” Í” Í” Í”  Í”& Í”' Í”+ Í#”/ Í'”1 Í)”2 Í*”: Í2”; Í3”< Í4”? Í7”ÌE Í=”ÌF Í>”ÌJ ÍÌB”ÌL ÍÌD” Í” Í” Í” Í” Í” Í”  Í”& Í”* Í"”, Í$”- Í%”/ Í'”0 Í(”1 Í)‘” Í‘”	 Í‘” Í	˜” Í
+” Í
+” Í
+” Í
+” Í
+” Í
+” Í
+” Í
+’” Í” Í˜” Í” Í” Í
+” Í” Í”" Í”$ Í”% ÍÜ ” Í” Í” Í”ÌC Í=”ÌJ ÍÌD”ÌK ÍÌE”ÌP ÍÌJ”ÌQ ÍÌK”ÌR ÍÌL”ÌT ÍÌN”ÌU ÍÌO”ÌV ÍÌP”ÌW ÍÌQ”Ì[ ÍÌU”Ì\ ÍÌV”Ì_ ÍÌY”Ì` ÍÌZ”Ìb ÍÌ\Ü ” Í” Í” Í” Í”! Í”$ Í”% Í”& Í”' Í”( Í ”+ Í#”, Í$”- Í%”. Í&”0 Í(”Ìa ÍÌY’”	 Í”
+ Í‘” Í˜” Í”
+ Í” Í” Í.” Í2” Í5” Í7” Í8™” Í”	 Í” Í” Í” Í” Í” Í”# Í!”% Í#œ” Í” Í” Í	” Í” Í” Í” Í” Í” Í” Í” Í” Í‘” Í–” Í”
+ Í” Í” Í&” Í(” Í)˜” Í”
+ Í” Í” Í5” Í9” Í<”! Í>”" Í?–” Í”
+ Í” Í” Í#” Í%” Í&Ü ” Í”	 Í” Í” Í” Í” Í” Í” Í” Í” Í” Í”' Í%”( Í&”. Í,”0 Í.”1 Í/”3 Í1”5 Í3›” Í” Í
+” Í” Í” Í” Í”$ Í ”% Í!”& Í"”' Í#”( Í$›” Í” Í” Í” Í” Í” Í” Í” Í”' Í#”( Í$”* Í&’” Í” Í‘”	 Í” Í” Í
+” Í” Í” Í” Í” Í” Í”  Í”! Í”, Í(”- Í)”. Í*•” Í ” Í ” Í 	” Í ” Í ’” Í!”< Í!6š” Í"” Í"” Í"” Í"”  Í"”$ Í"”% Í"”0 Í"*”1 Í"+”2 Í",’” Í#” Í#‘”	 Í$–” Í%” Í%” Í%
+” Í%” Í%” Í%’” Í&” Í&‘”	 Í'Ü "” Í(” Í(” Í(” Í(” Í(” Í(” Í(” Í(”  Í(”$ Í( ”( Í($”) Í(%”* Í(&”- Í()”3 Í(/”4 Í(0”8 Í(4”< Í(8”Ì@ Í(<”ÌA Í(=”ÌB Í(>”ÌE Í(ÌA”ÌK Í(ÌG”ÌL Í(ÌH”ÌP Í(ÌL”ÌT Í(ÌP”ÌX Í(ÌT”ÌY Í(ÌU”ÌZ Í(ÌV”Ì] Í(ÌY”Ìc Í(Ì_”Ìd Í(Ì`”Ìh Í(Ìd”Ìj Í(Ìf’” Í)” Í)˜” Í*” Í*
+” Í*” Í*” Í*”& Í*”( Í* ”) Í*!Ü ” Í+” Í+” Í+”7 Í+/”9 Í+1”: Í+2”Ì@ Í+8”ÌE Í+=”ÌI Í+ÌA”ÌJ Í+ÌB”ÌK Í+ÌC”ÌO Í+ÌG”ÌS Í+ÌK”ÌT Í+ÌL”ÌU Í+ÌM”ÌX Í+ÌP’” Í,” Í,‘”	 Í-”” Í.” Í.
+” Í.” Í.#”” Í/” Í/” Í/
+” Í/–” Í0” Í0” Í0	” Í0” Í0” Í0–” Í1” Í1” Í1	” Í1” Í1” Í1™” Í2” Í2	” Í2” Í2” Í2”" Í2”# Í2”. Í2(”/ Í2)˜” Í3” Í3	” Í3” Í3” Í3” Í3”# Í3”' Í3!’”	 Í4”
+ Í4˜” Í5” Í5” Í5” Í5” Í5” Í5” Í5” Í5œ” Í6” Í6” Í6” Í6” Í6” Í6” Í6” Í6” Í6”# Í6”$ Í6 ”% Í6!‘” Í7˜” Í8” Í8” Í8” Í8” Í8”  Í8”! Í8”# Í8!Ü ” Í9” Í9” Í9”  Í9”" Í:”0 Í:”> Í:"”? Í:#”ÌE Í:)”ÌP Í:4”Ì^ Í:ÌB”Ì_ Í:ÌC”Ìd Í:ÌH”Ìe Í:ÌI”Ìf Í:ÌJ”Ìh Í:ÌL”Ìi Í:ÌM”Ìj Í:ÌN”Ìk Í:ÌO”Ìo Í:ÌS”Ìp Í:ÌT”Ìs Í:ÌW”Ìt Í:ÌX”Ìv Í:ÌZ”Ìw Í:Ì[”Ìx Í:Ì\‘” Í;–” Í=” Í=” Í=” Í=” Í=” Í=™” Í>”	 Í>” Í>” Í>” Í>” Í>” Í>”# Í>!”% Í>#Ü ” Í?” Í?” Í?	” Í?” Í?” Í?” Í?” Í?”! Í?”" Í?”% Í?!”& Í?"”( Í?$”) Í?%”+ Í?'”, Í?(”. Í?*”” Í@” Í@” Í@” Í@‘”	 ÍA‘” ÍBœ” ÍC” ÍC” ÍC” ÍC” ÍC” ÍC” ÍC”  ÍC”& ÍC$”) ÍC'”1 ÍC/”3 ÍC1™” ÍD” ÍD
+” ÍD” ÍD”& ÍD"”' ÍD#”- ÍD)”0 ÍD,”1 ÍD-Ü ” ÍE” ÍE” ÍE”" ÍE”0 ÍE*”1 ÍE+”6 ÍE0”7 ÍE1”8 ÍE2”: ÍE4”; ÍE5”< ÍE6”= ÍE7”ÌA ÍE;”ÌB ÍE<”ÌE ÍE?”ÌF ÍEÌ@”ÌH ÍEÌBÜ ” ÍF” ÍF”! ÍF”" ÍF”( ÍF ”+ ÍF#”, ÍF$”- ÍF%”. ÍF&”/ ÍF'”2 ÍF*”3 ÍF+”4 ÍF,”5 ÍF-”7 ÍF/”ÌU ÍFÌM•” ÍG” ÍG” ÍG” ÍG
+” ÍG’” ÍH” ÍHš” ÍI” ÍI” ÍI
+” ÍI” ÍI”" ÍI”$ ÍI”+ ÍI%”, ÍI&”2 ÍI,œ” ÍJ” ÍJ” ÍJ”* ÍJ$”1 ÍJ+”2 ÍJ,”8 ÍJ2”< ÍJ6”ÌD ÍJ>”Ì[ ÍJÌU”Ìb ÍJÌ\”Ìd ÍJÌ^’”	 ÍK”
+ ÍK‘” ÍL’” ÍN”$ ÍN"œ” ÍO”
+ ÍO” ÍO” ÍO” ÍO” ÍO” ÍO” ÍO”& ÍO$”* ÍO(”+ ÍO)”, ÍO*–” ÍP” ÍP” ÍP” ÍP” ÍP” ÍP–” ÍQ” ÍQ” ÍQ” ÍQ” ÍQ” ÍQÜ ” ÍR”	 ÍR” ÍR” ÍR” ÍR” ÍR” ÍR” ÍR” ÍR” ÍR”  ÍR”& ÍR$”( ÍR&”) ÍR'”+ ÍR)”- ÍR+™” ÍS” ÍS
+” ÍS” ÍS” ÍS” ÍS” ÍS” ÍS” ÍS™” ÍT” ÍT” ÍT” ÍT” ÍT” ÍT” ÍT” ÍT” ÍT’” ÍU” ÍU‘”	 ÍV”” ÍW” ÍW” ÍW” ÍWÜ ” ÍX” ÍX
+” ÍX” ÍX” ÍX” ÍX” ÍX” ÍX” ÍX” ÍX” ÍX”" ÍX”# ÍX”$ ÍX ”& ÍX"”' ÍX#”/ ÍX+”0 ÍX,”1 ÍX-”2 ÍX.”3 ÍX/Ü ” ÍY” ÍY
+” ÍY” ÍY” ÍY” ÍY” ÍY” ÍY” ÍY” ÍY” ÍY”" ÍY”# ÍY”$ ÍY ”& ÍY"”' ÍY#”/ ÍY+”0 ÍY,”1 ÍY-”2 ÍY.”3 ÍY/Ü ” ÍZ” ÍZ
+” ÍZ” ÍZ”$ ÍZ ”% ÍZ!”& ÍZ"”' ÍZ#”) ÍZ%”* ÍZ&”2 ÍZ.”3 ÍZ/”8 ÍZ4”9 ÍZ5”: ÍZ6”= ÍZ9”> ÍZ:œ” Í[” Í[” Í[
+” Í[” Í[” Í[” Í[”  Í[”$ Í[ ”( Í[$”/ Í[+”1 Í[-”” Í\” Í\” Í\” Í\‘”	 Í]‘” Í^œ” Í_” Í_” Í_” Í_” Í_” Í_” Í_”" Í_ ”* Í_(”. Í_,”2 Í_0”4 Í_2’” Í`” Í`˜” Ía” Ía” Ía
+” Ía” Ía”" Ía”$ Ía”% Íaš” Íb” Íb” Íb”& Íb ”' Íb!”- Íb'”. Íb(”2 Íb,”: Íb4”Ì| ÍbÌv’”	 Íc”
+ Íc‘” ÍdŸ” Íf”
+ Íf” Íf” Íf”# Íf!”$ Íf"”( Íf&”* Íf(”. Íf,”0 Íf.”; Íf9”= Íf;”ÌC ÍfÌA”ÌD ÍfÌB”ÌE ÍfÌC˜” Íg” Íg” Íg” Íg” Íg” Íg” Íg” ÍgÜ ” Íh” Íh” Íh” Íh” Íh” Íh” Íh”' Íh#”) Íh%”* Íh&”, Íh(”2 Íh.”4 Íh0”< Íh8”> Íh:”? Íh;‘” Íi” Íj” Íj”	 Íj” Íj” Íj” Íj” Íj” Íj”  Íj”! Íj”" Íj ”% Íj#”& Íj$”( Íj&” Ík” Ík” Ík”" Ík”$ Ík ”) Ík%”- Ík)”. Ík*”4 Ík1”5 Ík2”; Ík8”= Ík:”> Ík;”? Ík<‘” ÍlŸ” Ín”
+ Ín” Ín” Ín” Ín” Ín” Ín” Ín”! Ín”$ Ín"”% Ín#”' Ín%”) Ín'”* Ín(”+ Ín)Ü ” Ío”	 Ío” Ío” Ío” Ío” Ío” Ío” Ío” Ío” Ío”  Ío”& Ío$”( Ío&”) Ío'”+ Ío)”- Ío+Ü ” Íp” Íp	” Íp” Íp” Íp” Íp” Íp” Íp” Íp” Íp”  Íp”' Íp#”( Íp$”. Íp*”0 Íp,”1 Íp-”3 Íp/”5 Íp1Ü ” Íq” Íq” Íq” Íq” Íq” Íq” Íq”" Íq%”# Íq&”$ Íq'”% Íq(”& Íq)”' Íq*”) Íq,”* Íq-”, Íq/”3 Íq6”4 Íq7”5 Íq8”6 Íq9”7 Íq:”8 Íq;”: Íq=”; Íq>Ü ” Ír” Ír” Ír” Ír” Ír” Ír” Ír”" Ír%”# Ír&”$ Ír'”% Ír(”& Ír)”' Ír*”) Ír,”* Ír-”, Ír/”3 Ír6”4 Ír7”5 Ír8”6 Ír9”7 Ír:”8 Ír;”: Ír=”; Ír>›” Ís” Ís
+” Ís”  Ís”! Ís”# Ís”$ Ís”& Ís ”- Ís'”. Ís(”0 Ís*’” Ít” Ít˜” Íu
+” Íu” Íu” Íu” Íu”* Íu ”, Íu"”- Íu#Ü ” Ív
+” Ív” Ív”7 Ív-”> Ív4”? Ív5”Ì@ Ív6”ÌA Ív7”ÌB Ív8”ÌD Ív:”ÌE Ív;”ÌK ÍvÌA”ÌQ ÍvÌG”ÌX ÍvÌN”ÌY ÍvÌO”ÌZ ÍvÌP”Ì[ ÍvÌQ”Ì\ ÍvÌR”Ì^ ÍvÌT”Ì_ ÍvÌU”Ìe ÍvÌ[”Ìg ÍvÌ]’” Íw	” Íw
+‘” Íx‘”	 Íy‘” Íz˜” Í|”
+ Í|” Í|” Í|-” Í|1”  Í|4”" Í|6”# Í|7˜” Í}”
+ Í}” Í}” Í} ” Í}$” Í}'” Í})” Í}*Ü ” Í~”	 Í~” Í~” Í~” Í~” Í~” Í~” Í~” Í~” Í~”  Í~”& Í~$”( Í~&”) Í~'”+ Í~)”- Í~+™” Í” Í
+” Í” Í” Í” Í” Í” Í” Í›” Í€” Í€
+” Í€” Í€”3 Í€/”4 Í€0”5 Í€1”6 Í€2”8 Í€4”9 Í€5”: Í€6›” Í” Í
+” Í” Í” Í” Í” Í ” Í"”  Í-”" Í/”$ Í1Ü ” Í‚” Í‚” Í‚” Í‚” Í‚”  Í‚”" Í‚”$ Í‚”% Í‚”' Í‚!”* Í‚$”+ Í‚%”, Í‚&”. Í‚(”/ Í‚)”1 Í‚+”4 Í‚.”5 Í‚/”6 Í‚0”8 Í‚2”9 Í‚3”: Í‚4”” Íƒ”	 Íƒ”
+ Íƒ” ÍƒÜ ” Í„”	 Í„”
+ Í„” Í„” Í„	” Í„” Í„” Í„” Í„” Í„” Í„” Í„”  Í„”" Í„”# Í„”% Í„!”& Í„"”' Í„#”( Í„$”* Í„&”+ Í„'›” Í…”	 Í…”
+ Í…” Í…” Í…	” Í…” Í…” Í…” Í…” Í…” Í…›” Í†”	 Í†”
+ Í†” Í†” Í†	” Í†” Í†” Í†” Í†” Í†” Í†œ” Í‡” Í‡” Í‡” Í‡” Í‡” Í‡” Í‡” Í‡” Í‡” Í‡” Í‡” Í‡Ü ” Íˆ” Íˆ” Íˆ” Íˆ” Íˆ”  Íˆ”! Íˆ”" Íˆ”$ Íˆ ”% Íˆ!”+ Íˆ'”3 Íˆ/”4 Íˆ0”5 Íˆ1”6 Íˆ2”: Íˆ6”; Íˆ7”< Íˆ8”= Íˆ9”ÌD ÍˆÌ@”ÌE ÍˆÌA”ÌF ÍˆÌB”ÌI ÍˆÌE”ÌK ÍˆÌG”ÌL ÍˆÌH”ÌM ÍˆÌI‘” Í‰˜” ÍŠ” ÍŠ” ÍŠ” ÍŠ” ÍŠ” ÍŠ” ÍŠ” ÍŠš” Í‹”) Í‹%”* Í‹&”- Í‹)”/ Í‹+”7 Í‹3”9 Í‹5”ÌE Í‹ÌA”ÌF Í‹ÌB”ÌG Í‹ÌC‘” ÍŒ’” Í” Íœ” Í” Í”	 Í” Í” Í” Í” Í” Í”  Í”& Í$”' Í%”( Í&Ü ” Í‘” Í‘	” Í‘” Í‘” Í‘” Í‘” Í‘”" Í‘ ”$ Í‘"”+ Í‘)”, Í‘*”2 Í‘0”4 Í‘2”: Í‘8”< Í‘:”Ì@ Í‘>”ÌB Í‘Ì@”ÌC Í‘ÌA’”  Í’ ” Í’ÔrH–§version¤file§sources®sourcesContent¥names¨mappingsÀ‘À‘ÀÜ[‘”    ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”  	 ‘”  
+ ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”    ‘”  ! ‘”  " ‘”  # ‘”  $ ‘”  % ‘”  & ‘”  ' ‘”  ( ‘”  ) ‘”  * ‘”  + ‘”  , ‘”  - ‘”  . ‘”  / ‘”  0 ‘”  1 ‘”  2 ‘”  3 ‘”  4 ‘”  5 ‘”  6 ‘”  7 ‘”  8 ‘”  9 ‘”  : ‘”  ; ‘”  < ‘”  = ‘”  > ‘”  ? ‘”  Ì@ ‘”  ÌA ‘”  ÌB ‘”  ÌC ‘”  ÌD ‘”  ÌE ‘”  ÌF ‘”  ÌG ‘”  ÌH ‘”  ÌI ‘”  ÌJ ‘”  ÌK ‘”  ÌL ‘”  ÌM ‘”  ÌN ‘”  ÌO ‘”  ÌP ‘”  ÌQ ‘”  ÌR ‘”  ÌS ‘”  ÌT ‘”  ÌU ‘”  ÌV ‘”  ÌW ‘”  ÌX ‘”  ÌY ‘”  ÌZ ‘”  Ì[ ‘”  Ì\ ‘”  Ì] ‘”  Ì^ ‘”  Ì_ ‘”  Ì` ‘”  Ìa ‘”  Ìb ‘”  Ìc ‘”  Ìd ‘”  Ìe ‘”  Ìf ‘”  Ìg ‘”  Ìh ‘”  Ìi ‘”  Ìj ‘”  Ìk ‘”  Ìl ‘”  Ìm ‘”  Ìn ‘”  Ìo ‘”  Ìp ‘”  Ìq ‘”  Ìr ‘”  Ìs ‘”  Ìt ‘”  Ìu ‘”  Ìv ‘”  Ìw ‘”  Ìx ‘”  Ìy ‘”  Ìz ‘”  Ì{ ‘”  Ì| ‘”  Ì} ‘”  Ì~ ‘”  Ì ‘”  Ì€ ‘”  Ì ‘”  Ì‚ ‘”  Ìƒ ‘”  Ì„ ‘”  Ì… ‘”  Ì† ‘”  Ì‡ ‘”  Ìˆ ‘”  Ì‰ ‘”  ÌŠ ‘”  Ì‹ ‘”  ÌŒ ‘”  Ì ‘”  Ì ‘”  Ì ‘”  Ì ‘”  Ì‘ ‘”  Ì’ ‘”  Ì“ ‘”  Ì” ‘”  Ì• ‘”  Ì– ‘”  Ì— ‘”  Ì˜ ‘”  Ì™ ‘”  Ìš ‘”  Ì› ‘”  Ìœ ‘”  Ì ‘”  Ì ‘”  ÌŸ ‘”  Ì  ‘”  Ì¡ ‘”  Ì¢ ‘”  Ì£ ‘”  Ì¤ ‘”  Ì¥ ‘”  Ì¦ ‘”  Ì§ ‘”  Ì¨ ‘”  Ì© ‘”  Ìª ‘”  Ì« ‘”  Ì¬ ‘”  Ì­ ‘”  Ì® ‘”  Ì¯ ‘”  Ì° ‘”  Ì± ‘”  Ì² ‘”  Ì³ ‘”  Ì´ ‘”  Ìµ ‘”  Ì¶ ‘”  Ì· ‘”  Ì¸ ‘”  Ì¹ ‘”  Ìº ‘”  Ì» ‘”  Ì¼ ‘”  Ì½ ‘”  Ì¾ ‘”  Ì¿ ‘”  ÌÀ ‘”  ÌÁ ‘”  ÌÂ ‘”  ÌÃ ‘”  ÌÄ ‘”  ÌÅ ‘”  ÌÆ ‘”  ÌÇ ‘”  ÌÈ ‘”  ÌÉ ‘”  ÌÊ ‘”  ÌË ‘”  ÌÌ ‘”  ÌÍ ‘”  ÌÎ ‘”  ÌÏ ‘”  ÌĞ ‘”  ÌÑ ‘”  ÌÒ ‘”  ÌÓ ‘”  ÌÔ ‘”  ÌÕ ‘”  ÌÖ ‘”  Ì× ‘”  ÌØ ‘”  ÌÙ ‘”  ÌÚ ‘”  ÌÛ ‘”  ÌÜ ‘”  Ìİ ‘”  ÌŞ ‘”  Ìß ‘”  Ìà ‘”  Ìá ‘”  Ìâ ‘”  Ìã ‘”  Ìä ‘”  Ìå ‘”  Ìæ ‘”  Ìç ‘”  Ìè ‘”  Ìé ‘”  Ìê ‘”  Ìë ‘”  Ìì ‘”  Ìí ‘”  Ìî ‘”  Ìï ‘”  Ìğ ‘”  Ìñ ‘”  Ìò ‘”  Ìó ‘”  Ìô ‘”  Ìõ ‘”  Ìö ‘”  Ì÷ ‘”  Ìø ‘”  Ìù ‘”  Ìú ‘”  Ìû ‘”  Ìü ‘”  Ìı ‘”  Ìş ‘”  Ìÿ ‘”  Í  ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í	 ‘”  Í
+ ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í ‘”  Í  ‘”  Í! ‘”  Í" ‘”  Í# ‘”  Í$ ‘”  Í% ‘”  Í& ‘”  Í' ‘”  Í( ‘”  Í) ‘”  Í* ‘”  Í+ ‘”  Í, ‘”  Í- ‘”  Í. ‘”  Í/ ‘”  Í0 ‘”  Í1 ‘”  Í2 ‘”  Í3 ‘”  Í4 ‘”  Í5 ‘”  Í6 ‘”  Í7 ‘”  Í8 ‘”  Í9 ‘”  Í: ‘”  Í; ‘”  Í< ‘”  Í= ‘”  Í> ‘”  Í? ‘”  Í@ ‘”  ÍA ‘”  ÍB ‘”  ÍC ‘”  ÍD ‘”  ÍE ‘”  ÍF ‘”  ÍG ‘”  ÍH ‘”  ÍI ‘”  ÍJ ‘”  ÍK ‘”  ÍL ‘”  ÍM ‘”  ÍN ‘”  ÍO ‘”  ÍP ‘”  ÍQ ‘”  ÍR ‘”  ÍS ‘”  ÍT ‘”  ÍU ‘”  ÍV ‘”  ÍW ‘”  ÍX ‘”  ÍY ‘”  ÍZ ÔrI’§missing¦pluginÃ¦genAbcÂÔ  ÔrJ”²dynamicImportCache¹exportAllDeclarationCache»exportNamedDeclarationCache«importCache‘ÔrK–¤type¥start£end«declarationªspecifiers¦source¶ExportNamedDeclarationÍ÷Í.ÄÔrL™¤type¥start£end¢idªexpression©generator¥async¦params¤body³FunctionDeclarationÍşÍ.ÄÔrM”¤type¥start£end¤nameªIdentifierÍÍµapplyPcbPlacementPlanÂÂÂ’MªIdentifierÍÍ £docMªIdentifierÍ"Í&¤planÔrN”¤type¥start£end¤body®BlockStatementÍ(Í.ÄÜ 'ÔrO–¤type¥start£end¤testªconsequent©alternate«IfStatementÍ/Í ÔrP–¤type¥start£end¨operator¦prefix¨argument¯UnaryExpressionÍ3Í@¡!ÃÔrQ—¤type¥start£end¦object¨property¨computed¨optional°MemberExpressionÍ4Í@MªIdentifierÍ4Í8¤planMªIdentifierÍ9Í@§fromLlmÂÂN®BlockStatementÍBÍ ‘ÔrR”¤type¥start£end¨argument¯ReturnStatementÍMÍ™ÔrS”¤type¥start£endªproperties°ObjectExpressionÍTÍ˜“ÔrT™¤type¥start£end¦method©shorthand¨computed£key¥value¤kind¨PropertyÍVÍ_ÂÂÂMªIdentifierÍVÍX¢okÔrU•¤type¥start£end¥value£raw§LiteralÍZÍ_Â¥false¤initT¨PropertyÍaÍoÂÂÂMªIdentifierÍaÍl«placedCountU§LiteralÍnÍo ¡0¤initT¨PropertyÍqÍ–ÂÂÂMªIdentifierÍqÍw¦reasonU§LiteralÍyÍ–»placement plan not from LLM½'placement plan not from LLM'¤initÀO«IfStatementÍ¦Í<ÔrV–¤type¥start£end¤left¨operator¥right±LogicalExpressionÍªÍÚP¯UnaryExpressionÍªÍº¡!ÃQ°MemberExpressionÍ«ÍºMªIdentifierÍ«Í¯¤planMªIdentifierÍ°ÍºªplacementsÂÂ¢||V°BinaryExpressionÍ¾ÍÚQ°MemberExpressionÍ¾ÍÔQ°MemberExpressionÍ¾ÍÍMªIdentifierÍ¾ÍÂ¤planMªIdentifierÍÃÍÍªplacementsÂÂMªIdentifierÍÎÍÔ¦lengthÂÂ£===U§LiteralÍÙÍÚ ¡0N®BlockStatementÍÜÍ<‘R¯ReturnStatementÍçÍ5S°ObjectExpressionÍîÍ4“T¨PropertyÍğÍùÂÂÂMªIdentifierÍğÍò¢okU§LiteralÍôÍùÂ¥false¤initT¨PropertyÍûÍ	ÂÂÂMªIdentifierÍûÍ«placedCountU§LiteralÍÍ	 ¡0¤initT¨PropertyÍÍ2ÂÂÂMªIdentifierÍÍ¦reasonU§LiteralÍÍ2½empty placement plan from LLM¿'empty placement plan from LLM'¤initÀÔrW•¤type¥start£end¬declarations¤kind³VariableDeclarationÍlÍŠ‘ÔrX•¤type¥start£end¢id¤init²VariableDeclaratorÍrÍ‰MªIdentifierÍrÍt¢bwQ°MemberExpressionÍwÍ‰MªIdentifierÍwÍ{¤planMªIdentifierÍ|Í‰­boardWidthMilÂÂ¥constW³VariableDeclarationÍÍ¯‘X²VariableDeclaratorÍ–Í®MªIdentifierÍ–Í˜¢bhQ°MemberExpressionÍ›Í®MªIdentifierÍ›ÍŸ¤planMªIdentifierÍ Í®®boardHeightMilÂÂ¥constO«IfStatementÍµÍ³V±LogicalExpressionÍ¹Í÷V±LogicalExpressionÍ¹ÍêV±LogicalExpressionÍ¹ÍİV°BinaryExpressionÍ¹ÍÉMªIdentifierÍ¹Í»¢bw£===MªIdentifierÍÀÍÉ©undefined¢||V°BinaryExpressionÍÍÍİMªIdentifierÍÍÍÏ¢bh£===MªIdentifierÍÔÍİ©undefined¢||P¯UnaryExpressionÍáÍê¡!ÃV°BinaryExpressionÍãÍéMªIdentifierÍãÍå¢bw¡>U§LiteralÍèÍé ¡0¢||P¯UnaryExpressionÍîÍ÷¡!ÃV°BinaryExpressionÍğÍöMªIdentifierÍğÍò¢bh¡>U§LiteralÍõÍö ¡0N®BlockStatementÍùÍ³‘R¯ReturnStatementÍÍ¬S°ObjectExpressionÍÍ«“T¨PropertyÍÍ#ÂÂÂMªIdentifierÍÍ¢okU§LiteralÍÍ#Â¥false¤initT¨PropertyÍ%Í3ÂÂÂMªIdentifierÍ%Í0«placedCountU§LiteralÍ2Í3 ¡0¤initT¨PropertyÍBÍ ÂÂÂMªIdentifierÍBÍH¦reasonU§LiteralÍJÍ ÙVLLM placement missing boardWidthMil/boardHeightMil â€” board size must come from modelÙX'LLM placement missing boardWidthMil/boardHeightMil â€” board size must come from model'¤initÀW³VariableDeclarationÍ¹Íé‘X²VariableDeclaratorÍ¿ÍèMªIdentifierÍ¿ÍÇ¨boardErrÔrY–¤type¥start£end¦callee©arguments¨optional®CallExpressionÍÊÍèMªIdentifierÍÊÍÛ±applyLlmBoardSize“MªIdentifierÍÜÍß£docMªIdentifierÍáÍã¢bwMªIdentifierÍåÍç¢bhÂ¥constO«IfStatementÍïÍQV°BinaryExpressionÍóÍQ°MemberExpressionÍóÍMªIdentifierÍóÍû¨boardErrMªIdentifierÍüÍ¦lengthÂÂ¡>U§LiteralÍÍ ¡0N®BlockStatementÍÍQ‘R¯ReturnStatementÍÍJS°ObjectExpressionÍÍI“T¨PropertyÍÍ%ÂÂÂMªIdentifierÍÍ¢okU§LiteralÍ Í%Â¥false¤initT¨PropertyÍ'Í5ÂÂÂMªIdentifierÍ'Í2«placedCountU§LiteralÍ4Í5 ¡0¤initT¨PropertyÍ7ÍGÂÂÂMªIdentifierÍ7Í=¦reasonMªIdentifierÍ?ÍG¨boardErr¤initÀW³VariableDeclarationÍWÍ„‘X²VariableDeclaratorÍ]ÍƒMªIdentifierÍ]Íc¦lockedÔrZ•¤type¥start£end¦callee©arguments­NewExpressionÍfÍƒMªIdentifierÍjÍm£Set‘V±LogicalExpressionÍnÍ‚Q°MemberExpressionÍnÍ|MªIdentifierÍnÍr¤planMªIdentifierÍsÍ|©lockedIdsÂÂ¢??Ôr[”¤type¥start£end¨elements¯ArrayExpressionÍ€Í‚¥constÔr\—¤type¥start£end¥await¤left¥right¤body®ForOfStatementÍ¹Í;ÂW³VariableDeclarationÍ¾ÍÆ‘X²VariableDeclaratorÍÄÍÆMªIdentifierÍÄÍÆ¢fpÀ¥constQ°MemberExpressionÍÊÍØMªIdentifierÍÊÍÍ£docMªIdentifierÍÎÍØªfootprintsÂÂN®BlockStatementÍÚÍ;‘O«IfStatementÍåÍ4V±LogicalExpressionÍéÍY®CallExpressionÍéÍøMªIdentifierÍéÍô«isMountHole‘MªIdentifierÍõÍ÷¢fpÂ¢&&P¯UnaryExpressionÍüÍ¡!ÃQ°MemberExpressionÍıÍMªIdentifierÍıÍÿ¢fpMªIdentifierÍ Í¦lockedÂÂN®BlockStatementÍÍ4‘Ôr]”¤type¥start£endªexpression³ExpressionStatementÍÍ)Y®CallExpressionÍÍ(Q°MemberExpressionÍÍ!MªIdentifierÍÍ¦lockedMªIdentifierÍÍ!£addÂÂ‘Q°MemberExpressionÍ"Í'MªIdentifierÍ"Í$¢fpMªIdentifierÍ%Í'¢idÂÂÂÀW³VariableDeclarationÍAÍa‘X²VariableDeclaratorÍGÍ`MªIdentifierÍGÍM¦boundsY®CallExpressionÍPÍ`MªIdentifierÍPÍ[«boardBounds‘MªIdentifierÍ\Í_£docÂ¥constW³VariableDeclarationÍgÍz‘X²VariableDeclaratorÍmÍyMªIdentifierÍmÍt§ejected[¯ArrayExpressionÍwÍy¥const\®ForOfStatementÍ€ÍÂW³VariableDeclarationÍ…Í‘X²VariableDeclaratorÍ‹ÍMªIdentifierÍ‹Í¢fpÀ¥constQ°MemberExpressionÍ‘ÍŸMªIdentifierÍ‘Í”£docMªIdentifierÍ•ÍŸªfootprintsÂÂN®BlockStatementÍ¡Í’O«IfStatementÍ¬ÍíY®CallExpressionÍ°Í¿MªIdentifierÍ°Í»«isMountHole‘MªIdentifierÍ¼Í¾¢fpÂN®BlockStatementÍÁÍí‘Ôr^”¤type¥start£end¥label±ContinueStatementÍĞÍÙÀÀO«IfStatementÍ÷ÍV±LogicalExpressionÍûÍY®CallExpressionÍûÍQ°MemberExpressionÍûÍMªIdentifierÍûÍ¦lockedMªIdentifierÍÍ£hasÂÂ‘Q°MemberExpressionÍÍMªIdentifierÍÍ¢fpMªIdentifierÍ	Í¢idÂÂÂ¢||Q°MemberExpressionÍÍMªIdentifierÍÍ¢fpMªIdentifierÍÍ¦lockedÂÂN®BlockStatementÍÍ‘O«IfStatementÍ*ÍüV±LogicalExpressionÍ.Í·V±LogicalExpressionÍ.Í˜V±LogicalExpressionÍ.ÍhV°BinaryExpressionÍ.ÍIQ°MemberExpressionÍ.Í;Q°MemberExpressionÍ.Í9MªIdentifierÍ.Í0¢fpMªIdentifierÍ1Í9¨positionÂÂMªIdentifierÍ:Í;¡xÂÂ¡<Q°MemberExpressionÍ>ÍIMªIdentifierÍ>ÍD¦boundsMªIdentifierÍEÍI¤minXÂÂ¢||V°BinaryExpressionÍMÍhQ°MemberExpressionÍMÍZQ°MemberExpressionÍMÍXMªIdentifierÍMÍO¢fpMªIdentifierÍPÍX¨positionÂÂMªIdentifierÍYÍZ¡xÂÂ¡>Q°MemberExpressionÍ]ÍhMªIdentifierÍ]Íc¦boundsMªIdentifierÍdÍh¤maxXÂÂ¢||V°BinaryExpressionÍ}Í˜Q°MemberExpressionÍ}ÍŠQ°MemberExpressionÍ}ÍˆMªIdentifierÍ}Í¢fpMªIdentifierÍ€Íˆ¨positionÂÂMªIdentifierÍ‰ÍŠ¡yÂÂ¡<Q°MemberExpressionÍÍ˜MªIdentifierÍÍ“¦boundsMªIdentifierÍ”Í˜¤minYÂÂ¢||V°BinaryExpressionÍœÍ·Q°MemberExpressionÍœÍ©Q°MemberExpressionÍœÍ§MªIdentifierÍœÍ¢fpMªIdentifierÍŸÍ§¨positionÂÂMªIdentifierÍ¨Í©¡yÂÂ¡>Q°MemberExpressionÍ¬Í·MªIdentifierÍ¬Í²¦boundsMªIdentifierÍ³Í·¤maxYÂÂN®BlockStatementÍ¹Íü‘]³ExpressionStatementÍÌÍíY®CallExpressionÍÌÍìQ°MemberExpressionÍÌÍØMªIdentifierÍÌÍÓ§ejectedMªIdentifierÍÔÍØ¤pushÂÂ‘V±LogicalExpressionÍÙÍëQ°MemberExpressionÍÙÍâMªIdentifierÍÙÍÛ¢fpMªIdentifierÍÜÍâ¦refDesÂÂ¢||Q°MemberExpressionÍæÍëMªIdentifierÍæÍè¢fpMªIdentifierÍéÍë¢idÂÂÂÀÀO«IfStatementÍÍCV°BinaryExpressionÍÍ*Q°MemberExpressionÍÍ&MªIdentifierÍÍ§ejectedMªIdentifierÍ Í&¦lengthÂÂ¡>U§LiteralÍ)Í* ¡0N®BlockStatementÍ,ÍC‘R¯ReturnStatementÍ7Í<S°ObjectExpressionÍ>Í;“T¨PropertyÍMÍVÂÂÂMªIdentifierÍMÍO¢okU§LiteralÍQÍVÂ¥false¤initT¨PropertyÍXÍfÂÂÂMªIdentifierÍXÍc«placedCountU§LiteralÍeÍf ¡0¤initT¨PropertyÍuÍ0ÂÂÂMªIdentifierÍuÍ{¦reasonV°BinaryExpressionÍ}Í0Ôr_•¤type¥start£end«expressions¦quasis¯TemplateLiteralÍ}ÍË‘Y®CallExpressionÍ¬ÍÉQ°MemberExpressionÍ¬ÍÄY®CallExpressionÍ¬Í¿Q°MemberExpressionÍ¬Í¹MªIdentifierÍ¬Í³§ejectedMªIdentifierÍ´Í¹¥sliceÂÂ’U§LiteralÍºÍ» ¡0U§LiteralÍ½Í¾¡6ÂMªIdentifierÍÀÍÄ¤joinÂÂ‘U§LiteralÍÅÍÈ¡,£','Â’Ôr`•¤type¥start£end¥value¤tail¯TemplateElementÍ~ÍªÔra’£raw¦cookedÙ,board shrink would eject locked footprints: Ù,board shrink would eject locked footprints: Â`¯TemplateElementÍÊÍÊa  Ã¡+_¯TemplateLiteralÍßÍ0‘OµConditionalExpressionÍâÍÿV°BinaryExpressionÍâÍôQ°MemberExpressionÍâÍğMªIdentifierÍâÍé§ejectedMªIdentifierÍêÍğ¦lengthÂÂ¡>U§LiteralÍóÍô¡6U§LiteralÍ÷Íú£â€¦¥'â€¦'U§LiteralÍıÍÿ ¢''’`¯TemplateElementÍàÍàa  Â`¯TemplateElementÍ Í/aÙ1 â€” enlarge boardWidthMil/Height or rePlace themÙ1 â€” enlarge boardWidthMil/Height or rePlace themÃ¤initÀW³VariableDeclarationÍIÍ`‘X²VariableDeclaratorÍOÍ_MªIdentifierÍOÍS¤byIdZ­NewExpressionÍVÍ_MªIdentifierÍZÍ]£Map¥const\®ForOfStatementÍfÍ­ÂW³VariableDeclarationÍkÍs‘X²VariableDeclaratorÍqÍsMªIdentifierÍqÍs¢fpÀ¥constQ°MemberExpressionÍwÍ…MªIdentifierÍwÍz£docMªIdentifierÍ{Í…ªfootprintsÂÂN®BlockStatementÍ‡Í­‘]³ExpressionStatementÍ’Í¦Y®CallExpressionÍ’Í¥Q°MemberExpressionÍ’ÍšMªIdentifierÍ’Í–¤byIdMªIdentifierÍ—Íš£setÂÂ’Q°MemberExpressionÍ›Í MªIdentifierÍ›Í¢fpMªIdentifierÍÍ ¢idÂÂMªIdentifierÍ¢Í¤¢fpÂW³VariableDeclarationÍ³ÍÆ‘X²VariableDeclaratorÍ¹ÍÅMªIdentifierÍ¹ÍÀ§pending[¯ArrayExpressionÍÃÍÅ¥constW³VariableDeclarationÍÌÍê‘X²VariableDeclaratorÍÒÍéMªIdentifierÍÒÍİ«pendingByIdZ­NewExpressionÍàÍéMªIdentifierÍäÍç£Map¥constW³VariableDeclarationÍğÍ
+‘X²VariableDeclaratorÍöÍ	MªIdentifierÍöÍ®skippedUnknown[¯ArrayExpressionÍÍ	¥constÔrb—¤type¥start£end¤init¤test¦update¤body¬ForStatementÍÍ"W³VariableDeclarationÍÍ‘X²VariableDeclaratorÍÍMªIdentifierÍÍ¡iU§LiteralÍÍ ¡0£letV°BinaryExpressionÍ Í:MªIdentifierÍ Í!¡i¡<Q°MemberExpressionÍ$Í:Q°MemberExpressionÍ$Í3MªIdentifierÍ$Í(¤planMªIdentifierÍ)Í3ªplacementsÂÂMªIdentifierÍ4Í:¦lengthÂÂP°UpdateExpressionÍ<Í?¢++ÂMªIdentifierÍ<Í=¡iN®BlockStatementÍAÍ"™W³VariableDeclarationÍLÍl‘X²VariableDeclaratorÍRÍkMªIdentifierÍRÍV¤itemQ°MemberExpressionÍYÍkQ°MemberExpressionÍYÍhMªIdentifierÍYÍ]¤planMªIdentifierÍ^ÍhªplacementsÂÂMªIdentifierÍiÍj¡iÃÂ¥constO«IfStatementÍvÍ»Y®CallExpressionÍzÍ–Q°MemberExpressionÍzÍ„MªIdentifierÍzÍ€¦lockedMªIdentifierÍÍ„£hasÂÂ‘Q°MemberExpressionÍ…Í•MªIdentifierÍ…Í‰¤itemMªIdentifierÍŠÍ•«footprintIdÂÂÂN®BlockStatementÍ˜Í»‘^±ContinueStatementÍ§Í°ÀÀW³VariableDeclarationÍÅÍë‘X²VariableDeclaratorÍËÍêMªIdentifierÍËÍÍ¢fpY®CallExpressionÍĞÍêQ°MemberExpressionÍĞÍØMªIdentifierÍĞÍÔ¤byIdMªIdentifierÍÕÍØ£getÂÂ‘Q°MemberExpressionÍÙÍéMªIdentifierÍÙÍİ¤itemMªIdentifierÍŞÍé«footprintIdÂÂÂ¥constO«IfStatementÍõÍ“P¯UnaryExpressionÍùÍü¡!ÃMªIdentifierÍúÍü¢fpN®BlockStatementÍşÍ“’]³ExpressionStatementÍKÍqY®CallExpressionÍKÍpQ°MemberExpressionÍKÍ^MªIdentifierÍKÍY®skippedUnknownMªIdentifierÍZÍ^¤pushÂÂ‘Q°MemberExpressionÍ_ÍoMªIdentifierÍ_Íc¤itemMªIdentifierÍdÍo«footprintIdÂÂÂ^±ContinueStatementÍÍˆÀÀO«IfStatementÍÍÏQ°MemberExpressionÍ¡ÍªMªIdentifierÍ¡Í£¢fpMªIdentifierÍ¤Íª¦lockedÂÂN®BlockStatementÍ¬ÍÏ‘^±ContinueStatementÍ»ÍÄÀÀO«IfStatementÍÙÍ óV±LogicalExpressionÍİÍ 9V±LogicalExpressionÍİÍ !V±LogicalExpressionÍİÍ 	V°BinaryExpressionÍİÍñQ°MemberExpressionÍİÍãMªIdentifierÍİÍá¤itemMªIdentifierÍâÍã¡xÂÂ¡<Q°MemberExpressionÍæÍñMªIdentifierÍæÍì¦boundsMªIdentifierÍíÍñ¤minXÂÂ¢||V°BinaryExpressionÍõÍ 	Q°MemberExpressionÍõÍûMªIdentifierÍõÍù¤itemMªIdentifierÍúÍû¡xÂÂ¡>Q°MemberExpressionÍşÍ 	MªIdentifierÍşÍ ¦boundsMªIdentifierÍ Í 	¤maxXÂÂ¢||V°BinaryExpressionÍ Í !Q°MemberExpressionÍ Í MªIdentifierÍ Í ¤itemMªIdentifierÍ Í ¡yÂÂ¡<Q°MemberExpressionÍ Í !MªIdentifierÍ Í ¦boundsMªIdentifierÍ Í !¤minYÂÂ¢||V°BinaryExpressionÍ %Í 9Q°MemberExpressionÍ %Í +MªIdentifierÍ %Í )¤itemMªIdentifierÍ *Í +¡yÂÂ¡>Q°MemberExpressionÍ .Í 9MªIdentifierÍ .Í 4¦boundsMªIdentifierÍ 5Í 9¤maxYÂÂN®BlockStatementÍ ;Í ó‘R¯ReturnStatementÍ JÍ èS°ObjectExpressionÍ QÍ ç“T¨PropertyÍ dÍ mÂÂÂMªIdentifierÍ dÍ f¢okU§LiteralÍ hÍ mÂ¥false¤initT¨PropertyÍ oÍ }ÂÂÂMªIdentifierÍ oÍ z«placedCountU§LiteralÍ |Í } ¡0¤initT¨PropertyÍ Í ØÂÂÂMªIdentifierÍ Í –¦reason_¯TemplateLiteralÍ ˜Í Ø“Q°MemberExpressionÍ ·Í ÀMªIdentifierÍ ·Í ¹¢fpMªIdentifierÍ ºÍ À¦refDesÂÂQ°MemberExpressionÍ ÅÍ ËMªIdentifierÍ ÅÍ É¤itemMªIdentifierÍ ÊÍ Ë¡xÂÂQ°MemberExpressionÍ ÏÍ ÕMªIdentifierÍ ÏÍ Ó¤itemMªIdentifierÍ ÔÍ Õ¡yÂÂ”`¯TemplateElementÍ ™Í µa¼LLM placement out of board: ¼LLM placement out of board: Â`¯TemplateElementÍ ÁÍ Ãa¢ (¢ (Â`¯TemplateElementÍ ÌÍ Ía¡,¡,Â`¯TemplateElementÍ ÖÍ ×a¡)¡)Ã¤initÀW³VariableDeclarationÍ ıÍ!·‘X²VariableDeclaratorÍ!Í!¶MªIdentifierÍ!Í!¤pendS°ObjectExpressionÍ!
+Í!¶•T¨PropertyÍ!Í!ÂÂÂMªIdentifierÍ!Í!¢fpMªIdentifierÍ!Í!¢fp¤initT¨PropertyÍ!.Í!7ÂÂÂMªIdentifierÍ!.Í!/¡xQ°MemberExpressionÍ!1Í!7MªIdentifierÍ!1Í!5¤itemMªIdentifierÍ!6Í!7¡xÂÂ¤initT¨PropertyÍ!FÍ!OÂÂÂMªIdentifierÍ!FÍ!G¡yQ°MemberExpressionÍ!IÍ!OMªIdentifierÍ!IÍ!M¤itemMªIdentifierÍ!NÍ!O¡yÂÂ¤initT¨PropertyÍ!^Í!ÂÂÂMªIdentifierÍ!^Í!a£rotY®CallExpressionÍ!cÍ!MªIdentifierÍ!cÍ!o¬snapRotation‘Q°MemberExpressionÍ!pÍ!€MªIdentifierÍ!pÍ!t¤itemMªIdentifierÍ!uÍ!€«rotationDegÂÂÂ¤initT¨PropertyÍ!Í!«ÂÂÂMªIdentifierÍ!Í!“£mirV°BinaryExpressionÍ!•Í!«Q°MemberExpressionÍ!•Í!¢MªIdentifierÍ!•Í!™¤itemMªIdentifierÍ!šÍ!¢¨mirroredÂÂ£===U§LiteralÍ!§Í!«Ã¤true¤init¥const]³ExpressionStatementÍ!ÁÍ!ÔY®CallExpressionÍ!ÁÍ!ÓQ°MemberExpressionÍ!ÁÍ!ÍMªIdentifierÍ!ÁÍ!È§pendingMªIdentifierÍ!ÉÍ!Í¤pushÂÂ‘MªIdentifierÍ!ÎÍ!Ò¤pendÂ]³ExpressionStatementÍ!ŞÍ!ûY®CallExpressionÍ!ŞÍ!úQ°MemberExpressionÍ!ŞÍ!íMªIdentifierÍ!ŞÍ!é«pendingByIdMªIdentifierÍ!êÍ!í£setÂÂ’Q°MemberExpressionÍ!îÍ!óMªIdentifierÍ!îÍ!ğ¢fpMªIdentifierÍ!ñÍ!ó¢idÂÂMªIdentifierÍ!õÍ!ù¤pendÂO«IfStatementÍ"Í"©V°BinaryExpressionÍ"Í"%Q°MemberExpressionÍ"Í"!MªIdentifierÍ"Í"®skippedUnknownMªIdentifierÍ"Í"!¦lengthÂÂ¡>U§LiteralÍ"$Í"% ¡0N®BlockStatementÍ"'Í"©‘]³ExpressionStatementÍ"2Í"¢Y®CallExpressionÍ"2Í"¡MªIdentifierÍ"2Í":¨tracePcb’U§LiteralÍ";Í"J­AI_PLACE_SKIP¯'AI_PLACE_SKIP'_¯TemplateLiteralÍ"LÍ" ’Q°MemberExpressionÍ"ZÍ"oMªIdentifierÍ"ZÍ"h®skippedUnknownMªIdentifierÍ"iÍ"o¦lengthÂÂY®CallExpressionÍ"zÍ"Q°MemberExpressionÍ"zÍ"™Y®CallExpressionÍ"zÍ"”Q°MemberExpressionÍ"zÍ"MªIdentifierÍ"zÍ"ˆ®skippedUnknownMªIdentifierÍ"‰Í"¥sliceÂÂ’U§LiteralÍ"Í" ¡0U§LiteralÍ"’Í"“¡3ÂMªIdentifierÍ"•Í"™¤joinÂÂ‘U§LiteralÍ"šÍ"¡,£','Â“`¯TemplateElementÍ"MÍ"Xa«unknownIds=«unknownIds=Â`¯TemplateElementÍ"pÍ"xa¨ sample=¨ sample=Â`¯TemplateElementÍ"ŸÍ"Ÿa  ÃÂÀW³VariableDeclarationÍ"¯Í"À‘X²VariableDeclaratorÍ"³Í"¿MªIdentifierÍ"³Í"»¨unlockedU§LiteralÍ"¾Í"¿ ¡0£let\®ForOfStatementÍ"ÆÍ#DÂW³VariableDeclarationÍ"ËÍ"Ó‘X²VariableDeclaratorÍ"ÑÍ"ÓMªIdentifierÍ"ÑÍ"Ó¢fpÀ¥constQ°MemberExpressionÍ"×Í"åMªIdentifierÍ"×Í"Ú£docMªIdentifierÍ"ÛÍ"åªfootprintsÂÂN®BlockStatementÍ"çÍ#D‘O«IfStatementÍ"òÍ#=V±LogicalExpressionÍ"öÍ#P¯UnaryExpressionÍ"öÍ# ¡!ÃQ°MemberExpressionÍ"÷Í# MªIdentifierÍ"÷Í"ù¢fpMªIdentifierÍ"úÍ# ¦lockedÂÂ¢&&P¯UnaryExpressionÍ#Í#¡!ÃY®CallExpressionÍ#Í#Q°MemberExpressionÍ#Í#MªIdentifierÍ#Í#¦lockedMªIdentifierÍ#Í#£hasÂÂ‘Q°MemberExpressionÍ#Í#MªIdentifierÍ#Í#¢fpMªIdentifierÍ#Í#¢idÂÂÂN®BlockStatementÍ#Í#=‘]³ExpressionStatementÍ#'Í#2P°UpdateExpressionÍ#'Í#1¢++ÂMªIdentifierÍ#'Í#/¨unlockedÀO«IfStatementÍ#JÍ%#V±LogicalExpressionÍ#NÍ#wV°BinaryExpressionÍ#NÍ#ZMªIdentifierÍ#NÍ#V¨unlocked¡>U§LiteralÍ#YÍ#Z ¡0¢&&V°BinaryExpressionÍ#^Í#wQ°MemberExpressionÍ#^Í#lMªIdentifierÍ#^Í#e§pendingMªIdentifierÍ#fÍ#l¦lengthÂÂ¡<MªIdentifierÍ#oÍ#w¨unlockedN®BlockStatementÍ#yÍ%#’W³VariableDeclarationÍ#„Í$c‘X²VariableDeclaratorÍ#ŠÍ$bMªIdentifierÍ#ŠÍ#‘§unkHintOµConditionalExpressionÍ#”Í$bV°BinaryExpressionÍ#”Í#­Q°MemberExpressionÍ#”Í#©MªIdentifierÍ#”Í#¢®skippedUnknownMªIdentifierÍ#£Í#©¦lengthÂÂ¡>U§LiteralÍ#¬Í#­ ¡0V°BinaryExpressionÍ#½Í$P_¯TemplateLiteralÍ#½Í#÷‘Y®CallExpressionÍ#ÑÍ#õQ°MemberExpressionÍ#ÑÍ#ğY®CallExpressionÍ#ÑÍ#ëQ°MemberExpressionÍ#ÑÍ#åMªIdentifierÍ#ÑÍ#ß®skippedUnknownMªIdentifierÍ#àÍ#å¥sliceÂÂ’U§LiteralÍ#æÍ#ç ¡0U§LiteralÍ#éÍ#ê¡5ÂMªIdentifierÍ#ìÍ#ğ¤joinÂÂ‘U§LiteralÍ#ñÍ#ô¡,£','Â’`¯TemplateElementÍ#¾Í#Ïa±; skippedUnknown=±; skippedUnknown=Â`¯TemplateElementÍ#öÍ#öa  Ã¡+_¯TemplateLiteralÍ$Í$P‘OµConditionalExpressionÍ$Í$2V°BinaryExpressionÍ$Í$'Q°MemberExpressionÍ$Í$#MªIdentifierÍ$Í$®skippedUnknownMªIdentifierÍ$Í$#¦lengthÂÂ¡>U§LiteralÍ$&Í$'¡5U§LiteralÍ$*Í$-£â€¦¥'â€¦'U§LiteralÍ$0Í$2 ¢''’`¯TemplateElementÍ$Í$a  Â`¯TemplateElementÍ$3Í$OaÙ8 â€” footprintId å¿…é¡»é€å­—å¤åˆ¶åˆ—è¡¨ï¼Œç¦æ­¢ç¼–é€ Ù8 â€” footprintId å¿…é¡»é€å­—å¤åˆ¶åˆ—è¡¨ï¼Œç¦æ­¢ç¼–é€ ÃU§LiteralÍ$`Í$b ¢''¥constR¯ReturnStatementÍ$mÍ%S°ObjectExpressionÍ$tÍ%“T¨PropertyÍ$ƒÍ$ŒÂÂÂMªIdentifierÍ$ƒÍ$…¢okU§LiteralÍ$‡Í$ŒÂ¥false¤initT¨PropertyÍ$Í$©ÂÂÂMªIdentifierÍ$Í$™«placedCountQ°MemberExpressionÍ$›Í$©MªIdentifierÍ$›Í$¢§pendingMªIdentifierÍ$£Í$©¦lengthÂÂ¤initT¨PropertyÍ$¸Í%ÂÂÂMªIdentifierÍ$¸Í$¾¦reason_¯TemplateLiteralÍ$ÀÍ%“Q°MemberExpressionÍ$ÖÍ$äMªIdentifierÍ$ÖÍ$İ§pendingMªIdentifierÍ$ŞÍ$ä¦lengthÂÂMªIdentifierÍ$èÍ$ğ¨unlockedMªIdentifierÍ%Í%§unkHint”`¯TemplateElementÍ$ÁÍ$Ôa³placement coverage ³placement coverage Â`¯TemplateElementÍ$åÍ$æa¡/¡/Â`¯TemplateElementÍ$ñÍ%a´ unlocked footprints´ unlocked footprintsÂ`¯TemplateElementÍ%Í%a  Ã¤initÀW³VariableDeclarationÍ%OÍ%w‘X²VariableDeclaratorÍ%UÍ%vMªIdentifierÍ%UÍ%Y¤gridV±LogicalExpressionÍ%\Í%vQ°MemberExpressionÍ%\Í%qQ°MemberExpressionÍ%\Í%hMªIdentifierÍ%\Í%_£docMªIdentifierÍ%`Í%h¨metadataÂÂMªIdentifierÍ%iÍ%q¨gridSizeÂÂ¢??U§LiteralÍ%uÍ%v¡5¥constW³VariableDeclarationÍ%}Í%‘X²VariableDeclaratorÍ%Í%MªIdentifierÍ%Í%‰¨echoableU§LiteralÍ%ŒÍ% ¡0£letW³VariableDeclarationÍ%”Í%£‘X²VariableDeclaratorÍ%˜Í%¢MªIdentifierÍ%˜Í%¦echoedU§LiteralÍ%¡Í%¢ ¡0£letb¬ForStatementÍ%©Í'RW³VariableDeclarationÍ%®Í%·‘X²VariableDeclaratorÍ%²Í%·MªIdentifierÍ%²Í%³¡iU§LiteralÍ%¶Í%· ¡0£letV°BinaryExpressionÍ%¹Í%ËMªIdentifierÍ%¹Í%º¡i¡<Q°MemberExpressionÍ%½Í%ËMªIdentifierÍ%½Í%Ä§pendingMªIdentifierÍ%ÅÍ%Ë¦lengthÂÂP°UpdateExpressionÍ%ÍÍ%Ğ¢++ÂMªIdentifierÍ%ÍÍ%Î¡iN®BlockStatementÍ%ÒÍ'R—W³VariableDeclarationÍ%İÍ%ò‘X²VariableDeclaratorÍ%ãÍ%ñMªIdentifierÍ%ãÍ%ä¡pQ°MemberExpressionÍ%çÍ%ñMªIdentifierÍ%çÍ%î§pendingMªIdentifierÍ%ïÍ%ğ¡iÃÂ¥constO«IfStatementÍ%üÍ&6Y®CallExpressionÍ& Í&MªIdentifierÍ& Í&«isMountHole‘Q°MemberExpressionÍ&Í&MªIdentifierÍ&Í&¡pMªIdentifierÍ&Í&¢fpÂÂÂN®BlockStatementÍ&Í&6‘^±ContinueStatementÍ&"Í&+ÀÀ]³ExpressionStatementÍ&@Í&KP°UpdateExpressionÍ&@Í&J¢++ÂMªIdentifierÍ&@Í&H¨echoableW³VariableDeclarationÍ&UÍ&€‘X²VariableDeclaratorÍ&[Í&MªIdentifierÍ&[Í&]¢dxY®CallExpressionÍ&`Í&Q°MemberExpressionÍ&`Í&hMªIdentifierÍ&`Í&d¤MathMªIdentifierÍ&eÍ&h£absÂÂ‘V°BinaryExpressionÍ&iÍ&~Q°MemberExpressionÍ&iÍ&lMªIdentifierÍ&iÍ&j¡pMªIdentifierÍ&kÍ&l¡xÂÂ¡-Q°MemberExpressionÍ&oÍ&~Q°MemberExpressionÍ&oÍ&|Q°MemberExpressionÍ&oÍ&sMªIdentifierÍ&oÍ&p¡pMªIdentifierÍ&qÍ&s¢fpÂÂMªIdentifierÍ&tÍ&|¨positionÂÂMªIdentifierÍ&}Í&~¡xÂÂÂ¥constW³VariableDeclarationÍ&ŠÍ&µ‘X²VariableDeclaratorÍ&Í&´MªIdentifierÍ&Í&’¢dyY®CallExpressionÍ&•Í&´Q°MemberExpressionÍ&•Í&MªIdentifierÍ&•Í&™¤MathMªIdentifierÍ&šÍ&£absÂÂ‘V°BinaryExpressionÍ&Í&³Q°MemberExpressionÍ&Í&¡MªIdentifierÍ&Í&Ÿ¡pMªIdentifierÍ& Í&¡¡yÂÂ¡-Q°MemberExpressionÍ&¤Í&³Q°MemberExpressionÍ&¤Í&±Q°MemberExpressionÍ&¤Í&¨MªIdentifierÍ&¤Í&¥¡pMªIdentifierÍ&¦Í&¨¢fpÂÂMªIdentifierÍ&©Í&±¨positionÂÂMªIdentifierÍ&²Í&³¡yÂÂÂ¥constW³VariableDeclarationÍ&¿Í&õ‘X²VariableDeclaratorÍ&ÅÍ&ôMªIdentifierÍ&ÅÍ&Ì§sameRotV°BinaryExpressionÍ&ÏÍ&ôY®CallExpressionÍ&ÏÍ&êMªIdentifierÍ&ÏÍ&Û¬snapRotation‘Q°MemberExpressionÍ&ÜÍ&éQ°MemberExpressionÍ&ÜÍ&àMªIdentifierÍ&ÜÍ&İ¡pMªIdentifierÍ&ŞÍ&à¢fpÂÂMªIdentifierÍ&áÍ&é¨rotationÂÂÂ£===Q°MemberExpressionÍ&ïÍ&ôMªIdentifierÍ&ïÍ&ğ¡pMªIdentifierÍ&ñÍ&ô£rotÂÂ¥constO«IfStatementÍ&ÿÍ'KV±LogicalExpressionÍ'Í'&V±LogicalExpressionÍ'Í'V°BinaryExpressionÍ'Í'MªIdentifierÍ'Í'¢dx¢<=MªIdentifierÍ'	Í'¤grid¢&&V°BinaryExpressionÍ'Í'MªIdentifierÍ'Í'¢dy¢<=MªIdentifierÍ'Í'¤grid¢&&MªIdentifierÍ'Í'&§sameRotN®BlockStatementÍ'(Í'K‘]³ExpressionStatementÍ'7Í'@P°UpdateExpressionÍ'7Í'?¢++ÂMªIdentifierÍ'7Í'=¦echoedÀO«IfStatementÍ'XÍ(TV±LogicalExpressionÍ'\Í'†V°BinaryExpressionÍ'\Í'iMªIdentifierÍ'\Í'd¨echoable¢>=U§LiteralÍ'hÍ'i¡3¢&&V°BinaryExpressionÍ'mÍ'†V°BinaryExpressionÍ'mÍ'~MªIdentifierÍ'mÍ's¦echoed¡/MªIdentifierÍ'vÍ'~¨echoable¢>=U§LiteralÍ'‚Í'†Ë?ë333333¤0.85N®BlockStatementÍ'ˆÍ(T‘R¯ReturnStatementÍ'“Í(MS°ObjectExpressionÍ'šÍ(L“T¨PropertyÍ'©Í'²ÂÂÂMªIdentifierÍ'©Í'«¢okU§LiteralÍ'­Í'²Â¥false¤initT¨PropertyÍ'´Í'ÂÂÂÂMªIdentifierÍ'´Í'¿«placedCountU§LiteralÍ'ÁÍ'Â ¡0¤initT¨PropertyÍ'ÑÍ(AÂÂÂMªIdentifierÍ'ÑÍ'×¦reason_¯TemplateLiteralÍ'ÙÍ(A’MªIdentifierÍ'ìÍ'ò¦echoedMªIdentifierÍ'÷Í'ÿ¨echoable“`¯TemplateElementÍ'ÚÍ'éa¯placement echo ¯placement echo Â`¯TemplateElementÍ'ôÍ'õa¡/¡/Â`¯TemplateElementÍ( Í(@aÙB â€” refuse copy of current poses; rearrange functional footprintsÙB â€” refuse copy of current poses; rearrange functional footprintsÃ¤initÀW³VariableDeclarationÍ(ZÍ(›‘X²VariableDeclaratorÍ(`Í(šMªIdentifierÍ(`Í(h¨groupErrY®CallExpressionÍ(kÍ(šMªIdentifierÍ(kÍ(y®validateGroups”MªIdentifierÍ(zÍ(~¤planMªIdentifierÍ(€Í(„¤byIdMªIdentifierÍ(†Í(‘«pendingByIdMªIdentifierÍ(“Í(™¦boundsÂ¥constO«IfStatementÍ(¡Í)V°BinaryExpressionÍ(¥Í(¸Q°MemberExpressionÍ(¥Í(´MªIdentifierÍ(¥Í(­¨groupErrMªIdentifierÍ(®Í(´¦lengthÂÂ¡>U§LiteralÍ(·Í(¸ ¡0N®BlockStatementÍ(ºÍ)‘R¯ReturnStatementÍ(ÅÍ(üS°ObjectExpressionÍ(ÌÍ(û“T¨PropertyÍ(ÎÍ(×ÂÂÂMªIdentifierÍ(ÎÍ(Ğ¢okU§LiteralÍ(ÒÍ(×Â¥false¤initT¨PropertyÍ(ÙÍ(çÂÂÂMªIdentifierÍ(ÙÍ(ä«placedCountU§LiteralÍ(æÍ(ç ¡0¤initT¨PropertyÍ(éÍ(ùÂÂÂMªIdentifierÍ(éÍ(ï¦reasonMªIdentifierÍ(ñÍ(ù¨groupErr¤initÀO«IfStatementÍ)	Í)vV°BinaryExpressionÍ)Í)+V±LogicalExpressionÍ)Í)&]¯ChainExpressionÍ)Í)!Q°MemberExpressionÍ)Í)!Q°MemberExpressionÍ)Í)MªIdentifierÍ)Í)¤planMªIdentifierÍ)Í)¦groupsÂÂMªIdentifierÍ)Í)!¦lengthÂÃ¢??U§LiteralÍ)%Í)& ¡0¡>U§LiteralÍ)*Í)+ ¡0N®BlockStatementÍ)-Í)v‘]³ExpressionStatementÍ)8Í)oY®CallExpressionÍ)8Í)nMªIdentifierÍ)8Í)@¨tracePcb’U§LiteralÍ)AÍ)R¯AI_PLACE_GROUPS±'AI_PLACE_GROUPS'_¯TemplateLiteralÍ)TÍ)m‘Q°MemberExpressionÍ)YÍ)kQ°MemberExpressionÍ)YÍ)dMªIdentifierÍ)YÍ)]¤planMªIdentifierÍ)^Í)d¦groupsÂÂMªIdentifierÍ)eÍ)k¦lengthÂÂ’`¯TemplateElementÍ)UÍ)Wa¢n=¢n=Â`¯TemplateElementÍ)lÍ)la  ÃÂÀW³VariableDeclarationÍ)|Í)£‘X²VariableDeclaratorÍ)‚Í)¢MªIdentifierÍ)‚Í)‰§minDistY®CallExpressionÍ)ŒÍ)¢Q°MemberExpressionÍ)ŒÍ)”MªIdentifierÍ)ŒÍ)¤MathMªIdentifierÍ)‘Í)”£maxÂÂ’V°BinaryExpressionÍ)•Í)MªIdentifierÍ)•Í)™¤grid¡*U§LiteralÍ)œÍ)¡8U§LiteralÍ)ŸÍ)¡(¢40Â¥constb¬ForStatementÍ)©Í+ W³VariableDeclarationÍ)®Í)·‘X²VariableDeclaratorÍ)²Í)·MªIdentifierÍ)²Í)³¡iU§LiteralÍ)¶Í)· ¡0£letV°BinaryExpressionÍ)¹Í)ËMªIdentifierÍ)¹Í)º¡i¡<Q°MemberExpressionÍ)½Í)ËMªIdentifierÍ)½Í)Ä§pendingMªIdentifierÍ)ÅÍ)Ë¦lengthÂÂP°UpdateExpressionÍ)ÍÍ)Ğ¢++ÂMªIdentifierÍ)ÍÍ)Î¡iN®BlockStatementÍ)ÒÍ+ ‘b¬ForStatementÍ)İÍ+™W³VariableDeclarationÍ)âÍ)ï‘X²VariableDeclaratorÍ)æÍ)ïMªIdentifierÍ)æÍ)ç¡jV°BinaryExpressionÍ)êÍ)ïMªIdentifierÍ)êÍ)ë¡i¡+U§LiteralÍ)îÍ)ï¡1£letV°BinaryExpressionÍ)ñÍ*MªIdentifierÍ)ñÍ)ò¡j¡<Q°MemberExpressionÍ)õÍ*MªIdentifierÍ)õÍ)ü§pendingMªIdentifierÍ)ıÍ*¦lengthÂÂP°UpdateExpressionÍ*Í*¢++ÂMªIdentifierÍ*Í*¡jN®BlockStatementÍ*
+Í+™“W³VariableDeclarationÍ*Í*H‘X²VariableDeclaratorÍ*Í*GMªIdentifierÍ*Í* ¡aS°ObjectExpressionÍ*#Í*G’T¨PropertyÍ*%Í*4ÂÂÂMªIdentifierÍ*%Í*&¡xQ°MemberExpressionÍ*(Í*4Q°MemberExpressionÍ*(Í*2MªIdentifierÍ*(Í*/§pendingMªIdentifierÍ*0Í*1¡iÃÂMªIdentifierÍ*3Í*4¡xÂÂ¤initT¨PropertyÍ*6Í*EÂÂÂMªIdentifierÍ*6Í*7¡yQ°MemberExpressionÍ*9Í*EQ°MemberExpressionÍ*9Í*CMªIdentifierÍ*9Í*@§pendingMªIdentifierÍ*AÍ*B¡iÃÂMªIdentifierÍ*DÍ*E¡yÂÂ¤init¥constW³VariableDeclarationÍ*VÍ*…‘X²VariableDeclaratorÍ*\Í*„MªIdentifierÍ*\Í*]¡bS°ObjectExpressionÍ*`Í*„’T¨PropertyÍ*bÍ*qÂÂÂMªIdentifierÍ*bÍ*c¡xQ°MemberExpressionÍ*eÍ*qQ°MemberExpressionÍ*eÍ*oMªIdentifierÍ*eÍ*l§pendingMªIdentifierÍ*mÍ*n¡jÃÂMªIdentifierÍ*pÍ*q¡xÂÂ¤initT¨PropertyÍ*sÍ*‚ÂÂÂMªIdentifierÍ*sÍ*t¡yQ°MemberExpressionÍ*vÍ*‚Q°MemberExpressionÍ*vÍ*€MªIdentifierÍ*vÍ*}§pendingMªIdentifierÍ*~Í*¡jÃÂMªIdentifierÍ*Í*‚¡yÂÂ¤init¥constO«IfStatementÍ*“Í+Y®CallExpressionÍ*—Í*µMªIdentifierÍ*—Í*¦¯centersTooClose“MªIdentifierÍ*§Í*¨¡aMªIdentifierÍ*ªÍ*«¡bMªIdentifierÍ*­Í*´§minDistÂN®BlockStatementÍ*·Í+‘R¯ReturnStatementÍ*ÊÍ+S°ObjectExpressionÍ*ÑÍ+~“T¨PropertyÍ*èÍ*ñÂÂÂMªIdentifierÍ*èÍ*ê¢okU§LiteralÍ*ìÍ*ñÂ¥false¤initT¨PropertyÍ*óÍ+ÂÂÂMªIdentifierÍ*óÍ*ş«placedCountU§LiteralÍ+ Í+ ¡0¤initT¨PropertyÍ+Í+kÂÂÂMªIdentifierÍ+Í+¦reason_¯TemplateLiteralÍ+ Í+k’Q°MemberExpressionÍ+;Í+OQ°MemberExpressionÍ+;Í+HQ°MemberExpressionÍ+;Í+EMªIdentifierÍ+;Í+B§pendingMªIdentifierÍ+CÍ+D¡iÃÂMªIdentifierÍ+FÍ+H¢fpÂÂMªIdentifierÍ+IÍ+O¦refDesÂÂQ°MemberExpressionÍ+UÍ+iQ°MemberExpressionÍ+UÍ+bQ°MemberExpressionÍ+UÍ+_MªIdentifierÍ+UÍ+\§pendingMªIdentifierÍ+]Í+^¡jÃÂMªIdentifierÍ+`Í+b¢fpÂÂMªIdentifierÍ+cÍ+i¦refDesÂÂ“`¯TemplateElementÍ+!Í+9a¸LLM placements overlap: ¸LLM placements overlap: Â`¯TemplateElementÍ+PÍ+Sa£ / £ / Â`¯TemplateElementÍ+jÍ+ja  Ã¤initÀW³VariableDeclarationÍ+¦Í+Å‘X²VariableDeclaratorÍ+¬Í+ÄMªIdentifierÍ+¬Í+¸¬oldPositionsZ­NewExpressionÍ+»Í+ÄMªIdentifierÍ+¿Í+Â£Map¥constW³VariableDeclarationÍ+ËÍ+æ‘X²VariableDeclaratorÍ+ÑÍ+åMªIdentifierÍ+ÑÍ+Ù¨movedIdsZ­NewExpressionÍ+ÜÍ+åMªIdentifierÍ+àÍ+ã£Set¥constb¬ForStatementÍ+ìÍ-ÅW³VariableDeclarationÍ+ñÍ+ú‘X²VariableDeclaratorÍ+õÍ+úMªIdentifierÍ+õÍ+ö¡iU§LiteralÍ+ùÍ+ú ¡0£letV°BinaryExpressionÍ+üÍ,MªIdentifierÍ+üÍ+ı¡i¡<Q°MemberExpressionÍ, Í,MªIdentifierÍ, Í,§pendingMªIdentifierÍ,Í,¦lengthÂÂP°UpdateExpressionÍ,Í,¢++ÂMªIdentifierÍ,Í,¡iN®BlockStatementÍ,Í-Å˜W³VariableDeclarationÍ, Í,5‘X²VariableDeclaratorÍ,&Í,4MªIdentifierÍ,&Í,'¡pQ°MemberExpressionÍ,*Í,4MªIdentifierÍ,*Í,1§pendingMªIdentifierÍ,2Í,3¡iÃÂ¥constW³VariableDeclarationÍ,?Í,q‘X²VariableDeclaratorÍ,EÍ,pMªIdentifierÍ,EÍ,K¦beforeY®CallExpressionÍ,NÍ,pMªIdentifierÍ,NÍ,j¼collectFootprintPadPositions‘Q°MemberExpressionÍ,kÍ,oMªIdentifierÍ,kÍ,l¡pMªIdentifierÍ,mÍ,o¢fpÂÂÂ¥const]³ExpressionStatementÍ,{Í,âY®CallExpressionÍ,{Í,áQ°MemberExpressionÍ,{Í,‰MªIdentifierÍ,{Í,¦beforeMªIdentifierÍ,‚Í,‰§forEachÂÂ‘L·ArrowFunctionExpressionÍ,ŠÍ,àÀÂÂÂ’MªIdentifierÍ,‹Í,£posMªIdentifierÍ,Í,“£keyN®BlockStatementÍ,˜Í,à‘]³ExpressionStatementÍ,§Í,ÕY®CallExpressionÍ,§Í,ÔQ°MemberExpressionÍ,§Í,·MªIdentifierÍ,§Í,³¬oldPositionsMªIdentifierÍ,´Í,·£setÂÂ’MªIdentifierÍ,¸Í,»£keyS°ObjectExpressionÍ,½Í,Ó’T¨PropertyÍ,¿Í,ÇÂÂÂMªIdentifierÍ,¿Í,À¡xQ°MemberExpressionÍ,ÂÍ,ÇMªIdentifierÍ,ÂÍ,Å£posMªIdentifierÍ,ÆÍ,Ç¡xÂÂ¤initT¨PropertyÍ,ÉÍ,ÑÂÂÂMªIdentifierÍ,ÉÍ,Ê¡yQ°MemberExpressionÍ,ÌÍ,ÑMªIdentifierÍ,ÌÍ,Ï£posMªIdentifierÍ,ĞÍ,Ñ¡yÂÂ¤initÂÂ]³ExpressionStatementÍ,ìÍ-Ôrc–¤type¥start£end¨operator¤left¥right´AssignmentExpressionÍ,ìÍ-¡=Q°MemberExpressionÍ,ìÍ,ùQ°MemberExpressionÍ,ìÍ,ğMªIdentifierÍ,ìÍ,í¡pMªIdentifierÍ,îÍ,ğ¢fpÂÂMªIdentifierÍ,ñÍ,ù¨positionÂÂS°ObjectExpressionÍ,üÍ-’T¨PropertyÍ,şÍ-ÂÂÂMªIdentifierÍ,şÍ,ÿ¡xQ°MemberExpressionÍ-Í-MªIdentifierÍ-Í-¡pMªIdentifierÍ-Í-¡xÂÂ¤initT¨PropertyÍ-Í-ÂÂÂMªIdentifierÍ-Í-¡yQ°MemberExpressionÍ-	Í-MªIdentifierÍ-	Í-
+¡pMªIdentifierÍ-Í-¡yÂÂ¤init]³ExpressionStatementÍ-Í-/c´AssignmentExpressionÍ-Í-.¡=Q°MemberExpressionÍ-Í-&Q°MemberExpressionÍ-Í-MªIdentifierÍ-Í-¡pMªIdentifierÍ-Í-¢fpÂÂMªIdentifierÍ-Í-&¨rotationÂÂQ°MemberExpressionÍ-)Í-.MªIdentifierÍ-)Í-*¡pMªIdentifierÍ-+Í-.£rotÂÂ]³ExpressionStatementÍ-9Í-Oc´AssignmentExpressionÍ-9Í-N¡=Q°MemberExpressionÍ-9Í-FQ°MemberExpressionÍ-9Í-=MªIdentifierÍ-9Í-:¡pMªIdentifierÍ-;Í-=¢fpÂÂMªIdentifierÍ->Í-F¨mirroredÂÂQ°MemberExpressionÍ-IÍ-NMªIdentifierÍ-IÍ-J¡pMªIdentifierÍ-KÍ-N£mirÂÂ]³ExpressionStatementÍ-YÍ-oY®CallExpressionÍ-YÍ-nQ°MemberExpressionÍ-YÍ-eMªIdentifierÍ-YÍ-a¨movedIdsMªIdentifierÍ-bÍ-e£addÂÂ‘Q°MemberExpressionÍ-fÍ-mQ°MemberExpressionÍ-fÍ-jMªIdentifierÍ-fÍ-g¡pMªIdentifierÍ-hÍ-j¢fpÂÂMªIdentifierÍ-kÍ-m¢idÂÂÂ]³ExpressionStatementÍ-yÍ-¾Y®CallExpressionÍ-yÍ-½MªIdentifierÍ-yÍ-¨tracePcb’U§LiteralÍ-‚Í-Œ¨AI_PLACEª'AI_PLACE'_¯TemplateLiteralÍ-Í-¼”Q°MemberExpressionÍ-‘Í-œQ°MemberExpressionÍ-‘Í-•MªIdentifierÍ-‘Í-’¡pMªIdentifierÍ-“Í-•¢fpÂÂMªIdentifierÍ-–Í-œ¦refDesÂÂQ°MemberExpressionÍ-¤Í-§MªIdentifierÍ-¤Í-¥¡pMªIdentifierÍ-¦Í-§¡xÂÂQ°MemberExpressionÍ-«Í-®MªIdentifierÍ-«Í-¬¡pMªIdentifierÍ-­Í-®¡yÂÂQ°MemberExpressionÍ-µÍ-ºMªIdentifierÍ-µÍ-¶¡pMªIdentifierÍ-·Í-º£rotÂÂ•`¯TemplateElementÍ-Í-a  Â`¯TemplateElementÍ-Í-¢a¥ -> (¥ -> (Â`¯TemplateElementÍ-¨Í-©a¡,¡,Â`¯TemplateElementÍ-¯Í-³a¤) r=¤) r=Â`¯TemplateElementÍ-»Í-»a  ÃÂO«IfStatementÍ-ËÍ.3V°BinaryExpressionÍ-ÏÍ-àQ°MemberExpressionÍ-ÏÍ-ÜMªIdentifierÍ-ÏÍ-×¨movedIdsMªIdentifierÍ-ØÍ-Ü¤sizeÂÂ¡>U§LiteralÍ-ßÍ-à ¡0N®BlockStatementÍ-âÍ.3‘]³ExpressionStatementÍ-íÍ.,Y®CallExpressionÍ-íÍ.+MªIdentifierÍ-íÍ.Ù!updateTracksForFootprintTransform“MªIdentifierÍ.Í.£docMªIdentifierÍ.Í.¨movedIdsMªIdentifierÍ.Í.*¬oldPositionsÂÀ]³ExpressionStatementÍ.XÍ.|c´AssignmentExpressionÍ.XÍ.{¡=Q°MemberExpressionÍ.XÍ.fMªIdentifierÍ.XÍ.\¤planMªIdentifierÍ.]Í.f©lockedIdsÂÂY®CallExpressionÍ.iÍ.{Q°MemberExpressionÍ.iÍ.sMªIdentifierÍ.iÍ.n¥ArrayMªIdentifierÍ.oÍ.s¤fromÂÂ‘MªIdentifierÍ.tÍ.z¦lockedÂR¯ReturnStatementÍ.‚Í.ÁS°ObjectExpressionÍ.‰Í.À“T¨PropertyÍ.‹Í.“ÂÂÂMªIdentifierÍ.‹Í.¢okU§LiteralÍ.Í.“Ã¤true¤initT¨PropertyÍ.•Í.°ÂÂÂMªIdentifierÍ.•Í. «placedCountQ°MemberExpressionÍ.¢Í.°MªIdentifierÍ.¢Í.©§pendingMªIdentifierÍ.ªÍ.°¦lengthÂÂ¤initT¨PropertyÍ.²Í.¾ÂÂÂMªIdentifierÍ.²Í.¸¦reasonU§LiteralÍ.ºÍ.¾¢ok¤'ok'¤initÀ’Ôrd•¤type¥start£endªspecifiers¦source±ImportDeclaration Ìf’Ôre•¤type¥start£end¨imported¥local¯ImportSpecifier	%MªIdentifier	%¼collectFootprintPadPositionsMªIdentifier	%¼collectFootprintPadPositionse¯ImportSpecifier'ÌHMªIdentifier'ÌHÙ!updateTracksForFootprintTransformMªIdentifier'ÌHÙ!updateTracksForFootprintTransformU§LiteralÌPÌe³../PcbTrackBindUtilµ'../PcbTrackBindUtil'd±ImportDeclarationÌhÌ’‘e¯ImportSpecifierÌqÌyMªIdentifierÌqÌy¨tracePcbMªIdentifierÌqÌy¨tracePcbU§LiteralÌÌ‘®../PcbTraceLog°'../PcbTraceLog'

@@ -15,6 +15,7 @@ export interface AiApiConfigUpdate {
     proxyUrl?: string;
     customHeaders?: Record<string, string>;
     capabilityBinding?: Record<string, string>;
+    stream?: boolean;
     remark?: string;
     lastStatus?: ApiConnectionStatus;
     lastTestedAt?: string;
@@ -46,6 +47,20 @@ export interface ChatRequestBody {
     max_tokens: number;
     temperature?: number;
     thinking?: ThinkingParam;
+    /** Qwen 系（DashScope 兼容端点）：OpenAI 兼容参数，等价 thinking disabled */
+    enable_thinking?: boolean;
+    /** SSE 流式：长生成持续回包，绕开网关非流式响应上限与代理空闲掐断 */
+    stream?: boolean;
+}
+/** SSE 流式 chunk（OpenAI 兼容：choices[0].delta.content 逐片累积） */
+export interface ChatCompletionStreamChunk {
+    choices?: ChatCompletionStreamChoice[];
+    error?: Record<string, Object> | null;
+}
+export interface ChatCompletionStreamChoice {
+    delta?: ChatCompletionMessage;
+    message?: ChatCompletionMessage;
+    finish_reason?: string;
 }
 /** Anthropic /messages 响应片段 */
 export interface AnthropicContentBlock {
@@ -56,23 +71,105 @@ export interface AnthropicMessagesResponse {
     content?: AnthropicContentBlock[];
     stop_reason?: string;
 }
-export function buildChatRequestBody(model: string, messages: ChatRequestMessage[], maxTokens: number, temperature: number, disableThinking?: boolean): ChatRequestBody {
+export function buildChatRequestBody(model: string, messages: ChatRequestMessage[], maxTokens: number, temperature: number, disableThinking?: boolean, provider?: string, stream?: boolean): ChatRequestBody {
     const body: ChatRequestBody = {
         model: model,
         messages: messages,
         max_tokens: maxTokens,
         temperature: temperature
     };
-    // DeepSeek V4 等：显式 enabled/disabled；未传则不带 thinking 字段（兼容旧模型）
+    // Qwen 系（agnes/DashScope 兼容端点）忽略 thinking 对象，只认 enable_thinking；
+    // 否则 thinking 会继续吃光 max_tokens → finish_reason=length 空 content。
+    const isQwen = provider === AiProviderType.QWEN;
     if (disableThinking === true) {
-        const thinking: ThinkingParam = { type: 'disabled' };
-        body.thinking = thinking;
+        if (isQwen) {
+            body.enable_thinking = false;
+        }
+        else {
+            const thinking: ThinkingParam = { type: 'disabled' };
+            body.thinking = thinking;
+        }
     }
-    else if (disableThinking === false) {
+    else if (disableThinking === false && !isQwen) {
         const thinkingOn: ThinkingParam = { type: 'enabled' };
         body.thinking = thinkingOn;
     }
+    if (stream === true) {
+        body.stream = true;
+    }
     return body;
+}
+/**
+ * 解析 OpenAI 兼容 SSE 流式正文：累积 data: 行中 delta.content。
+ * 返回 null = 不是合法 SSE（网关可能不支持 stream，返回了普通 JSON/错误）。
+ * content 为空时尝试从 reasoning 通道恢复（模型常在推理末尾写出完整答案 JSON）。
+ */
+export function parseSseContent(raw: string): string | null {
+    const lines = raw.split('\n');
+    let out = '';
+    let reasoning = '';
+    let sawData = false;
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i].trim();
+        if (line.length === 0) {
+            continue;
+        }
+        if (line.charAt(0) === ':' || line.charAt(0) === '#') {
+            continue; // SSE 注释行
+        }
+        if (line.indexOf('data:') !== 0) {
+            continue; // event:/id:/retry: 等忽略
+        }
+        const payload = line.substring(5).trim();
+        if (payload === '[DONE]') {
+            break;
+        }
+        sawData = true;
+        let chunk: ChatCompletionStreamChunk | null = null;
+        try {
+            chunk = JSON.parse(payload) as ChatCompletionStreamChunk;
+        }
+        catch (_e) {
+            continue; // 分片可能被网关拆行，忽略残缺 JSON
+        }
+        if (chunk === null || typeof chunk !== 'object') {
+            continue;
+        }
+        if (chunk.error !== undefined && chunk.error !== null) {
+            continue; // data: {"error":...} —— 正文累积保持为空，走空内容失败路径
+        }
+        const choices = chunk.choices;
+        if (!choices || choices.length === 0) {
+            continue;
+        }
+        const delta = choices[0].delta;
+        if (!delta) {
+            continue;
+        }
+        const c = delta.content ?? '';
+        if (c.length > 0) {
+            out += c;
+        }
+        const rc = delta.reasoning_content ?? '';
+        if (rc.length > 0) {
+            reasoning += rc;
+        }
+    }
+    if (!sawData) {
+        return null;
+    }
+    if (out.length > 0) {
+        return out;
+    }
+    // 正文为空但推理非空：推理常被 finish_reason=length 截断，
+    // 但模型常在推理末尾写出完整答案 —— 隔离最后一个完整 JSON 恢复
+    if (reasoning.length > 0) {
+        const fromReason = isolateJsonFromText(reasoning);
+        if (fromReason !== null && fromReason.length > 0) {
+            return fromReason;
+        }
+    }
+    return '';
 }
 /** Claude Messages API：与 OpenAI Chat Completions 字段相近，但勿带 thinking，且需 anthropic-version 头 */
 export function buildAnthropicMessagesBody(model: string, messages: ChatRequestMessage[], maxTokens: number, temperature: number): ChatRequestBody {
@@ -106,6 +203,17 @@ export function extractChoiceContent(choice: ChatCompletionChoice): string {
     if (content.length > 0) {
         content = stripInlineThinkTags(content).trim();
         if (content.length > 0) {
+            // 短前言 + JSON：隔离出对象，避免英文推理污染下游 parser
+            if (content.charAt(0) === '{') {
+                return content;
+            }
+            const fromContent = isolateJsonFromText(content);
+            if (fromContent !== null) {
+                const pre = content.indexOf('{');
+                if (pre >= 0 && pre <= 200) {
+                    return fromContent;
+                }
+            }
             return content;
         }
     }
@@ -113,7 +221,10 @@ export function extractChoiceContent(choice: ChatCompletionChoice): string {
     if (reasoning.length > 0) {
         const fromReason = isolateJsonFromText(reasoning);
         if (fromReason !== null) {
-            return fromReason;
+            const pre = reasoning.indexOf('{');
+            if (pre < 0 || pre <= 200) {
+                return fromReason;
+            }
         }
         if (reasoning.charAt(0) === '{' && reasoning.charAt(reasoning.length - 1) === '}') {
             return reasoning;
@@ -210,6 +321,7 @@ export function maskApiConfig(api: AiApiConfig): AiApiConfig {
         proxyUrl: api.proxyUrl,
         customHeaders: api.customHeaders,
         capabilityBinding: api.capabilityBinding,
+        stream: api.stream,
         remark: api.remark,
         lastStatus: api.lastStatus,
         lastTestedAt: api.lastTestedAt,
@@ -234,6 +346,7 @@ export function cloneAiApiConfig(source: AiApiConfig): AiApiConfig {
         proxyUrl: source.proxyUrl,
         customHeaders: source.customHeaders,
         capabilityBinding: source.capabilityBinding,
+        stream: source.stream,
         remark: source.remark,
         lastStatus: source.lastStatus,
         lastTestedAt: source.lastTestedAt,
@@ -273,6 +386,7 @@ export function mergeAiApiConfig(existing: AiApiConfig, updates: AiApiConfigUpda
         proxyUrl: updates.proxyUrl !== undefined ? updates.proxyUrl : existing.proxyUrl,
         customHeaders: updates.customHeaders !== undefined ? updates.customHeaders : existing.customHeaders,
         capabilityBinding: updates.capabilityBinding !== undefined ? updates.capabilityBinding : existing.capabilityBinding,
+        stream: updates.stream !== undefined ? updates.stream : existing.stream,
         remark: updates.remark !== undefined ? updates.remark : existing.remark,
         lastStatus: updates.lastStatus !== undefined ? updates.lastStatus : existing.lastStatus,
         lastTestedAt: updates.lastTestedAt !== undefined ? updates.lastTestedAt : existing.lastTestedAt,

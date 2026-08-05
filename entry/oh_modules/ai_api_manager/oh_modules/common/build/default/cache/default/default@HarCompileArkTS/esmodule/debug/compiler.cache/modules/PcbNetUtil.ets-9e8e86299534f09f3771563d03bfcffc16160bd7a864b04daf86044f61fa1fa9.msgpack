@@ -1,1164 +1,0 @@
-Ôr@Ÿªassertions¤code´customTransformCache¬dependencies¢id¤meta±moduleSideEffects¬originalCode±originalSourcemap«resolvedIds®sourcemapChainµsyntheticNamedExportsµtransformDependencies®transformFiles¨cacheAstÔrAÚ.import { padWorldPosition, pointInPolygon } from './PcbZoneUtil';
-export function guessNetClassId(netName, classes) {
-    const upper = (netName ?? '').toUpperCase();
-    let powerId = 'nc_power';
-    let signalId = 'nc_signal';
-    let defaultId = 'nc_default';
-    for (const c of classes) {
-        if (c.name === 'Power')
-            powerId = c.id;
-        if (c.name === 'Signal')
-            signalId = c.id;
-        if (c.name === 'Default')
-            defaultId = c.id;
-    }
-    if (upper === 'GND' || upper === 'VSS' || upper === 'AGND' ||
-        upper === 'VOUT' || upper === 'REG_IN' || upper === 'VIN_SRC' ||
-        upper.indexOf('VCC') >= 0 || upper.indexOf('VDD') >= 0 ||
-        upper.indexOf('3V3') >= 0 || upper.indexOf('5V') >= 0 ||
-        upper.indexOf('VIN') >= 0 || upper.indexOf('VBAT') >= 0 ||
-        upper.indexOf('VOUT') >= 0) {
-        return powerId;
-    }
-    if (upper.length > 0) {
-        return signalId;
-    }
-    return defaultId;
-}
-export function findNetClass(doc, classId) {
-    if (classId) {
-        for (const c of doc.netClasses) {
-            if (c.id === classId)
-                return c;
-        }
-    }
-    for (const c of doc.netClasses) {
-        if (c.name === 'Default')
-            return c;
-    }
-    return doc.netClasses[0];
-}
-/** ä»ç„Šç›˜/èµ°çº¿/è¿‡å­”é‡å»º nets[] */
-export function rebuildPcbNets(doc) {
-    const map = new Map();
-    const add = (netId, netName) => {
-        if (!netId || netId.length === 0)
-            return;
-        if (map.has(netId))
-            return;
-        const name = netName && netName.length > 0 ? netName : netId;
-        map.set(netId, {
-            id: netId,
-            name,
-            classId: guessNetClassId(name, doc.netClasses)
-        });
-    };
-    for (const fp of doc.footprints) {
-        for (const pad of fp.pads) {
-            add(pad.netId, pad.netName);
-        }
-    }
-    for (const trk of doc.tracks) {
-        add(trk.netId, trk.netName);
-    }
-    for (const via of doc.vias) {
-        add(via.netId, via.netName);
-    }
-    for (const z of doc.zones) {
-        add(z.netId, z.netName);
-    }
-    const nets = [];
-    map.forEach((v) => {
-        nets.push(v);
-    });
-    nets.sort((a, b) => a.name.localeCompare(b.name));
-    doc.nets = nets;
-}
-/** æœªè¿æ¥ç„Šç›˜å¯¹é£çº¿ï¼ˆåŒç½‘æœ€å°ç”Ÿæˆæ ‘è¾¹ï¼Œè¿‡æ»¤å·²æœ‰é“œè¿é€šï¼‰ */
-export function buildRatsnest(doc) {
-    const nodesByNet = new Map();
-    for (const fp of doc.footprints) {
-        for (const pad of fp.pads) {
-            if (!pad.netId || pad.netId.length === 0)
-                continue;
-            const pos = padWorldPosition(fp, pad);
-            const list = nodesByNet.get(pad.netId) ?? [];
-            list.push({
-                key: `${fp.id}:${pad.number}`,
-                netId: pad.netId,
-                netName: pad.netName ?? pad.netId,
-                pos
-            });
-            nodesByNet.set(pad.netId, list);
-        }
-    }
-    const edges = [];
-    nodesByNet.forEach((nodes, netId) => {
-        if (nodes.length < 2)
-            return;
-        if (isNetFullyConnected(doc, netId, nodes))
-            return;
-        // Prim MST on pads
-        const used = [];
-        for (let i = 0; i < nodes.length; i++)
-            used.push(false);
-        used[0] = true;
-        let usedCount = 1;
-        while (usedCount < nodes.length) {
-            let bestI = -1;
-            let bestJ = -1;
-            let bestD = Infinity;
-            for (let i = 0; i < nodes.length; i++) {
-                if (!used[i])
-                    continue;
-                for (let j = 0; j < nodes.length; j++) {
-                    if (used[j])
-                        continue;
-                    const dx = nodes[i].pos.x - nodes[j].pos.x;
-                    const dy = nodes[i].pos.y - nodes[j].pos.y;
-                    const d = dx * dx + dy * dy;
-                    if (d < bestD) {
-                        bestD = d;
-                        bestI = i;
-                        bestJ = j;
-                    }
-                }
-            }
-            if (bestJ < 0)
-                break;
-            used[bestJ] = true;
-            usedCount++;
-            if (!padsCopperConnected(doc, netId, nodes[bestI].pos, nodes[bestJ].pos)) {
-                edges.push({
-                    netId,
-                    netName: nodes[bestI].netName,
-                    a: { x: nodes[bestI].pos.x, y: nodes[bestI].pos.y },
-                    b: { x: nodes[bestJ].pos.x, y: nodes[bestJ].pos.y }
-                });
-            }
-        }
-    });
-    return edges;
-}
-function isNetFullyConnected(doc, netId, nodes) {
-    if (nodes.length < 2)
-        return true;
-    for (let i = 1; i < nodes.length; i++) {
-        if (!padsCopperConnected(doc, netId, nodes[0].pos, nodes[i].pos)) {
-            return false;
-        }
-    }
-    return true;
-}
-/** ç®€åŒ–è¿é€šï¼šåŒç½‘é“œçš®å›¾å…ƒç«¯ç‚¹ç½‘æ ¼å¹¶æŸ¥é›†ï¼ˆå« Zone è¦†é“œï¼‰ */
-function padsCopperConnected(doc, netId, a, b) {
-    const tol = 15;
-    const keyOf = (p) => `${Math.round(p.x / tol)}_${Math.round(p.y / tol)}`;
-    const parent = new Map();
-    const find = (k) => {
-        let p = parent.get(k) ?? k;
-        if (!parent.has(k))
-            parent.set(k, k);
-        while (p !== (parent.get(p) ?? p)) {
-            const pp = parent.get(p) ?? p;
-            parent.set(p, parent.get(pp) ?? pp);
-            p = parent.get(p) ?? p;
-        }
-        return p;
-    };
-    const union = (x, y) => {
-        const rx = find(x);
-        const ry = find(y);
-        if (rx !== ry)
-            parent.set(rx, ry);
-    };
-    const touch = (p) => {
-        const k = keyOf(p);
-        if (!parent.has(k))
-            parent.set(k, k);
-    };
-    for (const trk of doc.tracks) {
-        if (trk.netId !== netId)
-            continue;
-        touch(trk.start);
-        touch(trk.end);
-        union(keyOf(trk.start), keyOf(trk.end));
-    }
-    for (const via of doc.vias) {
-        if (via.netId !== netId)
-            continue;
-        touch(via.position);
-    }
-    for (const fp of doc.footprints) {
-        for (const pad of fp.pads) {
-            if (pad.netId !== netId)
-                continue;
-            touch(padWorldPosition(fp, pad));
-        }
-    }
-    // Zone è¦†é“œï¼šè½®å»“é¡¶ç‚¹ + è½åœ¨é“ºé“œå†…ä¸”å±‚å…¼å®¹çš„åŒç½‘ç„Šç›˜/è¿‡å­”ï¼ˆçƒ­ç„Šç›˜ä»è§†ä¸ºè¿é€šï¼‰
-    for (let zi = 0; zi < doc.zones.length; zi++) {
-        const z = doc.zones[zi];
-        if (z.netId !== netId || z.outline.length < 3)
-            continue;
-        const hub = `__zone_${zi}`;
-        if (!parent.has(hub))
-            parent.set(hub, hub);
-        for (let i = 0; i < z.outline.length; i++) {
-            const p = z.outline[i];
-            touch(p);
-            union(keyOf(p), hub);
-            if (i > 0)
-                union(keyOf(z.outline[i - 1]), keyOf(p));
-        }
-        union(keyOf(z.outline[z.outline.length - 1]), keyOf(z.outline[0]));
-        for (const fp of doc.footprints) {
-            for (const pad of fp.pads) {
-                if (pad.netId !== netId)
-                    continue;
-                if (!padTouchesZoneLayer(pad.layers, pad.type, z.layer))
-                    continue;
-                const wp = padWorldPosition(fp, pad);
-                if (!pointInPolygon(wp, z.outline))
-                    continue;
-                touch(wp);
-                union(keyOf(wp), hub);
-            }
-        }
-        for (const via of doc.vias) {
-            if (via.netId !== netId)
-                continue;
-            if (!pointInPolygon(via.position, z.outline))
-                continue;
-            touch(via.position);
-            union(keyOf(via.position), hub);
-        }
-    }
-    // è¿‘é‚»å¹¶æŸ¥ï¼ˆç„Šç›˜/è¿‡å­”ä¸èµ°çº¿ç«¯ç‚¹ã€Zone é¡¶ç‚¹ï¼‰
-    const keys = [];
-    parent.forEach((_v, k) => {
-        keys.push(k);
-    });
-    for (let i = 0; i < keys.length; i++) {
-        for (let j = i + 1; j < keys.length; j++) {
-            if (keys[i].startsWith('__zone_') || keys[j].startsWith('__zone_'))
-                continue;
-            const partsI = keys[i].split('_');
-            const partsJ = keys[j].split('_');
-            if (partsI.length < 2 || partsJ.length < 2)
-                continue;
-            const dx = Number(partsI[0]) - Number(partsJ[0]);
-            const dy = Number(partsI[1]) - Number(partsJ[1]);
-            if (Math.abs(dx) <= 1 && Math.abs(dy) <= 1) {
-                union(keys[i], keys[j]);
-            }
-        }
-    }
-    const ka = keyOf(a);
-    const kb = keyOf(b);
-    if (!parent.has(ka) || !parent.has(kb))
-        return false;
-    return find(ka) === find(kb);
-}
-/** ç„Šç›˜æ˜¯å¦èƒ½æ¥åˆ°æŒ‡å®šé“œå±‚ï¼ˆé€šå­”ç„Šç›˜é»˜è®¤åŒé¢ï¼‰ */
-function padTouchesZoneLayer(layers, padType, zoneLayer) {
-    if (padType === 'th' || padType === 'npth')
-        return true;
-    if (!layers || layers.length === 0)
-        return true;
-    for (let i = 0; i < layers.length; i++) {
-        if (layers[i] === zoneLayer)
-            return true;
-    }
-    return false;
-}
-/** æ­£äº¤ L æŠ˜çº¿ï¼ˆ90Â°ï¼‰ */
-export function routeLPoints(a, b) {
-    const dx = b.x - a.x;
-    const dy = b.y - a.y;
-    if (Math.abs(dx) < 0.5 && Math.abs(dy) < 0.5) {
-        return [a, b];
-    }
-    const midH = { x: b.x, y: a.y };
-    const midV = { x: a.x, y: b.y };
-    const lenH = Math.abs(dx) + Math.abs(b.y - a.y);
-    const lenV = Math.abs(dy) + Math.abs(b.x - a.x);
-    if (lenH <= lenV) {
-        return [a, midH, b];
-    }
-    return [a, midV, b];
-}
-/** 45Â° æŠ˜çº¿ï¼ˆä¼˜å…ˆï¼‰ */
-export function routeOrtho45Points(a, b) {
-    const dx = b.x - a.x;
-    const dy = b.y - a.y;
-    if (Math.abs(dx) < 0.5 && Math.abs(dy) < 0.5) {
-        return [a, b];
-    }
-    const adx = Math.abs(dx);
-    const ady = Math.abs(dy);
-    if (Math.abs(adx - ady) < 0.5) {
-        return [a, b];
-    }
-    if (adx > ady) {
-        const sx = dx > 0 ? 1 : -1;
-        const mid = { x: a.x + sx * (adx - ady), y: a.y };
-        return [a, mid, b];
-    }
-    const sy = dy > 0 ? 1 : -1;
-    const mid = { x: a.x, y: a.y + sy * (ady - adx) };
-    return [a, mid, b];
-}
-/**
- * åœ†å¼§æ‹è§’ï¼šä»¥ 45Â° æŠ˜ç‚¹ä¸ºæ§åˆ¶ç‚¹çš„äºŒæ¬¡è´å¡å°”ï¼Œç¦»æ•£ä¸ºæŠ˜çº¿ï¼ˆå¯æäº¤ä¸ºå¤šæ®µ trackï¼‰
- */
-export function routeArcPoints(a, b, segments = 12) {
-    const base = routeOrtho45Points(a, b);
-    if (base.length < 3) {
-        return base;
-    }
-    const ctrl = base[1];
-    const n = Math.max(6, Math.min(24, segments));
-    const pts = [];
-    for (let i = 0; i <= n; i++) {
-        const t = i / n;
-        const u = 1 - t;
-        pts.push({
-            x: u * u * a.x + 2 * u * t * ctrl.x + t * t * b.x,
-            y: u * u * a.y + 2 * u * t * ctrl.y + t * t * b.y
-        });
-    }
-    return pts;
-}
-/** æŒ‰æ‹è§’æ¨¡å¼ç”Ÿæˆå¸ƒçº¿è·¯å¾„ */
-export function routeByCornerMode(a, b, mode) {
-    if (mode === 'ortho90') {
-        return routeLPoints(a, b);
-    }
-    if (mode === 'arc') {
-        return routeArcPoints(a, b, 12);
-    }
-    return routeOrtho45Points(a, b);
-}
-export function sumTrackLengthForNet(doc, netId) {
-    let len = 0;
-    for (const trk of doc.tracks) {
-        if (trk.netId !== netId)
-            continue;
-        const dx = trk.end.x - trk.start.x;
-        const dy = trk.end.y - trk.start.y;
-        len += Math.sqrt(dx * dx + dy * dy);
-    }
-    return len;
-}
-export function collectPadWorld(fp, pad) {
-    return padWorldPosition(fp, pad);
-}
-//# sourceMappingURL=PcbNetUtil.js.mapÂ‘ÙFC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\PcbZoneUtil.etsÙEC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\PcbNetUtil.etsÔrB›ªmoduleName±isLocalDependency¯isNodeEntryFile§pkgPath±belongProjectPath§pkgNameªpkgVersion±dependencyPkgInfo°belongModulePath¬shouldEmitJs¯hostModulesInfo¦commonÃÂÙ#C:\Projects\ElecDraw_Harmony\common¼C:\Projects\ElecDraw_Harmony¦common¥1.0.0Ô  Ù#C:\Projects\ElecDraw_Harmony\commonÃ“ÔrC’²hostDependencyName®hostModuleName¬./PcbNetUtil¦commonC­../PcbNetUtil¦commonC¿./src/main/ets/utils/PcbNetUtil¦commonÃÚ+à/**
- * PCB ç½‘ç»œè¡¨é‡å»ºã€é£çº¿ã€æ­£äº¤ L è·¯å¾„ã€ç½‘ç»œé«˜äº®è¾…åŠ©
- */
-import {
-  PcbDocument, PcbNet, PcbNetClass, PcbRatsnestEdge, PcbPad,
-  PcbFootprintInst
-} from '../types/PcbTypes';
-import { Point2D } from '../types/CommonTypes';
-import { padWorldPosition, pointInPolygon } from './PcbZoneUtil';
-
-export function guessNetClassId(netName: string, classes: PcbNetClass[]): string {
-  const upper = (netName ?? '').toUpperCase();
-  let powerId = 'nc_power';
-  let signalId = 'nc_signal';
-  let defaultId = 'nc_default';
-  for (const c of classes) {
-    if (c.name === 'Power') powerId = c.id;
-    if (c.name === 'Signal') signalId = c.id;
-    if (c.name === 'Default') defaultId = c.id;
-  }
-  if (upper === 'GND' || upper === 'VSS' || upper === 'AGND' ||
-    upper === 'VOUT' || upper === 'REG_IN' || upper === 'VIN_SRC' ||
-    upper.indexOf('VCC') >= 0 || upper.indexOf('VDD') >= 0 ||
-    upper.indexOf('3V3') >= 0 || upper.indexOf('5V') >= 0 ||
-    upper.indexOf('VIN') >= 0 || upper.indexOf('VBAT') >= 0 ||
-    upper.indexOf('VOUT') >= 0) {
-    return powerId;
-  }
-  if (upper.length > 0) {
-    return signalId;
-  }
-  return defaultId;
-}
-
-export function findNetClass(doc: PcbDocument, classId?: string): PcbNetClass {
-  if (classId) {
-    for (const c of doc.netClasses) {
-      if (c.id === classId) return c;
-    }
-  }
-  for (const c of doc.netClasses) {
-    if (c.name === 'Default') return c;
-  }
-  return doc.netClasses[0];
-}
-
-/** ä»ç„Šç›˜/èµ°çº¿/è¿‡å­”é‡å»º nets[] */
-export function rebuildPcbNets(doc: PcbDocument): void {
-  const map: Map<string, PcbNet> = new Map();
-  const add = (netId?: string, netName?: string): void => {
-    if (!netId || netId.length === 0) return;
-    if (map.has(netId)) return;
-    const name = netName && netName.length > 0 ? netName : netId;
-    map.set(netId, {
-      id: netId,
-      name,
-      classId: guessNetClassId(name, doc.netClasses)
-    });
-  };
-  for (const fp of doc.footprints) {
-    for (const pad of fp.pads) {
-      add(pad.netId, pad.netName);
-    }
-  }
-  for (const trk of doc.tracks) {
-    add(trk.netId, trk.netName);
-  }
-  for (const via of doc.vias) {
-    add(via.netId, via.netName);
-  }
-  for (const z of doc.zones) {
-    add(z.netId, z.netName);
-  }
-  const nets: PcbNet[] = [];
-  map.forEach((v: PcbNet) => {
-    nets.push(v);
-  });
-  nets.sort((a: PcbNet, b: PcbNet) => a.name.localeCompare(b.name));
-  doc.nets = nets;
-}
-
-interface PadNode {
-  key: string;
-  netId: string;
-  netName: string;
-  pos: Point2D;
-}
-
-/** æœªè¿æ¥ç„Šç›˜å¯¹é£çº¿ï¼ˆåŒç½‘æœ€å°ç”Ÿæˆæ ‘è¾¹ï¼Œè¿‡æ»¤å·²æœ‰é“œè¿é€šï¼‰ */
-export function buildRatsnest(doc: PcbDocument): PcbRatsnestEdge[] {
-  const nodesByNet: Map<string, PadNode[]> = new Map();
-  for (const fp of doc.footprints) {
-    for (const pad of fp.pads) {
-      if (!pad.netId || pad.netId.length === 0) continue;
-      const pos = padWorldPosition(fp, pad);
-      const list = nodesByNet.get(pad.netId) ?? [];
-      list.push({
-        key: `${fp.id}:${pad.number}`,
-        netId: pad.netId,
-        netName: pad.netName ?? pad.netId,
-        pos
-      });
-      nodesByNet.set(pad.netId, list);
-    }
-  }
-
-  const edges: PcbRatsnestEdge[] = [];
-  nodesByNet.forEach((nodes: PadNode[], netId: string) => {
-    if (nodes.length < 2) return;
-    if (isNetFullyConnected(doc, netId, nodes)) return;
-    // Prim MST on pads
-    const used: boolean[] = [];
-    for (let i = 0; i < nodes.length; i++) used.push(false);
-    used[0] = true;
-    let usedCount = 1;
-    while (usedCount < nodes.length) {
-      let bestI = -1;
-      let bestJ = -1;
-      let bestD = Infinity;
-      for (let i = 0; i < nodes.length; i++) {
-        if (!used[i]) continue;
-        for (let j = 0; j < nodes.length; j++) {
-          if (used[j]) continue;
-          const dx = nodes[i].pos.x - nodes[j].pos.x;
-          const dy = nodes[i].pos.y - nodes[j].pos.y;
-          const d = dx * dx + dy * dy;
-          if (d < bestD) {
-            bestD = d;
-            bestI = i;
-            bestJ = j;
-          }
-        }
-      }
-      if (bestJ < 0) break;
-      used[bestJ] = true;
-      usedCount++;
-      if (!padsCopperConnected(doc, netId, nodes[bestI].pos, nodes[bestJ].pos)) {
-        edges.push({
-          netId,
-          netName: nodes[bestI].netName,
-          a: { x: nodes[bestI].pos.x, y: nodes[bestI].pos.y },
-          b: { x: nodes[bestJ].pos.x, y: nodes[bestJ].pos.y }
-        });
-      }
-    }
-  });
-  return edges;
-}
-
-function isNetFullyConnected(doc: PcbDocument, netId: string, nodes: PadNode[]): boolean {
-  if (nodes.length < 2) return true;
-  for (let i = 1; i < nodes.length; i++) {
-    if (!padsCopperConnected(doc, netId, nodes[0].pos, nodes[i].pos)) {
-      return false;
-    }
-  }
-  return true;
-}
-
-/** ç®€åŒ–è¿é€šï¼šåŒç½‘é“œçš®å›¾å…ƒç«¯ç‚¹ç½‘æ ¼å¹¶æŸ¥é›†ï¼ˆå« Zone è¦†é“œï¼‰ */
-function padsCopperConnected(doc: PcbDocument, netId: string, a: Point2D, b: Point2D): boolean {
-  const tol = 15;
-  const keyOf = (p: Point2D): string =>
-    `${Math.round(p.x / tol)}_${Math.round(p.y / tol)}`;
-  const parent: Map<string, string> = new Map();
-  const find = (k: string): string => {
-    let p = parent.get(k) ?? k;
-    if (!parent.has(k)) parent.set(k, k);
-    while (p !== (parent.get(p) ?? p)) {
-      const pp = parent.get(p) ?? p;
-      parent.set(p, parent.get(pp) ?? pp);
-      p = parent.get(p) ?? p;
-    }
-    return p;
-  };
-  const union = (x: string, y: string): void => {
-    const rx = find(x);
-    const ry = find(y);
-    if (rx !== ry) parent.set(rx, ry);
-  };
-  const touch = (p: Point2D): void => {
-    const k = keyOf(p);
-    if (!parent.has(k)) parent.set(k, k);
-  };
-
-  for (const trk of doc.tracks) {
-    if (trk.netId !== netId) continue;
-    touch(trk.start);
-    touch(trk.end);
-    union(keyOf(trk.start), keyOf(trk.end));
-  }
-  for (const via of doc.vias) {
-    if (via.netId !== netId) continue;
-    touch(via.position);
-  }
-  for (const fp of doc.footprints) {
-    for (const pad of fp.pads) {
-      if (pad.netId !== netId) continue;
-      touch(padWorldPosition(fp, pad));
-    }
-  }
-  // Zone è¦†é“œï¼šè½®å»“é¡¶ç‚¹ + è½åœ¨é“ºé“œå†…ä¸”å±‚å…¼å®¹çš„åŒç½‘ç„Šç›˜/è¿‡å­”ï¼ˆçƒ­ç„Šç›˜ä»è§†ä¸ºè¿é€šï¼‰
-  for (let zi = 0; zi < doc.zones.length; zi++) {
-    const z = doc.zones[zi];
-    if (z.netId !== netId || z.outline.length < 3) continue;
-    const hub = `__zone_${zi}`;
-    if (!parent.has(hub)) parent.set(hub, hub);
-    for (let i = 0; i < z.outline.length; i++) {
-      const p = z.outline[i];
-      touch(p);
-      union(keyOf(p), hub);
-      if (i > 0) union(keyOf(z.outline[i - 1]), keyOf(p));
-    }
-    union(keyOf(z.outline[z.outline.length - 1]), keyOf(z.outline[0]));
-    for (const fp of doc.footprints) {
-      for (const pad of fp.pads) {
-        if (pad.netId !== netId) continue;
-        if (!padTouchesZoneLayer(pad.layers, pad.type, z.layer)) continue;
-        const wp = padWorldPosition(fp, pad);
-        if (!pointInPolygon(wp, z.outline)) continue;
-        touch(wp);
-        union(keyOf(wp), hub);
-      }
-    }
-    for (const via of doc.vias) {
-      if (via.netId !== netId) continue;
-      if (!pointInPolygon(via.position, z.outline)) continue;
-      touch(via.position);
-      union(keyOf(via.position), hub);
-    }
-  }
-  // è¿‘é‚»å¹¶æŸ¥ï¼ˆç„Šç›˜/è¿‡å­”ä¸èµ°çº¿ç«¯ç‚¹ã€Zone é¡¶ç‚¹ï¼‰
-  const keys: string[] = [];
-  parent.forEach((_v: string, k: string) => {
-    keys.push(k);
-  });
-  for (let i = 0; i < keys.length; i++) {
-    for (let j = i + 1; j < keys.length; j++) {
-      if (keys[i].startsWith('__zone_') || keys[j].startsWith('__zone_')) continue;
-      const partsI = keys[i].split('_');
-      const partsJ = keys[j].split('_');
-      if (partsI.length < 2 || partsJ.length < 2) continue;
-      const dx = Number(partsI[0]) - Number(partsJ[0]);
-      const dy = Number(partsI[1]) - Number(partsJ[1]);
-      if (Math.abs(dx) <= 1 && Math.abs(dy) <= 1) {
-        union(keys[i], keys[j]);
-      }
-    }
-  }
-  const ka = keyOf(a);
-  const kb = keyOf(b);
-  if (!parent.has(ka) || !parent.has(kb)) return false;
-  return find(ka) === find(kb);
-}
-
-/** ç„Šç›˜æ˜¯å¦èƒ½æ¥åˆ°æŒ‡å®šé“œå±‚ï¼ˆé€šå­”ç„Šç›˜é»˜è®¤åŒé¢ï¼‰ */
-function padTouchesZoneLayer(layers: string[] | undefined | null, padType: string,
-  zoneLayer: string): boolean {
-  if (padType === 'th' || padType === 'npth') return true;
-  if (!layers || layers.length === 0) return true;
-  for (let i = 0; i < layers.length; i++) {
-    if (layers[i] === zoneLayer) return true;
-  }
-  return false;
-}
-
-/** æ­£äº¤ L æŠ˜çº¿ï¼ˆ90Â°ï¼‰ */
-export function routeLPoints(a: Point2D, b: Point2D): Point2D[] {
-  const dx = b.x - a.x;
-  const dy = b.y - a.y;
-  if (Math.abs(dx) < 0.5 && Math.abs(dy) < 0.5) {
-    return [a, b];
-  }
-  const midH: Point2D = { x: b.x, y: a.y };
-  const midV: Point2D = { x: a.x, y: b.y };
-  const lenH = Math.abs(dx) + Math.abs(b.y - a.y);
-  const lenV = Math.abs(dy) + Math.abs(b.x - a.x);
-  if (lenH <= lenV) {
-    return [a, midH, b];
-  }
-  return [a, midV, b];
-}
-
-/** 45Â° æŠ˜çº¿ï¼ˆä¼˜å…ˆï¼‰ */
-export function routeOrtho45Points(a: Point2D, b: Point2D): Point2D[] {
-  const dx = b.x - a.x;
-  const dy = b.y - a.y;
-  if (Math.abs(dx) < 0.5 && Math.abs(dy) < 0.5) {
-    return [a, b];
-  }
-  const adx = Math.abs(dx);
-  const ady = Math.abs(dy);
-  if (Math.abs(adx - ady) < 0.5) {
-    return [a, b];
-  }
-  if (adx > ady) {
-    const sx = dx > 0 ? 1 : -1;
-    const mid: Point2D = { x: a.x + sx * (adx - ady), y: a.y };
-    return [a, mid, b];
-  }
-  const sy = dy > 0 ? 1 : -1;
-  const mid: Point2D = { x: a.x, y: a.y + sy * (ady - adx) };
-  return [a, mid, b];
-}
-
-/**
- * åœ†å¼§æ‹è§’ï¼šä»¥ 45Â° æŠ˜ç‚¹ä¸ºæ§åˆ¶ç‚¹çš„äºŒæ¬¡è´å¡å°”ï¼Œç¦»æ•£ä¸ºæŠ˜çº¿ï¼ˆå¯æäº¤ä¸ºå¤šæ®µ trackï¼‰
- */
-export function routeArcPoints(a: Point2D, b: Point2D, segments: number = 12): Point2D[] {
-  const base = routeOrtho45Points(a, b);
-  if (base.length < 3) {
-    return base;
-  }
-  const ctrl = base[1];
-  const n = Math.max(6, Math.min(24, segments));
-  const pts: Point2D[] = [];
-  for (let i = 0; i <= n; i++) {
-    const t = i / n;
-    const u = 1 - t;
-    pts.push({
-      x: u * u * a.x + 2 * u * t * ctrl.x + t * t * b.x,
-      y: u * u * a.y + 2 * u * t * ctrl.y + t * t * b.y
-    });
-  }
-  return pts;
-}
-
-/** æŒ‰æ‹è§’æ¨¡å¼ç”Ÿæˆå¸ƒçº¿è·¯å¾„ */
-export function routeByCornerMode(a: Point2D, b: Point2D, mode: string): Point2D[] {
-  if (mode === 'ortho90') {
-    return routeLPoints(a, b);
-  }
-  if (mode === 'arc') {
-    return routeArcPoints(a, b, 12);
-  }
-  return routeOrtho45Points(a, b);
-}
-
-export function sumTrackLengthForNet(doc: PcbDocument, netId: string): number {
-  let len = 0;
-  for (const trk of doc.tracks) {
-    if (trk.netId !== netId) continue;
-    const dx = trk.end.x - trk.start.x;
-    const dy = trk.end.y - trk.start.y;
-    len += Math.sqrt(dx * dx + dy * dy);
-  }
-  return len;
-}
-
-export function collectPadWorld(fp: PcbFootprintInst, pad: PcbPad): Point2D {
-  return padWorldPosition(fp, pad);
-}
-ÔrD•§version¨mappings¥names§sources®sourcesContentÜe‘”   ‘”  
- ‘”  ‘”  ‘”  ‘”  ‘”  ‘”  ‘”  ‘”  ‘”  ‘”  ‘”  ‘”  ‘”  ‘”  ‘”  ‘”  ‘”  ‘”  ‘”    ‘”  " ‘”  #‘”  $‘”  %‘”  %‘”  &‘”  '‘”  (‘”  )‘”  )‘”  *‘”  +‘”  , ‘”  . ‘”  / ‘”  0‘”  1‘”  2‘”  3‘”  4‘”  5‘”  6‘”  9‘”  :‘”  ;‘”  <‘”  >‘”  ?‘”  Ì@‘”  ÌB‘”  ÌC‘”  ÌE‘”  ÌF‘”  ÌH‘”  ÌJ‘”  ÌK‘”  ÌL‘”  ÌN‘”  ÌO ‘”  ÌX ‘”  ÌY ‘”  ÌZ‘”  Ì[‘”  Ì\‘”  Ì_‘”  Ìc‘”  Ìe‘”  Ìg‘”  Ìh‘”  Ìl‘”  Ìm‘”  Ìp‘”  Ìp+‘”  Ìq‘”  Ìs‘”  Ìt‘”  Ìu‘”  Ìw‘”  Ìx‘”  Ìy‘”  Ì{
-‘”  Ì|
-‘”  Ì‚‘”  Ìƒ	‘”  Ì„‘”  Ì†‘”  Ì‡‘”  Ì‹
-‘”  Ì	‘”  Ì‘”  Ì‘”  Ì‘‘”  Ì’‘”  Ì“ ‘”  Ì• ‘”  Ì–‘”  Ì–‘”  Ì—‘”  Ì™‘”  Ìš‘”  Ì›‘”  Ìœ‘”  Ì ‘”  ÌŸ ‘”  Ì  ‘”  Ì¢‘”  Ì¤‘”  Ì¥‘”  Ì§‘”  Ì§‘”  Ì¨‘”  Ìª‘”  Ì¬‘”  Ì­‘”  Ì®‘”  Ì¯‘”  Ì°‘”  Ì±‘”  Ì²‘”  Ì³‘”  Ì´‘”  Ìµ‘”  Ì¶‘”  Ì¶‘”  Ì·‘”  Ì¹‘”  Ìº‘”  Ì»‘”  Ì¼‘”  Ì½‘”  Ì¾‘”  Ì¿‘”  ÌÀ‘”  ÌÁ‘”  ÌÂ‘”  ÌÃ‘”  ÌÄ‘”  ÌÅ‘”  ÌÇ‘”  ÌÈ‘”  ÌÊ‘”  ÌÌ‘”  ÌÍ‘”  ÌÎ‘”  ÌÎ‘”  ÌÏ‘”  ÌÓ‘”  ÌÔ‘”  ÌÖ‘”  Ì×‘”  ÌØ‘”  ÌÙ‘”  ÌŞ‘”  Ìß‘”  Ìà‘”  Ìá‘”  Ìã‘”  Ìå‘”  Ìæ‘”  Ìê‘”  Ìë‘”  Ìì‘”  Ìí‘”  Ìî‘”  Ìò‘”  Ìó‘”  Ìô‘”  Ìö‘”  Ì÷‘”  Ìø‘”  Ìù‘”  Ìú‘”  Ìû‘”  Ìû*‘”  Ìı ‘”  Ìÿ ‘”  Í  ‘”  Í‘”  Í.‘”  Í‘”  Í&‘”  Í‘”  Í‘”  Í!‘”  Í‘”  Í‘”  Í ‘”  Í
- ‘”  Í ‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í ‘”  Í ‘”  Í ‘”  Í‘”  Í ‘”  Í!‘”  Í%‘”  Í&‘”  Í(‘”  Í*‘”  Í+‘”  Í,‘”  Í.‘”  Í/ ‘”  Í1 ‘”  Í3‘”  Í4 ‘”  Í6‘”  Í7‘”  Í8‘”  Í9‘”  Í:‘”  Í=‘”  Í>‘”  ÍB‘”  ÍC‘”  ÍD‘”  ÍE ‘”  ÍG ‘”  ÍH ‘”  ÍJ‘”  ÍK‘”  ÍN‘”  ÍO‘”  ÍP ‘”  ÍR ‘”  ÍT‘”  ÍU‘”  ÍV‘”  ÍW‘”  ÍX‘”  ÍY‘”  ÍZ‘”  Í[ ‘”  Í] ‘”  Í^‘”  Í_ ‘ÙEC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\PcbNetUtil.ets‘Ú+à/**
- * PCB ç½‘ç»œè¡¨é‡å»ºã€é£çº¿ã€æ­£äº¤ L è·¯å¾„ã€ç½‘ç»œé«˜äº®è¾…åŠ©
- */
-import {
-  PcbDocument, PcbNet, PcbNetClass, PcbRatsnestEdge, PcbPad,
-  PcbFootprintInst
-} from '../types/PcbTypes';
-import { Point2D } from '../types/CommonTypes';
-import { padWorldPosition, pointInPolygon } from './PcbZoneUtil';
-
-export function guessNetClassId(netName: string, classes: PcbNetClass[]): string {
-  const upper = (netName ?? '').toUpperCase();
-  let powerId = 'nc_power';
-  let signalId = 'nc_signal';
-  let defaultId = 'nc_default';
-  for (const c of classes) {
-    if (c.name === 'Power') powerId = c.id;
-    if (c.name === 'Signal') signalId = c.id;
-    if (c.name === 'Default') defaultId = c.id;
-  }
-  if (upper === 'GND' || upper === 'VSS' || upper === 'AGND' ||
-    upper === 'VOUT' || upper === 'REG_IN' || upper === 'VIN_SRC' ||
-    upper.indexOf('VCC') >= 0 || upper.indexOf('VDD') >= 0 ||
-    upper.indexOf('3V3') >= 0 || upper.indexOf('5V') >= 0 ||
-    upper.indexOf('VIN') >= 0 || upper.indexOf('VBAT') >= 0 ||
-    upper.indexOf('VOUT') >= 0) {
-    return powerId;
-  }
-  if (upper.length > 0) {
-    return signalId;
-  }
-  return defaultId;
-}
-
-export function findNetClass(doc: PcbDocument, classId?: string): PcbNetClass {
-  if (classId) {
-    for (const c of doc.netClasses) {
-      if (c.id === classId) return c;
-    }
-  }
-  for (const c of doc.netClasses) {
-    if (c.name === 'Default') return c;
-  }
-  return doc.netClasses[0];
-}
-
-/** ä»ç„Šç›˜/èµ°çº¿/è¿‡å­”é‡å»º nets[] */
-export function rebuildPcbNets(doc: PcbDocument): void {
-  const map: Map<string, PcbNet> = new Map();
-  const add = (netId?: string, netName?: string): void => {
-    if (!netId || netId.length === 0) return;
-    if (map.has(netId)) return;
-    const name = netName && netName.length > 0 ? netName : netId;
-    map.set(netId, {
-      id: netId,
-      name,
-      classId: guessNetClassId(name, doc.netClasses)
-    });
-  };
-  for (const fp of doc.footprints) {
-    for (const pad of fp.pads) {
-      add(pad.netId, pad.netName);
-    }
-  }
-  for (const trk of doc.tracks) {
-    add(trk.netId, trk.netName);
-  }
-  for (const via of doc.vias) {
-    add(via.netId, via.netName);
-  }
-  for (const z of doc.zones) {
-    add(z.netId, z.netName);
-  }
-  const nets: PcbNet[] = [];
-  map.forEach((v: PcbNet) => {
-    nets.push(v);
-  });
-  nets.sort((a: PcbNet, b: PcbNet) => a.name.localeCompare(b.name));
-  doc.nets = nets;
-}
-
-interface PadNode {
-  key: string;
-  netId: string;
-  netName: string;
-  pos: Point2D;
-}
-
-/** æœªè¿æ¥ç„Šç›˜å¯¹é£çº¿ï¼ˆåŒç½‘æœ€å°ç”Ÿæˆæ ‘è¾¹ï¼Œè¿‡æ»¤å·²æœ‰é“œè¿é€šï¼‰ */
-export function buildRatsnest(doc: PcbDocument): PcbRatsnestEdge[] {
-  const nodesByNet: Map<string, PadNode[]> = new Map();
-  for (const fp of doc.footprints) {
-    for (const pad of fp.pads) {
-      if (!pad.netId || pad.netId.length === 0) continue;
-      const pos = padWorldPosition(fp, pad);
-      const list = nodesByNet.get(pad.netId) ?? [];
-      list.push({
-        key: `${fp.id}:${pad.number}`,
-        netId: pad.netId,
-        netName: pad.netName ?? pad.netId,
-        pos
-      });
-      nodesByNet.set(pad.netId, list);
-    }
-  }
-
-  const edges: PcbRatsnestEdge[] = [];
-  nodesByNet.forEach((nodes: PadNode[], netId: string) => {
-    if (nodes.length < 2) return;
-    if (isNetFullyConnected(doc, netId, nodes)) return;
-    // Prim MST on pads
-    const used: boolean[] = [];
-    for (let i = 0; i < nodes.length; i++) used.push(false);
-    used[0] = true;
-    let usedCount = 1;
-    while (usedCount < nodes.length) {
-      let bestI = -1;
-      let bestJ = -1;
-      let bestD = Infinity;
-      for (let i = 0; i < nodes.length; i++) {
-        if (!used[i]) continue;
-        for (let j = 0; j < nodes.length; j++) {
-          if (used[j]) continue;
-          const dx = nodes[i].pos.x - nodes[j].pos.x;
-          const dy = nodes[i].pos.y - nodes[j].pos.y;
-          const d = dx * dx + dy * dy;
-          if (d < bestD) {
-            bestD = d;
-            bestI = i;
-            bestJ = j;
-          }
-        }
-      }
-      if (bestJ < 0) break;
-      used[bestJ] = true;
-      usedCount++;
-      if (!padsCopperConnected(doc, netId, nodes[bestI].pos, nodes[bestJ].pos)) {
-        edges.push({
-          netId,
-          netName: nodes[bestI].netName,
-          a: { x: nodes[bestI].pos.x, y: nodes[bestI].pos.y },
-          b: { x: nodes[bestJ].pos.x, y: nodes[bestJ].pos.y }
-        });
-      }
-    }
-  });
-  return edges;
-}
-
-function isNetFullyConnected(doc: PcbDocument, netId: string, nodes: PadNode[]): boolean {
-  if (nodes.length < 2) return true;
-  for (let i = 1; i < nodes.length; i++) {
-    if (!padsCopperConnected(doc, netId, nodes[0].pos, nodes[i].pos)) {
-      return false;
-    }
-  }
-  return true;
-}
-
-/** ç®€åŒ–è¿é€šï¼šåŒç½‘é“œçš®å›¾å…ƒç«¯ç‚¹ç½‘æ ¼å¹¶æŸ¥é›†ï¼ˆå« Zone è¦†é“œï¼‰ */
-function padsCopperConnected(doc: PcbDocument, netId: string, a: Point2D, b: Point2D): boolean {
-  const tol = 15;
-  const keyOf = (p: Point2D): string =>
-    `${Math.round(p.x / tol)}_${Math.round(p.y / tol)}`;
-  const parent: Map<string, string> = new Map();
-  const find = (k: string): string => {
-    let p = parent.get(k) ?? k;
-    if (!parent.has(k)) parent.set(k, k);
-    while (p !== (parent.get(p) ?? p)) {
-      const pp = parent.get(p) ?? p;
-      parent.set(p, parent.get(pp) ?? pp);
-      p = parent.get(p) ?? p;
-    }
-    return p;
-  };
-  const union = (x: string, y: string): void => {
-    const rx = find(x);
-    const ry = find(y);
-    if (rx !== ry) parent.set(rx, ry);
-  };
-  const touch = (p: Point2D): void => {
-    const k = keyOf(p);
-    if (!parent.has(k)) parent.set(k, k);
-  };
-
-  for (const trk of doc.tracks) {
-    if (trk.netId !== netId) continue;
-    touch(trk.start);
-    touch(trk.end);
-    union(keyOf(trk.start), keyOf(trk.end));
-  }
-  for (const via of doc.vias) {
-    if (via.netId !== netId) continue;
-    touch(via.position);
-  }
-  for (const fp of doc.footprints) {
-    for (const pad of fp.pads) {
-      if (pad.netId !== netId) continue;
-      touch(padWorldPosition(fp, pad));
-    }
-  }
-  // Zone è¦†é“œï¼šè½®å»“é¡¶ç‚¹ + è½åœ¨é“ºé“œå†…ä¸”å±‚å…¼å®¹çš„åŒç½‘ç„Šç›˜/è¿‡å­”ï¼ˆçƒ­ç„Šç›˜ä»è§†ä¸ºè¿é€šï¼‰
-  for (let zi = 0; zi < doc.zones.length; zi++) {
-    const z = doc.zones[zi];
-    if (z.netId !== netId || z.outline.length < 3) continue;
-    const hub = `__zone_${zi}`;
-    if (!parent.has(hub)) parent.set(hub, hub);
-    for (let i = 0; i < z.outline.length; i++) {
-      const p = z.outline[i];
-      touch(p);
-      union(keyOf(p), hub);
-      if (i > 0) union(keyOf(z.outline[i - 1]), keyOf(p));
-    }
-    union(keyOf(z.outline[z.outline.length - 1]), keyOf(z.outline[0]));
-    for (const fp of doc.footprints) {
-      for (const pad of fp.pads) {
-        if (pad.netId !== netId) continue;
-        if (!padTouchesZoneLayer(pad.layers, pad.type, z.layer)) continue;
-        const wp = padWorldPosition(fp, pad);
-        if (!pointInPolygon(wp, z.outline)) continue;
-        touch(wp);
-        union(keyOf(wp), hub);
-      }
-    }
-    for (const via of doc.vias) {
-      if (via.netId !== netId) continue;
-      if (!pointInPolygon(via.position, z.outline)) continue;
-      touch(via.position);
-      union(keyOf(via.position), hub);
-    }
-  }
-  // è¿‘é‚»å¹¶æŸ¥ï¼ˆç„Šç›˜/è¿‡å­”ä¸èµ°çº¿ç«¯ç‚¹ã€Zone é¡¶ç‚¹ï¼‰
-  const keys: string[] = [];
-  parent.forEach((_v: string, k: string) => {
-    keys.push(k);
-  });
-  for (let i = 0; i < keys.length; i++) {
-    for (let j = i + 1; j < keys.length; j++) {
-      if (keys[i].startsWith('__zone_') || keys[j].startsWith('__zone_')) continue;
-      const partsI = keys[i].split('_');
-      const partsJ = keys[j].split('_');
-      if (partsI.length < 2 || partsJ.length < 2) continue;
-      const dx = Number(partsI[0]) - Number(partsJ[0]);
-      const dy = Number(partsI[1]) - Number(partsJ[1]);
-      if (Math.abs(dx) <= 1 && Math.abs(dy) <= 1) {
-        union(keys[i], keys[j]);
-      }
-    }
-  }
-  const ka = keyOf(a);
-  const kb = keyOf(b);
-  if (!parent.has(ka) || !parent.has(kb)) return false;
-  return find(ka) === find(kb);
-}
-
-/** ç„Šç›˜æ˜¯å¦èƒ½æ¥åˆ°æŒ‡å®šé“œå±‚ï¼ˆé€šå­”ç„Šç›˜é»˜è®¤åŒé¢ï¼‰ */
-function padTouchesZoneLayer(layers: string[] | undefined | null, padType: string,
-  zoneLayer: string): boolean {
-  if (padType === 'th' || padType === 'npth') return true;
-  if (!layers || layers.length === 0) return true;
-  for (let i = 0; i < layers.length; i++) {
-    if (layers[i] === zoneLayer) return true;
-  }
-  return false;
-}
-
-/** æ­£äº¤ L æŠ˜çº¿ï¼ˆ90Â°ï¼‰ */
-export function routeLPoints(a: Point2D, b: Point2D): Point2D[] {
-  const dx = b.x - a.x;
-  const dy = b.y - a.y;
-  if (Math.abs(dx) < 0.5 && Math.abs(dy) < 0.5) {
-    return [a, b];
-  }
-  const midH: Point2D = { x: b.x, y: a.y };
-  const midV: Point2D = { x: a.x, y: b.y };
-  const lenH = Math.abs(dx) + Math.abs(b.y - a.y);
-  const lenV = Math.abs(dy) + Math.abs(b.x - a.x);
-  if (lenH <= lenV) {
-    return [a, midH, b];
-  }
-  return [a, midV, b];
-}
-
-/** 45Â° æŠ˜çº¿ï¼ˆä¼˜å…ˆï¼‰ */
-export function routeOrtho45Points(a: Point2D, b: Point2D): Point2D[] {
-  const dx = b.x - a.x;
-  const dy = b.y - a.y;
-  if (Math.abs(dx) < 0.5 && Math.abs(dy) < 0.5) {
-    return [a, b];
-  }
-  const adx = Math.abs(dx);
-  const ady = Math.abs(dy);
-  if (Math.abs(adx - ady) < 0.5) {
-    return [a, b];
-  }
-  if (adx > ady) {
-    const sx = dx > 0 ? 1 : -1;
-    const mid: Point2D = { x: a.x + sx * (adx - ady), y: a.y };
-    return [a, mid, b];
-  }
-  const sy = dy > 0 ? 1 : -1;
-  const mid: Point2D = { x: a.x, y: a.y + sy * (ady - adx) };
-  return [a, mid, b];
-}
-
-/**
- * åœ†å¼§æ‹è§’ï¼šä»¥ 45Â° æŠ˜ç‚¹ä¸ºæ§åˆ¶ç‚¹çš„äºŒæ¬¡è´å¡å°”ï¼Œç¦»æ•£ä¸ºæŠ˜çº¿ï¼ˆå¯æäº¤ä¸ºå¤šæ®µ trackï¼‰
- */
-export function routeArcPoints(a: Point2D, b: Point2D, segments: number = 12): Point2D[] {
-  const base = routeOrtho45Points(a, b);
-  if (base.length < 3) {
-    return base;
-  }
-  const ctrl = base[1];
-  const n = Math.max(6, Math.min(24, segments));
-  const pts: Point2D[] = [];
-  for (let i = 0; i <= n; i++) {
-    const t = i / n;
-    const u = 1 - t;
-    pts.push({
-      x: u * u * a.x + 2 * u * t * ctrl.x + t * t * b.x,
-      y: u * u * a.y + 2 * u * t * ctrl.y + t * t * b.y
-    });
-  }
-  return pts;
-}
-
-/** æŒ‰æ‹è§’æ¨¡å¼ç”Ÿæˆå¸ƒçº¿è·¯å¾„ */
-export function routeByCornerMode(a: Point2D, b: Point2D, mode: string): Point2D[] {
-  if (mode === 'ortho90') {
-    return routeLPoints(a, b);
-  }
-  if (mode === 'arc') {
-    return routeArcPoints(a, b, 12);
-  }
-  return routeOrtho45Points(a, b);
-}
-
-export function sumTrackLengthForNet(doc: PcbDocument, netId: string): number {
-  let len = 0;
-  for (const trk of doc.tracks) {
-    if (trk.netId !== netId) continue;
-    const dx = trk.end.x - trk.start.x;
-    const dy = trk.end.y - trk.start.y;
-    len += Math.sqrt(dx * dx + dy * dy);
-  }
-  return len;
-}
-
-export function collectPadWorld(fp: PcbFootprintInst, pad: PcbPad): Point2D {
-  return padWorldPosition(fp, pad);
-}
-ÔrE‘­./PcbZoneUtilÔrF—ªassertions¨external¢id¤meta±moduleSideEffectsªresolvedByµsyntheticNamedExportsAÂÙFC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\PcbZoneUtil.etsAÃªoh-resolveÂ‘ÔrG’§missing¦pluginÃ¦genAbcÂÔ  ÔrH”²dynamicImportCache¹exportAllDeclarationCache»exportNamedDeclarationCache«importCachešÔrI–¤type¥start£end«declarationªspecifiers¦source¶ExportNamedDeclarationÌCÍçÔrJ™¤type¥start£end¢idªexpression©generator¥async¦params¤body³FunctionDeclarationÌJÍçÔrK”¤type¥start£end¤nameªIdentifierÌSÌb¯guessNetClassIdÂÂÂ’KªIdentifierÌcÌj§netNameKªIdentifierÌlÌs§classesÔrL”¤type¥start£end¤body®BlockStatementÌuÍç˜ÔrM•¤type¥start£end¬declarations¤kind³VariableDeclarationÌ|Ì¨‘ÔrN•¤type¥start£end¢id¤init²VariableDeclaratorÌ‚Ì§KªIdentifierÌ‚Ì‡¥upperÔrO–¤type¥start£end¦callee©arguments¨optional®CallExpressionÌŠÌ§ÔrP—¤type¥start£end¦object¨property¨computed¨optional°MemberExpressionÌŠÌ¥ÔrQ–¤type¥start£end¤left¨operator¥right±LogicalExpressionÌ‹Ì˜KªIdentifierÌ‹Ì’§netName¢??ÔrR•¤type¥start£end¥value£raw§LiteralÌ–Ì˜ ¢''KªIdentifierÌšÌ¥«toUpperCaseÂÂÂ¥constM³VariableDeclarationÌ®ÌÇ‘N²VariableDeclaratorÌ²ÌÆKªIdentifierÌ²Ì¹§powerIdR§LiteralÌ¼ÌÆ¨nc_powerª'nc_power'£letM³VariableDeclarationÌÍÌè‘N²VariableDeclaratorÌÑÌçKªIdentifierÌÑÌÙ¨signalIdR§LiteralÌÜÌç©nc_signal«'nc_signal'£letM³VariableDeclarationÌîÍ‘N²VariableDeclaratorÌòÍ
-KªIdentifierÌòÌû©defaultIdR§LiteralÌşÍ
-ªnc_default¬'nc_default'£letÔrS—¤type¥start£end¥await¤left¥right¤body®ForOfStatementÍÍòÂM³VariableDeclarationÍÍ‘N²VariableDeclaratorÍÍKªIdentifierÍÍ¡cÀ¥constKªIdentifierÍ!Í(§classesL®BlockStatementÍ*Íò“ÔrT–¤type¥start£end¤testªconsequent©alternate«IfStatementÍ5ÍiQ°BinaryExpressionÍ9ÍKP°MemberExpressionÍ9Í?KªIdentifierÍ9Í:¡cKªIdentifierÍ;Í?¤nameÂÂ£===R§LiteralÍDÍK¥Power§'Power'ÔrU”¤type¥start£endªexpression³ExpressionStatementÍZÍiÔrV–¤type¥start£end¨operator¤left¥right´AssignmentExpressionÍZÍh¡=KªIdentifierÍZÍa§powerIdP°MemberExpressionÍdÍhKªIdentifierÍdÍe¡cKªIdentifierÍfÍh¢idÂÂÀT«IfStatementÍsÍ©Q°BinaryExpressionÍwÍŠP°MemberExpressionÍwÍ}KªIdentifierÍwÍx¡cKªIdentifierÍyÍ}¤nameÂÂ£===R§LiteralÍ‚ÍŠ¦Signal¨'Signal'U³ExpressionStatementÍ™Í©V´AssignmentExpressionÍ™Í¨¡=KªIdentifierÍ™Í¡¨signalIdP°MemberExpressionÍ¤Í¨KªIdentifierÍ¤Í¥¡cKªIdentifierÍ¦Í¨¢idÂÂÀT«IfStatementÍ³ÍëQ°BinaryExpressionÍ·ÍËP°MemberExpressionÍ·Í½KªIdentifierÍ·Í¸¡cKªIdentifierÍ¹Í½¤nameÂÂ£===R§LiteralÍÂÍË§Default©'Default'U³ExpressionStatementÍÚÍëV´AssignmentExpressionÍÚÍê¡=KªIdentifierÍÚÍã©defaultIdP°MemberExpressionÍæÍêKªIdentifierÍæÍç¡cKªIdentifierÍèÍê¢idÂÂÀT«IfStatementÍøÍQ±LogicalExpressionÍüÍlQ±LogicalExpressionÍüÍEQ±LogicalExpressionÍüÍ'Q±LogicalExpressionÍüÍQ±LogicalExpressionÍüÍåQ±LogicalExpressionÍüÍ¿Q±LogicalExpressionÍüÍ¢Q±LogicalExpressionÍüÍ|Q±LogicalExpressionÍüÍeQ±LogicalExpressionÍüÍOQ±LogicalExpressionÍüÍ2Q±LogicalExpressionÍüÍQ°BinaryExpressionÍüÍKªIdentifierÍüÍ¥upper£===R§LiteralÍÍ£GND¥'GND'¢||Q°BinaryExpressionÍÍKªIdentifierÍÍ¥upper£===R§LiteralÍÍ£VSS¥'VSS'¢||Q°BinaryExpressionÍ"Í2KªIdentifierÍ"Í'¥upper£===R§LiteralÍ,Í2¤AGND¦'AGND'¢||Q°BinaryExpressionÍ?ÍOKªIdentifierÍ?ÍD¥upper£===R§LiteralÍIÍO¤VOUT¦'VOUT'¢||Q°BinaryExpressionÍSÍeKªIdentifierÍSÍX¥upper£===R§LiteralÍ]Íe¦REG_IN¨'REG_IN'¢||Q°BinaryExpressionÍiÍ|KªIdentifierÍiÍn¥upper£===R§LiteralÍsÍ|§VIN_SRC©'VIN_SRC'¢||Q°BinaryExpressionÍ‰Í¢O®CallExpressionÍ‰ÍP°MemberExpressionÍ‰Í–KªIdentifierÍ‰Í¥upperKªIdentifierÍÍ–§indexOfÂÂ‘R§LiteralÍ—Íœ£VCC¥'VCC'Â¢>=R§LiteralÍ¡Í¢ ¡0¢||Q°BinaryExpressionÍ¦Í¿O®CallExpressionÍ¦ÍºP°MemberExpressionÍ¦Í³KªIdentifierÍ¦Í«¥upperKªIdentifierÍ¬Í³§indexOfÂÂ‘R§LiteralÍ´Í¹£VDD¥'VDD'Â¢>=R§LiteralÍ¾Í¿ ¡0¢||Q°BinaryExpressionÍÌÍåO®CallExpressionÍÌÍàP°MemberExpressionÍÌÍÙKªIdentifierÍÌÍÑ¥upperKªIdentifierÍÒÍÙ§indexOfÂÂ‘R§LiteralÍÚÍß£3V3¥'3V3'Â¢>=R§LiteralÍäÍå ¡0¢||Q°BinaryExpressionÍéÍO®CallExpressionÍéÍüP°MemberExpressionÍéÍöKªIdentifierÍéÍî¥upperKªIdentifierÍïÍö§indexOfÂÂ‘R§LiteralÍ÷Íû¢5V¤'5V'Â¢>=R§LiteralÍ Í ¡0¢||Q°BinaryExpressionÍÍ'O®CallExpressionÍÍ"P°MemberExpressionÍÍKªIdentifierÍÍ¥upperKªIdentifierÍÍ§indexOfÂÂ‘R§LiteralÍÍ!£VIN¥'VIN'Â¢>=R§LiteralÍ&Í' ¡0¢||Q°BinaryExpressionÍ+ÍEO®CallExpressionÍ+Í@P°MemberExpressionÍ+Í8KªIdentifierÍ+Í0¥upperKªIdentifierÍ1Í8§indexOfÂÂ‘R§LiteralÍ9Í?¤VBAT¦'VBAT'Â¢>=R§LiteralÍDÍE ¡0¢||Q°BinaryExpressionÍRÍlO®CallExpressionÍRÍgP°MemberExpressionÍRÍ_KªIdentifierÍRÍW¥upperKªIdentifierÍXÍ_§indexOfÂÂ‘R§LiteralÍ`Íf¤VOUT¦'VOUT'Â¢>=R§LiteralÍkÍl ¡0L®BlockStatementÍnÍ‘ÔrW”¤type¥start£end¨argument¯ReturnStatementÍyÍˆKªIdentifierÍ€Í‡§powerIdÀT«IfStatementÍ•ÍÍQ°BinaryExpressionÍ™Í©P°MemberExpressionÍ™Í¥KªIdentifierÍ™Í¥upperKªIdentifierÍŸÍ¥¦lengthÂÂ¡>R§LiteralÍ¨Í© ¡0L®BlockStatementÍ«ÍÍ‘W¯ReturnStatementÍ¶ÍÆKªIdentifierÍ½ÍÅ¨signalIdÀW¯ReturnStatementÍÓÍäKªIdentifierÍÚÍã©defaultIdÀI¶ExportNamedDeclarationÍéÍ.J³FunctionDeclarationÍğÍ.KªIdentifierÍùÍ¬findNetClassÂÂÂ’KªIdentifierÍÍ	£docKªIdentifierÍÍ§classIdL®BlockStatementÍÍ.“T«IfStatementÍÍ¤KªIdentifierÍÍ&§classIdL®BlockStatementÍ(Í¤‘S®ForOfStatementÍ3ÍÂM³VariableDeclarationÍ8Í?‘N²VariableDeclaratorÍ>Í?KªIdentifierÍ>Í?¡cÀ¥constP°MemberExpressionÍCÍQKªIdentifierÍCÍF£docKªIdentifierÍGÍQªnetClassesÂÂL®BlockStatementÍSÍ‘T«IfStatementÍbÍ’Q°BinaryExpressionÍfÍvP°MemberExpressionÍfÍjKªIdentifierÍfÍg¡cKªIdentifierÍhÍj¢idÂÂ£===KªIdentifierÍoÍv§classIdW¯ReturnStatementÍ‰Í’KªIdentifierÍÍ‘¡cÀÀS®ForOfStatementÍªÍÂM³VariableDeclarationÍ¯Í¶‘N²VariableDeclaratorÍµÍ¶KªIdentifierÍµÍ¶¡cÀ¥constP°MemberExpressionÍºÍÈKªIdentifierÍºÍ½£docKªIdentifierÍ¾ÍÈªnetClassesÂÂL®BlockStatementÍÊÍ‘T«IfStatementÍÕÍQ°BinaryExpressionÍÙÍíP°MemberExpressionÍÙÍßKªIdentifierÍÙÍÚ¡cKªIdentifierÍÛÍß¤nameÂÂ£===R§LiteralÍäÍí§Default©'Default'W¯ReturnStatementÍüÍKªIdentifierÍÍ¡cÀW¯ReturnStatementÍÍ+P°MemberExpressionÍÍ*P°MemberExpressionÍÍ'KªIdentifierÍÍ£docKªIdentifierÍÍ'ªnetClassesÂÂR§LiteralÍ(Í) ¡0ÃÂÀI¶ExportNamedDeclarationÍKÍ	J³FunctionDeclarationÍRÍ	KªIdentifierÍ[Íi®rebuildPcbNetsÂÂÂ‘KªIdentifierÍjÍm£docL®BlockStatementÍoÍ	šM³VariableDeclarationÍvÍŒ‘N²VariableDeclaratorÍ|Í‹KªIdentifierÍ|Í£mapÔrX•¤type¥start£end¦callee©arguments­NewExpressionÍ‚Í‹KªIdentifierÍ†Í‰£Map¥constM³VariableDeclarationÍ’Í‘N²VariableDeclaratorÍ˜ÍKªIdentifierÍ˜Í›£addJ·ArrowFunctionExpressionÍÍÀÂÂÂ’KªIdentifierÍŸÍ¤¥netIdKªIdentifierÍ¦Í­§netNameL®BlockStatementÍ²Í”T«IfStatementÍ½ÍóQ±LogicalExpressionÍÁÍİÔrY–¤type¥start£end¨operator¦prefix¨argument¯UnaryExpressionÍÁÍÇ¡!ÃKªIdentifierÍÂÍÇ¥netId¢||Q°BinaryExpressionÍËÍİP°MemberExpressionÍËÍ×KªIdentifierÍËÍĞ¥netIdKªIdentifierÍÑÍ×¦lengthÂÂ£===R§LiteralÍÜÍİ ¡0W¯ReturnStatementÍìÍóÀÀT«IfStatementÍıÍ%O®CallExpressionÍÍP°MemberExpressionÍÍKªIdentifierÍÍ£mapKªIdentifierÍÍ£hasÂÂ‘KªIdentifierÍ	Í¥netIdÂW¯ReturnStatementÍÍ%ÀÀM³VariableDeclarationÍ/Íl‘N²VariableDeclaratorÍ5ÍkKªIdentifierÍ5Í9¤nameTµConditionalExpressionÍ<ÍkQ±LogicalExpressionÍ<ÍYKªIdentifierÍ<ÍC§netName¢&&Q°BinaryExpressionÍGÍYP°MemberExpressionÍGÍUKªIdentifierÍGÍN§netNameKªIdentifierÍOÍU¦lengthÂÂ¡>R§LiteralÍXÍY ¡0KªIdentifierÍ\Íc§netNameKªIdentifierÍfÍk¥netId¥constU³ExpressionStatementÍvÍúO®CallExpressionÍvÍùP°MemberExpressionÍvÍ}KªIdentifierÍvÍy£mapKªIdentifierÍzÍ}£setÂÂ’KªIdentifierÍ~Íƒ¥netIdÔrZ”¤type¥start£endªproperties°ObjectExpressionÍ…Íø“Ôr[™¤type¥start£end¦method©shorthand¨computed£key¥value¤kind¨PropertyÍ”ÍÂÂÂKªIdentifierÍ”Í–¢idKªIdentifierÍ˜Í¥netId¤initÔr\™¤type¥start£end¦method©shorthand¨computed£key¤kind¥value¨PropertyÍ¬Í°ÂÃÂKªIdentifierÍ¬Í°¤name¤initKªIdentifierÍ¬Í°¤name[¨PropertyÍ¿ÍíÂÂÂKªIdentifierÍ¿ÍÆ§classIdO®CallExpressionÍÈÍíKªIdentifierÍÈÍ×¯guessNetClassId’KªIdentifierÍØÍÜ¤nameP°MemberExpressionÍŞÍìKªIdentifierÍŞÍá£docKªIdentifierÍâÍìªnetClassesÂÂÂ¤initÂ¥constS®ForOfStatementÍÍŒÂM³VariableDeclarationÍÍ‘N²VariableDeclaratorÍÍKªIdentifierÍÍ¢fpÀ¥constP°MemberExpressionÍÍ'KªIdentifierÍÍ£docKªIdentifierÍÍ'ªfootprintsÂÂL®BlockStatementÍ)ÍŒ‘S®ForOfStatementÍ4Í…ÂM³VariableDeclarationÍ9ÍB‘N²VariableDeclaratorÍ?ÍBKªIdentifierÍ?ÍB£padÀ¥constP°MemberExpressionÍFÍMKªIdentifierÍFÍH¢fpKªIdentifierÍIÍM¤padsÂÂL®BlockStatementÍOÍ…‘U³ExpressionStatementÍ^ÍzO®CallExpressionÍ^ÍyKªIdentifierÍ^Ía£add’P°MemberExpressionÍbÍkKªIdentifierÍbÍe£padKªIdentifierÍfÍk¥netIdÂÂP°MemberExpressionÍmÍxKªIdentifierÍmÍp£padKªIdentifierÍqÍx§netNameÂÂÂS®ForOfStatementÍ’ÍŞÂM³VariableDeclarationÍ—Í ‘N²VariableDeclaratorÍÍ KªIdentifierÍÍ £trkÀ¥constP°MemberExpressionÍ¤Í®KªIdentifierÍ¤Í§£docKªIdentifierÍ¨Í®¦tracksÂÂL®BlockStatementÍ°ÍŞ‘U³ExpressionStatementÍ»Í×O®CallExpressionÍ»ÍÖKªIdentifierÍ»Í¾£add’P°MemberExpressionÍ¿ÍÈKªIdentifierÍ¿ÍÂ£trkKªIdentifierÍÃÍÈ¥netIdÂÂP°MemberExpressionÍÊÍÕKªIdentifierÍÊÍÍ£trkKªIdentifierÍÎÍÕ§netNameÂÂÂS®ForOfStatementÍäÍ.ÂM³VariableDeclarationÍéÍò‘N²VariableDeclaratorÍïÍòKªIdentifierÍïÍò£viaÀ¥constP°MemberExpressionÍöÍşKªIdentifierÍöÍù£docKªIdentifierÍúÍş¤viasÂÂL®BlockStatementÍ Í.‘U³ExpressionStatementÍÍ'O®CallExpressionÍÍ&KªIdentifierÍÍ£add’P°MemberExpressionÍÍKªIdentifierÍÍ£viaKªIdentifierÍÍ¥netIdÂÂP°MemberExpressionÍÍ%KªIdentifierÍÍ£viaKªIdentifierÍÍ%§netNameÂÂÂS®ForOfStatementÍ4ÍyÂM³VariableDeclarationÍ9Í@‘N²VariableDeclaratorÍ?Í@KªIdentifierÍ?Í@¡zÀ¥constP°MemberExpressionÍDÍMKªIdentifierÍDÍG£docKªIdentifierÍHÍM¥zonesÂÂL®BlockStatementÍOÍy‘U³ExpressionStatementÍZÍrO®CallExpressionÍZÍqKªIdentifierÍZÍ]£add’P°MemberExpressionÍ^ÍeKªIdentifierÍ^Í_¡zKªIdentifierÍ`Íe¥netIdÂÂP°MemberExpressionÍgÍpKªIdentifierÍgÍh¡zKªIdentifierÍiÍp§netNameÂÂÂM³VariableDeclarationÍÍ‘N²VariableDeclaratorÍ…ÍKªIdentifierÍ…Í‰¤netsÔr]”¤type¥start£end¨elements¯ArrayExpressionÍŒÍ¥constU³ExpressionStatementÍ•ÍÉO®CallExpressionÍ•ÍÈP°MemberExpressionÍ•Í KªIdentifierÍ•Í˜£mapKªIdentifierÍ™Í §forEachÂÂ‘J·ArrowFunctionExpressionÍ¡ÍÇÀÂÂÂ‘KªIdentifierÍ¢Í£¡vL®BlockStatementÍ¨ÍÇ‘U³ExpressionStatementÍ³ÍÀO®CallExpressionÍ³Í¿P°MemberExpressionÍ³Í¼KªIdentifierÍ³Í·¤netsKªIdentifierÍ¸Í¼¤pushÂÂ‘KªIdentifierÍ½Í¾¡vÂÂU³ExpressionStatementÍÏÍ	O®CallExpressionÍÏÍ	 P°MemberExpressionÍÏÍØKªIdentifierÍÏÍÓ¤netsKªIdentifierÍÔÍØ¤sortÂÂ‘J·ArrowFunctionExpressionÍÙÍÿÀÃÂÂ’KªIdentifierÍÚÍÛ¡aKªIdentifierÍİÍŞ¡bO®CallExpressionÍãÍÿP°MemberExpressionÍãÍ÷P°MemberExpressionÍãÍéKªIdentifierÍãÍä¡aKªIdentifierÍåÍé¤nameÂÂKªIdentifierÍêÍ÷­localeCompareÂÂ‘P°MemberExpressionÍøÍşKªIdentifierÍøÍù¡bKªIdentifierÍúÍş¤nameÂÂÂÂU³ExpressionStatementÍ	Í	V´AssignmentExpressionÍ	Í	¡=P°MemberExpressionÍ	Í	KªIdentifierÍ	Í	
-£docKªIdentifierÍ	Í	¤netsÂÂKªIdentifierÍ	Í	¤netsÀI¶ExportNamedDeclarationÍ	?Í)J³FunctionDeclarationÍ	FÍ)KªIdentifierÍ	OÍ	\­buildRatsnestÂÂÂ‘KªIdentifierÍ	]Í	`£docL®BlockStatementÍ	bÍ)•M³VariableDeclarationÍ	iÍ	†‘N²VariableDeclaratorÍ	oÍ	…KªIdentifierÍ	oÍ	yªnodesByNetX­NewExpressionÍ	|Í	…KªIdentifierÍ	€Í	ƒ£Map¥constS®ForOfStatementÍ	ŒÍ›ÂM³VariableDeclarationÍ	‘Í	™‘N²VariableDeclaratorÍ	—Í	™KªIdentifierÍ	—Í	™¢fpÀ¥constP°MemberExpressionÍ	Í	«KªIdentifierÍ	Í	 £docKªIdentifierÍ	¡Í	«ªfootprintsÂÂL®BlockStatementÍ	­Í›‘S®ForOfStatementÍ	¸Í”ÂM³VariableDeclarationÍ	½Í	Æ‘N²VariableDeclaratorÍ	ÃÍ	ÆKªIdentifierÍ	ÃÍ	Æ£padÀ¥constP°MemberExpressionÍ	ÊÍ	ÑKªIdentifierÍ	ÊÍ	Ì¢fpKªIdentifierÍ	ÍÍ	Ñ¤padsÂÂL®BlockStatementÍ	ÓÍ”•T«IfStatementÍ	âÍ
-&Q±LogicalExpressionÍ	æÍ
-
-Y¯UnaryExpressionÍ	æÍ	ğ¡!ÃP°MemberExpressionÍ	çÍ	ğKªIdentifierÍ	çÍ	ê£padKªIdentifierÍ	ëÍ	ğ¥netIdÂÂ¢||Q°BinaryExpressionÍ	ôÍ
-
-P°MemberExpressionÍ	ôÍ
-P°MemberExpressionÍ	ôÍ	ıKªIdentifierÍ	ôÍ	÷£padKªIdentifierÍ	øÍ	ı¥netIdÂÂKªIdentifierÍ	şÍ
-¦lengthÂÂ£===R§LiteralÍ
-	Í
-
- ¡0Ôr^”¤type¥start£end¥label±ContinueStatementÍ
-Í
-&ÀÀM³VariableDeclarationÍ
-4Í
-Z‘N²VariableDeclaratorÍ
-:Í
-YKªIdentifierÍ
-:Í
-=£posO®CallExpressionÍ
-@Í
-YKªIdentifierÍ
-@Í
-P°padWorldPosition’KªIdentifierÍ
-QÍ
-S¢fpKªIdentifierÍ
-UÍ
-X£padÂ¥constM³VariableDeclarationÍ
-hÍ
-•‘N²VariableDeclaratorÍ
-nÍ
-”KªIdentifierÍ
-nÍ
-r¤listQ±LogicalExpressionÍ
-uÍ
-”O®CallExpressionÍ
-uÍ
-P°MemberExpressionÍ
-uÍ
-ƒKªIdentifierÍ
-uÍ
-ªnodesByNetKªIdentifierÍ
-€Í
-ƒ£getÂÂ‘P°MemberExpressionÍ
-„Í
-KªIdentifierÍ
-„Í
-‡£padKªIdentifierÍ
-ˆÍ
-¥netIdÂÂÂ¢??]¯ArrayExpressionÍ
-’Í
-”¥constU³ExpressionStatementÍ
-£Í[O®CallExpressionÍ
-£ÍZP°MemberExpressionÍ
-£Í
-¬KªIdentifierÍ
-£Í
-§¤listKªIdentifierÍ
-¨Í
-¬¤pushÂÂ‘Z°ObjectExpressionÍ
-­ÍY”[¨PropertyÍ
-ÀÍ
-İÂÂÂKªIdentifierÍ
-ÀÍ
-Ã£keyÔr_•¤type¥start£end«expressions¦quasis¯TemplateLiteralÍ
-ÅÍ
-İ’P°MemberExpressionÍ
-ÈÍ
-ÍKªIdentifierÍ
-ÈÍ
-Ê¢fpKªIdentifierÍ
-ËÍ
-Í¢idÂÂP°MemberExpressionÍ
-ÑÍ
-ÛKªIdentifierÍ
-ÑÍ
-Ô£padKªIdentifierÍ
-ÕÍ
-Û¦numberÂÂ“Ôr`•¤type¥start£end¥value¤tail¯TemplateElementÍ
-ÆÍ
-ÆÔra’£raw¦cooked  Â`¯TemplateElementÍ
-ÎÍ
-Ïa¡:¡:Â`¯TemplateElementÍ
-ÜÍ
-Üa  Ã¤init[¨PropertyÍ
-ğÍ ÂÂÂKªIdentifierÍ
-ğÍ
-õ¥netIdP°MemberExpressionÍ
-÷Í KªIdentifierÍ
-÷Í
-ú£padKªIdentifierÍ
-ûÍ ¥netIdÂÂ¤init[¨PropertyÍÍ4ÂÂÂKªIdentifierÍÍ§netNameQ±LogicalExpressionÍÍ4P°MemberExpressionÍÍ'KªIdentifierÍÍ£padKªIdentifierÍ Í'§netNameÂÂ¢??P°MemberExpressionÍ+Í4KªIdentifierÍ+Í.£padKªIdentifierÍ/Í4¥netIdÂÂ¤init\¨PropertyÍGÍJÂÃÂKªIdentifierÍGÍJ£pos¤initKªIdentifierÍGÍJ£posÂU³ExpressionStatementÍiÍ‰O®CallExpressionÍiÍˆP°MemberExpressionÍiÍwKªIdentifierÍiÍsªnodesByNetKªIdentifierÍtÍw£setÂÂ’P°MemberExpressionÍxÍKªIdentifierÍxÍ{£padKªIdentifierÍ|Í¥netIdÂÂKªIdentifierÍƒÍ‡¤listÂM³VariableDeclarationÍ¡Í²‘N²VariableDeclaratorÍ§Í±KªIdentifierÍ§Í¬¥edges]¯ArrayExpressionÍ¯Í±¥constU³ExpressionStatementÍ¸ÍO®CallExpressionÍ¸ÍP°MemberExpressionÍ¸ÍÊKªIdentifierÍ¸ÍÂªnodesByNetKªIdentifierÍÃÍÊ§forEachÂÂ‘J·ArrowFunctionExpressionÍËÍÀÂÂÂ’KªIdentifierÍÌÍÑ¥nodesKªIdentifierÍÓÍØ¥netIdL®BlockStatementÍİÍ—T«IfStatementÍèÍQ°BinaryExpressionÍìÍüP°MemberExpressionÍìÍøKªIdentifierÍìÍñ¥nodesKªIdentifierÍòÍø¦lengthÂÂ¡<R§LiteralÍûÍü¡2W¯ReturnStatementÍÍÀÀT«IfStatementÍÍ\O®CallExpressionÍ ÍFKªIdentifierÍ Í3³isNetFullyConnected“KªIdentifierÍ4Í7£docKªIdentifierÍ9Í>¥netIdKªIdentifierÍ@ÍE¥nodesÂW¯ReturnStatementÍUÍ\ÀÀM³VariableDeclarationÍƒÍ“‘N²VariableDeclaratorÍ‰Í’KªIdentifierÍ‰Í¤used]¯ArrayExpressionÍÍ’¥constÔrb—¤type¥start£end¤init¤test¦update¤body¬ForStatementÍÍâM³VariableDeclarationÍ¢Í«‘N²VariableDeclaratorÍ¦Í«KªIdentifierÍ¦Í§¡iR§LiteralÍªÍ« ¡0£letQ°BinaryExpressionÍ­Í½KªIdentifierÍ­Í®¡i¡<P°MemberExpressionÍ±Í½KªIdentifierÍ±Í¶¥nodesKªIdentifierÍ·Í½¦lengthÂÂY°UpdateExpressionÍ¿ÍÂ¢++ÂKªIdentifierÍ¿ÍÀ¡iU³ExpressionStatementÍÑÍâO®CallExpressionÍÑÍáP°MemberExpressionÍÑÍÚKªIdentifierÍÑÍÕ¤usedKªIdentifierÍÖÍÚ¤pushÂÂ‘R§LiteralÍÛÍàÂ¥falseÂU³ExpressionStatementÍìÍûV´AssignmentExpressionÍìÍú¡=P°MemberExpressionÍìÍóKªIdentifierÍìÍğ¤usedR§LiteralÍñÍò ¡0ÃÂR§LiteralÍöÍúÃ¤trueM³VariableDeclarationÍÍ‘N²VariableDeclaratorÍ	ÍKªIdentifierÍ	Í©usedCountR§LiteralÍÍ¡1£letÔrc•¤type¥start£end¤test¤body®WhileStatementÍ!Í
-Q°BinaryExpressionÍ(Í@KªIdentifierÍ(Í1©usedCount¡<P°MemberExpressionÍ4Í@KªIdentifierÍ4Í9¥nodesKªIdentifierÍ:Í@¦lengthÂÂL®BlockStatementÍBÍ
-˜M³VariableDeclarationÍQÍ`‘N²VariableDeclaratorÍUÍ_KªIdentifierÍUÍZ¥bestIY¯UnaryExpressionÍ]Í_¡-ÃR§LiteralÍ^Í_¡1£letM³VariableDeclarationÍnÍ}‘N²VariableDeclaratorÍrÍ|KªIdentifierÍrÍw¥bestJY¯UnaryExpressionÍzÍ|¡-ÃR§LiteralÍ{Í|¡1£letM³VariableDeclarationÍ‹Í ‘N²VariableDeclaratorÍÍŸKªIdentifierÍÍ”¥bestDKªIdentifierÍ—ÍŸ¨Infinity£letb¬ForStatementÍ®ÍM³VariableDeclarationÍ³Í¼‘N²VariableDeclaratorÍ·Í¼KªIdentifierÍ·Í¸¡iR§LiteralÍ»Í¼ ¡0£letQ°BinaryExpressionÍ¾ÍÎKªIdentifierÍ¾Í¿¡i¡<P°MemberExpressionÍÂÍÎKªIdentifierÍÂÍÇ¥nodesKªIdentifierÍÈÍÎ¦lengthÂÂY°UpdateExpressionÍĞÍÓ¢++ÂKªIdentifierÍĞÍÑ¡iL®BlockStatementÍÕÍ’T«IfStatementÍèÍY¯UnaryExpressionÍìÍô¡!ÃP°MemberExpressionÍíÍôKªIdentifierÍíÍñ¤usedKªIdentifierÍòÍó¡iÃÂ^±ContinueStatementÍÍÀÀb¬ForStatementÍ&ÍM³VariableDeclarationÍ+Í4‘N²VariableDeclaratorÍ/Í4KªIdentifierÍ/Í0¡jR§LiteralÍ3Í4 ¡0£letQ°BinaryExpressionÍ6ÍFKªIdentifierÍ6Í7¡j¡<P°MemberExpressionÍ:ÍFKªIdentifierÍ:Í?¥nodesKªIdentifierÍ@ÍF¦lengthÂÂY°UpdateExpressionÍHÍK¢++ÂKªIdentifierÍHÍI¡jL®BlockStatementÍMÍ•T«IfStatementÍdÍ“P°MemberExpressionÍhÍoKªIdentifierÍhÍl¤usedKªIdentifierÍmÍn¡jÃÂ^±ContinueStatementÍŠÍ“ÀÀM³VariableDeclarationÍ©ÍÔ‘N²VariableDeclaratorÍ¯ÍÓKªIdentifierÍ¯Í±¢dxQ°BinaryExpressionÍ´ÍÓP°MemberExpressionÍ´ÍÂP°MemberExpressionÍ´ÍÀP°MemberExpressionÍ´Í¼KªIdentifierÍ´Í¹¥nodesKªIdentifierÍºÍ»¡iÃÂKªIdentifierÍ½ÍÀ£posÂÂKªIdentifierÍÁÍÂ¡xÂÂ¡-P°MemberExpressionÍÅÍÓP°MemberExpressionÍÅÍÑP°MemberExpressionÍÅÍÍKªIdentifierÍÅÍÊ¥nodesKªIdentifierÍËÍÌ¡jÃÂKªIdentifierÍÎÍÑ£posÂÂKªIdentifierÍÒÍÓ¡xÂÂ¥constM³VariableDeclarationÍêÍ‘N²VariableDeclaratorÍğÍKªIdentifierÍğÍò¢dyQ°BinaryExpressionÍõÍP°MemberExpressionÍõÍP°MemberExpressionÍõÍP°MemberExpressionÍõÍıKªIdentifierÍõÍú¥nodesKªIdentifierÍûÍü¡iÃÂKªIdentifierÍşÍ£posÂÂKªIdentifierÍÍ¡yÂÂ¡-P°MemberExpressionÍÍP°MemberExpressionÍÍP°MemberExpressionÍÍKªIdentifierÍÍ¥nodesKªIdentifierÍÍ¡jÃÂKªIdentifierÍÍ£posÂÂKªIdentifierÍÍ¡yÂÂ¥constM³VariableDeclarationÍ+ÍG‘N²VariableDeclaratorÍ1ÍFKªIdentifierÍ1Í2¡dQ°BinaryExpressionÍ5ÍFQ°BinaryExpressionÍ5Í<KªIdentifierÍ5Í7¢dx¡*KªIdentifierÍ:Í<¢dx¡+Q°BinaryExpressionÍ?ÍFKªIdentifierÍ?ÍA¢dy¡*KªIdentifierÍDÍF¢dy¥constT«IfStatementÍ]ÍğQ°BinaryExpressionÍaÍjKªIdentifierÍaÍb¡d¡<KªIdentifierÍeÍj¥bestDL®BlockStatementÍlÍğ“U³ExpressionStatementÍ‡Í‘V´AssignmentExpressionÍ‡Í¡=KªIdentifierÍ‡ÍŒ¥bestDKªIdentifierÍÍ¡dU³ExpressionStatementÍ«ÍµV´AssignmentExpressionÍ«Í´¡=KªIdentifierÍ«Í°¥bestIKªIdentifierÍ³Í´¡iU³ExpressionStatementÍÏÍÙV´AssignmentExpressionÍÏÍØ¡=KªIdentifierÍÏÍÔ¥bestJKªIdentifierÍ×ÍØ¡jÀT«IfStatementÍ ÍFQ°BinaryExpressionÍ$Í-KªIdentifierÍ$Í)¥bestJ¡<R§LiteralÍ,Í- ¡0^®BreakStatementÍ@ÍFÀÀU³ExpressionStatementÍTÍgV´AssignmentExpressionÍTÍf¡=P°MemberExpressionÍTÍ_KªIdentifierÍTÍX¤usedKªIdentifierÍYÍ^¥bestJÃÂR§LiteralÍbÍfÃ¤trueU³ExpressionStatementÍuÍY°UpdateExpressionÍuÍ€¢++ÂKªIdentifierÍuÍ~©usedCountT«IfStatementÍÍÿY¯UnaryExpressionÍ“Í×¡!ÃO®CallExpressionÍ”Í×KªIdentifierÍ”Í§³padsCopperConnected”KªIdentifierÍ¨Í«£docKªIdentifierÍ­Í²¥netIdP°MemberExpressionÍ´ÍÄP°MemberExpressionÍ´ÍÀKªIdentifierÍ´Í¹¥nodesKªIdentifierÍºÍ¿¥bestIÃÂKªIdentifierÍÁÍÄ£posÂÂP°MemberExpressionÍÆÍÖP°MemberExpressionÍÆÍÒKªIdentifierÍÆÍË¥nodesKªIdentifierÍÌÍÑ¥bestJÃÂKªIdentifierÍÓÍÖ£posÂÂÂL®BlockStatementÍÙÍÿ‘U³ExpressionStatementÍìÍğO®CallExpressionÍìÍïP°MemberExpressionÍìÍöKªIdentifierÍìÍñ¥edgesKªIdentifierÍòÍö¤pushÂÂ‘Z°ObjectExpressionÍ÷Íî”\¨PropertyÍÍÂÃÂKªIdentifierÍÍ¥netId¤initKªIdentifierÍÍ¥netId[¨PropertyÍ*ÍGÂÂÂKªIdentifierÍ*Í1§netNameP°MemberExpressionÍ3ÍGP°MemberExpressionÍ3Í?KªIdentifierÍ3Í8¥nodesKªIdentifierÍ9Í>¥bestIÃÂKªIdentifierÍ@ÍG§netNameÂÂ¤init[¨PropertyÍ^Í‘ÂÂÂKªIdentifierÍ^Í_¡aZ°ObjectExpressionÍaÍ‘’[¨PropertyÍcÍxÂÂÂKªIdentifierÍcÍd¡xP°MemberExpressionÍfÍxP°MemberExpressionÍfÍvP°MemberExpressionÍfÍrKªIdentifierÍfÍk¥nodesKªIdentifierÍlÍq¥bestIÃÂKªIdentifierÍsÍv£posÂÂKªIdentifierÍwÍx¡xÂÂ¤init[¨PropertyÍzÍÂÂÂKªIdentifierÍzÍ{¡yP°MemberExpressionÍ}ÍP°MemberExpressionÍ}ÍP°MemberExpressionÍ}Í‰KªIdentifierÍ}Í‚¥nodesKªIdentifierÍƒÍˆ¥bestIÃÂKªIdentifierÍŠÍ£posÂÂKªIdentifierÍÍ¡yÂÂ¤init¤init[¨PropertyÍ¨ÍÛÂÂÂKªIdentifierÍ¨Í©¡bZ°ObjectExpressionÍ«ÍÛ’[¨PropertyÍ­ÍÂÂÂÂKªIdentifierÍ­Í®¡xP°MemberExpressionÍ°ÍÂP°MemberExpressionÍ°ÍÀP°MemberExpressionÍ°Í¼KªIdentifierÍ°Íµ¥nodesKªIdentifierÍ¶Í»¥bestJÃÂKªIdentifierÍ½ÍÀ£posÂÂKªIdentifierÍÁÍÂ¡xÂÂ¤init[¨PropertyÍÄÍÙÂÂÂKªIdentifierÍÄÍÅ¡yP°MemberExpressionÍÇÍÙP°MemberExpressionÍÇÍ×P°MemberExpressionÍÇÍÓKªIdentifierÍÇÍÌ¥nodesKªIdentifierÍÍÍÒ¥bestJÃÂKªIdentifierÍÔÍ×£posÂÂKªIdentifierÍØÍÙ¡yÂÂ¤init¤initÂÀÂW¯ReturnStatementÍÍ&KªIdentifierÍ Í%¥edgesÀI¶ExportNamedDeclarationÍ#[Í%J³FunctionDeclarationÍ#bÍ%KªIdentifierÍ#kÍ#w¬routeLPointsÂÂÂ’KªIdentifierÍ#xÍ#y¡aKªIdentifierÍ#{Í#|¡bL®BlockStatementÍ#~Í%™M³VariableDeclarationÍ#…Í#š‘N²VariableDeclaratorÍ#‹Í#™KªIdentifierÍ#‹Í#¢dxQ°BinaryExpressionÍ#Í#™P°MemberExpressionÍ#Í#“KªIdentifierÍ#Í#‘¡bKªIdentifierÍ#’Í#“¡xÂÂ¡-P°MemberExpressionÍ#–Í#™KªIdentifierÍ#–Í#—¡aKªIdentifierÍ#˜Í#™¡xÂÂ¥constM³VariableDeclarationÍ# Í#µ‘N²VariableDeclaratorÍ#¦Í#´KªIdentifierÍ#¦Í#¨¢dyQ°BinaryExpressionÍ#«Í#´P°MemberExpressionÍ#«Í#®KªIdentifierÍ#«Í#¬¡bKªIdentifierÍ#­Í#®¡yÂÂ¡-P°MemberExpressionÍ#±Í#´KªIdentifierÍ#±Í#²¡aKªIdentifierÍ#³Í#´¡yÂÂ¥constT«IfStatementÍ#»Í$	Q±LogicalExpressionÍ#¿Í#çQ°BinaryExpressionÍ#¿Í#ÑO®CallExpressionÍ#¿Í#ËP°MemberExpressionÍ#¿Í#ÇKªIdentifierÍ#¿Í#Ã¤MathKªIdentifierÍ#ÄÍ#Ç£absÂÂ‘KªIdentifierÍ#ÈÍ#Ê¢dxÂ¡<R§LiteralÍ#ÎÍ#ÑË?à      £0.5¢&&Q°BinaryExpressionÍ#ÕÍ#çO®CallExpressionÍ#ÕÍ#áP°MemberExpressionÍ#ÕÍ#İKªIdentifierÍ#ÕÍ#Ù¤MathKªIdentifierÍ#ÚÍ#İ£absÂÂ‘KªIdentifierÍ#ŞÍ#à¢dyÂ¡<R§LiteralÍ#äÍ#çË?à      £0.5L®BlockStatementÍ#éÍ$	‘W¯ReturnStatementÍ#ôÍ$]¯ArrayExpressionÍ#ûÍ$’KªIdentifierÍ#üÍ#ı¡aKªIdentifierÍ#ÿÍ$ ¡bÀM³VariableDeclarationÍ$Í$/‘N²VariableDeclaratorÍ$Í$.KªIdentifierÍ$Í$¤midHZ°ObjectExpressionÍ$Í$.’[¨PropertyÍ$Í$$ÂÂÂKªIdentifierÍ$Í$¡xP°MemberExpressionÍ$!Í$$KªIdentifierÍ$!Í$"¡bKªIdentifierÍ$#Í$$¡xÂÂ¤init[¨PropertyÍ$&Í$,ÂÂÂKªIdentifierÍ$&Í$'¡yP°MemberExpressionÍ$)Í$,KªIdentifierÍ$)Í$*¡aKªIdentifierÍ$+Í$,¡yÂÂ¤init¥constM³VariableDeclarationÍ$5Í$U‘N²VariableDeclaratorÍ$;Í$TKªIdentifierÍ$;Í$?¤midVZ°ObjectExpressionÍ$BÍ$T’[¨PropertyÍ$DÍ$JÂÂÂKªIdentifierÍ$DÍ$E¡xP°MemberExpressionÍ$GÍ$JKªIdentifierÍ$GÍ$H¡aKªIdentifierÍ$IÍ$J¡xÂÂ¤init[¨PropertyÍ$LÍ$RÂÂÂKªIdentifierÍ$LÍ$M¡yP°MemberExpressionÍ$OÍ$RKªIdentifierÍ$OÍ$P¡bKªIdentifierÍ$QÍ$R¡yÂÂ¤init¥constM³VariableDeclarationÍ$[Í$‹‘N²VariableDeclaratorÍ$aÍ$ŠKªIdentifierÍ$aÍ$e¤lenHQ°BinaryExpressionÍ$hÍ$ŠO®CallExpressionÍ$hÍ$tP°MemberExpressionÍ$hÍ$pKªIdentifierÍ$hÍ$l¤MathKªIdentifierÍ$mÍ$p£absÂÂ‘KªIdentifierÍ$qÍ$s¢dxÂ¡+O®CallExpressionÍ$wÍ$ŠP°MemberExpressionÍ$wÍ$KªIdentifierÍ$wÍ${¤MathKªIdentifierÍ$|Í$£absÂÂ‘Q°BinaryExpressionÍ$€Í$‰P°MemberExpressionÍ$€Í$ƒKªIdentifierÍ$€Í$¡bKªIdentifierÍ$‚Í$ƒ¡yÂÂ¡-P°MemberExpressionÍ$†Í$‰KªIdentifierÍ$†Í$‡¡aKªIdentifierÍ$ˆÍ$‰¡yÂÂÂ¥constM³VariableDeclarationÍ$‘Í$Á‘N²VariableDeclaratorÍ$—Í$ÀKªIdentifierÍ$—Í$›¤lenVQ°BinaryExpressionÍ$Í$ÀO®CallExpressionÍ$Í$ªP°MemberExpressionÍ$Í$¦KªIdentifierÍ$Í$¢¤MathKªIdentifierÍ$£Í$¦£absÂÂ‘KªIdentifierÍ$§Í$©¢dyÂ¡+O®CallExpressionÍ$­Í$ÀP°MemberExpressionÍ$­Í$µKªIdentifierÍ$­Í$±¤MathKªIdentifierÍ$²Í$µ£absÂÂ‘Q°BinaryExpressionÍ$¶Í$¿P°MemberExpressionÍ$¶Í$¹KªIdentifierÍ$¶Í$·¡bKªIdentifierÍ$¸Í$¹¡xÂÂ¡-P°MemberExpressionÍ$¼Í$¿KªIdentifierÍ$¼Í$½¡aKªIdentifierÍ$¾Í$¿¡xÂÂÂ¥constT«IfStatementÍ$ÇÍ$ÿQ°BinaryExpressionÍ$ËÍ$×KªIdentifierÍ$ËÍ$Ï¤lenH¢<=KªIdentifierÍ$ÓÍ$×¤lenVL®BlockStatementÍ$ÙÍ$ÿ‘W¯ReturnStatementÍ$äÍ$ø]¯ArrayExpressionÍ$ëÍ$÷“KªIdentifierÍ$ìÍ$í¡aKªIdentifierÍ$ïÍ$ó¤midHKªIdentifierÍ$õÍ$ö¡bÀW¯ReturnStatementÍ%Í%]¯ArrayExpressionÍ%Í%“KªIdentifierÍ%Í%¡aKªIdentifierÍ%Í%¤midVKªIdentifierÍ%Í%¡bÀI¶ExportNamedDeclarationÍ%1Í'xJ³FunctionDeclarationÍ%8Í'xKªIdentifierÍ%AÍ%S²routeOrtho45PointsÂÂÂ’KªIdentifierÍ%TÍ%U¡aKªIdentifierÍ%WÍ%X¡bL®BlockStatementÍ%ZÍ'xšM³VariableDeclarationÍ%aÍ%v‘N²VariableDeclaratorÍ%gÍ%uKªIdentifierÍ%gÍ%i¢dxQ°BinaryExpressionÍ%lÍ%uP°MemberExpressionÍ%lÍ%oKªIdentifierÍ%lÍ%m¡bKªIdentifierÍ%nÍ%o¡xÂÂ¡-P°MemberExpressionÍ%rÍ%uKªIdentifierÍ%rÍ%s¡aKªIdentifierÍ%tÍ%u¡xÂÂ¥constM³VariableDeclarationÍ%|Í%‘‘N²VariableDeclaratorÍ%‚Í%KªIdentifierÍ%‚Í%„¢dyQ°BinaryExpressionÍ%‡Í%P°MemberExpressionÍ%‡Í%ŠKªIdentifierÍ%‡Í%ˆ¡bKªIdentifierÍ%‰Í%Š¡yÂÂ¡-P°MemberExpressionÍ%Í%KªIdentifierÍ%Í%¡aKªIdentifierÍ%Í%¡yÂÂ¥constT«IfStatementÍ%—Í%åQ±LogicalExpressionÍ%›Í%ÃQ°BinaryExpressionÍ%›Í%­O®CallExpressionÍ%›Í%§P°MemberExpressionÍ%›Í%£KªIdentifierÍ%›Í%Ÿ¤MathKªIdentifierÍ% Í%££absÂÂ‘KªIdentifierÍ%¤Í%¦¢dxÂ¡<R§LiteralÍ%ªÍ%­Ë?à      £0.5¢&&Q°BinaryExpressionÍ%±Í%ÃO®CallExpressionÍ%±Í%½P°MemberExpressionÍ%±Í%¹KªIdentifierÍ%±Í%µ¤MathKªIdentifierÍ%¶Í%¹£absÂÂ‘KªIdentifierÍ%ºÍ%¼¢dyÂ¡<R§LiteralÍ%ÀÍ%ÃË?à      £0.5L®BlockStatementÍ%ÅÍ%å‘W¯ReturnStatementÍ%ĞÍ%Ş]¯ArrayExpressionÍ%×Í%İ’KªIdentifierÍ%ØÍ%Ù¡aKªIdentifierÍ%ÛÍ%Ü¡bÀM³VariableDeclarationÍ%ëÍ&‘N²VariableDeclaratorÍ%ñÍ&KªIdentifierÍ%ñÍ%ô£adxO®CallExpressionÍ%÷Í&P°MemberExpressionÍ%÷Í%ÿKªIdentifierÍ%÷Í%û¤MathKªIdentifierÍ%üÍ%ÿ£absÂÂ‘KªIdentifierÍ& Í&¢dxÂ¥constM³VariableDeclarationÍ&
-Í&#‘N²VariableDeclaratorÍ&Í&"KªIdentifierÍ&Í&£adyO®CallExpressionÍ&Í&"P°MemberExpressionÍ&Í&KªIdentifierÍ&Í&¤MathKªIdentifierÍ&Í&£absÂÂ‘KªIdentifierÍ&Í&!¢dyÂ¥constT«IfStatementÍ&)Í&hQ°BinaryExpressionÍ&-Í&FO®CallExpressionÍ&-Í&@P°MemberExpressionÍ&-Í&5KªIdentifierÍ&-Í&1¤MathKªIdentifierÍ&2Í&5£absÂÂ‘Q°BinaryExpressionÍ&6Í&?KªIdentifierÍ&6Í&9£adx¡-KªIdentifierÍ&<Í&?£adyÂ¡<R§LiteralÍ&CÍ&FË?à      £0.5L®BlockStatementÍ&HÍ&h‘W¯ReturnStatementÍ&SÍ&a]¯ArrayExpressionÍ&ZÍ&`’KªIdentifierÍ&[Í&\¡aKªIdentifierÍ&^Í&_¡bÀT«IfStatementÍ&nÍ'Q°BinaryExpressionÍ&rÍ&{KªIdentifierÍ&rÍ&u£adx¡>KªIdentifierÍ&xÍ&{£adyL®BlockStatementÍ&}Í'“M³VariableDeclarationÍ&ˆÍ&£‘N²VariableDeclaratorÍ&Í&¢KªIdentifierÍ&Í&¢sxTµConditionalExpressionÍ&“Í&¢Q°BinaryExpressionÍ&“Í&™KªIdentifierÍ&“Í&•¢dx¡>R§LiteralÍ&˜Í&™ ¡0R§LiteralÍ&œÍ&¡1Y¯UnaryExpressionÍ& Í&¢¡-ÃR§LiteralÍ&¡Í&¢¡1¥constM³VariableDeclarationÍ&­Í&ß‘N²VariableDeclaratorÍ&³Í&ŞKªIdentifierÍ&³Í&¶£midZ°ObjectExpressionÍ&¹Í&Ş’[¨PropertyÍ&»Í&ÔÂÂÂKªIdentifierÍ&»Í&¼¡xQ°BinaryExpressionÍ&¾Í&ÔP°MemberExpressionÍ&¾Í&ÁKªIdentifierÍ&¾Í&¿¡aKªIdentifierÍ&ÀÍ&Á¡xÂÂ¡+Q°BinaryExpressionÍ&ÄÍ&ÔKªIdentifierÍ&ÄÍ&Æ¢sx¡*Q°BinaryExpressionÍ&ÊÍ&ÓKªIdentifierÍ&ÊÍ&Í£adx¡-KªIdentifierÍ&ĞÍ&Ó£ady¤init[¨PropertyÍ&ÖÍ&ÜÂÂÂKªIdentifierÍ&ÖÍ&×¡yP°MemberExpressionÍ&ÙÍ&ÜKªIdentifierÍ&ÙÍ&Ú¡aKªIdentifierÍ&ÛÍ&Ü¡yÂÂ¤init¥constW¯ReturnStatementÍ&éÍ&ü]¯ArrayExpressionÍ&ğÍ&û“KªIdentifierÍ&ñÍ&ò¡aKªIdentifierÍ&ôÍ&÷£midKªIdentifierÍ&ùÍ&ú¡bÀM³VariableDeclarationÍ'	Í'$‘N²VariableDeclaratorÍ'Í'#KªIdentifierÍ'Í'¢syTµConditionalExpressionÍ'Í'#Q°BinaryExpressionÍ'Í'KªIdentifierÍ'Í'¢dy¡>R§LiteralÍ'Í' ¡0R§LiteralÍ'Í'¡1Y¯UnaryExpressionÍ'!Í'#¡-ÃR§LiteralÍ'"Í'#¡1¥constM³VariableDeclarationÍ'*Í'\‘N²VariableDeclaratorÍ'0Í'[KªIdentifierÍ'0Í'3£midZ°ObjectExpressionÍ'6Í'[’[¨PropertyÍ'8Í'>ÂÂÂKªIdentifierÍ'8Í'9¡xP°MemberExpressionÍ';Í'>KªIdentifierÍ';Í'<¡aKªIdentifierÍ'=Í'>¡xÂÂ¤init[¨PropertyÍ'@Í'YÂÂÂKªIdentifierÍ'@Í'A¡yQ°BinaryExpressionÍ'CÍ'YP°MemberExpressionÍ'CÍ'FKªIdentifierÍ'CÍ'D¡aKªIdentifierÍ'EÍ'F¡yÂÂ¡+Q°BinaryExpressionÍ'IÍ'YKªIdentifierÍ'IÍ'K¢sy¡*Q°BinaryExpressionÍ'OÍ'XKªIdentifierÍ'OÍ'R£ady¡-KªIdentifierÍ'UÍ'X£adx¤init¥constW¯ReturnStatementÍ'bÍ'u]¯ArrayExpressionÍ'iÍ't“KªIdentifierÍ'jÍ'k¡aKªIdentifierÍ'mÍ'p£midKªIdentifierÍ'rÍ's¡bÀI¶ExportNamedDeclarationÍ'´Í)ÅJ³FunctionDeclarationÍ'»Í)ÅKªIdentifierÍ'ÄÍ'Ò®routeArcPointsÂÂÂ“KªIdentifierÍ'ÓÍ'Ô¡aKªIdentifierÍ'ÖÍ'×¡bÔrd•¤type¥start£end¤left¥right±AssignmentPatternÍ'ÙÍ'æKªIdentifierÍ'ÙÍ'á¨segmentsR§LiteralÍ'äÍ'æ¢12L®BlockStatementÍ'èÍ)Å—M³VariableDeclarationÍ'ïÍ(‘N²VariableDeclaratorÍ'õÍ(KªIdentifierÍ'õÍ'ù¤baseO®CallExpressionÍ'üÍ(KªIdentifierÍ'üÍ(²routeOrtho45Points’KªIdentifierÍ(Í(¡aKªIdentifierÍ(Í(¡bÂ¥constT«IfStatementÍ(Í(NQ°BinaryExpressionÍ(Í(.P°MemberExpressionÍ(Í(*KªIdentifierÍ(Í(#¤baseKªIdentifierÍ($Í(*¦lengthÂÂ¡<R§LiteralÍ(-Í(.¡3L®BlockStatementÍ(0Í(N‘W¯ReturnStatementÍ(;Í(GKªIdentifierÍ(BÍ(F¤baseÀM³VariableDeclarationÍ(TÍ(i‘N²VariableDeclaratorÍ(ZÍ(hKªIdentifierÍ(ZÍ(^¤ctrlP°MemberExpressionÍ(aÍ(hKªIdentifierÍ(aÍ(e¤baseR§LiteralÍ(fÍ(g¡1ÃÂ¥constM³VariableDeclarationÍ(oÍ(‘N²VariableDeclaratorÍ(uÍ(œKªIdentifierÍ(uÍ(v¡nO®CallExpressionÍ(yÍ(œP°MemberExpressionÍ(yÍ(KªIdentifierÍ(yÍ(}¤MathKªIdentifierÍ(~Í(£maxÂÂ’R§LiteralÍ(‚Í(ƒ¡6O®CallExpressionÍ(…Í(›P°MemberExpressionÍ(…Í(KªIdentifierÍ(…Í(‰¤MathKªIdentifierÍ(ŠÍ(£minÂÂ’R§LiteralÍ(Í(¢24KªIdentifierÍ(’Í(š¨segmentsÂÂ¥constM³VariableDeclarationÍ(£Í(²‘N²VariableDeclaratorÍ(©Í(±KªIdentifierÍ(©Í(¬£pts]¯ArrayExpressionÍ(¯Í(±¥constb¬ForStatementÍ(¸Í)±M³VariableDeclarationÍ(½Í(Æ‘N²VariableDeclaratorÍ(ÁÍ(ÆKªIdentifierÍ(ÁÍ(Â¡iR§LiteralÍ(ÅÍ(Æ ¡0£letQ°BinaryExpressionÍ(ÈÍ(ÎKªIdentifierÍ(ÈÍ(É¡i¢<=KªIdentifierÍ(ÍÍ(Î¡nY°UpdateExpressionÍ(ĞÍ(Ó¢++ÂKªIdentifierÍ(ĞÍ(Ñ¡iL®BlockStatementÍ(ÕÍ)±“M³VariableDeclarationÍ(àÍ(ğ‘N²VariableDeclaratorÍ(æÍ(ïKªIdentifierÍ(æÍ(ç¡tQ°BinaryExpressionÍ(êÍ(ïKªIdentifierÍ(êÍ(ë¡i¡/KªIdentifierÍ(îÍ(ï¡n¥constM³VariableDeclarationÍ(úÍ)
-‘N²VariableDeclaratorÍ) Í)	KªIdentifierÍ) Í)¡uQ°BinaryExpressionÍ)Í)	R§LiteralÍ)Í)¡1¡-KªIdentifierÍ)Í)	¡t¥constU³ExpressionStatementÍ)Í)ªO®CallExpressionÍ)Í)©P°MemberExpressionÍ)Í)KªIdentifierÍ)Í)£ptsKªIdentifierÍ)Í)¤pushÂÂ‘Z°ObjectExpressionÍ)Í)¨’[¨PropertyÍ),Í)]ÂÂÂKªIdentifierÍ),Í)-¡xQ°BinaryExpressionÍ)/Í)]Q°BinaryExpressionÍ)/Í)OQ°BinaryExpressionÍ)/Í):Q°BinaryExpressionÍ)/Í)4KªIdentifierÍ)/Í)0¡u¡*KªIdentifierÍ)3Í)4¡u¡*P°MemberExpressionÍ)7Í):KªIdentifierÍ)7Í)8¡aKªIdentifierÍ)9Í):¡xÂÂ¡+Q°BinaryExpressionÍ)=Í)OQ°BinaryExpressionÍ)=Í)FQ°BinaryExpressionÍ)=Í)BR§LiteralÍ)=Í)>¡2¡*KªIdentifierÍ)AÍ)B¡u¡*KªIdentifierÍ)EÍ)F¡t¡*P°MemberExpressionÍ)IÍ)OKªIdentifierÍ)IÍ)M¤ctrlKªIdentifierÍ)NÍ)O¡xÂÂ¡+Q°BinaryExpressionÍ)RÍ)]Q°BinaryExpressionÍ)RÍ)WKªIdentifierÍ)RÍ)S¡t¡*KªIdentifierÍ)VÍ)W¡t¡*P°MemberExpressionÍ)ZÍ)]KªIdentifierÍ)ZÍ)[¡bKªIdentifierÍ)\Í)]¡xÂÂ¤init[¨PropertyÍ)lÍ)ÂÂÂKªIdentifierÍ)lÍ)m¡yQ°BinaryExpressionÍ)oÍ)Q°BinaryExpressionÍ)oÍ)Q°BinaryExpressionÍ)oÍ)zQ°BinaryExpressionÍ)oÍ)tKªIdentifierÍ)oÍ)p¡u¡*KªIdentifierÍ)sÍ)t¡u¡*P°MemberExpressionÍ)wÍ)zKªIdentifierÍ)wÍ)x¡aKªIdentifierÍ)yÍ)z¡yÂÂ¡+Q°BinaryExpressionÍ)}Í)Q°BinaryExpressionÍ)}Í)†Q°BinaryExpressionÍ)}Í)‚R§LiteralÍ)}Í)~¡2¡*KªIdentifierÍ)Í)‚¡u¡*KªIdentifierÍ)…Í)†¡t¡*P°MemberExpressionÍ)‰Í)KªIdentifierÍ)‰Í)¤ctrlKªIdentifierÍ)Í)¡yÂÂ¡+Q°BinaryExpressionÍ)’Í)Q°BinaryExpressionÍ)’Í)—KªIdentifierÍ)’Í)“¡t¡*KªIdentifierÍ)–Í)—¡t¡*P°MemberExpressionÍ)šÍ)KªIdentifierÍ)šÍ)›¡bKªIdentifierÍ)œÍ)¡yÂÂ¤initÂW¯ReturnStatementÍ)·Í)ÂKªIdentifierÍ)¾Í)Á£ptsÀI¶ExportNamedDeclarationÍ)ÛÍ*ÉJ³FunctionDeclarationÍ)âÍ*ÉKªIdentifierÍ)ëÍ)ü±routeByCornerModeÂÂÂ“KªIdentifierÍ)ıÍ)ş¡aKªIdentifierÍ* Í*¡bKªIdentifierÍ*Í*¤modeL®BlockStatementÍ*	Í*É“T«IfStatementÍ*Í*TQ°BinaryExpressionÍ*Í*&KªIdentifierÍ*Í*¤mode£===R§LiteralÍ*Í*&§ortho90©'ortho90'L®BlockStatementÍ*(Í*T‘W¯ReturnStatementÍ*3Í*MO®CallExpressionÍ*:Í*LKªIdentifierÍ*:Í*F¬routeLPoints’KªIdentifierÍ*GÍ*H¡aKªIdentifierÍ*JÍ*K¡bÂÀT«IfStatementÍ*ZÍ* Q°BinaryExpressionÍ*^Í*lKªIdentifierÍ*^Í*b¤mode£===R§LiteralÍ*gÍ*l£arc¥'arc'L®BlockStatementÍ*nÍ* ‘W¯ReturnStatementÍ*yÍ*™O®CallExpressionÍ*€Í*˜KªIdentifierÍ*€Í*®routeArcPoints“KªIdentifierÍ*Í*¡aKªIdentifierÍ*’Í*“¡bR§LiteralÍ*•Í*—¢12ÂÀW¯ReturnStatementÍ*¦Í*ÆO®CallExpressionÍ*­Í*ÅKªIdentifierÍ*­Í*¿²routeOrtho45Points’KªIdentifierÍ*ÀÍ*Á¡aKªIdentifierÍ*ÃÍ*Ä¡bÂÀI¶ExportNamedDeclarationÍ*ËÍ,J³FunctionDeclarationÍ*ÒÍ,KªIdentifierÍ*ÛÍ*ï´sumTrackLengthForNetÂÂÂ’KªIdentifierÍ*ğÍ*ó£docKªIdentifierÍ*õÍ*ú¥netIdL®BlockStatementÍ*üÍ,“M³VariableDeclarationÍ+Í+‘N²VariableDeclaratorÍ+Í+KªIdentifierÍ+Í+
-£lenR§LiteralÍ+Í+ ¡0£letS®ForOfStatementÍ+Í+üÂM³VariableDeclarationÍ+Í+#‘N²VariableDeclaratorÍ+ Í+#KªIdentifierÍ+ Í+#£trkÀ¥constP°MemberExpressionÍ+'Í+1KªIdentifierÍ+'Í+*£docKªIdentifierÍ++Í+1¦tracksÂÂL®BlockStatementÍ+3Í+ü”T«IfStatementÍ+>Í+mQ°BinaryExpressionÍ+BÍ+UP°MemberExpressionÍ+BÍ+KKªIdentifierÍ+BÍ+E£trkKªIdentifierÍ+FÍ+K¥netIdÂÂ£!==KªIdentifierÍ+PÍ+U¥netId^±ContinueStatementÍ+dÍ+mÀÀM³VariableDeclarationÍ+wÍ+š‘N²VariableDeclaratorÍ+}Í+™KªIdentifierÍ+}Í+¢dxQ°BinaryExpressionÍ+‚Í+™P°MemberExpressionÍ+‚Í+‹P°MemberExpressionÍ+‚Í+‰KªIdentifierÍ+‚Í+…£trkKªIdentifierÍ+†Í+‰£endÂÂKªIdentifierÍ+ŠÍ+‹¡xÂÂ¡-P°MemberExpressionÍ+Í+™P°MemberExpressionÍ+Í+—KªIdentifierÍ+Í+‘£trkKªIdentifierÍ+’Í+—¥startÂÂKªIdentifierÍ+˜Í+™¡xÂÂ¥constM³VariableDeclarationÍ+¤Í+Ç‘N²VariableDeclaratorÍ+ªÍ+ÆKªIdentifierÍ+ªÍ+¬¢dyQ°BinaryExpressionÍ+¯Í+ÆP°MemberExpressionÍ+¯Í+¸P°MemberExpressionÍ+¯Í+¶KªIdentifierÍ+¯Í+²£trkKªIdentifierÍ+³Í+¶£endÂÂKªIdentifierÍ+·Í+¸¡yÂÂ¡-P°MemberExpressionÍ+»Í+ÆP°MemberExpressionÍ+»Í+ÄKªIdentifierÍ+»Í+¾£trkKªIdentifierÍ+¿Í+Ä¥startÂÂKªIdentifierÍ+ÅÍ+Æ¡yÂÂ¥constU³ExpressionStatementÍ+ÑÍ+õV´AssignmentExpressionÍ+ÑÍ+ô¢+=KªIdentifierÍ+ÑÍ+Ô£lenO®CallExpressionÍ+ØÍ+ôP°MemberExpressionÍ+ØÍ+áKªIdentifierÍ+ØÍ+Ü¤MathKªIdentifierÍ+İÍ+á¤sqrtÂÂ‘Q°BinaryExpressionÍ+âÍ+óQ°BinaryExpressionÍ+âÍ+éKªIdentifierÍ+âÍ+ä¢dx¡*KªIdentifierÍ+çÍ+é¢dx¡+Q°BinaryExpressionÍ+ìÍ+óKªIdentifierÍ+ìÍ+î¢dy¡*KªIdentifierÍ+ñÍ+ó¢dyÂW¯ReturnStatementÍ,Í,KªIdentifierÍ,	Í,£lenÀI¶ExportNamedDeclarationÍ,Í,fJ³FunctionDeclarationÍ,Í,fKªIdentifierÍ,"Í,1¯collectPadWorldÂÂÂ’KªIdentifierÍ,2Í,4¢fpKªIdentifierÍ,6Í,9£padL®BlockStatementÍ,;Í,f‘W¯ReturnStatementÍ,BÍ,cO®CallExpressionÍ,IÍ,bKªIdentifierÍ,IÍ,Y°padWorldPosition’KªIdentifierÍ,ZÍ,\¢fpKªIdentifierÍ,^Í,a£padÂÀ‘Ôre•¤type¥start£endªspecifiers¦source±ImportDeclaration ÌA’Ôrf•¤type¥start£end¨imported¥local¯ImportSpecifier	KªIdentifier	°padWorldPositionKªIdentifier	°padWorldPositionf¯ImportSpecifier)KªIdentifier)®pointInPolygonKªIdentifier)®pointInPolygonR§Literal1Ì@­./PcbZoneUtil¯'./PcbZoneUtil'

@@ -1,986 +1,0 @@
-Ôr@Ÿªassertions¤code´customTransformCache¬dependencies¢id¤meta±moduleSideEffects¬originalCode±originalSourcemap«resolvedIds®sourcemapChainµsyntheticNamedExportsµtransformDependencies®transformFiles¨cacheAstÔrAÚ)×/**
- * PCB è‡ªåŠ¨å¸ƒçº¿ â€” æ­£äº¤ L å‹é“¾å¼è¿æ¥ï¼ˆæŒ‰ç½‘ç»œï¼‰
- */
-import { PcbLayerId } from '../types/PcbTypes';
-import { IdUtil } from './IdUtil';
-import { padWorldPosition } from './PcbZoneUtil';
-import { orderPointsNearestNeighbor, snapTrackEndpointsToPads, pruneZeroLengthTracks } from './PcbTrackBindUtil';
-import { ensureBoardAccessories, clearCopperForNets } from './PcbBoardAccessories';
-import { tracePcb, tracePcbWarn } from './PcbTraceLog';
-function snap(v, grid) {
-    if (grid <= 0)
-        return v;
-    return Math.round(v / grid) * grid;
-}
-function dist(a, b) {
-    const dx = a.x - b.x;
-    const dy = a.y - b.y;
-    return Math.sqrt(dx * dx + dy * dy);
-}
-/** æ­£äº¤ L å‹ä¸¤æ®µèµ°çº¿ â€” ç«¯ç‚¹ç²¾ç¡®è½åœ¨ç„Šç›˜ä¸­å¿ƒï¼Œä¸­é—´æŠ˜ç‚¹å¸é™„ç½‘æ ¼ */
-function routeL(a, b, grid) {
-    const s = { x: a.x, y: a.y };
-    const e = { x: b.x, y: b.y };
-    if (dist(s, e) < 0.5)
-        return [];
-    const midH = { x: e.x, y: snap(s.y, grid) };
-    const midV = { x: snap(s.x, grid), y: e.y };
-    const lenH = dist(s, midH) + dist(midH, e);
-    const lenV = dist(s, midV) + dist(midV, e);
-    if (lenH <= lenV) {
-        if (dist(s, midH) > 0.5 && dist(midH, e) > 0.5) {
-            return [s, midH, e];
-        }
-        return [s, e];
-    }
-    if (dist(s, midV) > 0.5 && dist(midV, e) > 0.5) {
-        return [s, midV, e];
-    }
-    return [s, e];
-}
-function collectNetPads(doc) {
-    const map = new Map();
-    for (const fp of doc.footprints) {
-        // å®‰è£…å­”ä»…å ç½‘ç»œåä¾›é“ºé“œï¼Œä¸å‚ä¸ L å‹é“¾å¼å¸ƒçº¿ï¼ˆé¿å…åœ°çº¿ç»•å››è§’ï¼‰
-        if (fp.defId === 'FP_MOUNT' || (fp.refDes.length >= 2 && fp.refDes.charAt(0) === 'H' &&
-            fp.refDes.charCodeAt(1) >= 48 && fp.refDes.charCodeAt(1) <= 57)) {
-            continue;
-        }
-        const isConnector = fp.refDes === 'J1' || fp.defId.indexOf('FP_PINHDR_') === 0;
-        for (const pad of fp.pads) {
-            const nid = pad.netId ?? '';
-            if (nid.length === 0)
-                continue;
-            const nname = pad.netName ?? '';
-            let grp = map.get(nid);
-            if (!grp) {
-                grp = { netId: nid, netName: nname, points: [], connectorPoints: [] };
-                map.set(nid, grp);
-            }
-            const wp = padWorldPosition(fp, pad);
-            if (isConnector) {
-                grp.connectorPoints.push(wp);
-            }
-            else {
-                grp.points.push(wp);
-            }
-        }
-    }
-    return map;
-}
-function netPadTotal(grp) {
-    return grp.points.length + grp.connectorPoints.length;
-}
-function netAlreadyRouted(doc, netId) {
-    for (const trk of doc.tracks) {
-        if (trk.netId === netId)
-            return true;
-    }
-    for (const via of doc.vias) {
-        if (via.netId === netId)
-            return true;
-    }
-    return false;
-}
-function addSegment(doc, layer, a, b, netId, netName, width) {
-    if (dist(a, b) < 0.5)
-        return 0;
-    const track = {
-        id: IdUtil.generate('trk'),
-        layer,
-        start: { x: a.x, y: a.y },
-        end: { x: b.x, y: b.y },
-        width,
-        netId,
-        netName
-    };
-    doc.tracks.push(track);
-    return 1;
-}
-function isGndNetName(netName) {
-    const nm = netName.toUpperCase();
-    return nm === 'GND' || nm === 'VSS' || nm === 'AGND';
-}
-function isPowerNetName(netName) {
-    const nm = netName.toUpperCase();
-    return isGndNetName(nm) || nm === 'VCC' || nm === 'VDD' || nm === 'VEE' ||
-        nm === 'VOUT' || nm === 'REG_IN' || nm === 'VIN' || nm === 'VIN_SRC' ||
-        nm.indexOf('VCC') === 0 || nm.indexOf('VDD') === 0 || nm.indexOf('VIN') === 0;
-}
-/** åœ°ç½‘èµ°åº•å±‚ï¼Œå‡å°‘ä¸é¡¶å±‚ä¿¡å·äº¤å‰ï¼›ç”µæºåŠ å®½ */
-function layerForNet(preferred, netName) {
-    if (isGndNetName(netName)) {
-        return PcbLayerId.B_CU;
-    }
-    return preferred;
-}
-function widthForNet(defaultWidth, netName) {
-    if (isPowerNetName(netName)) {
-        return Math.max(defaultWidth * 2, 20);
-    }
-    return defaultWidth;
-}
-function routeLChain(doc, layer, points, netId, netName, grid, width) {
-    if (points.length < 2) {
-        return 0;
-    }
-    const ordered = orderPointsNearestNeighbor(points);
-    let segs = 0;
-    for (let i = 0; i < ordered.length - 1; i++) {
-        const path = routeL(ordered[i], ordered[i + 1], grid);
-        for (let j = 0; j < path.length - 1; j++) {
-            segs += addSegment(doc, layer, path[j], path[j + 1], netId, netName, width);
-        }
-    }
-    return segs;
-}
-function nearestPoint(from, candidates) {
-    if (candidates.length === 0) {
-        return null;
-    }
-    let best = candidates[0];
-    let bestD = dist(from, best);
-    for (let i = 1; i < candidates.length; i++) {
-        const d = dist(from, candidates[i]);
-        if (d < bestD) {
-            bestD = d;
-            best = candidates[i];
-        }
-    }
-    return best;
-}
-function routeNetGroup(doc, layer, grp, grid, width) {
-    const core = grp.points;
-    const connectors = grp.connectorPoints;
-    let segs = 0;
-    // 1) å…ˆåœ¨å™¨ä»¶ç„Šç›˜ä¹‹é—´æˆé“¾ï¼ˆä¸å« J1ï¼‰
-    if (core.length >= 2) {
-        segs += routeLChain(doc, layer, core, grp.netId, grp.netName, grid, width);
-    }
-    // 2) J1 ä»æœ€è¿‘çš„å™¨ä»¶ç„Šç›˜å•ç‹¬æŠ½å¤´ï¼Œé¿å…é•¿å¹²çº¿æŒ‚åœ¨ R1 ç­‰è¾¹è§’è„šä¸Š
-    if (connectors.length > 0) {
-        const hubs = [];
-        for (const p of core) {
-            hubs.push(p);
-        }
-        if (hubs.length === 0) {
-            // ä»…å¤–æ¥é’ˆï¼ˆå¦‚ç©º VEEï¼‰â€” å¤šé’ˆæ‰äº’è¿ï¼Œå•é’ˆè·³è¿‡
-            segs += routeLChain(doc, layer, connectors, grp.netId, grp.netName, grid, width);
-        }
-        else {
-            for (const c of connectors) {
-                const hub = nearestPoint(c, hubs);
-                if (!hub) {
-                    continue;
-                }
-                const path = routeL(hub, c, grid);
-                for (let j = 0; j < path.length - 1; j++) {
-                    segs += addSegment(doc, layer, path[j], path[j + 1], grp.netId, grp.netName, width);
-                }
-            }
-        }
-    }
-    // ä»… 1 ä¸ªå™¨ä»¶ç„Šç›˜ + æ— è¿æ¥å™¨ï¼šæ— æ³•å¸ƒ
-    // ä»… 1 ä¸ªå™¨ä»¶ç„Šç›˜ + è¿æ¥å™¨ï¼šä¸Šé¢ step2 å·²å¤„ç†
-    if (core.length === 1 && connectors.length === 0) {
-        return 0;
-    }
-    return segs;
-}
-function finishRouteCleanup(doc, tag) {
-    const snapped = snapTrackEndpointsToPads(doc);
-    if (snapped > 0) {
-        tracePcb(`${tag}_SNAP`, `endpoints=${snapped}`);
-    }
-    const pruned = pruneZeroLengthTracks(doc);
-    if (pruned > 0) {
-        tracePcbWarn(`${tag}_PRUNE`, `zeroLen=${pruned}`);
-    }
-}
-/**
- * å¯¹æŒ‡å®šç½‘ç»œæ¸…é™¤æ—§èµ°çº¿å¹¶é‡æ–° L å‹é“¾å¼å¸ƒçº¿ã€‚
- * ç”¨äºå°è£…ç§»åŠ¨/æ—‹è½¬åçš„å±€éƒ¨é‡å¸ƒã€‚
- */
-export function rerouteNets(doc, layer, netIds) {
-    const empty = { trackCount: 0, netCount: 0 };
-    if (netIds.size === 0) {
-        return empty;
-    }
-    const grid = doc.metadata.gridSize ?? 5;
-    const width = doc.metadata.designRules.defaultTrackWidth;
-    const netPads = collectNetPads(doc);
-    const toRoute = [];
-    netIds.forEach((nid) => {
-        const grp = netPads.get(nid);
-        if (grp === undefined || netPadTotal(grp) < 2) {
-            return;
-        }
-        toRoute.push(nid);
-    });
-    if (toRoute.length === 0) {
-        return empty;
-    }
-    const routeSet = new Set(toRoute);
-    doc.tracks = doc.tracks.filter((t) => !routeSet.has(t.netId));
-    let trackCount = 0;
-    for (const nid of toRoute) {
-        const grp = netPads.get(nid);
-        if (grp === undefined) {
-            continue;
-        }
-        const ly = layerForNet(layer, grp.netName);
-        const w = widthForNet(width, grp.netName);
-        const segs = routeNetGroup(doc, ly, grp, grid, w);
-        trackCount += segs;
-        tracePcb('REROUTE_NET', `${grp.netName || grp.netId} pads=${grp.points.length} segments=${segs} layer=${ly}`);
-    }
-    finishRouteCleanup(doc, 'REROUTE');
-    tracePcb('REROUTE_DONE', `nets=${toRoute.length} tracks=${trackCount}`);
-    doc.metadata.modifiedAt = new Date().toISOString();
-    return { trackCount, netCount: toRoute.length };
-}
-/**
- * å¯¹æœªå¸ƒçº¿ç½‘ç»œæ‰§è¡Œè‡ªåŠ¨ L å‹é“¾å¼å¸ƒçº¿ï¼ˆè·³è¿‡å·²æœ‰èµ°çº¿çš„ç½‘ç»œï¼›åœ°ç½‘èµ° B.Cuï¼‰
- */
-export function autoRoutePcb(doc, layer, schNets) {
-    const messages = [];
-    const grid = doc.metadata.gridSize ?? 5;
-    const width = doc.metadata.designRules.defaultTrackWidth;
-    const acc = ensureBoardAccessories(doc, undefined, schNets);
-    if (acc.message.length > 0) {
-        messages.push(acc.message);
-    }
-    // æ–°å»º J1/è§’å­”åæ¸…æ‰ç›¸å…³ç½‘æ—§é“œï¼Œå¦åˆ™ netAlreadyRouted ä¼šè·³è¿‡ï¼Œå¤–æ¥ç‚¹æ¥ä¸ä¸Š
-    if (acc.addedNew && acc.connectorNetIds.length > 0) {
-        const cleared = clearCopperForNets(doc, acc.connectorNetIds);
-        if (cleared > 0) {
-            tracePcb('AUTO_CLEAR_FOR_J1', `cleared=${cleared} nets=${acc.connectorNetIds.length}`);
-        }
-    }
-    const netPads = collectNetPads(doc);
-    let netCount = 0;
-    const tracksBefore = doc.tracks.length;
-    tracePcb('AUTO_ROUTE_BEGIN', `layer=${layer} netGroups=${netPads.size} grid=${grid} width=${width}`);
-    netPads.forEach((grp) => {
-        const total = netPadTotal(grp);
-        if (total < 2) {
-            tracePcbWarn('AUTO_SKIP', `${grp.netName || grp.netId} pads=${total} (dev=${grp.points.length},j1=${grp.connectorPoints.length}) â€” ç„Šç›˜ä¸è¶³`);
-            return;
-        }
-        if (netAlreadyRouted(doc, grp.netId)) {
-            tracePcb('AUTO_SKIP', `${grp.netName || grp.netId} â€” å·²æœ‰èµ°çº¿/è¿‡å­”`);
-            return;
-        }
-        netCount++;
-        const ly = layerForNet(layer, grp.netName);
-        const w = widthForNet(width, grp.netName);
-        const segs = routeNetGroup(doc, ly, grp, grid, w);
-        tracePcb('AUTO_NET', `${grp.netName || grp.netId} pads=${total} (dev=${grp.points.length},j1=${grp.connectorPoints.length}) ` +
-            `segments=${segs} layer=${ly} w=${w}`);
-    });
-    finishRouteCleanup(doc, 'AUTO');
-    const trackCount = Math.max(0, doc.tracks.length - tracksBefore);
-    if (netCount === 0) {
-        messages.push('æ²¡æœ‰éœ€è¦è‡ªåŠ¨å¸ƒçº¿çš„ç½‘ç»œ');
-    }
-    else {
-        messages.push(`å·²è‡ªåŠ¨å¸ƒçº¿ ${netCount} ä¸ªç½‘ç»œï¼Œ${trackCount} æ®µ`);
-    }
-    doc.metadata.modifiedAt = new Date().toISOString();
-    return { trackCount, netCount, messages };
-}
-//# sourceMappingURL=PcbAutoRouter.js.mapÂ–ÙCC:\Projects\ElecDraw_Harmony\common\src\main\ets\types\PcbTypes.etsÙAC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\IdUtil.etsÙFC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\PcbZoneUtil.etsÙKC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\PcbTrackBindUtil.etsÙNC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\PcbBoardAccessories.etsÙFC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\PcbTraceLog.etsÙHC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\PcbAutoRouter.etsÔrB›ªmoduleName±isLocalDependency¯isNodeEntryFile§pkgPath±belongProjectPath§pkgNameªpkgVersion±dependencyPkgInfo°belongModulePath¬shouldEmitJs¯hostModulesInfo¦commonÃÂÙ#C:\Projects\ElecDraw_Harmony\common¼C:\Projects\ElecDraw_Harmony¦common¥1.0.0Ô  Ù#C:\Projects\ElecDraw_Harmony\commonÃ‘ÔrC’²hostDependencyName®hostModuleNameÙ"./src/main/ets/utils/PcbAutoRouter¦commonÃÚ+°/**
- * PCB è‡ªåŠ¨å¸ƒçº¿ â€” æ­£äº¤ L å‹é“¾å¼è¿æ¥ï¼ˆæŒ‰ç½‘ç»œï¼‰
- */
-import { PcbDocument, PcbLayerId, PcbTrack } from '../types/PcbTypes';
-import { Point2D } from '../types/CommonTypes';
-import { IdUtil } from './IdUtil';
-import { padWorldPosition } from './PcbZoneUtil';
-import {
-  orderPointsNearestNeighbor, snapTrackEndpointsToPads, pruneZeroLengthTracks
-} from './PcbTrackBindUtil';
-import { ensureBoardAccessories, clearCopperForNets, AccessoryNetHint } from './PcbBoardAccessories';
-import { tracePcb, tracePcbWarn } from './PcbTraceLog';
-
-export interface AutoRouteResult {
-  trackCount: number;
-  netCount: number;
-  messages: string[];
-}
-
-export interface RerouteResult {
-  trackCount: number;
-  netCount: number;
-}
-
-interface NetPadGroup {
-  netId: string;
-  netName: string;
-  /** åŸç†å›¾å…³è”å™¨ä»¶ç„Šç›˜ */
-  points: Point2D[];
-  /** J1 å¤–æ¥é’ˆ â€” å™¨ä»¶å¸ƒå®Œåå†æŠ½å¤´ */
-  connectorPoints: Point2D[];
-}
-
-function snap(v: number, grid: number): number {
-  if (grid <= 0) return v;
-  return Math.round(v / grid) * grid;
-}
-
-function dist(a: Point2D, b: Point2D): number {
-  const dx = a.x - b.x;
-  const dy = a.y - b.y;
-  return Math.sqrt(dx * dx + dy * dy);
-}
-
-/** æ­£äº¤ L å‹ä¸¤æ®µèµ°çº¿ â€” ç«¯ç‚¹ç²¾ç¡®è½åœ¨ç„Šç›˜ä¸­å¿ƒï¼Œä¸­é—´æŠ˜ç‚¹å¸é™„ç½‘æ ¼ */
-function routeL(a: Point2D, b: Point2D, grid: number): Point2D[] {
-  const s: Point2D = { x: a.x, y: a.y };
-  const e: Point2D = { x: b.x, y: b.y };
-  if (dist(s, e) < 0.5) return [];
-  const midH: Point2D = { x: e.x, y: snap(s.y, grid) };
-  const midV: Point2D = { x: snap(s.x, grid), y: e.y };
-  const lenH = dist(s, midH) + dist(midH, e);
-  const lenV = dist(s, midV) + dist(midV, e);
-  if (lenH <= lenV) {
-    if (dist(s, midH) > 0.5 && dist(midH, e) > 0.5) {
-      return [s, midH, e];
-    }
-    return [s, e];
-  }
-  if (dist(s, midV) > 0.5 && dist(midV, e) > 0.5) {
-    return [s, midV, e];
-  }
-  return [s, e];
-}
-
-function collectNetPads(doc: PcbDocument): Map<string, NetPadGroup> {
-  const map: Map<string, NetPadGroup> = new Map();
-  for (const fp of doc.footprints) {
-    // å®‰è£…å­”ä»…å ç½‘ç»œåä¾›é“ºé“œï¼Œä¸å‚ä¸ L å‹é“¾å¼å¸ƒçº¿ï¼ˆé¿å…åœ°çº¿ç»•å››è§’ï¼‰
-    if (fp.defId === 'FP_MOUNT' || (fp.refDes.length >= 2 && fp.refDes.charAt(0) === 'H' &&
-      fp.refDes.charCodeAt(1) >= 48 && fp.refDes.charCodeAt(1) <= 57)) {
-      continue;
-    }
-    const isConnector = fp.refDes === 'J1' || fp.defId.indexOf('FP_PINHDR_') === 0;
-    for (const pad of fp.pads) {
-      const nid = pad.netId ?? '';
-      if (nid.length === 0) continue;
-      const nname = pad.netName ?? '';
-      let grp = map.get(nid);
-      if (!grp) {
-        grp = { netId: nid, netName: nname, points: [], connectorPoints: [] };
-        map.set(nid, grp);
-      }
-      const wp = padWorldPosition(fp, pad);
-      if (isConnector) {
-        grp.connectorPoints.push(wp);
-      } else {
-        grp.points.push(wp);
-      }
-    }
-  }
-  return map;
-}
-
-function netPadTotal(grp: NetPadGroup): number {
-  return grp.points.length + grp.connectorPoints.length;
-}
-
-function netAlreadyRouted(doc: PcbDocument, netId: string): boolean {
-  for (const trk of doc.tracks) {
-    if (trk.netId === netId) return true;
-  }
-  for (const via of doc.vias) {
-    if (via.netId === netId) return true;
-  }
-  return false;
-}
-
-function addSegment(doc: PcbDocument, layer: PcbLayerId, a: Point2D, b: Point2D,
-  netId: string, netName: string, width: number): number {
-  if (dist(a, b) < 0.5) return 0;
-  const track: PcbTrack = {
-    id: IdUtil.generate('trk'),
-    layer,
-    start: { x: a.x, y: a.y },
-    end: { x: b.x, y: b.y },
-    width,
-    netId,
-    netName
-  };
-  doc.tracks.push(track);
-  return 1;
-}
-
-function isGndNetName(netName: string): boolean {
-  const nm = netName.toUpperCase();
-  return nm === 'GND' || nm === 'VSS' || nm === 'AGND';
-}
-
-function isPowerNetName(netName: string): boolean {
-  const nm = netName.toUpperCase();
-  return isGndNetName(nm) || nm === 'VCC' || nm === 'VDD' || nm === 'VEE' ||
-    nm === 'VOUT' || nm === 'REG_IN' || nm === 'VIN' || nm === 'VIN_SRC' ||
-    nm.indexOf('VCC') === 0 || nm.indexOf('VDD') === 0 || nm.indexOf('VIN') === 0;
-}
-
-/** åœ°ç½‘èµ°åº•å±‚ï¼Œå‡å°‘ä¸é¡¶å±‚ä¿¡å·äº¤å‰ï¼›ç”µæºåŠ å®½ */
-function layerForNet(preferred: PcbLayerId, netName: string): PcbLayerId {
-  if (isGndNetName(netName)) {
-    return PcbLayerId.B_CU;
-  }
-  return preferred;
-}
-
-function widthForNet(defaultWidth: number, netName: string): number {
-  if (isPowerNetName(netName)) {
-    return Math.max(defaultWidth * 2, 20);
-  }
-  return defaultWidth;
-}
-
-function routeLChain(doc: PcbDocument, layer: PcbLayerId, points: Point2D[],
-  netId: string, netName: string, grid: number, width: number): number {
-  if (points.length < 2) {
-    return 0;
-  }
-  const ordered = orderPointsNearestNeighbor(points);
-  let segs = 0;
-  for (let i = 0; i < ordered.length - 1; i++) {
-    const path = routeL(ordered[i], ordered[i + 1], grid);
-    for (let j = 0; j < path.length - 1; j++) {
-      segs += addSegment(doc, layer, path[j], path[j + 1], netId, netName, width);
-    }
-  }
-  return segs;
-}
-
-function nearestPoint(from: Point2D, candidates: Point2D[]): Point2D | null {
-  if (candidates.length === 0) {
-    return null;
-  }
-  let best = candidates[0];
-  let bestD = dist(from, best);
-  for (let i = 1; i < candidates.length; i++) {
-    const d = dist(from, candidates[i]);
-    if (d < bestD) {
-      bestD = d;
-      best = candidates[i];
-    }
-  }
-  return best;
-}
-
-function routeNetGroup(doc: PcbDocument, layer: PcbLayerId, grp: NetPadGroup,
-  grid: number, width: number): number {
-  const core = grp.points;
-  const connectors = grp.connectorPoints;
-  let segs = 0;
-
-  // 1) å…ˆåœ¨å™¨ä»¶ç„Šç›˜ä¹‹é—´æˆé“¾ï¼ˆä¸å« J1ï¼‰
-  if (core.length >= 2) {
-    segs += routeLChain(doc, layer, core, grp.netId, grp.netName, grid, width);
-  }
-
-  // 2) J1 ä»æœ€è¿‘çš„å™¨ä»¶ç„Šç›˜å•ç‹¬æŠ½å¤´ï¼Œé¿å…é•¿å¹²çº¿æŒ‚åœ¨ R1 ç­‰è¾¹è§’è„šä¸Š
-  if (connectors.length > 0) {
-    const hubs: Point2D[] = [];
-    for (const p of core) {
-      hubs.push(p);
-    }
-    if (hubs.length === 0) {
-      // ä»…å¤–æ¥é’ˆï¼ˆå¦‚ç©º VEEï¼‰â€” å¤šé’ˆæ‰äº’è¿ï¼Œå•é’ˆè·³è¿‡
-      segs += routeLChain(doc, layer, connectors, grp.netId, grp.netName, grid, width);
-    } else {
-      for (const c of connectors) {
-        const hub = nearestPoint(c, hubs);
-        if (!hub) {
-          continue;
-        }
-        const path = routeL(hub, c, grid);
-        for (let j = 0; j < path.length - 1; j++) {
-          segs += addSegment(doc, layer, path[j], path[j + 1], grp.netId, grp.netName, width);
-        }
-      }
-    }
-  }
-
-  // ä»… 1 ä¸ªå™¨ä»¶ç„Šç›˜ + æ— è¿æ¥å™¨ï¼šæ— æ³•å¸ƒ
-  // ä»… 1 ä¸ªå™¨ä»¶ç„Šç›˜ + è¿æ¥å™¨ï¼šä¸Šé¢ step2 å·²å¤„ç†
-  if (core.length === 1 && connectors.length === 0) {
-    return 0;
-  }
-  return segs;
-}
-
-function finishRouteCleanup(doc: PcbDocument, tag: string): void {
-  const snapped = snapTrackEndpointsToPads(doc);
-  if (snapped > 0) {
-    tracePcb(`${tag}_SNAP`, `endpoints=${snapped}`);
-  }
-  const pruned = pruneZeroLengthTracks(doc);
-  if (pruned > 0) {
-    tracePcbWarn(`${tag}_PRUNE`, `zeroLen=${pruned}`);
-  }
-}
-
-/**
- * å¯¹æŒ‡å®šç½‘ç»œæ¸…é™¤æ—§èµ°çº¿å¹¶é‡æ–° L å‹é“¾å¼å¸ƒçº¿ã€‚
- * ç”¨äºå°è£…ç§»åŠ¨/æ—‹è½¬åçš„å±€éƒ¨é‡å¸ƒã€‚
- */
-export function rerouteNets(doc: PcbDocument, layer: PcbLayerId, netIds: Set<string>): RerouteResult {
-  const empty: RerouteResult = { trackCount: 0, netCount: 0 };
-  if (netIds.size === 0) {
-    return empty;
-  }
-
-  const grid = doc.metadata.gridSize ?? 5;
-  const width = doc.metadata.designRules.defaultTrackWidth;
-  const netPads = collectNetPads(doc);
-  const toRoute: string[] = [];
-
-  netIds.forEach((nid: string) => {
-    const grp = netPads.get(nid);
-    if (grp === undefined || netPadTotal(grp) < 2) {
-      return;
-    }
-    toRoute.push(nid);
-  });
-
-  if (toRoute.length === 0) {
-    return empty;
-  }
-
-  const routeSet = new Set(toRoute);
-  doc.tracks = doc.tracks.filter((t: PcbTrack) => !routeSet.has(t.netId));
-
-  let trackCount = 0;
-  for (const nid of toRoute) {
-    const grp = netPads.get(nid);
-    if (grp === undefined) {
-      continue;
-    }
-    const ly = layerForNet(layer, grp.netName);
-    const w = widthForNet(width, grp.netName);
-    const segs = routeNetGroup(doc, ly, grp, grid, w);
-    trackCount += segs;
-    tracePcb('REROUTE_NET',
-      `${grp.netName || grp.netId} pads=${grp.points.length} segments=${segs} layer=${ly}`);
-  }
-
-  finishRouteCleanup(doc, 'REROUTE');
-
-  tracePcb('REROUTE_DONE', `nets=${toRoute.length} tracks=${trackCount}`);
-  doc.metadata.modifiedAt = new Date().toISOString();
-  return { trackCount, netCount: toRoute.length };
-}
-
-/**
- * å¯¹æœªå¸ƒçº¿ç½‘ç»œæ‰§è¡Œè‡ªåŠ¨ L å‹é“¾å¼å¸ƒçº¿ï¼ˆè·³è¿‡å·²æœ‰èµ°çº¿çš„ç½‘ç»œï¼›åœ°ç½‘èµ° B.Cuï¼‰
- */
-export function autoRoutePcb(doc: PcbDocument, layer: PcbLayerId,
-  schNets?: AccessoryNetHint[]): AutoRouteResult {
-  const messages: string[] = [];
-  const grid = doc.metadata.gridSize ?? 5;
-  const width = doc.metadata.designRules.defaultTrackWidth;
-
-  const acc = ensureBoardAccessories(doc, undefined, schNets);
-  if (acc.message.length > 0) {
-    messages.push(acc.message);
-  }
-  // æ–°å»º J1/è§’å­”åæ¸…æ‰ç›¸å…³ç½‘æ—§é“œï¼Œå¦åˆ™ netAlreadyRouted ä¼šè·³è¿‡ï¼Œå¤–æ¥ç‚¹æ¥ä¸ä¸Š
-  if (acc.addedNew && acc.connectorNetIds.length > 0) {
-    const cleared = clearCopperForNets(doc, acc.connectorNetIds);
-    if (cleared > 0) {
-      tracePcb('AUTO_CLEAR_FOR_J1', `cleared=${cleared} nets=${acc.connectorNetIds.length}`);
-    }
-  }
-
-  const netPads = collectNetPads(doc);
-  let netCount = 0;
-  const tracksBefore = doc.tracks.length;
-
-  tracePcb('AUTO_ROUTE_BEGIN', `layer=${layer} netGroups=${netPads.size} grid=${grid} width=${width}`);
-
-  netPads.forEach((grp: NetPadGroup) => {
-    const total = netPadTotal(grp);
-    if (total < 2) {
-      tracePcbWarn('AUTO_SKIP',
-        `${grp.netName || grp.netId} pads=${total} (dev=${grp.points.length},j1=${grp.connectorPoints.length}) â€” ç„Šç›˜ä¸è¶³`);
-      return;
-    }
-    if (netAlreadyRouted(doc, grp.netId)) {
-      tracePcb('AUTO_SKIP', `${grp.netName || grp.netId} â€” å·²æœ‰èµ°çº¿/è¿‡å­”`);
-      return;
-    }
-    netCount++;
-    const ly = layerForNet(layer, grp.netName);
-    const w = widthForNet(width, grp.netName);
-    const segs = routeNetGroup(doc, ly, grp, grid, w);
-    tracePcb('AUTO_NET',
-      `${grp.netName || grp.netId} pads=${total} (dev=${grp.points.length},j1=${grp.connectorPoints.length}) ` +
-      `segments=${segs} layer=${ly} w=${w}`);
-  });
-
-  finishRouteCleanup(doc, 'AUTO');
-  const trackCount = Math.max(0, doc.tracks.length - tracksBefore);
-
-  if (netCount === 0) {
-    messages.push('æ²¡æœ‰éœ€è¦è‡ªåŠ¨å¸ƒçº¿çš„ç½‘ç»œ');
-  } else {
-    messages.push(`å·²è‡ªåŠ¨å¸ƒçº¿ ${netCount} ä¸ªç½‘ç»œï¼Œ${trackCount} æ®µ`);
-  }
-  doc.metadata.modifiedAt = new Date().toISOString();
-  return { trackCount, netCount, messages };
-}
-ÔrD•§version¨mappings¥names§sources®sourcesContentÜ$‘”    ‘”  ‘”   ‘”   ‘”   ‘”   ‘”  
- ‘”   ‘”  ! ‘”  "‘”  $ ‘”  & ‘”  )‘”  * ‘”  , ‘”  - ‘”  .‘”  /‘”  0‘”  0‘”  3‘”  4‘”  6‘”  7‘”  8‘”  9‘”  :‘”  ;‘”  <‘”  =‘”  >‘”  ? ‘”  ÌA ‘”  ÌB‘”  ÌC‘”  ÌH‘”  ÌI‘”  ÌJ‘”  ÌK‘”  ÌL‘”  ÌM‘”  ÌP‘”  ÌQ‘”  ÌR‘”  ÌT‘”  ÌU‘”  ÌV‘”  ÌV‘”  ÌW‘”  ÌX‘”  ÌY‘”  ÌZ‘”  Ì[‘”  Ì\ ‘”  Ì^ ‘”  Ì` ‘”  Ìb ‘”  Ìc‘”  Ìd‘”  Ìd‘”  Ìe‘”  Ìf‘”  Ìg‘”  Ìg‘”  Ìh‘”  Ìi‘”  Ìj ‘”  Ìl ‘”  Ìn‘”  Ìn‘”  Ìo‘”  Ìp‘”  Ìr‘”  Ìs‘”  Ìx‘”  Ìy‘”  Ìz ‘”  Ì| ‘”  Ì}‘”  Ì ‘”  Ì ‘”  Ì‚‘”  Ìƒ‘”  Ì„‘”  Ì† ‘”  Ìˆ ‘”  Ì‰ ‘”  ÌŠ‘”  ÌŒ‘”  Ì‘”  Ì ‘”  Ì ‘”  Ì‘‘”  Ì“‘”  Ì”‘”  Ì• ‘”  Ì— ‘”  Ì™‘”  Ìš‘”  Ì›‘”  Ìœ‘”  Ì‘”  ÌŸ‘”  Ì ‘”  Ì¢‘”  Ì£‘”  Ì¤‘”  Ì¥ ‘”  Ì§ ‘”  Ì¨‘”  Ì©‘”  Ìª‘”  Ì«‘”  Ì­‘”  Ì±‘”  Ì²‘”  Ì³‘”  Ì´‘”  Ìµ ‘”  Ì· ‘”  Ì¹‘”  Ìº‘”  Ì¾‘”  ÌÀ‘”  ÌÃ‘”  ÌÅ‘”  ÌÆ‘”  ÌÇ‘”  ÌÈ‘”  ÌË‘”  ÌË‘”  ÌÌ‘”  ÌĞ	‘”  ÌÒ‘”  ÌÓ
-‘”  ÌÔ	‘”  ÌÕ‘”  ÌÖ‘”  Ì×‘”  ÌÜ‘”  Ìİ‘”  ÌŞ‘”  Ìß ‘”  Ìá ‘”  Ìâ‘”  Ìå‘”  Ìæ‘”  Ìé‘”  Ìê ‘”  Ìì ‘”  Ìï‘”  Ìğ ‘”  Ìò‘”  Ìó‘”  Ìô‘”  Ìø‘”  Ìû‘”  Ìÿ‘”  Í ‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í ‘”  Í ‘”  Í!‘”  Í" ‘”  Í)‘”  Í*‘”  Í+‘”  Í0‘”  Í1‘”  Í2‘”  Í4‘”  Í6‘”  Í8‘”  Í:‘”  Í;‘”  Í@‘”  ÍB‘”  ÍD‘”  ÍE‘”  ÍH‘”  ÍK‘”  ÍL‘”  ÍN‘”  ÍO‘”  ÍR‘”  ÍS‘”  ÍS	‘”  ÍU‘”  ÍW‘”  ÍX ‘ÙHC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\PcbAutoRouter.ets‘Ú+°/**
- * PCB è‡ªåŠ¨å¸ƒçº¿ â€” æ­£äº¤ L å‹é“¾å¼è¿æ¥ï¼ˆæŒ‰ç½‘ç»œï¼‰
- */
-import { PcbDocument, PcbLayerId, PcbTrack } from '../types/PcbTypes';
-import { Point2D } from '../types/CommonTypes';
-import { IdUtil } from './IdUtil';
-import { padWorldPosition } from './PcbZoneUtil';
-import {
-  orderPointsNearestNeighbor, snapTrackEndpointsToPads, pruneZeroLengthTracks
-} from './PcbTrackBindUtil';
-import { ensureBoardAccessories, clearCopperForNets, AccessoryNetHint } from './PcbBoardAccessories';
-import { tracePcb, tracePcbWarn } from './PcbTraceLog';
-
-export interface AutoRouteResult {
-  trackCount: number;
-  netCount: number;
-  messages: string[];
-}
-
-export interface RerouteResult {
-  trackCount: number;
-  netCount: number;
-}
-
-interface NetPadGroup {
-  netId: string;
-  netName: string;
-  /** åŸç†å›¾å…³è”å™¨ä»¶ç„Šç›˜ */
-  points: Point2D[];
-  /** J1 å¤–æ¥é’ˆ â€” å™¨ä»¶å¸ƒå®Œåå†æŠ½å¤´ */
-  connectorPoints: Point2D[];
-}
-
-function snap(v: number, grid: number): number {
-  if (grid <= 0) return v;
-  return Math.round(v / grid) * grid;
-}
-
-function dist(a: Point2D, b: Point2D): number {
-  const dx = a.x - b.x;
-  const dy = a.y - b.y;
-  return Math.sqrt(dx * dx + dy * dy);
-}
-
-/** æ­£äº¤ L å‹ä¸¤æ®µèµ°çº¿ â€” ç«¯ç‚¹ç²¾ç¡®è½åœ¨ç„Šç›˜ä¸­å¿ƒï¼Œä¸­é—´æŠ˜ç‚¹å¸é™„ç½‘æ ¼ */
-function routeL(a: Point2D, b: Point2D, grid: number): Point2D[] {
-  const s: Point2D = { x: a.x, y: a.y };
-  const e: Point2D = { x: b.x, y: b.y };
-  if (dist(s, e) < 0.5) return [];
-  const midH: Point2D = { x: e.x, y: snap(s.y, grid) };
-  const midV: Point2D = { x: snap(s.x, grid), y: e.y };
-  const lenH = dist(s, midH) + dist(midH, e);
-  const lenV = dist(s, midV) + dist(midV, e);
-  if (lenH <= lenV) {
-    if (dist(s, midH) > 0.5 && dist(midH, e) > 0.5) {
-      return [s, midH, e];
-    }
-    return [s, e];
-  }
-  if (dist(s, midV) > 0.5 && dist(midV, e) > 0.5) {
-    return [s, midV, e];
-  }
-  return [s, e];
-}
-
-function collectNetPads(doc: PcbDocument): Map<string, NetPadGroup> {
-  const map: Map<string, NetPadGroup> = new Map();
-  for (const fp of doc.footprints) {
-    // å®‰è£…å­”ä»…å ç½‘ç»œåä¾›é“ºé“œï¼Œä¸å‚ä¸ L å‹é“¾å¼å¸ƒçº¿ï¼ˆé¿å…åœ°çº¿ç»•å››è§’ï¼‰
-    if (fp.defId === 'FP_MOUNT' || (fp.refDes.length >= 2 && fp.refDes.charAt(0) === 'H' &&
-      fp.refDes.charCodeAt(1) >= 48 && fp.refDes.charCodeAt(1) <= 57)) {
-      continue;
-    }
-    const isConnector = fp.refDes === 'J1' || fp.defId.indexOf('FP_PINHDR_') === 0;
-    for (const pad of fp.pads) {
-      const nid = pad.netId ?? '';
-      if (nid.length === 0) continue;
-      const nname = pad.netName ?? '';
-      let grp = map.get(nid);
-      if (!grp) {
-        grp = { netId: nid, netName: nname, points: [], connectorPoints: [] };
-        map.set(nid, grp);
-      }
-      const wp = padWorldPosition(fp, pad);
-      if (isConnector) {
-        grp.connectorPoints.push(wp);
-      } else {
-        grp.points.push(wp);
-      }
-    }
-  }
-  return map;
-}
-
-function netPadTotal(grp: NetPadGroup): number {
-  return grp.points.length + grp.connectorPoints.length;
-}
-
-function netAlreadyRouted(doc: PcbDocument, netId: string): boolean {
-  for (const trk of doc.tracks) {
-    if (trk.netId === netId) return true;
-  }
-  for (const via of doc.vias) {
-    if (via.netId === netId) return true;
-  }
-  return false;
-}
-
-function addSegment(doc: PcbDocument, layer: PcbLayerId, a: Point2D, b: Point2D,
-  netId: string, netName: string, width: number): number {
-  if (dist(a, b) < 0.5) return 0;
-  const track: PcbTrack = {
-    id: IdUtil.generate('trk'),
-    layer,
-    start: { x: a.x, y: a.y },
-    end: { x: b.x, y: b.y },
-    width,
-    netId,
-    netName
-  };
-  doc.tracks.push(track);
-  return 1;
-}
-
-function isGndNetName(netName: string): boolean {
-  const nm = netName.toUpperCase();
-  return nm === 'GND' || nm === 'VSS' || nm === 'AGND';
-}
-
-function isPowerNetName(netName: string): boolean {
-  const nm = netName.toUpperCase();
-  return isGndNetName(nm) || nm === 'VCC' || nm === 'VDD' || nm === 'VEE' ||
-    nm === 'VOUT' || nm === 'REG_IN' || nm === 'VIN' || nm === 'VIN_SRC' ||
-    nm.indexOf('VCC') === 0 || nm.indexOf('VDD') === 0 || nm.indexOf('VIN') === 0;
-}
-
-/** åœ°ç½‘èµ°åº•å±‚ï¼Œå‡å°‘ä¸é¡¶å±‚ä¿¡å·äº¤å‰ï¼›ç”µæºåŠ å®½ */
-function layerForNet(preferred: PcbLayerId, netName: string): PcbLayerId {
-  if (isGndNetName(netName)) {
-    return PcbLayerId.B_CU;
-  }
-  return preferred;
-}
-
-function widthForNet(defaultWidth: number, netName: string): number {
-  if (isPowerNetName(netName)) {
-    return Math.max(defaultWidth * 2, 20);
-  }
-  return defaultWidth;
-}
-
-function routeLChain(doc: PcbDocument, layer: PcbLayerId, points: Point2D[],
-  netId: string, netName: string, grid: number, width: number): number {
-  if (points.length < 2) {
-    return 0;
-  }
-  const ordered = orderPointsNearestNeighbor(points);
-  let segs = 0;
-  for (let i = 0; i < ordered.length - 1; i++) {
-    const path = routeL(ordered[i], ordered[i + 1], grid);
-    for (let j = 0; j < path.length - 1; j++) {
-      segs += addSegment(doc, layer, path[j], path[j + 1], netId, netName, width);
-    }
-  }
-  return segs;
-}
-
-function nearestPoint(from: Point2D, candidates: Point2D[]): Point2D | null {
-  if (candidates.length === 0) {
-    return null;
-  }
-  let best = candidates[0];
-  let bestD = dist(from, best);
-  for (let i = 1; i < candidates.length; i++) {
-    const d = dist(from, candidates[i]);
-    if (d < bestD) {
-      bestD = d;
-      best = candidates[i];
-    }
-  }
-  return best;
-}
-
-function routeNetGroup(doc: PcbDocument, layer: PcbLayerId, grp: NetPadGroup,
-  grid: number, width: number): number {
-  const core = grp.points;
-  const connectors = grp.connectorPoints;
-  let segs = 0;
-
-  // 1) å…ˆåœ¨å™¨ä»¶ç„Šç›˜ä¹‹é—´æˆé“¾ï¼ˆä¸å« J1ï¼‰
-  if (core.length >= 2) {
-    segs += routeLChain(doc, layer, core, grp.netId, grp.netName, grid, width);
-  }
-
-  // 2) J1 ä»æœ€è¿‘çš„å™¨ä»¶ç„Šç›˜å•ç‹¬æŠ½å¤´ï¼Œé¿å…é•¿å¹²çº¿æŒ‚åœ¨ R1 ç­‰è¾¹è§’è„šä¸Š
-  if (connectors.length > 0) {
-    const hubs: Point2D[] = [];
-    for (const p of core) {
-      hubs.push(p);
-    }
-    if (hubs.length === 0) {
-      // ä»…å¤–æ¥é’ˆï¼ˆå¦‚ç©º VEEï¼‰â€” å¤šé’ˆæ‰äº’è¿ï¼Œå•é’ˆè·³è¿‡
-      segs += routeLChain(doc, layer, connectors, grp.netId, grp.netName, grid, width);
-    } else {
-      for (const c of connectors) {
-        const hub = nearestPoint(c, hubs);
-        if (!hub) {
-          continue;
-        }
-        const path = routeL(hub, c, grid);
-        for (let j = 0; j < path.length - 1; j++) {
-          segs += addSegment(doc, layer, path[j], path[j + 1], grp.netId, grp.netName, width);
-        }
-      }
-    }
-  }
-
-  // ä»… 1 ä¸ªå™¨ä»¶ç„Šç›˜ + æ— è¿æ¥å™¨ï¼šæ— æ³•å¸ƒ
-  // ä»… 1 ä¸ªå™¨ä»¶ç„Šç›˜ + è¿æ¥å™¨ï¼šä¸Šé¢ step2 å·²å¤„ç†
-  if (core.length === 1 && connectors.length === 0) {
-    return 0;
-  }
-  return segs;
-}
-
-function finishRouteCleanup(doc: PcbDocument, tag: string): void {
-  const snapped = snapTrackEndpointsToPads(doc);
-  if (snapped > 0) {
-    tracePcb(`${tag}_SNAP`, `endpoints=${snapped}`);
-  }
-  const pruned = pruneZeroLengthTracks(doc);
-  if (pruned > 0) {
-    tracePcbWarn(`${tag}_PRUNE`, `zeroLen=${pruned}`);
-  }
-}
-
-/**
- * å¯¹æŒ‡å®šç½‘ç»œæ¸…é™¤æ—§èµ°çº¿å¹¶é‡æ–° L å‹é“¾å¼å¸ƒçº¿ã€‚
- * ç”¨äºå°è£…ç§»åŠ¨/æ—‹è½¬åçš„å±€éƒ¨é‡å¸ƒã€‚
- */
-export function rerouteNets(doc: PcbDocument, layer: PcbLayerId, netIds: Set<string>): RerouteResult {
-  const empty: RerouteResult = { trackCount: 0, netCount: 0 };
-  if (netIds.size === 0) {
-    return empty;
-  }
-
-  const grid = doc.metadata.gridSize ?? 5;
-  const width = doc.metadata.designRules.defaultTrackWidth;
-  const netPads = collectNetPads(doc);
-  const toRoute: string[] = [];
-
-  netIds.forEach((nid: string) => {
-    const grp = netPads.get(nid);
-    if (grp === undefined || netPadTotal(grp) < 2) {
-      return;
-    }
-    toRoute.push(nid);
-  });
-
-  if (toRoute.length === 0) {
-    return empty;
-  }
-
-  const routeSet = new Set(toRoute);
-  doc.tracks = doc.tracks.filter((t: PcbTrack) => !routeSet.has(t.netId));
-
-  let trackCount = 0;
-  for (const nid of toRoute) {
-    const grp = netPads.get(nid);
-    if (grp === undefined) {
-      continue;
-    }
-    const ly = layerForNet(layer, grp.netName);
-    const w = widthForNet(width, grp.netName);
-    const segs = routeNetGroup(doc, ly, grp, grid, w);
-    trackCount += segs;
-    tracePcb('REROUTE_NET',
-      `${grp.netName || grp.netId} pads=${grp.points.length} segments=${segs} layer=${ly}`);
-  }
-
-  finishRouteCleanup(doc, 'REROUTE');
-
-  tracePcb('REROUTE_DONE', `nets=${toRoute.length} tracks=${trackCount}`);
-  doc.metadata.modifiedAt = new Date().toISOString();
-  return { trackCount, netCount: toRoute.length };
-}
-
-/**
- * å¯¹æœªå¸ƒçº¿ç½‘ç»œæ‰§è¡Œè‡ªåŠ¨ L å‹é“¾å¼å¸ƒçº¿ï¼ˆè·³è¿‡å·²æœ‰èµ°çº¿çš„ç½‘ç»œï¼›åœ°ç½‘èµ° B.Cuï¼‰
- */
-export function autoRoutePcb(doc: PcbDocument, layer: PcbLayerId,
-  schNets?: AccessoryNetHint[]): AutoRouteResult {
-  const messages: string[] = [];
-  const grid = doc.metadata.gridSize ?? 5;
-  const width = doc.metadata.designRules.defaultTrackWidth;
-
-  const acc = ensureBoardAccessories(doc, undefined, schNets);
-  if (acc.message.length > 0) {
-    messages.push(acc.message);
-  }
-  // æ–°å»º J1/è§’å­”åæ¸…æ‰ç›¸å…³ç½‘æ—§é“œï¼Œå¦åˆ™ netAlreadyRouted ä¼šè·³è¿‡ï¼Œå¤–æ¥ç‚¹æ¥ä¸ä¸Š
-  if (acc.addedNew && acc.connectorNetIds.length > 0) {
-    const cleared = clearCopperForNets(doc, acc.connectorNetIds);
-    if (cleared > 0) {
-      tracePcb('AUTO_CLEAR_FOR_J1', `cleared=${cleared} nets=${acc.connectorNetIds.length}`);
-    }
-  }
-
-  const netPads = collectNetPads(doc);
-  let netCount = 0;
-  const tracksBefore = doc.tracks.length;
-
-  tracePcb('AUTO_ROUTE_BEGIN', `layer=${layer} netGroups=${netPads.size} grid=${grid} width=${width}`);
-
-  netPads.forEach((grp: NetPadGroup) => {
-    const total = netPadTotal(grp);
-    if (total < 2) {
-      tracePcbWarn('AUTO_SKIP',
-        `${grp.netName || grp.netId} pads=${total} (dev=${grp.points.length},j1=${grp.connectorPoints.length}) â€” ç„Šç›˜ä¸è¶³`);
-      return;
-    }
-    if (netAlreadyRouted(doc, grp.netId)) {
-      tracePcb('AUTO_SKIP', `${grp.netName || grp.netId} â€” å·²æœ‰èµ°çº¿/è¿‡å­”`);
-      return;
-    }
-    netCount++;
-    const ly = layerForNet(layer, grp.netName);
-    const w = widthForNet(width, grp.netName);
-    const segs = routeNetGroup(doc, ly, grp, grid, w);
-    tracePcb('AUTO_NET',
-      `${grp.netName || grp.netId} pads=${total} (dev=${grp.points.length},j1=${grp.connectorPoints.length}) ` +
-      `segments=${segs} layer=${ly} w=${w}`);
-  });
-
-  finishRouteCleanup(doc, 'AUTO');
-  const trackCount = Math.max(0, doc.tracks.length - tracksBefore);
-
-  if (netCount === 0) {
-    messages.push('æ²¡æœ‰éœ€è¦è‡ªåŠ¨å¸ƒçº¿çš„ç½‘ç»œ');
-  } else {
-    messages.push(`å·²è‡ªåŠ¨å¸ƒçº¿ ${netCount} ä¸ªç½‘ç»œï¼Œ${trackCount} æ®µ`);
-  }
-  doc.metadata.modifiedAt = new Date().toISOString();
-  return { trackCount, netCount, messages };
-}
-ÔrE–¨./IdUtil±../types/PcbTypes²./PcbTrackBindUtil­./PcbZoneUtilµ./PcbBoardAccessories­./PcbTraceLogÔrF—ªassertions¨external¢id¤meta±moduleSideEffectsªresolvedByµsyntheticNamedExportsAÂÙAC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\IdUtil.etsAÃªoh-resolveÂFAÂÙCC:\Projects\ElecDraw_Harmony\common\src\main\ets\types\PcbTypes.etsAÃªoh-resolveÂFAÂÙKC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\PcbTrackBindUtil.etsAÃªoh-resolveÂFAÂÙFC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\PcbZoneUtil.etsAÃªoh-resolveÂFAÂÙNC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\PcbBoardAccessories.etsAÃªoh-resolveÂFAÂÙFC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\PcbTraceLog.etsAÃªoh-resolveÂ‘ÔrG’§missing¦pluginÃ¦genAbcÂÔ  ÔrH”²dynamicImportCache¹exportAllDeclarationCache»exportNamedDeclarationCache«importCache’ÔrI–¤type¥start£end«declarationªspecifiers¦source¶ExportNamedDeclarationÍhÍøÔrJ™¤type¥start£end¢idªexpression©generator¥async¦params¤body³FunctionDeclarationÍoÍøÔrK”¤type¥start£end¤nameªIdentifierÍxÍƒ«rerouteNetsÂÂÂ“KªIdentifierÍ„Í‡£docKªIdentifierÍ‰Í¥layerKªIdentifierÍÍ–¦netIdsÔrL”¤type¥start£end¤body®BlockStatementÍ˜ÍøÜ ÔrM•¤type¥start£end¬declarations¤kind³VariableDeclarationÍŸÍÌ‘ÔrN•¤type¥start£end¢id¤init²VariableDeclaratorÍ¥ÍËKªIdentifierÍ¥Íª¥emptyÔrO”¤type¥start£endªproperties°ObjectExpressionÍ­ÍË’ÔrP™¤type¥start£end¦method©shorthand¨computed£key¥value¤kind¨PropertyÍ¯Í¼ÂÂÂKªIdentifierÍ¯Í¹ªtrackCountÔrQ•¤type¥start£end¥value£raw§LiteralÍ»Í¼ ¡0¤initP¨PropertyÍ¾ÍÉÂÂÂKªIdentifierÍ¾ÍÆ¨netCountQ§LiteralÍÈÍÉ ¡0¤init¥constÔrR–¤type¥start£end¤testªconsequent©alternate«IfStatementÍÒÍÔrS–¤type¥start£end¤left¨operator¥right°BinaryExpressionÍÖÍçÔrT—¤type¥start£end¦object¨property¨computed¨optional°MemberExpressionÍÖÍáKªIdentifierÍÖÍÜ¦netIdsKªIdentifierÍİÍá¤sizeÂÂ£===Q§LiteralÍæÍç ¡0L®BlockStatementÍéÍ‘ÔrU”¤type¥start£end¨argument¯ReturnStatementÍôÍKªIdentifierÍûÍ ¥emptyÀM³VariableDeclarationÍÍ6‘N²VariableDeclaratorÍÍ5KªIdentifierÍÍ¤gridS±LogicalExpressionÍÍ5T°MemberExpressionÍÍ0T°MemberExpressionÍÍ'KªIdentifierÍÍ£docKªIdentifierÍÍ'¨metadataÂÂKªIdentifierÍ(Í0¨gridSizeÂÂ¢??Q§LiteralÍ4Í5¡5¥constM³VariableDeclarationÍ<Íu‘N²VariableDeclaratorÍBÍtKªIdentifierÍBÍG¥widthT°MemberExpressionÍJÍtT°MemberExpressionÍJÍbT°MemberExpressionÍJÍVKªIdentifierÍJÍM£docKªIdentifierÍNÍV¨metadataÂÂKªIdentifierÍWÍb«designRulesÂÂKªIdentifierÍcÍt±defaultTrackWidthÂÂ¥constM³VariableDeclarationÍ{ÍŸ‘N²VariableDeclaratorÍÍKªIdentifierÍÍˆ§netPadsÔrV–¤type¥start£end¦callee©arguments¨optional®CallExpressionÍ‹ÍKªIdentifierÍ‹Í™®collectNetPads‘KªIdentifierÍšÍ£docÂ¥constM³VariableDeclarationÍ¥Í¸‘N²VariableDeclaratorÍ«Í·KªIdentifierÍ«Í²§toRouteÔrW”¤type¥start£end¨elements¯ArrayExpressionÍµÍ·¥constÔrX”¤type¥start£endªexpression³ExpressionStatementÍ¾Í}V®CallExpressionÍ¾Í|T°MemberExpressionÍ¾ÍÌKªIdentifierÍ¾ÍÄ¦netIdsKªIdentifierÍÅÍÌ§forEachÂÂ‘J·ArrowFunctionExpressionÍÍÍ{ÀÂÂÂ‘KªIdentifierÍÎÍÑ£nidL®BlockStatementÍÖÍ{“M³VariableDeclarationÍáÍş‘N²VariableDeclaratorÍçÍıKªIdentifierÍçÍê£grpV®CallExpressionÍíÍıT°MemberExpressionÍíÍøKªIdentifierÍíÍô§netPadsKªIdentifierÍõÍø£getÂÂ‘KªIdentifierÍùÍü£nidÂ¥constR«IfStatementÍÍXS±LogicalExpressionÍÍ5S°BinaryExpressionÍÍKªIdentifierÍÍ£grp£===KªIdentifierÍÍ©undefined¢||S°BinaryExpressionÍ!Í5V®CallExpressionÍ!Í1KªIdentifierÍ!Í,«netPadTotal‘KªIdentifierÍ-Í0£grpÂ¡<Q§LiteralÍ4Í5¡2L®BlockStatementÍ7ÍX‘U¯ReturnStatementÍFÍMÀÀX³ExpressionStatementÍbÍtV®CallExpressionÍbÍsT°MemberExpressionÍbÍnKªIdentifierÍbÍi§toRouteKªIdentifierÍjÍn¤pushÂÂ‘KªIdentifierÍoÍr£nidÂÂR«IfStatementÍƒÍ¼S°BinaryExpressionÍ‡Í›T°MemberExpressionÍ‡Í•KªIdentifierÍ‡Í§toRouteKªIdentifierÍÍ•¦lengthÂÂ£===Q§LiteralÍšÍ› ¡0L®BlockStatementÍÍ¼‘U¯ReturnStatementÍ¨ÍµKªIdentifierÍ¯Í´¥emptyÀM³VariableDeclarationÍÂÍä‘N²VariableDeclaratorÍÈÍãKªIdentifierÍÈÍĞ¨routeSetÔrY•¤type¥start£end¦callee©arguments­NewExpressionÍÓÍãKªIdentifierÍ×ÍÚ£Set‘KªIdentifierÍÛÍâ§toRoute¥constX³ExpressionStatementÍêÍ(ÔrZ–¤type¥start£end¨operator¤left¥right´AssignmentExpressionÍêÍ'¡=T°MemberExpressionÍêÍôKªIdentifierÍêÍí£docKªIdentifierÍîÍô¦tracksÂÂV®CallExpressionÍ÷Í'T°MemberExpressionÍ÷ÍT°MemberExpressionÍ÷ÍKªIdentifierÍ÷Íú£docKªIdentifierÍûÍ¦tracksÂÂKªIdentifierÍÍ¦filterÂÂ‘J·ArrowFunctionExpressionÍ	Í&ÀÃÂÂ‘KªIdentifierÍ
-Í¡tÔr[–¤type¥start£end¨operator¦prefix¨argument¯UnaryExpressionÍÍ&¡!ÃV®CallExpressionÍÍ&T°MemberExpressionÍÍKªIdentifierÍÍ¨routeSetKªIdentifierÍÍ£hasÂÂ‘T°MemberExpressionÍÍ%KªIdentifierÍÍ¡tKªIdentifierÍ Í%¥netIdÂÂÂÂM³VariableDeclarationÍ.ÍA‘N²VariableDeclaratorÍ2Í@KªIdentifierÍ2Í<ªtrackCountQ§LiteralÍ?Í@ ¡0£letÔr\—¤type¥start£end¥await¤left¥right¤body®ForOfStatementÍGÍÂM³VariableDeclarationÍLÍU‘N²VariableDeclaratorÍRÍUKªIdentifierÍRÍU£nidÀ¥constKªIdentifierÍYÍ`§toRouteL®BlockStatementÍbÍ—M³VariableDeclarationÍmÍŠ‘N²VariableDeclaratorÍsÍ‰KªIdentifierÍsÍv£grpV®CallExpressionÍyÍ‰T°MemberExpressionÍyÍ„KªIdentifierÍyÍ€§netPadsKªIdentifierÍÍ„£getÂÂ‘KªIdentifierÍ…Íˆ£nidÂ¥constR«IfStatementÍ”ÍÎS°BinaryExpressionÍ˜Í©KªIdentifierÍ˜Í›£grp£===KªIdentifierÍ Í©©undefinedL®BlockStatementÍ«ÍÎ‘Ôr]”¤type¥start£end¥label±ContinueStatementÍºÍÃÀÀM³VariableDeclarationÍØÍ‘N²VariableDeclaratorÍŞÍKªIdentifierÍŞÍà¢lyV®CallExpressionÍãÍKªIdentifierÍãÍî«layerForNet’KªIdentifierÍïÍô¥layerT°MemberExpressionÍöÍKªIdentifierÍöÍù£grpKªIdentifierÍúÍ§netNameÂÂÂ¥constM³VariableDeclarationÍÍ7‘N²VariableDeclaratorÍÍ6KªIdentifierÍÍ¡wV®CallExpressionÍÍ6KªIdentifierÍÍ"«widthForNet’KªIdentifierÍ#Í(¥widthT°MemberExpressionÍ*Í5KªIdentifierÍ*Í-£grpKªIdentifierÍ.Í5§netNameÂÂÂ¥constM³VariableDeclarationÍAÍs‘N²VariableDeclaratorÍGÍrKªIdentifierÍGÍK¤segsV®CallExpressionÍNÍrKªIdentifierÍNÍ[­routeNetGroup•KªIdentifierÍ\Í_£docKªIdentifierÍaÍc¢lyKªIdentifierÍeÍh£grpKªIdentifierÍjÍn¤gridKªIdentifierÍpÍq¡wÂ¥constX³ExpressionStatementÍ}ÍZ´AssignmentExpressionÍ}Í¢+=KªIdentifierÍ}Í‡ªtrackCountKªIdentifierÍ‹Í¤segsX³ExpressionStatementÍšÍV®CallExpressionÍšÍKªIdentifierÍšÍ¢¨tracePcb’Q§LiteralÍ£Í°«REROUTE_NET­'REROUTE_NET'Ôr^•¤type¥start£end«expressions¦quasis¯TemplateLiteralÍ²Í”S±LogicalExpressionÍµÍÍT°MemberExpressionÍµÍÀKªIdentifierÍµÍ¸£grpKªIdentifierÍ¹ÍÀ§netNameÂÂ¢||T°MemberExpressionÍÄÍÍKªIdentifierÍÄÍÇ£grpKªIdentifierÍÈÍÍ¥netIdÂÂT°MemberExpressionÍÖÍçT°MemberExpressionÍÖÍàKªIdentifierÍÖÍÙ£grpKªIdentifierÍÚÍà¦pointsÂÂKªIdentifierÍáÍç¦lengthÂÂKªIdentifierÍôÍø¤segsKªIdentifierÍÍ¢ly•Ôr_•¤type¥start£end¥value¤tail¯TemplateElementÍ³Í³Ôr`’£raw¦cooked  Â_¯TemplateElementÍÎÍÔ`¦ pads=¦ pads=Â_¯TemplateElementÍèÍò`ª segments=ª segments=Â_¯TemplateElementÍùÍ `§ layer=§ layer=Â_¯TemplateElementÍÍ`  ÃÂX³ExpressionStatementÍÍ8V®CallExpressionÍÍ7KªIdentifierÍÍ'²finishRouteCleanup’KªIdentifierÍ(Í+£docQ§LiteralÍ-Í6§REROUTE©'REROUTE'ÂX³ExpressionStatementÍ>Í†V®CallExpressionÍ>Í…KªIdentifierÍ>ÍF¨tracePcb’Q§LiteralÍGÍU¬REROUTE_DONE®'REROUTE_DONE'^¯TemplateLiteralÍWÍ„’T°MemberExpressionÍ_ÍmKªIdentifierÍ_Íf§toRouteKªIdentifierÍgÍm¦lengthÂÂKªIdentifierÍxÍ‚ªtrackCount“_¯TemplateElementÍXÍ]`¥nets=¥nets=Â_¯TemplateElementÍnÍv`¨ tracks=¨ tracks=Â_¯TemplateElementÍƒÍƒ`  ÃÂX³ExpressionStatementÍŒÍ¿Z´AssignmentExpressionÍŒÍ¾¡=T°MemberExpressionÍŒÍ£T°MemberExpressionÍŒÍ˜KªIdentifierÍŒÍ£docKªIdentifierÍÍ˜¨metadataÂÂKªIdentifierÍ™Í£ªmodifiedAtÂÂV®CallExpressionÍ¦Í¾T°MemberExpressionÍ¦Í¼Y­NewExpressionÍ¦Í°KªIdentifierÍªÍ®¤DateKªIdentifierÍ±Í¼«toISOStringÂÂÂU¯ReturnStatementÍÅÍõO°ObjectExpressionÍÌÍô’Ôra™¤type¥start£end¦method©shorthand¨computed£key¤kind¥value¨PropertyÍÎÍØÂÃÂKªIdentifierÍÎÍØªtrackCount¤initKªIdentifierÍÎÍØªtrackCountP¨PropertyÍÚÍòÂÂÂKªIdentifierÍÚÍâ¨netCountT°MemberExpressionÍäÍòKªIdentifierÍäÍë§toRouteKªIdentifierÍìÍò¦lengthÂÂ¤initÀI¶ExportNamedDeclarationÍ/Í'PJ³FunctionDeclarationÍ6Í'PKªIdentifierÍ?ÍK¬autoRoutePcbÂÂÂ“KªIdentifierÍLÍO£docKªIdentifierÍQÍV¥layerKªIdentifierÍXÍ_§schNetsL®BlockStatementÍaÍ'PÜ M³VariableDeclarationÍhÍ|‘N²VariableDeclaratorÍnÍ{KªIdentifierÍnÍv¨messagesW¯ArrayExpressionÍyÍ{¥constM³VariableDeclarationÍ‚Íª‘N²VariableDeclaratorÍˆÍ©KªIdentifierÍˆÍŒ¤gridS±LogicalExpressionÍÍ©T°MemberExpressionÍÍ¤T°MemberExpressionÍÍ›KªIdentifierÍÍ’£docKªIdentifierÍ“Í›¨metadataÂÂKªIdentifierÍœÍ¤¨gridSizeÂÂ¢??Q§LiteralÍ¨Í©¡5¥constM³VariableDeclarationÍ°Íé‘N²VariableDeclaratorÍ¶ÍèKªIdentifierÍ¶Í»¥widthT°MemberExpressionÍ¾ÍèT°MemberExpressionÍ¾ÍÖT°MemberExpressionÍ¾ÍÊKªIdentifierÍ¾ÍÁ£docKªIdentifierÍÂÍÊ¨metadataÂÂKªIdentifierÍËÍÖ«designRulesÂÂKªIdentifierÍ×Íè±defaultTrackWidthÂÂ¥constM³VariableDeclarationÍïÍ +‘N²VariableDeclaratorÍõÍ *KªIdentifierÍõÍø£accV®CallExpressionÍûÍ *KªIdentifierÍûÍ ¶ensureBoardAccessories“KªIdentifierÍ Í £docKªIdentifierÍ Í  ©undefinedKªIdentifierÍ "Í )§schNetsÂ¥constR«IfStatementÍ 1Í zS°BinaryExpressionÍ 5Í KT°MemberExpressionÍ 5Í GT°MemberExpressionÍ 5Í @KªIdentifierÍ 5Í 8£accKªIdentifierÍ 9Í @§messageÂÂKªIdentifierÍ AÍ G¦lengthÂÂ¡>Q§LiteralÍ JÍ K ¡0L®BlockStatementÍ MÍ z‘X³ExpressionStatementÍ XÍ sV®CallExpressionÍ XÍ rT°MemberExpressionÍ XÍ eKªIdentifierÍ XÍ `¨messagesKªIdentifierÍ aÍ e¤pushÂÂ‘T°MemberExpressionÍ fÍ qKªIdentifierÍ fÍ i£accKªIdentifierÍ jÍ q§messageÂÂÂÀR«IfStatementÍ ¸Í!ÇS±LogicalExpressionÍ ¼Í êT°MemberExpressionÍ ¼Í ÈKªIdentifierÍ ¼Í ¿£accKªIdentifierÍ ÀÍ È¨addedNewÂÂ¢&&S°BinaryExpressionÍ ÌÍ êT°MemberExpressionÍ ÌÍ æT°MemberExpressionÍ ÌÍ ßKªIdentifierÍ ÌÍ Ï£accKªIdentifierÍ ĞÍ ß¯connectorNetIdsÂÂKªIdentifierÍ àÍ æ¦lengthÂÂ¡>Q§LiteralÍ éÍ ê ¡0L®BlockStatementÍ ìÍ!Ç’M³VariableDeclarationÍ ÷Í!4‘N²VariableDeclaratorÍ ıÍ!3KªIdentifierÍ ıÍ!§clearedV®CallExpressionÍ!Í!3KªIdentifierÍ!Í!²clearCopperForNets’KªIdentifierÍ!Í!£docT°MemberExpressionÍ!Í!2KªIdentifierÍ!Í!"£accKªIdentifierÍ!#Í!2¯connectorNetIdsÂÂÂ¥constR«IfStatementÍ!>Í!ÀS°BinaryExpressionÍ!BÍ!MKªIdentifierÍ!BÍ!I§cleared¡>Q§LiteralÍ!LÍ!M ¡0L®BlockStatementÍ!OÍ!À‘X³ExpressionStatementÍ!^Í!µV®CallExpressionÍ!^Í!´KªIdentifierÍ!^Í!f¨tracePcb’Q§LiteralÍ!gÍ!z±AUTO_CLEAR_FOR_J1³'AUTO_CLEAR_FOR_J1'^¯TemplateLiteralÍ!|Í!³’KªIdentifierÍ!‡Í!§clearedT°MemberExpressionÍ!—Í!±T°MemberExpressionÍ!—Í!ªKªIdentifierÍ!—Í!š£accKªIdentifierÍ!›Í!ª¯connectorNetIdsÂÂKªIdentifierÍ!«Í!±¦lengthÂÂ“_¯TemplateElementÍ!}Í!…`¨cleared=¨cleared=Â_¯TemplateElementÍ!Í!•`¦ nets=¦ nets=Â_¯TemplateElementÍ!²Í!²`  ÃÂÀÀM³VariableDeclarationÍ!ÍÍ!ñ‘N²VariableDeclaratorÍ!ÓÍ!ğKªIdentifierÍ!ÓÍ!Ú§netPadsV®CallExpressionÍ!İÍ!ğKªIdentifierÍ!İÍ!ë®collectNetPads‘KªIdentifierÍ!ìÍ!ï£docÂ¥constM³VariableDeclarationÍ!÷Í"‘N²VariableDeclaratorÍ!ûÍ"KªIdentifierÍ!ûÍ"¨netCountQ§LiteralÍ"Í" ¡0£letM³VariableDeclarationÍ"Í"5‘N²VariableDeclaratorÍ"Í"4KªIdentifierÍ"Í" ¬tracksBeforeT°MemberExpressionÍ"#Í"4T°MemberExpressionÍ"#Í"-KªIdentifierÍ"#Í"&£docKªIdentifierÍ"'Í"-¦tracksÂÂKªIdentifierÍ".Í"4¦lengthÂÂ¥constX³ExpressionStatementÍ";Í" V®CallExpressionÍ";Í"ŸKªIdentifierÍ";Í"C¨tracePcb’Q§LiteralÍ"DÍ"V°AUTO_ROUTE_BEGIN²'AUTO_ROUTE_BEGIN'^¯TemplateLiteralÍ"XÍ"”KªIdentifierÍ"aÍ"f¥layerT°MemberExpressionÍ"tÍ"€KªIdentifierÍ"tÍ"{§netPadsKªIdentifierÍ"|Í"€¤sizeÂÂKªIdentifierÍ"‰Í"¤gridKªIdentifierÍ"—Í"œ¥width•_¯TemplateElementÍ"YÍ"_`¦layer=¦layer=Â_¯TemplateElementÍ"gÍ"r`« netGroups=« netGroups=Â_¯TemplateElementÍ"Í"‡`¦ grid=¦ grid=Â_¯TemplateElementÍ"Í"•`§ width=§ width=Â_¯TemplateElementÍ"Í"`  ÃÂX³ExpressionStatementÍ"¦Í%ÚV®CallExpressionÍ"¦Í%ÙT°MemberExpressionÍ"¦Í"µKªIdentifierÍ"¦Í"­§netPadsKªIdentifierÍ"®Í"µ§forEachÂÂ‘J·ArrowFunctionExpressionÍ"¶Í%ØÀÂÂÂ‘KªIdentifierÍ"·Í"º£grpL®BlockStatementÍ"¿Í%Ø˜M³VariableDeclarationÍ"ÊÍ"é‘N²VariableDeclaratorÍ"ĞÍ"èKªIdentifierÍ"ĞÍ"Õ¥totalV®CallExpressionÍ"ØÍ"èKªIdentifierÍ"ØÍ"ã«netPadTotal‘KªIdentifierÍ"äÍ"ç£grpÂ¥constR«IfStatementÍ"óÍ#»S°BinaryExpressionÍ"÷Í# KªIdentifierÍ"÷Í"ü¥total¡<Q§LiteralÍ"ÿÍ# ¡2L®BlockStatementÍ#Í#»’X³ExpressionStatementÍ#Í#›V®CallExpressionÍ#Í#šKªIdentifierÍ#Í#¬tracePcbWarn’Q§LiteralÍ#Í#)©AUTO_SKIP«'AUTO_SKIP'^¯TemplateLiteralÍ#+Í#™”S±LogicalExpressionÍ#.Í#FT°MemberExpressionÍ#.Í#9KªIdentifierÍ#.Í#1£grpKªIdentifierÍ#2Í#9§netNameÂÂ¢||T°MemberExpressionÍ#=Í#FKªIdentifierÍ#=Í#@£grpKªIdentifierÍ#AÍ#F¥netIdÂÂKªIdentifierÍ#OÍ#T¥totalT°MemberExpressionÍ#]Í#nT°MemberExpressionÍ#]Í#gKªIdentifierÍ#]Í#`£grpKªIdentifierÍ#aÍ#g¦pointsÂÂKªIdentifierÍ#hÍ#n¦lengthÂÂT°MemberExpressionÍ#uÍ#T°MemberExpressionÍ#uÍ#ˆKªIdentifierÍ#uÍ#x£grpKªIdentifierÍ#yÍ#ˆ¯connectorPointsÂÂKªIdentifierÍ#‰Í#¦lengthÂÂ•_¯TemplateElementÍ#,Í#,`  Â_¯TemplateElementÍ#GÍ#M`¦ pads=¦ pads=Â_¯TemplateElementÍ#UÍ#[`¦ (dev=¦ (dev=Â_¯TemplateElementÍ#oÍ#s`¤,j1=¤,j1=Â_¯TemplateElementÍ#Í#˜`²) â€” ç„Šç›˜ä¸è¶³²) â€” ç„Šç›˜ä¸è¶³ÃÂU¯ReturnStatementÍ#©Í#°ÀÀR«IfStatementÍ#ÅÍ$YV®CallExpressionÍ#ÉÍ#éKªIdentifierÍ#ÉÍ#Ù°netAlreadyRouted’KªIdentifierÍ#ÚÍ#İ£docT°MemberExpressionÍ#ßÍ#èKªIdentifierÍ#ßÍ#â£grpKªIdentifierÍ#ãÍ#è¥netIdÂÂÂL®BlockStatementÍ#ëÍ$Y’X³ExpressionStatementÍ#úÍ$9V®CallExpressionÍ#úÍ$8KªIdentifierÍ#úÍ$¨tracePcb’Q§LiteralÍ$Í$©AUTO_SKIP«'AUTO_SKIP'^¯TemplateLiteralÍ$Í$7‘S±LogicalExpressionÍ$Í$+T°MemberExpressionÍ$Í$KªIdentifierÍ$Í$£grpKªIdentifierÍ$Í$§netNameÂÂ¢||T°MemberExpressionÍ$"Í$+KªIdentifierÍ$"Í$%£grpKªIdentifierÍ$&Í$+¥netIdÂÂ’_¯TemplateElementÍ$Í$`  Â_¯TemplateElementÍ$,Í$6`¸ â€” å·²æœ‰èµ°çº¿/è¿‡å­”¸ â€” å·²æœ‰èµ°çº¿/è¿‡å­”ÃÂU¯ReturnStatementÍ$GÍ$NÀÀX³ExpressionStatementÍ$cÍ$n[°UpdateExpressionÍ$cÍ$m¢++ÂKªIdentifierÍ$cÍ$k¨netCountM³VariableDeclarationÍ$xÍ$£‘N²VariableDeclaratorÍ$~Í$¢KªIdentifierÍ$~Í$€¢lyV®CallExpressionÍ$ƒÍ$¢KªIdentifierÍ$ƒÍ$«layerForNet’KªIdentifierÍ$Í$”¥layerT°MemberExpressionÍ$–Í$¡KªIdentifierÍ$–Í$™£grpKªIdentifierÍ$šÍ$¡§netNameÂÂÂ¥constM³VariableDeclarationÍ$­Í$×‘N²VariableDeclaratorÍ$³Í$ÖKªIdentifierÍ$³Í$´¡wV®CallExpressionÍ$·Í$ÖKªIdentifierÍ$·Í$Â«widthForNet’KªIdentifierÍ$ÃÍ$È¥widthT°MemberExpressionÍ$ÊÍ$ÕKªIdentifierÍ$ÊÍ$Í£grpKªIdentifierÍ$ÎÍ$Õ§netNameÂÂÂ¥constM³VariableDeclarationÍ$áÍ%‘N²VariableDeclaratorÍ$çÍ%KªIdentifierÍ$çÍ$ë¤segsV®CallExpressionÍ$îÍ%KªIdentifierÍ$îÍ$û­routeNetGroup•KªIdentifierÍ$üÍ$ÿ£docKªIdentifierÍ%Í%¢lyKªIdentifierÍ%Í%£grpKªIdentifierÍ%
-Í%¤gridKªIdentifierÍ%Í%¡wÂ¥constX³ExpressionStatementÍ%Í%ÑV®CallExpressionÍ%Í%ĞKªIdentifierÍ%Í%%¨tracePcb’Q§LiteralÍ%&Í%0¨AUTO_NETª'AUTO_NET'S°BinaryExpressionÍ%2Í%Ï^¯TemplateLiteralÍ%2Í%š”S±LogicalExpressionÍ%5Í%MT°MemberExpressionÍ%5Í%@KªIdentifierÍ%5Í%8£grpKªIdentifierÍ%9Í%@§netNameÂÂ¢||T°MemberExpressionÍ%DÍ%MKªIdentifierÍ%DÍ%G£grpKªIdentifierÍ%HÍ%M¥netIdÂÂKªIdentifierÍ%VÍ%[¥totalT°MemberExpressionÍ%dÍ%uT°MemberExpressionÍ%dÍ%nKªIdentifierÍ%dÍ%g£grpKªIdentifierÍ%hÍ%n¦pointsÂÂKªIdentifierÍ%oÍ%u¦lengthÂÂT°MemberExpressionÍ%|Í%–T°MemberExpressionÍ%|Í%KªIdentifierÍ%|Í%£grpKªIdentifierÍ%€Í%¯connectorPointsÂÂKªIdentifierÍ%Í%–¦lengthÂÂ•_¯TemplateElementÍ%3Í%3`  Â_¯TemplateElementÍ%NÍ%T`¦ pads=¦ pads=Â_¯TemplateElementÍ%\Í%b`¦ (dev=¦ (dev=Â_¯TemplateElementÍ%vÍ%z`¤,j1=¤,j1=Â_¯TemplateElementÍ%—Í%™`¢) ¢) Ã¡+^¯TemplateLiteralÍ%ªÍ%Ï“KªIdentifierÍ%¶Í%º¤segsKªIdentifierÍ%ÄÍ%Æ¢lyKªIdentifierÍ%ÌÍ%Í¡w”_¯TemplateElementÍ%«Í%´`©segments=©segments=Â_¯TemplateElementÍ%»Í%Â`§ layer=§ layer=Â_¯TemplateElementÍ%ÇÍ%Ê`£ w=£ w=Â_¯TemplateElementÍ%ÎÍ%Î`  ÃÂÂX³ExpressionStatementÍ%àÍ& V®CallExpressionÍ%àÍ%ÿKªIdentifierÍ%àÍ%ò²finishRouteCleanup’KªIdentifierÍ%óÍ%ö£docQ§LiteralÍ%øÍ%ş¤AUTO¦'AUTO'ÂM³VariableDeclarationÍ&Í&G‘N²VariableDeclaratorÍ&Í&FKªIdentifierÍ&Í&ªtrackCountV®CallExpressionÍ&Í&FT°MemberExpressionÍ&Í&!KªIdentifierÍ&Í&¤MathKªIdentifierÍ&Í&!£maxÂÂ’Q§LiteralÍ&"Í&# ¡0S°BinaryExpressionÍ&%Í&ET°MemberExpressionÍ&%Í&6T°MemberExpressionÍ&%Í&/KªIdentifierÍ&%Í&(£docKªIdentifierÍ&)Í&/¦tracksÂÂKªIdentifierÍ&0Í&6¦lengthÂÂ¡-KªIdentifierÍ&9Í&E¬tracksBeforeÂ¥constR«IfStatementÍ&MÍ&äS°BinaryExpressionÍ&QÍ&_KªIdentifierÍ&QÍ&Y¨netCount£===Q§LiteralÍ&^Í&_ ¡0L®BlockStatementÍ&aÍ&‘X³ExpressionStatementÍ&lÍ&‰V®CallExpressionÍ&lÍ&ˆT°MemberExpressionÍ&lÍ&yKªIdentifierÍ&lÍ&t¨messagesKªIdentifierÍ&uÍ&y¤pushÂÂ‘Q§LiteralÍ&zÍ&‡Ù!æ²¡æœ‰éœ€è¦è‡ªåŠ¨å¸ƒçº¿çš„ç½‘ç»œÙ#'æ²¡æœ‰éœ€è¦è‡ªåŠ¨å¸ƒçº¿çš„ç½‘ç»œ'ÂL®BlockStatementÍ&›Í&ä‘X³ExpressionStatementÍ&¦Í&İV®CallExpressionÍ&¦Í&ÜT°MemberExpressionÍ&¦Í&³KªIdentifierÍ&¦Í&®¨messagesKªIdentifierÍ&¯Í&³¤pushÂÂ‘^¯TemplateLiteralÍ&´Í&Û’KªIdentifierÍ&½Í&Å¨netCountKªIdentifierÍ&ÍÍ&×ªtrackCount“_¯TemplateElementÍ&µÍ&»`°å·²è‡ªåŠ¨å¸ƒçº¿ °å·²è‡ªåŠ¨å¸ƒçº¿ Â_¯TemplateElementÍ&ÆÍ&Ë`­ ä¸ªç½‘ç»œï¼Œ­ ä¸ªç½‘ç»œï¼ŒÂ_¯TemplateElementÍ&ØÍ&Ú`¤ æ®µ¤ æ®µÃÂX³ExpressionStatementÍ&êÍ'Z´AssignmentExpressionÍ&êÍ'¡=T°MemberExpressionÍ&êÍ'T°MemberExpressionÍ&êÍ&öKªIdentifierÍ&êÍ&í£docKªIdentifierÍ&îÍ&ö¨metadataÂÂKªIdentifierÍ&÷Í'ªmodifiedAtÂÂV®CallExpressionÍ'Í'T°MemberExpressionÍ'Í'Y­NewExpressionÍ'Í'KªIdentifierÍ'Í'¤DateKªIdentifierÍ'Í'«toISOStringÂÂÂU¯ReturnStatementÍ'#Í'MO°ObjectExpressionÍ'*Í'L“a¨PropertyÍ',Í'6ÂÃÂKªIdentifierÍ',Í'6ªtrackCount¤initKªIdentifierÍ',Í'6ªtrackCounta¨PropertyÍ'8Í'@ÂÃÂKªIdentifierÍ'8Í'@¨netCount¤initKªIdentifierÍ'8Í'@¨netCounta¨PropertyÍ'BÍ'JÂÃÂKªIdentifierÍ'BÍ'J¨messages¤initKªIdentifierÍ'BÍ'J¨messagesÀ–Ôrb•¤type¥start£endªspecifiers¦source±ImportDeclaration)ÌX‘Ôrc•¤type¥start£end¨imported¥local¯ImportSpecifier2<KªIdentifier2<ªPcbLayerIdKªIdentifier2<ªPcbLayerIdQ§LiteralÌDÌW±../types/PcbTypes³'../types/PcbTypes'b±ImportDeclarationÌZÌ|‘c¯ImportSpecifierÌcÌiKªIdentifierÌcÌi¦IdUtilKªIdentifierÌcÌi¦IdUtilQ§LiteralÌqÌ{¨./IdUtilª'./IdUtil'b±ImportDeclarationÌ~Ì¯‘c¯ImportSpecifierÌ‡Ì—KªIdentifierÌ‡Ì—°padWorldPositionKªIdentifierÌ‡Ì—°padWorldPositionQ§LiteralÌŸÌ®­./PcbZoneUtil¯'./PcbZoneUtil'b±ImportDeclarationÌ±Í"“c¯ImportSpecifierÌºÌÔKªIdentifierÌºÌÔºorderPointsNearestNeighborKªIdentifierÌºÌÔºorderPointsNearestNeighborc¯ImportSpecifierÌÖÌîKªIdentifierÌÖÌî¸snapTrackEndpointsToPadsKªIdentifierÌÖÌî¸snapTrackEndpointsToPadsc¯ImportSpecifierÌğÍKªIdentifierÌğÍµpruneZeroLengthTracksKªIdentifierÌğÍµpruneZeroLengthTracksQ§LiteralÍÍ!²./PcbTrackBindUtil´'./PcbTrackBindUtil'b±ImportDeclarationÍ$Íw’c¯ImportSpecifierÍ-ÍCKªIdentifierÍ-ÍC¶ensureBoardAccessoriesKªIdentifierÍ-ÍC¶ensureBoardAccessoriesc¯ImportSpecifierÍEÍWKªIdentifierÍEÍW²clearCopperForNetsKªIdentifierÍEÍW²clearCopperForNetsQ§LiteralÍ_Ívµ./PcbBoardAccessories·'./PcbBoardAccessories'b±ImportDeclarationÍyÍ°’c¯ImportSpecifierÍ‚ÍŠKªIdentifierÍ‚ÍŠ¨tracePcbKªIdentifierÍ‚ÍŠ¨tracePcbc¯ImportSpecifierÍŒÍ˜KªIdentifierÍŒÍ˜¬tracePcbWarnKªIdentifierÍŒÍ˜¬tracePcbWarnQ§LiteralÍ Í¯­./PcbTraceLog¯'./PcbTraceLog'

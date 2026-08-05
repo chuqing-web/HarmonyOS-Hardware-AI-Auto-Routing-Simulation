@@ -9,8 +9,9 @@ export const JSON_ONLY_OUTPUT_RULE: string = `
 2. 禁止 JSON 外任何文字：中文/英文说明、推理、电路分析、引脚讨论、复述规则
 3. 禁止 markdown、代码围栏（禁止 \`\`\`json 或 \`\`\`）
 4. 可在模型内部思考（reasoning / thinking 通道）；思考内容不得出现在 content 正文
-5. 若开启推理后 content 仍混入说明，系统会尝试隔离最后一个完整 JSON，但仍应尽量只出纯 JSON
-6. 字段名可用 camelCase 或 snake_case；除上述 JSON 外不得有任何字符（含前后空行以外的说明）`;
+5. 思考必须短促：优先把额度留给 content JSON；禁止把 max_tokens 耗尽在 reasoning（否则 finish_reason=length 空正文）
+6. 若开启推理后 content 仍混入说明，系统会尝试隔离最后一个完整 JSON，但仍应尽量只出纯 JSON
+7. 字段名可用 camelCase 或 snake_case；除上述 JSON 外不得有任何字符（含前后空行以外的说明）`;
 
 /** 仪器拓扑铁律 — 与 device-catalog / lab_instruments / SIM_CONN 对齐 */
 export const INSTRUMENT_TOPOLOGY_RULES: string = `

@@ -1,1362 +1,0 @@
-Ôr@Ÿªassertions¤code´customTransformCache¬dependencies¢id¤meta±moduleSideEffects¬originalCode±originalSourcemap«resolvedIds®sourcemapChainµsyntheticNamedExportsµtransformDependencies®transformFiles¨cacheAstÔrAÚ3*import { getGlobalPcbFootprintLibrary } from './PcbFootprintLibrary';
-import { rebuildPcbNets } from './PcbNetUtil';
-import { tracePcb } from './PcbTraceLog';
-function isGndNetName(name) {
-    const n = name.toUpperCase();
-    return n === 'GND' || n === 'VSS' || n === 'AGND' || n === '0';
-}
-function isVccNetName(name) {
-    const n = name.toUpperCase();
-    return n === 'VCC' || n === 'VDD' || n.indexOf('VCC') === 0 || n.indexOf('VDD') === 0 ||
-        n === 'VIN' || n === 'VIN_SRC' || (n.indexOf('VIN') === 0 && n.indexOf('VAC') < 0);
-}
-function isVeeNetName(name) {
-    const n = name.toUpperCase();
-    return n === 'VEE' || n === 'V-' || n.indexOf('VEE') === 0;
-}
-/** äº¤æµç”µæºæˆ–ä¿¡å·æºå¤–æ¥ç½‘ */
-function isVacOrSigNetName(name) {
-    const n = name.toUpperCase();
-    if (isGndNetName(n) || isVccNetName(n) || isVeeNetName(n)) {
-        return false;
-    }
-    return n === 'VAC' || n.indexOf('VAC') === 0 || n === 'AC' || n === 'VAC_AC' ||
-        n === 'SIG' || n === 'SIGNAL' || n.indexOf('SIG_') === 0 || n.indexOf('SIGNAL') === 0 ||
-        n === 'SRC' || n === 'WAVE' || n === 'SIN' || n === 'AIN' || n === 'SIG_OUT' ||
-        n === 'OUT' || n === 'SG_OUT' || n.indexOf('SIGGEN') === 0;
-}
-function collectNetPadStats(doc) {
-    const map = new Map();
-    for (const fp of doc.footprints) {
-        for (const pad of fp.pads) {
-            const nid = pad.netId ?? '';
-            if (nid.length === 0) {
-                continue;
-            }
-            const nm = pad.netName ?? nid;
-            let st = map.get(nid);
-            if (!st) {
-                st = { netId: nid, netName: nm, count: 0, schPinCount: 0 };
-                map.set(nid, st);
-            }
-            st.count++;
-            if (pad.netName && pad.netName.length > 0) {
-                st.netName = pad.netName;
-            }
-        }
-    }
-    const out = [];
-    map.forEach((v) => {
-        out.push(v);
-    });
-    return out;
-}
-/** åˆå¹¶æ¿ä¸Šç„Šç›˜ç»Ÿè®¡ + åŸç†å›¾ç½‘ç»œæç¤ºï¼ˆæ¿ç›˜ä¸º 0 ä¹Ÿå¯å é’ˆï¼‰ */
-function mergeNetPool(padStats, hints) {
-    const map = new Map();
-    for (const s of padStats) {
-        map.set(s.netId, {
-            netId: s.netId, netName: s.netName, count: s.count, schPinCount: s.schPinCount
-        });
-    }
-    for (const h of hints) {
-        if (!h.id || h.id.length === 0) {
-            continue;
-        }
-        const nm = h.name && h.name.length > 0 ? h.name : h.id;
-        const existing = map.get(h.id);
-        if (existing) {
-            if (nm.length > 0) {
-                existing.netName = nm;
-            }
-            existing.schPinCount = Math.max(existing.schPinCount, h.schPinCount);
-        }
-        else {
-            map.set(h.id, {
-                netId: h.id, netName: nm, count: 0, schPinCount: h.schPinCount
-            });
-        }
-    }
-    const out = [];
-    map.forEach((v) => {
-        out.push(v);
-    });
-    return out;
-}
-function takeNet(pool, used, pred, allowEmptySch = true) {
-    for (const s of pool) {
-        if (used.has(s.netId)) {
-            continue;
-        }
-        if (!pred(s.netName)) {
-            continue;
-        }
-        // VEE/VAC/SIGï¼šæ¿ä¸Šæ— ç„Šç›˜ä¸”åŸç†å›¾ä¹Ÿæ— å¼•è„š â†’ ç©ºå£³ç½‘ï¼Œè·³è¿‡
-        if (!allowEmptySch && s.count <= 0 && s.schPinCount <= 0) {
-            continue;
-        }
-        used.add(s.netId);
-        return s;
-    }
-    return null;
-}
-/**
- * æ•™å­¦æ¿å›ºå®šå‰ 4 é’ˆï¼šGND | VCC | VEE | VAC/SIGï¼Œå…¶åä¸ºå…¶ä½™ç½‘ï¼ˆå­¤å„¿ä¼˜å…ˆï¼‰ã€‚
- * GND/VCC å¯å¼ºåˆ¶å é’ˆï¼›VEE/VAC/SIG ä»…åœ¨åŸç†å›¾æœ‰å¼•è„šæˆ–æ¿ä¸Šå·²æœ‰ç„Šç›˜æ—¶å é’ˆã€‚
- */
-function buildPinAssignment(pool) {
-    const used = new Set();
-    const pins = [];
-    const gnd = takeNet(pool, used, isGndNetName, true);
-    const vcc = takeNet(pool, used, isVccNetName, true);
-    const vee = takeNet(pool, used, isVeeNetName, false);
-    const vacSig = takeNet(pool, used, isVacOrSigNetName, false);
-    if (gnd) {
-        pins.push(gnd);
-    }
-    if (vcc) {
-        pins.push(vcc);
-    }
-    if (vee) {
-        pins.push(vee);
-    }
-    if (vacSig) {
-        pins.push(vacSig);
-    }
-    const fillers = [];
-    for (const s of pool) {
-        if (used.has(s.netId)) {
-            continue;
-        }
-        // ç©ºå£³ç½‘ä¸å å…¶ä½™é’ˆè„š
-        if (s.count <= 0 && s.schPinCount <= 0) {
-            continue;
-        }
-        fillers.push(s);
-    }
-    fillers.sort((a, b) => {
-        if (a.count !== b.count) {
-            return a.count - b.count;
-        }
-        return a.netName.localeCompare(b.netName);
-    });
-    for (const f of fillers) {
-        pins.push(f);
-    }
-    return pins;
-}
-function boardExtents(doc) {
-    let maxX = 800;
-    let maxY = 600;
-    const pts = doc.boardOutline?.points ?? [];
-    for (const p of pts) {
-        maxX = Math.max(maxX, p.x);
-        maxY = Math.max(maxY, p.y);
-    }
-    for (const fp of doc.footprints) {
-        maxX = Math.max(maxX, fp.position.x + 120);
-        maxY = Math.max(maxY, fp.position.y + 120);
-    }
-    return { x: maxX, y: maxY };
-}
-function hasRef(doc, ref) {
-    for (const fp of doc.footprints) {
-        if (fp.refDes === ref) {
-            return true;
-        }
-    }
-    return false;
-}
-function pickHeaderDefId(pinNeed) {
-    if (pinNeed >= 7) {
-        return 'FP_PINHDR_8';
-    }
-    if (pinNeed >= 5) {
-        return 'FP_PINHDR_6';
-    }
-    return 'FP_PINHDR_4';
-}
-function pinCountFromDef(defId) {
-    if (defId.indexOf('_8') >= 0) {
-        return 8;
-    }
-    if (defId.indexOf('_6') >= 0) {
-        return 6;
-    }
-    return 4;
-}
-function isMountRef(ref) {
-    if (ref.length < 2 || ref.charAt(0) !== 'H') {
-        return false;
-    }
-    for (let i = 1; i < ref.length; i++) {
-        const c = ref.charCodeAt(i);
-        if (c < 48 || c > 57) {
-            return false;
-        }
-    }
-    return true;
-}
-function collectConnectorNetIds(doc) {
-    const ids = new Set();
-    for (const fp of doc.footprints) {
-        if (fp.refDes !== 'J1' && !isMountRef(fp.refDes)) {
-            continue;
-        }
-        for (const pad of fp.pads) {
-            if (pad.netId && pad.netId.length > 0) {
-                ids.add(pad.netId);
-            }
-        }
-    }
-    const out = [];
-    ids.forEach((id) => {
-        out.push(id);
-    });
-    return out;
-}
-function bindHeaderPadsFixed(hdr, assignment) {
-    for (let i = 0; i < hdr.pads.length; i++) {
-        if (i < assignment.length) {
-            hdr.pads[i].netId = assignment[i].netId;
-            hdr.pads[i].netName = assignment[i].netName;
-        }
-    }
-}
-function findGndInAssignment(assignment) {
-    for (const s of assignment) {
-        if (isGndNetName(s.netName)) {
-            return s;
-        }
-    }
-    return null;
-}
-/**
- * ç¡®ä¿æ¿ä¸Šæœ‰ J1 æ’é’ˆä¸è§’å­”ã€‚
- * @param schNets åŸç†å›¾ç½‘ç»œï¼ˆå¯å«æ¿ä¸Šç½‘ç›˜ä¸º 0 çš„ VEE/VAC/SIGï¼‰
- */
-export function ensureBoardAccessories(doc, lib, schNets) {
-    const empty = { message: '', addedNew: false, connectorNetIds: [] };
-    const library = lib ?? getGlobalPcbFootprintLibrary();
-    rebuildPcbNets(doc);
-    const hints = schNets ?? [];
-    // æ— åŸç†å›¾æç¤ºæ—¶ï¼Œç”¨å·²é‡å»ºçš„ PCB nets ä½œå¼±æç¤º
-    if (hints.length === 0) {
-        for (const n of doc.nets) {
-            hints.push({ id: n.id, name: n.name, schPinCount: 0 });
-        }
-    }
-    const padStats = collectNetPadStats(doc);
-    const pool = mergeNetPool(padStats, hints);
-    if (pool.length === 0) {
-        return empty;
-    }
-    const assignment = buildPinAssignment(pool);
-    if (assignment.length === 0) {
-        return empty;
-    }
-    const gnd = findGndInAssignment(assignment);
-    // è‡³å°‘ 4 é’ˆä¿ç•™æ•™å­¦è½¨ä½ï¼›æŒ‰éœ€åŠ å¤§
-    const pinNeed = Math.max(4, assignment.length);
-    const defId = pickHeaderDefId(pinNeed);
-    const pins = pinCountFromDef(defId);
-    let created = 0;
-    let ext = boardExtents(doc);
-    const hdrHalfH = ((pins - 1) * 100) / 2 + 50;
-    const reserve = 320;
-    const holeInset = 20;
-    const hadJ1 = hasRef(doc, 'J1');
-    if (!hadJ1) {
-        ext = { x: ext.x + reserve, y: Math.max(ext.y, Math.max(900, hdrHalfH * 2 + 400)) };
-        doc.boardOutline.points = [
-            { x: 0, y: 0 }, { x: ext.x, y: 0 }, { x: ext.x, y: ext.y }, { x: 0, y: ext.y }
-        ];
-        const hdrX = ext.x - 160;
-        const hdrY = Math.min(Math.max(ext.y / 2, holeInset + hdrHalfH + 80), ext.y - holeInset - hdrHalfH - 80);
-        const hdr = library.instantiate(defId, 'J1', `1x${pins}`, { x: hdrX, y: hdrY }, 0);
-        if (hdr) {
-            bindHeaderPadsFixed(hdr, assignment);
-            doc.footprints.push(hdr);
-            created++;
-        }
-        const holePositions = [
-            { x: holeInset, y: holeInset },
-            { x: ext.x - holeInset, y: holeInset },
-            { x: holeInset, y: ext.y - holeInset },
-            { x: ext.x - holeInset, y: ext.y - holeInset }
-        ];
-        let hi = 1;
-        for (const hp of holePositions) {
-            const href = `H${hi}`;
-            if (hasRef(doc, href)) {
-                hi++;
-                continue;
-            }
-            let clash = false;
-            for (const fp of doc.footprints) {
-                if (fp.refDes === 'J1') {
-                    continue;
-                }
-                if (Math.abs(fp.position.x - hp.x) < 100 && Math.abs(fp.position.y - hp.y) < 100) {
-                    clash = true;
-                    break;
-                }
-            }
-            if (clash) {
-                hi++;
-                continue;
-            }
-            const hole = library.instantiate('FP_MOUNT', href, 'MH', hp, 0);
-            if (hole) {
-                if (gnd) {
-                    for (const pad of hole.pads) {
-                        pad.netId = gnd.netId;
-                        pad.netName = gnd.netName;
-                    }
-                }
-                doc.footprints.push(hole);
-                created++;
-            }
-            hi++;
-        }
-    }
-    else {
-        for (const fp of doc.footprints) {
-            if (fp.refDes === 'J1') {
-                bindHeaderPadsFixed(fp, assignment);
-                break;
-            }
-        }
-        for (const fp of doc.footprints) {
-            if (!isMountRef(fp.refDes) || !gnd) {
-                continue;
-            }
-            for (const pad of fp.pads) {
-                pad.netId = gnd.netId;
-                pad.netName = gnd.netName;
-            }
-        }
-    }
-    // æ—§ç‰ˆ FP_MOUNTï¼ˆç„Šç›˜ç›´å¾„ 160ï¼‰ä¼šæº¢å‡ºæ¿æ¡†ï¼›ç»Ÿä¸€æŒ‰ç´§å‡‘å®šä¹‰åˆ·æ–°å‡ ä½•
-    for (const fp of doc.footprints) {
-        if (fp.defId !== 'FP_MOUNT') {
-            continue;
-        }
-        library.resyncPadsFromDef(fp, 'FP_MOUNT');
-        if (gnd) {
-            for (const pad of fp.pads) {
-                pad.netId = gnd.netId;
-                pad.netName = gnd.netName;
-            }
-        }
-    }
-    rebuildPcbNets(doc);
-    const connectorNetIds = collectConnectorNetIds(doc);
-    const addedNew = created > 0;
-    let message = '';
-    if (addedNew || assignment.length > 0) {
-        const railParts = [];
-        for (let i = 0; i < Math.min(assignment.length, 4); i++) {
-            railParts.push(`P${i + 1}=${assignment[i].netName}`);
-        }
-        if (addedNew) {
-            message = `å·²æ·»åŠ æ¿è¾¹å¤–æ¥ J1/å®‰è£…å­” ${created} ä»¶ï¼ˆ${railParts.join(' | ')}ï¼‰`;
-        }
-        tracePcb('BOARD_ACCESSORIES', `added=${created} J1=${defId} rails=[${railParts.join(',')}] totalPins=${assignment.length}`);
-    }
-    const result = {
-        message: message,
-        addedNew: addedNew,
-        connectorNetIds: connectorNetIds
-    };
-    return result;
-}
-export function clearCopperForNets(doc, netIds) {
-    if (netIds.length === 0) {
-        return 0;
-    }
-    const set = new Set(netIds);
-    const before = doc.tracks.length + doc.vias.length;
-    doc.tracks = doc.tracks.filter((t) => !set.has(t.netId));
-    doc.vias = doc.vias.filter((v) => !set.has(v.netId));
-    return before - doc.tracks.length - doc.vias.length;
-}
-export function findDocGndNet(doc) {
-    for (const n of doc.nets) {
-        if (isGndNetName(n.name)) {
-            return n;
-        }
-    }
-    return null;
-}
-/** ä»åŸç†å›¾ nets æå–é…ä»¶æç¤º */
-export function accessoryHintsFromSchematicNets(nets) {
-    const out = [];
-    if (!nets) {
-        return out;
-    }
-    for (const n of nets) {
-        if (!n.id || n.id.length === 0) {
-            continue;
-        }
-        const pinIds = n.pinIds;
-        const schPinCount = pinIds !== undefined ? pinIds.length : 0;
-        out.push({ id: n.id, name: n.name ?? '', schPinCount: schPinCount });
-    }
-    return out;
-}
-//# sourceMappingURL=PcbBoardAccessories.js.mapÂ“ÙNC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\PcbFootprintLibrary.etsÙEC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\PcbNetUtil.etsÙFC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\PcbTraceLog.etsÙNC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\PcbBoardAccessories.etsÔrB›ªmoduleName±isLocalDependency¯isNodeEntryFile§pkgPath±belongProjectPath§pkgNameªpkgVersion±dependencyPkgInfo°belongModulePath¬shouldEmitJs¯hostModulesInfo¦commonÃÂÙ#C:\Projects\ElecDraw_Harmony\common¼C:\Projects\ElecDraw_Harmony¦common¥1.0.0Ô  Ù#C:\Projects\ElecDraw_Harmony\commonÃ’ÔrC’²hostDependencyName®hostModuleNameµ./PcbBoardAccessories¦commonCÙ(./src/main/ets/utils/PcbBoardAccessories¦commonÃÚ4æ/**
- * æ¿çº§å¤–æ¥é…ä»¶ â€” æ•™å­¦æ¿å›ºå®šé’ˆåºï¼š
- * J1: GND | VCC | VEE | VAC/SIG |ï¼ˆå…¶ä½™å­¤å„¿ç½‘ï¼‰
- * æŒ‰åŸç†å›¾ç½‘ç»œå¼ºåˆ¶å é’ˆï¼ˆå³ä½¿å½“å‰æ¿ä¸Šç½‘ç›˜ä¸º 0ï¼‰ï¼›å››è§’å®‰è£…å­”ç»‘ GNDã€‚
- */
-import { Point2D, Net } from '../types/CommonTypes';
-import { PcbDocument, PcbFootprintInst, PcbNet } from '../types/PcbTypes';
-import { PcbFootprintLibrary, getGlobalPcbFootprintLibrary } from './PcbFootprintLibrary';
-import { rebuildPcbNets } from './PcbNetUtil';
-import { tracePcb } from './PcbTraceLog';
-
-/** åŸç†å›¾ç½‘ç»œæç¤ºï¼ˆå¯ä¸åœ¨æ¿ä¸Šå·²æœ‰ç„Šç›˜ï¼‰ */
-export interface AccessoryNetHint {
-  id: string;
-  name: string;
-  /** åŸç†å›¾è¯¥ç½‘ä¸Šçš„å¼•è„šæ•°ï¼›0 è¡¨ç¤ºç©ºç½‘ï¼ˆå¦‚æ®‹ç•™ VEEï¼‰ï¼Œä¸å¼ºåˆ¶å é’ˆ */
-  schPinCount: number;
-}
-
-export interface BoardAccessoriesResult {
-  message: string;
-  addedNew: boolean;
-  connectorNetIds: string[];
-}
-
-function isGndNetName(name: string): boolean {
-  const n = name.toUpperCase();
-  return n === 'GND' || n === 'VSS' || n === 'AGND' || n === '0';
-}
-
-function isVccNetName(name: string): boolean {
-  const n = name.toUpperCase();
-  return n === 'VCC' || n === 'VDD' || n.indexOf('VCC') === 0 || n.indexOf('VDD') === 0 ||
-    n === 'VIN' || n === 'VIN_SRC' || (n.indexOf('VIN') === 0 && n.indexOf('VAC') < 0);
-}
-
-function isVeeNetName(name: string): boolean {
-  const n = name.toUpperCase();
-  return n === 'VEE' || n === 'V-' || n.indexOf('VEE') === 0;
-}
-
-/** äº¤æµç”µæºæˆ–ä¿¡å·æºå¤–æ¥ç½‘ */
-function isVacOrSigNetName(name: string): boolean {
-  const n = name.toUpperCase();
-  if (isGndNetName(n) || isVccNetName(n) || isVeeNetName(n)) {
-    return false;
-  }
-  return n === 'VAC' || n.indexOf('VAC') === 0 || n === 'AC' || n === 'VAC_AC' ||
-    n === 'SIG' || n === 'SIGNAL' || n.indexOf('SIG_') === 0 || n.indexOf('SIGNAL') === 0 ||
-    n === 'SRC' || n === 'WAVE' || n === 'SIN' || n === 'AIN' || n === 'SIG_OUT' ||
-    n === 'OUT' || n === 'SG_OUT' || n.indexOf('SIGGEN') === 0;
-}
-
-interface NetPadStat {
-  netId: string;
-  netName: string;
-  count: number;
-  schPinCount: number;
-}
-
-function collectNetPadStats(doc: PcbDocument): NetPadStat[] {
-  const map: Map<string, NetPadStat> = new Map();
-  for (const fp of doc.footprints) {
-    for (const pad of fp.pads) {
-      const nid = pad.netId ?? '';
-      if (nid.length === 0) {
-        continue;
-      }
-      const nm = pad.netName ?? nid;
-      let st = map.get(nid);
-      if (!st) {
-        st = { netId: nid, netName: nm, count: 0, schPinCount: 0 };
-        map.set(nid, st);
-      }
-      st.count++;
-      if (pad.netName && pad.netName.length > 0) {
-        st.netName = pad.netName;
-      }
-    }
-  }
-  const out: NetPadStat[] = [];
-  map.forEach((v: NetPadStat) => {
-    out.push(v);
-  });
-  return out;
-}
-
-/** åˆå¹¶æ¿ä¸Šç„Šç›˜ç»Ÿè®¡ + åŸç†å›¾ç½‘ç»œæç¤ºï¼ˆæ¿ç›˜ä¸º 0 ä¹Ÿå¯å é’ˆï¼‰ */
-function mergeNetPool(padStats: NetPadStat[], hints: AccessoryNetHint[]): NetPadStat[] {
-  const map: Map<string, NetPadStat> = new Map();
-  for (const s of padStats) {
-    map.set(s.netId, {
-      netId: s.netId, netName: s.netName, count: s.count, schPinCount: s.schPinCount
-    });
-  }
-  for (const h of hints) {
-    if (!h.id || h.id.length === 0) {
-      continue;
-    }
-    const nm = h.name && h.name.length > 0 ? h.name : h.id;
-    const existing = map.get(h.id);
-    if (existing) {
-      if (nm.length > 0) {
-        existing.netName = nm;
-      }
-      existing.schPinCount = Math.max(existing.schPinCount, h.schPinCount);
-    } else {
-      map.set(h.id, {
-        netId: h.id, netName: nm, count: 0, schPinCount: h.schPinCount
-      });
-    }
-  }
-  const out: NetPadStat[] = [];
-  map.forEach((v: NetPadStat) => {
-    out.push(v);
-  });
-  return out;
-}
-
-function takeNet(pool: NetPadStat[], used: Set<string>,
-  pred: (name: string) => boolean, allowEmptySch: boolean = true): NetPadStat | null {
-  for (const s of pool) {
-    if (used.has(s.netId)) {
-      continue;
-    }
-    if (!pred(s.netName)) {
-      continue;
-    }
-    // VEE/VAC/SIGï¼šæ¿ä¸Šæ— ç„Šç›˜ä¸”åŸç†å›¾ä¹Ÿæ— å¼•è„š â†’ ç©ºå£³ç½‘ï¼Œè·³è¿‡
-    if (!allowEmptySch && s.count <= 0 && s.schPinCount <= 0) {
-      continue;
-    }
-    used.add(s.netId);
-    return s;
-  }
-  return null;
-}
-
-/**
- * æ•™å­¦æ¿å›ºå®šå‰ 4 é’ˆï¼šGND | VCC | VEE | VAC/SIGï¼Œå…¶åä¸ºå…¶ä½™ç½‘ï¼ˆå­¤å„¿ä¼˜å…ˆï¼‰ã€‚
- * GND/VCC å¯å¼ºåˆ¶å é’ˆï¼›VEE/VAC/SIG ä»…åœ¨åŸç†å›¾æœ‰å¼•è„šæˆ–æ¿ä¸Šå·²æœ‰ç„Šç›˜æ—¶å é’ˆã€‚
- */
-function buildPinAssignment(pool: NetPadStat[]): NetPadStat[] {
-  const used: Set<string> = new Set();
-  const pins: NetPadStat[] = [];
-
-  const gnd = takeNet(pool, used, isGndNetName, true);
-  const vcc = takeNet(pool, used, isVccNetName, true);
-  const vee = takeNet(pool, used, isVeeNetName, false);
-  const vacSig = takeNet(pool, used, isVacOrSigNetName, false);
-
-  if (gnd) {
-    pins.push(gnd);
-  }
-  if (vcc) {
-    pins.push(vcc);
-  }
-  if (vee) {
-    pins.push(vee);
-  }
-  if (vacSig) {
-    pins.push(vacSig);
-  }
-
-  const fillers: NetPadStat[] = [];
-  for (const s of pool) {
-    if (used.has(s.netId)) {
-      continue;
-    }
-    // ç©ºå£³ç½‘ä¸å å…¶ä½™é’ˆè„š
-    if (s.count <= 0 && s.schPinCount <= 0) {
-      continue;
-    }
-    fillers.push(s);
-  }
-  fillers.sort((a: NetPadStat, b: NetPadStat) => {
-    if (a.count !== b.count) {
-      return a.count - b.count;
-    }
-    return a.netName.localeCompare(b.netName);
-  });
-  for (const f of fillers) {
-    pins.push(f);
-  }
-  return pins;
-}
-
-function boardExtents(doc: PcbDocument): Point2D {
-  let maxX = 800;
-  let maxY = 600;
-  const pts = doc.boardOutline?.points ?? [];
-  for (const p of pts) {
-    maxX = Math.max(maxX, p.x);
-    maxY = Math.max(maxY, p.y);
-  }
-  for (const fp of doc.footprints) {
-    maxX = Math.max(maxX, fp.position.x + 120);
-    maxY = Math.max(maxY, fp.position.y + 120);
-  }
-  return { x: maxX, y: maxY };
-}
-
-function hasRef(doc: PcbDocument, ref: string): boolean {
-  for (const fp of doc.footprints) {
-    if (fp.refDes === ref) {
-      return true;
-    }
-  }
-  return false;
-}
-
-function pickHeaderDefId(pinNeed: number): string {
-  if (pinNeed >= 7) {
-    return 'FP_PINHDR_8';
-  }
-  if (pinNeed >= 5) {
-    return 'FP_PINHDR_6';
-  }
-  return 'FP_PINHDR_4';
-}
-
-function pinCountFromDef(defId: string): number {
-  if (defId.indexOf('_8') >= 0) {
-    return 8;
-  }
-  if (defId.indexOf('_6') >= 0) {
-    return 6;
-  }
-  return 4;
-}
-
-function isMountRef(ref: string): boolean {
-  if (ref.length < 2 || ref.charAt(0) !== 'H') {
-    return false;
-  }
-  for (let i = 1; i < ref.length; i++) {
-    const c = ref.charCodeAt(i);
-    if (c < 48 || c > 57) {
-      return false;
-    }
-  }
-  return true;
-}
-
-function collectConnectorNetIds(doc: PcbDocument): string[] {
-  const ids: Set<string> = new Set();
-  for (const fp of doc.footprints) {
-    if (fp.refDes !== 'J1' && !isMountRef(fp.refDes)) {
-      continue;
-    }
-    for (const pad of fp.pads) {
-      if (pad.netId && pad.netId.length > 0) {
-        ids.add(pad.netId);
-      }
-    }
-  }
-  const out: string[] = [];
-  ids.forEach((id: string) => {
-    out.push(id);
-  });
-  return out;
-}
-
-function bindHeaderPadsFixed(hdr: PcbFootprintInst, assignment: NetPadStat[]): void {
-  for (let i = 0; i < hdr.pads.length; i++) {
-    if (i < assignment.length) {
-      hdr.pads[i].netId = assignment[i].netId;
-      hdr.pads[i].netName = assignment[i].netName;
-    }
-  }
-}
-
-function findGndInAssignment(assignment: NetPadStat[]): NetPadStat | null {
-  for (const s of assignment) {
-    if (isGndNetName(s.netName)) {
-      return s;
-    }
-  }
-  return null;
-}
-
-/**
- * ç¡®ä¿æ¿ä¸Šæœ‰ J1 æ’é’ˆä¸è§’å­”ã€‚
- * @param schNets åŸç†å›¾ç½‘ç»œï¼ˆå¯å«æ¿ä¸Šç½‘ç›˜ä¸º 0 çš„ VEE/VAC/SIGï¼‰
- */
-export function ensureBoardAccessories(doc: PcbDocument,
-  lib?: PcbFootprintLibrary,
-  schNets?: AccessoryNetHint[]): BoardAccessoriesResult {
-  const empty: BoardAccessoriesResult = { message: '', addedNew: false, connectorNetIds: [] };
-  const library = lib ?? getGlobalPcbFootprintLibrary();
-  rebuildPcbNets(doc);
-
-  const hints: AccessoryNetHint[] = schNets ?? [];
-  // æ— åŸç†å›¾æç¤ºæ—¶ï¼Œç”¨å·²é‡å»ºçš„ PCB nets ä½œå¼±æç¤º
-  if (hints.length === 0) {
-    for (const n of doc.nets) {
-      hints.push({ id: n.id, name: n.name, schPinCount: 0 });
-    }
-  }
-
-  const padStats = collectNetPadStats(doc);
-  const pool = mergeNetPool(padStats, hints);
-  if (pool.length === 0) {
-    return empty;
-  }
-
-  const assignment = buildPinAssignment(pool);
-  if (assignment.length === 0) {
-    return empty;
-  }
-
-  const gnd = findGndInAssignment(assignment);
-  // è‡³å°‘ 4 é’ˆä¿ç•™æ•™å­¦è½¨ä½ï¼›æŒ‰éœ€åŠ å¤§
-  const pinNeed = Math.max(4, assignment.length);
-  const defId = pickHeaderDefId(pinNeed);
-  const pins = pinCountFromDef(defId);
-
-  let created = 0;
-  let ext = boardExtents(doc);
-  const hdrHalfH = ((pins - 1) * 100) / 2 + 50;
-  const reserve = 320;
-  const holeInset = 20;
-  const hadJ1 = hasRef(doc, 'J1');
-
-  if (!hadJ1) {
-    ext = { x: ext.x + reserve, y: Math.max(ext.y, Math.max(900, hdrHalfH * 2 + 400)) };
-    doc.boardOutline.points = [
-      { x: 0, y: 0 }, { x: ext.x, y: 0 }, { x: ext.x, y: ext.y }, { x: 0, y: ext.y }
-    ];
-
-    const hdrX = ext.x - 160;
-    const hdrY = Math.min(Math.max(ext.y / 2, holeInset + hdrHalfH + 80),
-      ext.y - holeInset - hdrHalfH - 80);
-    const hdr = library.instantiate(defId, 'J1', `1x${pins}`, { x: hdrX, y: hdrY }, 0);
-    if (hdr) {
-      bindHeaderPadsFixed(hdr, assignment);
-      doc.footprints.push(hdr);
-      created++;
-    }
-
-    const holePositions: Point2D[] = [
-      { x: holeInset, y: holeInset },
-      { x: ext.x - holeInset, y: holeInset },
-      { x: holeInset, y: ext.y - holeInset },
-      { x: ext.x - holeInset, y: ext.y - holeInset }
-    ];
-    let hi = 1;
-    for (const hp of holePositions) {
-      const href = `H${hi}`;
-      if (hasRef(doc, href)) {
-        hi++;
-        continue;
-      }
-      let clash = false;
-      for (const fp of doc.footprints) {
-        if (fp.refDes === 'J1') {
-          continue;
-        }
-        if (Math.abs(fp.position.x - hp.x) < 100 && Math.abs(fp.position.y - hp.y) < 100) {
-          clash = true;
-          break;
-        }
-      }
-      if (clash) {
-        hi++;
-        continue;
-      }
-      const hole = library.instantiate('FP_MOUNT', href, 'MH', hp, 0);
-      if (hole) {
-        if (gnd) {
-          for (const pad of hole.pads) {
-            pad.netId = gnd.netId;
-            pad.netName = gnd.netName;
-          }
-        }
-        doc.footprints.push(hole);
-        created++;
-      }
-      hi++;
-    }
-  } else {
-    for (const fp of doc.footprints) {
-      if (fp.refDes === 'J1') {
-        bindHeaderPadsFixed(fp, assignment);
-        break;
-      }
-    }
-    for (const fp of doc.footprints) {
-      if (!isMountRef(fp.refDes) || !gnd) {
-        continue;
-      }
-      for (const pad of fp.pads) {
-        pad.netId = gnd.netId;
-        pad.netName = gnd.netName;
-      }
-    }
-  }
-
-  // æ—§ç‰ˆ FP_MOUNTï¼ˆç„Šç›˜ç›´å¾„ 160ï¼‰ä¼šæº¢å‡ºæ¿æ¡†ï¼›ç»Ÿä¸€æŒ‰ç´§å‡‘å®šä¹‰åˆ·æ–°å‡ ä½•
-  for (const fp of doc.footprints) {
-    if (fp.defId !== 'FP_MOUNT') {
-      continue;
-    }
-    library.resyncPadsFromDef(fp, 'FP_MOUNT');
-    if (gnd) {
-      for (const pad of fp.pads) {
-        pad.netId = gnd.netId;
-        pad.netName = gnd.netName;
-      }
-    }
-  }
-
-  rebuildPcbNets(doc);
-  const connectorNetIds = collectConnectorNetIds(doc);
-  const addedNew = created > 0;
-  let message = '';
-  if (addedNew || assignment.length > 0) {
-    const railParts: string[] = [];
-    for (let i = 0; i < Math.min(assignment.length, 4); i++) {
-      railParts.push(`P${i + 1}=${assignment[i].netName}`);
-    }
-    if (addedNew) {
-      message = `å·²æ·»åŠ æ¿è¾¹å¤–æ¥ J1/å®‰è£…å­” ${created} ä»¶ï¼ˆ${railParts.join(' | ')}ï¼‰`;
-    }
-    tracePcb('BOARD_ACCESSORIES',
-      `added=${created} J1=${defId} rails=[${railParts.join(',')}] totalPins=${assignment.length}`);
-  }
-  const result: BoardAccessoriesResult = {
-    message: message,
-    addedNew: addedNew,
-    connectorNetIds: connectorNetIds
-  };
-  return result;
-}
-
-export function clearCopperForNets(doc: PcbDocument, netIds: string[]): number {
-  if (netIds.length === 0) {
-    return 0;
-  }
-  const set: Set<string> = new Set(netIds);
-  const before = doc.tracks.length + doc.vias.length;
-  doc.tracks = doc.tracks.filter((t) => !set.has(t.netId));
-  doc.vias = doc.vias.filter((v) => !set.has(v.netId));
-  return before - doc.tracks.length - doc.vias.length;
-}
-
-export function findDocGndNet(doc: PcbDocument): PcbNet | null {
-  for (const n of doc.nets) {
-    if (isGndNetName(n.name)) {
-      return n;
-    }
-  }
-  return null;
-}
-
-/** ä»åŸç†å›¾ nets æå–é…ä»¶æç¤º */
-export function accessoryHintsFromSchematicNets(
-  nets: Net[] | null | undefined): AccessoryNetHint[] {
-  const out: AccessoryNetHint[] = [];
-  if (!nets) {
-    return out;
-  }
-  for (const n of nets) {
-    if (!n.id || n.id.length === 0) {
-      continue;
-    }
-    const pinIds = n.pinIds;
-    const schPinCount = pinIds !== undefined ? pinIds.length : 0;
-    out.push({ id: n.id, name: n.name ?? '', schPinCount: schPinCount });
-  }
-  return out;
-}
-ÔrD•§version¨mappings¥names§sources®sourcesContentÜ˜‘”   ‘”   ‘”  	 ‘”   ‘”  ‘”  ‘”   ‘”   ‘”  ‘”  " ‘”  $ ‘”  %‘”  &‘”  ' ‘”  ) ‘”  * ‘”  +‘”  ,‘”  -‘”  .‘”  /‘”  1‘”  2‘”  3 ‘”  < ‘”  =‘”  >‘”  ?‘”  Ì@‘”  ÌA‘”  ÌC‘”  ÌD‘”  ÌG‘”  ÌH‘”  ÌI‘”  ÌL‘”  ÌM‘”  ÌN‘”  ÌO‘”  ÌQ‘”  ÌR‘”  ÌS‘”  ÌT‘”  ÌU ‘”  ÌW ‘”  ÌX ‘”  ÌY‘”  ÌZ‘”  Ì[‘”  Ì]‘”  Ì^‘”  Ì_‘”  Ì`‘”  Ìb‘”  Ìe‘”  Ìf‘”  Ìg‘”  Ìh‘”  Ìi‘”  Ìj‘”  Ìj‘”  Ìk‘”  Ìl‘”  Ìm‘”  Ìn‘”  Ìo‘”  Ìq‘”  Ìr‘”  Ìs‘”  Ìt‘”  Ìu ‘”  Ìw ‘”  Ìy‘”  Ì|‘”  Ì}‘”  Ì‘”  Ì‘”  Ìƒ‘”  Ì„‘”  Ì…‘”  Ì†‘”  Ì‡‘”  Ìˆ ‘”  ÌŠ ‘”  Ì‘”  Ì ‘”  Ì‘”  Ì’‘”  Ì“‘”  Ì”‘”  Ì•‘”  Ì—‘”  Ì˜‘”  Ì™‘”  Ìš‘”  Ì›‘”  Ìœ‘”  Ì‘”  Ì‘”  ÌŸ‘”  Ì ‘”  Ì¡‘”  Ì¢‘”  Ì¥‘”  Ì¨‘”  Ì¬‘”  Ì­‘”  Ì®‘”  Ì°‘”  Ì±‘”  Ì²‘”  Ì´‘”  Ìµ‘”  Ì¶‘”  Ì·‘”  Ì¸‘”  Ì¹ ‘”  Ì» ‘”  Ì¿‘”  ÌÂ‘”  ÌÃ‘”  ÌÄ‘”  ÌÅ‘”  ÌÆ‘”  ÌÈ ‘”  ÌÊ ‘”  ÌË‘”  ÌÌ‘”  ÌÍ‘”  ÌÎ‘”  ÌÏ‘”  ÌĞ‘”  ÌÑ ‘”  ÌÓ ‘”  ÌÕ‘”  ÌÖ‘”  ÌØ‘”  ÌÙ‘”  ÌÚ‘”  ÌÛ ‘”  Ìİ ‘”  Ìß‘”  Ìà‘”  Ìâ‘”  Ìã‘”  Ìä‘”  Ìå ‘”  Ìç ‘”  Ìè‘”  Ìé‘”  Ìê‘”  Ìë‘”  Ìí‘”  Ìî‘”  Ìï‘”  Ìğ‘”  Ìñ‘”  Ìò ‘”  Ìô ‘”  Ìõ‘”  Ìö‘”  Ì÷‘”  Ìù‘”  Ìú‘”  Ìü‘”  Ìı‘”  Ìş‘”  Ìÿ‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í ‘”  Í ‘”  Í‘”  Í	‘”  Í
-‘”  Í‘”  Í‘”  Í‘”  Í ‘”  Í ‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í ‘”  Í ‘”  Í‘”  Í ‘”  Í ‘”  Í!‘”  Í$‘”  Í&‘”  Í'‘”  Í)‘”  Í*‘”  Í,‘”  Í.‘”  Í/‘”  Í0‘”  Í2‘”  Í3‘”  Í4‘”  Í5‘”  Í7‘”  Í9‘”  Í:‘”  Í;‘”  Í>‘”  Í?‘”  ÍE‘”  ÍF‘”  ÍJ‘”  ÍK‘”  ÍN‘”  ÍO‘”  ÍP‘”  ÍQ‘”  ÍR‘”  ÍT‘”  ÍU‘”  ÍX‘”  Í[‘”  Í\‘”  Í]‘”  Í^‘”  Í`‘”  Íb‘”  Íc‘”  Íe	‘”  Íf‘”  Íi	‘”  Íj‘”  Ík‘”  Íl‘”  Ín‘”  Ío‘”  Íp‘”  Íq‘”  Ír
-‘”  Ís‘”  Ít‘”  Íu‘”  Ív	‘”  Íw‘”  Íx‘”  Íy‘”  Íz‘”  Í{‘”  Í|‘”  Í|	‘”  Í}‘”  Í~‘”  Í‘”  Í‘”  Í‚‘”  Íƒ‘”  Í†‘”  Í‡‘”  Íˆ‘”  Í‰‘”  ÍŠ‘”  Í‹‘”  ÍŒ‘”  Í‘”  Í‘”  Í’‘”  Í“‘”  Í”‘”  Í•‘”  Í–‘”  Í—‘”  Í˜‘”  Í™‘”  Íš‘”  Í‘”  Í‘”  Í ‘”  Í£‘”  Í¤‘”  Í¥‘”  Í§‘”  Íª‘”  Í«‘”  Í¬‘”  Í­‘”  Í®‘”  Í°‘”  Í± ‘”  Í³ ‘”  Í´‘”  Íµ‘”  Í¶‘”  Í·‘”  Í¸‘”  Í»‘”  Í¼ ‘”  Í¾ ‘”  Í¿‘”  ÍÀ‘”  ÍÁ‘”  ÍÂ‘”  ÍÃ‘”  ÍÄ‘”  ÍÅ ‘”  ÍÇ ‘”  ÍÈ ‘”  ÍÌ‘”  ÍÍ‘”  ÍÎ‘”  ÍÏ‘”  ÍÑ‘”  ÍÒ‘”  ÍÓ‘”  ÍÕ‘”  ÍÖ‘”  Í× ‘ÙNC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\PcbBoardAccessories.ets‘Ú4æ/**
- * æ¿çº§å¤–æ¥é…ä»¶ â€” æ•™å­¦æ¿å›ºå®šé’ˆåºï¼š
- * J1: GND | VCC | VEE | VAC/SIG |ï¼ˆå…¶ä½™å­¤å„¿ç½‘ï¼‰
- * æŒ‰åŸç†å›¾ç½‘ç»œå¼ºåˆ¶å é’ˆï¼ˆå³ä½¿å½“å‰æ¿ä¸Šç½‘ç›˜ä¸º 0ï¼‰ï¼›å››è§’å®‰è£…å­”ç»‘ GNDã€‚
- */
-import { Point2D, Net } from '../types/CommonTypes';
-import { PcbDocument, PcbFootprintInst, PcbNet } from '../types/PcbTypes';
-import { PcbFootprintLibrary, getGlobalPcbFootprintLibrary } from './PcbFootprintLibrary';
-import { rebuildPcbNets } from './PcbNetUtil';
-import { tracePcb } from './PcbTraceLog';
-
-/** åŸç†å›¾ç½‘ç»œæç¤ºï¼ˆå¯ä¸åœ¨æ¿ä¸Šå·²æœ‰ç„Šç›˜ï¼‰ */
-export interface AccessoryNetHint {
-  id: string;
-  name: string;
-  /** åŸç†å›¾è¯¥ç½‘ä¸Šçš„å¼•è„šæ•°ï¼›0 è¡¨ç¤ºç©ºç½‘ï¼ˆå¦‚æ®‹ç•™ VEEï¼‰ï¼Œä¸å¼ºåˆ¶å é’ˆ */
-  schPinCount: number;
-}
-
-export interface BoardAccessoriesResult {
-  message: string;
-  addedNew: boolean;
-  connectorNetIds: string[];
-}
-
-function isGndNetName(name: string): boolean {
-  const n = name.toUpperCase();
-  return n === 'GND' || n === 'VSS' || n === 'AGND' || n === '0';
-}
-
-function isVccNetName(name: string): boolean {
-  const n = name.toUpperCase();
-  return n === 'VCC' || n === 'VDD' || n.indexOf('VCC') === 0 || n.indexOf('VDD') === 0 ||
-    n === 'VIN' || n === 'VIN_SRC' || (n.indexOf('VIN') === 0 && n.indexOf('VAC') < 0);
-}
-
-function isVeeNetName(name: string): boolean {
-  const n = name.toUpperCase();
-  return n === 'VEE' || n === 'V-' || n.indexOf('VEE') === 0;
-}
-
-/** äº¤æµç”µæºæˆ–ä¿¡å·æºå¤–æ¥ç½‘ */
-function isVacOrSigNetName(name: string): boolean {
-  const n = name.toUpperCase();
-  if (isGndNetName(n) || isVccNetName(n) || isVeeNetName(n)) {
-    return false;
-  }
-  return n === 'VAC' || n.indexOf('VAC') === 0 || n === 'AC' || n === 'VAC_AC' ||
-    n === 'SIG' || n === 'SIGNAL' || n.indexOf('SIG_') === 0 || n.indexOf('SIGNAL') === 0 ||
-    n === 'SRC' || n === 'WAVE' || n === 'SIN' || n === 'AIN' || n === 'SIG_OUT' ||
-    n === 'OUT' || n === 'SG_OUT' || n.indexOf('SIGGEN') === 0;
-}
-
-interface NetPadStat {
-  netId: string;
-  netName: string;
-  count: number;
-  schPinCount: number;
-}
-
-function collectNetPadStats(doc: PcbDocument): NetPadStat[] {
-  const map: Map<string, NetPadStat> = new Map();
-  for (const fp of doc.footprints) {
-    for (const pad of fp.pads) {
-      const nid = pad.netId ?? '';
-      if (nid.length === 0) {
-        continue;
-      }
-      const nm = pad.netName ?? nid;
-      let st = map.get(nid);
-      if (!st) {
-        st = { netId: nid, netName: nm, count: 0, schPinCount: 0 };
-        map.set(nid, st);
-      }
-      st.count++;
-      if (pad.netName && pad.netName.length > 0) {
-        st.netName = pad.netName;
-      }
-    }
-  }
-  const out: NetPadStat[] = [];
-  map.forEach((v: NetPadStat) => {
-    out.push(v);
-  });
-  return out;
-}
-
-/** åˆå¹¶æ¿ä¸Šç„Šç›˜ç»Ÿè®¡ + åŸç†å›¾ç½‘ç»œæç¤ºï¼ˆæ¿ç›˜ä¸º 0 ä¹Ÿå¯å é’ˆï¼‰ */
-function mergeNetPool(padStats: NetPadStat[], hints: AccessoryNetHint[]): NetPadStat[] {
-  const map: Map<string, NetPadStat> = new Map();
-  for (const s of padStats) {
-    map.set(s.netId, {
-      netId: s.netId, netName: s.netName, count: s.count, schPinCount: s.schPinCount
-    });
-  }
-  for (const h of hints) {
-    if (!h.id || h.id.length === 0) {
-      continue;
-    }
-    const nm = h.name && h.name.length > 0 ? h.name : h.id;
-    const existing = map.get(h.id);
-    if (existing) {
-      if (nm.length > 0) {
-        existing.netName = nm;
-      }
-      existing.schPinCount = Math.max(existing.schPinCount, h.schPinCount);
-    } else {
-      map.set(h.id, {
-        netId: h.id, netName: nm, count: 0, schPinCount: h.schPinCount
-      });
-    }
-  }
-  const out: NetPadStat[] = [];
-  map.forEach((v: NetPadStat) => {
-    out.push(v);
-  });
-  return out;
-}
-
-function takeNet(pool: NetPadStat[], used: Set<string>,
-  pred: (name: string) => boolean, allowEmptySch: boolean = true): NetPadStat | null {
-  for (const s of pool) {
-    if (used.has(s.netId)) {
-      continue;
-    }
-    if (!pred(s.netName)) {
-      continue;
-    }
-    // VEE/VAC/SIGï¼šæ¿ä¸Šæ— ç„Šç›˜ä¸”åŸç†å›¾ä¹Ÿæ— å¼•è„š â†’ ç©ºå£³ç½‘ï¼Œè·³è¿‡
-    if (!allowEmptySch && s.count <= 0 && s.schPinCount <= 0) {
-      continue;
-    }
-    used.add(s.netId);
-    return s;
-  }
-  return null;
-}
-
-/**
- * æ•™å­¦æ¿å›ºå®šå‰ 4 é’ˆï¼šGND | VCC | VEE | VAC/SIGï¼Œå…¶åä¸ºå…¶ä½™ç½‘ï¼ˆå­¤å„¿ä¼˜å…ˆï¼‰ã€‚
- * GND/VCC å¯å¼ºåˆ¶å é’ˆï¼›VEE/VAC/SIG ä»…åœ¨åŸç†å›¾æœ‰å¼•è„šæˆ–æ¿ä¸Šå·²æœ‰ç„Šç›˜æ—¶å é’ˆã€‚
- */
-function buildPinAssignment(pool: NetPadStat[]): NetPadStat[] {
-  const used: Set<string> = new Set();
-  const pins: NetPadStat[] = [];
-
-  const gnd = takeNet(pool, used, isGndNetName, true);
-  const vcc = takeNet(pool, used, isVccNetName, true);
-  const vee = takeNet(pool, used, isVeeNetName, false);
-  const vacSig = takeNet(pool, used, isVacOrSigNetName, false);
-
-  if (gnd) {
-    pins.push(gnd);
-  }
-  if (vcc) {
-    pins.push(vcc);
-  }
-  if (vee) {
-    pins.push(vee);
-  }
-  if (vacSig) {
-    pins.push(vacSig);
-  }
-
-  const fillers: NetPadStat[] = [];
-  for (const s of pool) {
-    if (used.has(s.netId)) {
-      continue;
-    }
-    // ç©ºå£³ç½‘ä¸å å…¶ä½™é’ˆè„š
-    if (s.count <= 0 && s.schPinCount <= 0) {
-      continue;
-    }
-    fillers.push(s);
-  }
-  fillers.sort((a: NetPadStat, b: NetPadStat) => {
-    if (a.count !== b.count) {
-      return a.count - b.count;
-    }
-    return a.netName.localeCompare(b.netName);
-  });
-  for (const f of fillers) {
-    pins.push(f);
-  }
-  return pins;
-}
-
-function boardExtents(doc: PcbDocument): Point2D {
-  let maxX = 800;
-  let maxY = 600;
-  const pts = doc.boardOutline?.points ?? [];
-  for (const p of pts) {
-    maxX = Math.max(maxX, p.x);
-    maxY = Math.max(maxY, p.y);
-  }
-  for (const fp of doc.footprints) {
-    maxX = Math.max(maxX, fp.position.x + 120);
-    maxY = Math.max(maxY, fp.position.y + 120);
-  }
-  return { x: maxX, y: maxY };
-}
-
-function hasRef(doc: PcbDocument, ref: string): boolean {
-  for (const fp of doc.footprints) {
-    if (fp.refDes === ref) {
-      return true;
-    }
-  }
-  return false;
-}
-
-function pickHeaderDefId(pinNeed: number): string {
-  if (pinNeed >= 7) {
-    return 'FP_PINHDR_8';
-  }
-  if (pinNeed >= 5) {
-    return 'FP_PINHDR_6';
-  }
-  return 'FP_PINHDR_4';
-}
-
-function pinCountFromDef(defId: string): number {
-  if (defId.indexOf('_8') >= 0) {
-    return 8;
-  }
-  if (defId.indexOf('_6') >= 0) {
-    return 6;
-  }
-  return 4;
-}
-
-function isMountRef(ref: string): boolean {
-  if (ref.length < 2 || ref.charAt(0) !== 'H') {
-    return false;
-  }
-  for (let i = 1; i < ref.length; i++) {
-    const c = ref.charCodeAt(i);
-    if (c < 48 || c > 57) {
-      return false;
-    }
-  }
-  return true;
-}
-
-function collectConnectorNetIds(doc: PcbDocument): string[] {
-  const ids: Set<string> = new Set();
-  for (const fp of doc.footprints) {
-    if (fp.refDes !== 'J1' && !isMountRef(fp.refDes)) {
-      continue;
-    }
-    for (const pad of fp.pads) {
-      if (pad.netId && pad.netId.length > 0) {
-        ids.add(pad.netId);
-      }
-    }
-  }
-  const out: string[] = [];
-  ids.forEach((id: string) => {
-    out.push(id);
-  });
-  return out;
-}
-
-function bindHeaderPadsFixed(hdr: PcbFootprintInst, assignment: NetPadStat[]): void {
-  for (let i = 0; i < hdr.pads.length; i++) {
-    if (i < assignment.length) {
-      hdr.pads[i].netId = assignment[i].netId;
-      hdr.pads[i].netName = assignment[i].netName;
-    }
-  }
-}
-
-function findGndInAssignment(assignment: NetPadStat[]): NetPadStat | null {
-  for (const s of assignment) {
-    if (isGndNetName(s.netName)) {
-      return s;
-    }
-  }
-  return null;
-}
-
-/**
- * ç¡®ä¿æ¿ä¸Šæœ‰ J1 æ’é’ˆä¸è§’å­”ã€‚
- * @param schNets åŸç†å›¾ç½‘ç»œï¼ˆå¯å«æ¿ä¸Šç½‘ç›˜ä¸º 0 çš„ VEE/VAC/SIGï¼‰
- */
-export function ensureBoardAccessories(doc: PcbDocument,
-  lib?: PcbFootprintLibrary,
-  schNets?: AccessoryNetHint[]): BoardAccessoriesResult {
-  const empty: BoardAccessoriesResult = { message: '', addedNew: false, connectorNetIds: [] };
-  const library = lib ?? getGlobalPcbFootprintLibrary();
-  rebuildPcbNets(doc);
-
-  const hints: AccessoryNetHint[] = schNets ?? [];
-  // æ— åŸç†å›¾æç¤ºæ—¶ï¼Œç”¨å·²é‡å»ºçš„ PCB nets ä½œå¼±æç¤º
-  if (hints.length === 0) {
-    for (const n of doc.nets) {
-      hints.push({ id: n.id, name: n.name, schPinCount: 0 });
-    }
-  }
-
-  const padStats = collectNetPadStats(doc);
-  const pool = mergeNetPool(padStats, hints);
-  if (pool.length === 0) {
-    return empty;
-  }
-
-  const assignment = buildPinAssignment(pool);
-  if (assignment.length === 0) {
-    return empty;
-  }
-
-  const gnd = findGndInAssignment(assignment);
-  // è‡³å°‘ 4 é’ˆä¿ç•™æ•™å­¦è½¨ä½ï¼›æŒ‰éœ€åŠ å¤§
-  const pinNeed = Math.max(4, assignment.length);
-  const defId = pickHeaderDefId(pinNeed);
-  const pins = pinCountFromDef(defId);
-
-  let created = 0;
-  let ext = boardExtents(doc);
-  const hdrHalfH = ((pins - 1) * 100) / 2 + 50;
-  const reserve = 320;
-  const holeInset = 20;
-  const hadJ1 = hasRef(doc, 'J1');
-
-  if (!hadJ1) {
-    ext = { x: ext.x + reserve, y: Math.max(ext.y, Math.max(900, hdrHalfH * 2 + 400)) };
-    doc.boardOutline.points = [
-      { x: 0, y: 0 }, { x: ext.x, y: 0 }, { x: ext.x, y: ext.y }, { x: 0, y: ext.y }
-    ];
-
-    const hdrX = ext.x - 160;
-    const hdrY = Math.min(Math.max(ext.y / 2, holeInset + hdrHalfH + 80),
-      ext.y - holeInset - hdrHalfH - 80);
-    const hdr = library.instantiate(defId, 'J1', `1x${pins}`, { x: hdrX, y: hdrY }, 0);
-    if (hdr) {
-      bindHeaderPadsFixed(hdr, assignment);
-      doc.footprints.push(hdr);
-      created++;
-    }
-
-    const holePositions: Point2D[] = [
-      { x: holeInset, y: holeInset },
-      { x: ext.x - holeInset, y: holeInset },
-      { x: holeInset, y: ext.y - holeInset },
-      { x: ext.x - holeInset, y: ext.y - holeInset }
-    ];
-    let hi = 1;
-    for (const hp of holePositions) {
-      const href = `H${hi}`;
-      if (hasRef(doc, href)) {
-        hi++;
-        continue;
-      }
-      let clash = false;
-      for (const fp of doc.footprints) {
-        if (fp.refDes === 'J1') {
-          continue;
-        }
-        if (Math.abs(fp.position.x - hp.x) < 100 && Math.abs(fp.position.y - hp.y) < 100) {
-          clash = true;
-          break;
-        }
-      }
-      if (clash) {
-        hi++;
-        continue;
-      }
-      const hole = library.instantiate('FP_MOUNT', href, 'MH', hp, 0);
-      if (hole) {
-        if (gnd) {
-          for (const pad of hole.pads) {
-            pad.netId = gnd.netId;
-            pad.netName = gnd.netName;
-          }
-        }
-        doc.footprints.push(hole);
-        created++;
-      }
-      hi++;
-    }
-  } else {
-    for (const fp of doc.footprints) {
-      if (fp.refDes === 'J1') {
-        bindHeaderPadsFixed(fp, assignment);
-        break;
-      }
-    }
-    for (const fp of doc.footprints) {
-      if (!isMountRef(fp.refDes) || !gnd) {
-        continue;
-      }
-      for (const pad of fp.pads) {
-        pad.netId = gnd.netId;
-        pad.netName = gnd.netName;
-      }
-    }
-  }
-
-  // æ—§ç‰ˆ FP_MOUNTï¼ˆç„Šç›˜ç›´å¾„ 160ï¼‰ä¼šæº¢å‡ºæ¿æ¡†ï¼›ç»Ÿä¸€æŒ‰ç´§å‡‘å®šä¹‰åˆ·æ–°å‡ ä½•
-  for (const fp of doc.footprints) {
-    if (fp.defId !== 'FP_MOUNT') {
-      continue;
-    }
-    library.resyncPadsFromDef(fp, 'FP_MOUNT');
-    if (gnd) {
-      for (const pad of fp.pads) {
-        pad.netId = gnd.netId;
-        pad.netName = gnd.netName;
-      }
-    }
-  }
-
-  rebuildPcbNets(doc);
-  const connectorNetIds = collectConnectorNetIds(doc);
-  const addedNew = created > 0;
-  let message = '';
-  if (addedNew || assignment.length > 0) {
-    const railParts: string[] = [];
-    for (let i = 0; i < Math.min(assignment.length, 4); i++) {
-      railParts.push(`P${i + 1}=${assignment[i].netName}`);
-    }
-    if (addedNew) {
-      message = `å·²æ·»åŠ æ¿è¾¹å¤–æ¥ J1/å®‰è£…å­” ${created} ä»¶ï¼ˆ${railParts.join(' | ')}ï¼‰`;
-    }
-    tracePcb('BOARD_ACCESSORIES',
-      `added=${created} J1=${defId} rails=[${railParts.join(',')}] totalPins=${assignment.length}`);
-  }
-  const result: BoardAccessoriesResult = {
-    message: message,
-    addedNew: addedNew,
-    connectorNetIds: connectorNetIds
-  };
-  return result;
-}
-
-export function clearCopperForNets(doc: PcbDocument, netIds: string[]): number {
-  if (netIds.length === 0) {
-    return 0;
-  }
-  const set: Set<string> = new Set(netIds);
-  const before = doc.tracks.length + doc.vias.length;
-  doc.tracks = doc.tracks.filter((t) => !set.has(t.netId));
-  doc.vias = doc.vias.filter((v) => !set.has(v.netId));
-  return before - doc.tracks.length - doc.vias.length;
-}
-
-export function findDocGndNet(doc: PcbDocument): PcbNet | null {
-  for (const n of doc.nets) {
-    if (isGndNetName(n.name)) {
-      return n;
-    }
-  }
-  return null;
-}
-
-/** ä»åŸç†å›¾ nets æå–é…ä»¶æç¤º */
-export function accessoryHintsFromSchematicNets(
-  nets: Net[] | null | undefined): AccessoryNetHint[] {
-  const out: AccessoryNetHint[] = [];
-  if (!nets) {
-    return out;
-  }
-  for (const n of nets) {
-    if (!n.id || n.id.length === 0) {
-      continue;
-    }
-    const pinIds = n.pinIds;
-    const schPinCount = pinIds !== undefined ? pinIds.length : 0;
-    out.push({ id: n.id, name: n.name ?? '', schPinCount: schPinCount });
-  }
-  return out;
-}
-ÔrE“­./PcbTraceLogµ./PcbFootprintLibrary¬./PcbNetUtilÔrF—ªassertions¨external¢id¤meta±moduleSideEffectsªresolvedByµsyntheticNamedExportsAÂÙFC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\PcbTraceLog.etsAÃªoh-resolveÂFAÂÙNC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\PcbFootprintLibrary.etsAÃªoh-resolveÂFAÂÙEC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\PcbNetUtil.etsAÃªoh-resolveÂ‘ÔrG’§missing¦pluginÃ¦genAbcÂÔ  ÔrH”²dynamicImportCache¹exportAllDeclarationCache»exportNamedDeclarationCache«importCache”ÔrI–¤type¥start£end«declarationªspecifiers¦source¶ExportNamedDeclarationÍŠÍ-LÔrJ™¤type¥start£end¢idªexpression©generator¥async¦params¤body³FunctionDeclarationÍ‘Í-LÔrK”¤type¥start£end¤nameªIdentifierÍšÍ°¶ensureBoardAccessoriesÂÂÂ“KªIdentifierÍ±Í´£docKªIdentifierÍ¶Í¹£libKªIdentifierÍ»ÍÂ§schNetsÔrL”¤type¥start£end¤body®BlockStatementÍÄÍ-LÜ ÔrM•¤type¥start£end¬declarations¤kind³VariableDeclarationÍËÍ‘ÔrN•¤type¥start£end¢id¤init²VariableDeclaratorÍÑÍKªIdentifierÍÑÍÖ¥emptyÔrO”¤type¥start£endªproperties°ObjectExpressionÍÙÍ“ÔrP™¤type¥start£end¦method©shorthand¨computed£key¥value¤kind¨PropertyÍÛÍæÂÂÂKªIdentifierÍÛÍâ§messageÔrQ•¤type¥start£end¥value£raw§LiteralÍäÍæ ¢''¤initP¨PropertyÍèÍ÷ÂÂÂKªIdentifierÍèÍğ¨addedNewQ§LiteralÍòÍ÷Â¥false¤initP¨PropertyÍùÍÂÂÂKªIdentifierÍùÍ¯connectorNetIdsÔrR”¤type¥start£end¨elements¯ArrayExpressionÍ
-Í¤init¥constM³VariableDeclarationÍÍK‘N²VariableDeclaratorÍÍJKªIdentifierÍÍ"§libraryÔrS–¤type¥start£end¤left¨operator¥right±LogicalExpressionÍ%ÍJKªIdentifierÍ%Í(£lib¢??ÔrT–¤type¥start£end¦callee©arguments¨optional®CallExpressionÍ,ÍJKªIdentifierÍ,ÍH¼getGlobalPcbFootprintLibraryÂ¥constÔrU”¤type¥start£endªexpression³ExpressionStatementÍQÍeT®CallExpressionÍQÍdKªIdentifierÍQÍ_®rebuildPcbNets‘KªIdentifierÍ`Íc£docÂM³VariableDeclarationÍkÍ‡‘N²VariableDeclaratorÍqÍ†KªIdentifierÍqÍv¥hintsS±LogicalExpressionÍyÍ†KªIdentifierÍyÍ€§schNets¢??R¯ArrayExpressionÍ„Í†¥constÔrV–¤type¥start£end¤testªconsequent©alternate«IfStatementÍ±ÍFS°BinaryExpressionÍµÍÇÔrW—¤type¥start£end¦object¨property¨computed¨optional°MemberExpressionÍµÍÁKªIdentifierÍµÍº¥hintsKªIdentifierÍ»ÍÁ¦lengthÂÂ£===Q§LiteralÍÆÍÇ ¡0L®BlockStatementÍÉÍF‘ÔrX—¤type¥start£end¥await¤left¥right¤body®ForOfStatementÍÔÍ?ÂM³VariableDeclarationÍÙÍà‘N²VariableDeclaratorÍßÍàKªIdentifierÍßÍà¡nÀ¥constW°MemberExpressionÍäÍìKªIdentifierÍäÍç£docKªIdentifierÍèÍì¤netsÂÂL®BlockStatementÍîÍ?‘U³ExpressionStatementÍıÍ4T®CallExpressionÍıÍ3W°MemberExpressionÍıÍKªIdentifierÍıÍ¥hintsKªIdentifierÍÍ¤pushÂÂ‘O°ObjectExpressionÍÍ2“P¨PropertyÍ
-ÍÂÂÂKªIdentifierÍ
-Í¢idW°MemberExpressionÍÍKªIdentifierÍÍ¡nKªIdentifierÍÍ¢idÂÂ¤initP¨PropertyÍÍ ÂÂÂKªIdentifierÍÍ¤nameW°MemberExpressionÍÍ KªIdentifierÍÍ¡nKªIdentifierÍÍ ¤nameÂÂ¤initP¨PropertyÍ"Í0ÂÂÂKªIdentifierÍ"Í-«schPinCountQ§LiteralÍ/Í0 ¡0¤initÂÀM³VariableDeclarationÍLÍu‘N²VariableDeclaratorÍRÍtKªIdentifierÍRÍZ¨padStatsT®CallExpressionÍ]ÍtKªIdentifierÍ]Ío²collectNetPadStats‘KªIdentifierÍpÍs£docÂ¥constM³VariableDeclarationÍ{Í¦‘N²VariableDeclaratorÍÍ¥KªIdentifierÍÍ…¤poolT®CallExpressionÍˆÍ¥KªIdentifierÍˆÍ”¬mergeNetPool’KªIdentifierÍ•Í¨padStatsKªIdentifierÍŸÍ¤¥hintsÂ¥constV«IfStatementÍ¬ÍâS°BinaryExpressionÍ°ÍÁW°MemberExpressionÍ°Í»KªIdentifierÍ°Í´¤poolKªIdentifierÍµÍ»¦lengthÂÂ£===Q§LiteralÍÀÍÁ ¡0L®BlockStatementÍÃÍâ‘ÔrY”¤type¥start£end¨argument¯ReturnStatementÍÎÍÛKªIdentifierÍÕÍÚ¥emptyÀM³VariableDeclarationÍèÍ‘N²VariableDeclaratorÍîÍKªIdentifierÍîÍøªassignmentT®CallExpressionÍûÍKªIdentifierÍûÍ²buildPinAssignment‘KªIdentifierÍÍ¤poolÂ¥constV«IfStatementÍÍVS°BinaryExpressionÍÍ5W°MemberExpressionÍÍ/KªIdentifierÍÍ(ªassignmentKªIdentifierÍ)Í/¦lengthÂÂ£===Q§LiteralÍ4Í5 ¡0L®BlockStatementÍ7ÍV‘Y¯ReturnStatementÍBÍOKªIdentifierÍIÍN¥emptyÀM³VariableDeclarationÍ\Íˆ‘N²VariableDeclaratorÍbÍ‡KªIdentifierÍbÍe£gndT®CallExpressionÍhÍ‡KªIdentifierÍhÍ{³findGndInAssignment‘KªIdentifierÍ|Í†ªassignmentÂ¥constM³VariableDeclarationÍ¨Í×‘N²VariableDeclaratorÍ®ÍÖKªIdentifierÍ®Íµ§pinNeedT®CallExpressionÍ¸ÍÖW°MemberExpressionÍ¸ÍÀKªIdentifierÍ¸Í¼¤MathKªIdentifierÍ½ÍÀ£maxÂÂ’Q§LiteralÍÁÍÂ¡4W°MemberExpressionÍÄÍÕKªIdentifierÍÄÍÎªassignmentKªIdentifierÍÏÍÕ¦lengthÂÂÂ¥constM³VariableDeclarationÍİÍ‘N²VariableDeclaratorÍãÍKªIdentifierÍãÍè¥defIdT®CallExpressionÍëÍKªIdentifierÍëÍú¯pickHeaderDefId‘KªIdentifierÍûÍ§pinNeedÂ¥constM³VariableDeclarationÍ
-Í.‘N²VariableDeclaratorÍÍ-KªIdentifierÍÍ¤pinsT®CallExpressionÍÍ-KªIdentifierÍÍ&¯pinCountFromDef‘KªIdentifierÍ'Í,¥defIdÂ¥constM³VariableDeclarationÍ4ÍD‘N²VariableDeclaratorÍ8ÍCKªIdentifierÍ8Í?§createdQ§LiteralÍBÍC ¡0£letM³VariableDeclarationÍJÍf‘N²VariableDeclaratorÍNÍeKªIdentifierÍNÍQ£extT®CallExpressionÍTÍeKªIdentifierÍTÍ`¬boardExtents‘KªIdentifierÍaÍd£docÂ£letM³VariableDeclarationÍlÍ™‘N²VariableDeclaratorÍrÍ˜KªIdentifierÍrÍz¨hdrHalfHS°BinaryExpressionÍ}Í˜S°BinaryExpressionÍ}Í“S°BinaryExpressionÍ~ÍS°BinaryExpressionÍÍ‡KªIdentifierÍÍƒ¤pins¡-Q§LiteralÍ†Í‡¡1¡*Q§LiteralÍ‹ÍÌd£100¡/Q§LiteralÍ’Í“¡2¡+Q§LiteralÍ–Í˜2¢50¥constM³VariableDeclarationÍŸÍ³‘N²VariableDeclaratorÍ¥Í²KªIdentifierÍ¥Í¬§reserveQ§LiteralÍ¯Í²Í@£320¥constM³VariableDeclarationÍ¹ÍÎ‘N²VariableDeclaratorÍ¿ÍÍKªIdentifierÍ¿ÍÈ©holeInsetQ§LiteralÍËÍÍ¢20¥constM³VariableDeclarationÍÔÍô‘N²VariableDeclaratorÍÚÍóKªIdentifierÍÚÍß¥hadJ1T®CallExpressionÍâÍóKªIdentifierÍâÍè¦hasRef’KªIdentifierÍéÍì£docQ§LiteralÍîÍò¢J1¤'J1'Â¥constV«IfStatementÍúÍ(¿ÔrZ–¤type¥start£end¨operator¦prefix¨argument¯UnaryExpressionÍşÍ¡!ÃKªIdentifierÍÿÍ¥hadJ1L®BlockStatementÍÍ&Ğ™U³ExpressionStatementÍÍeÔr[–¤type¥start£end¨operator¤left¥right´AssignmentExpressionÍÍd¡=KªIdentifierÍÍ£extO°ObjectExpressionÍÍd’P¨PropertyÍÍ+ÂÂÂKªIdentifierÍÍ¡xS°BinaryExpressionÍÍ+W°MemberExpressionÍÍ!KªIdentifierÍÍ£extKªIdentifierÍ Í!¡xÂÂ¡+KªIdentifierÍ$Í+§reserve¤initP¨PropertyÍ-ÍbÂÂÂKªIdentifierÍ-Í.¡yT®CallExpressionÍ0ÍbW°MemberExpressionÍ0Í8KªIdentifierÍ0Í4¤MathKªIdentifierÍ5Í8£maxÂÂ’W°MemberExpressionÍ9Í>KªIdentifierÍ9Í<£extKªIdentifierÍ=Í>¡yÂÂT®CallExpressionÍ@ÍaW°MemberExpressionÍ@ÍHKªIdentifierÍ@ÍD¤MathKªIdentifierÍEÍH£maxÂÂ’Q§LiteralÍIÍLÍ„£900S°BinaryExpressionÍNÍ`S°BinaryExpressionÍNÍZKªIdentifierÍNÍV¨hdrHalfH¡*Q§LiteralÍYÍZ¡2¡+Q§LiteralÍ]Í`Í£400ÂÂ¤initU³ExpressionStatementÍoÍò[´AssignmentExpressionÍoÍñ¡=W°MemberExpressionÍoÍ†W°MemberExpressionÍoÍKªIdentifierÍoÍr£docKªIdentifierÍsÍ¬boardOutlineÂÂKªIdentifierÍ€Í†¦pointsÂÂR¯ArrayExpressionÍ‰Íñ”O°ObjectExpressionÍ˜Í¦’P¨PropertyÍšÍÂÂÂKªIdentifierÍšÍ›¡xQ§LiteralÍÍ ¡0¤initP¨PropertyÍ Í¤ÂÂÂKªIdentifierÍ Í¡¡yQ§LiteralÍ£Í¤ ¡0¤initO°ObjectExpressionÍ¨Íº’P¨PropertyÍªÍ²ÂÂÂKªIdentifierÍªÍ«¡xW°MemberExpressionÍ­Í²KªIdentifierÍ­Í°£extKªIdentifierÍ±Í²¡xÂÂ¤initP¨PropertyÍ´Í¸ÂÂÂKªIdentifierÍ´Íµ¡yQ§LiteralÍ·Í¸ ¡0¤initO°ObjectExpressionÍ¼ÍÒ’P¨PropertyÍ¾ÍÆÂÂÂKªIdentifierÍ¾Í¿¡xW°MemberExpressionÍÁÍÆKªIdentifierÍÁÍÄ£extKªIdentifierÍÅÍÆ¡xÂÂ¤initP¨PropertyÍÈÍĞÂÂÂKªIdentifierÍÈÍÉ¡yW°MemberExpressionÍËÍĞKªIdentifierÍËÍÎ£extKªIdentifierÍÏÍĞ¡yÂÂ¤initO°ObjectExpressionÍÔÍæ’P¨PropertyÍÖÍÚÂÂÂKªIdentifierÍÖÍ×¡xQ§LiteralÍÙÍÚ ¡0¤initP¨PropertyÍÜÍäÂÂÂKªIdentifierÍÜÍİ¡yW°MemberExpressionÍßÍäKªIdentifierÍßÍâ£extKªIdentifierÍãÍä¡yÂÂ¤initM³VariableDeclarationÍüÍ ‘N²VariableDeclaratorÍ Í KªIdentifierÍ Í ¤hdrXS°BinaryExpressionÍ 	Í W°MemberExpressionÍ 	Í KªIdentifierÍ 	Í £extKªIdentifierÍ Í ¡xÂÂ¡-Q§LiteralÍ Í Ì £160¥constM³VariableDeclarationÍ Í ˆ‘N²VariableDeclaratorÍ %Í ‡KªIdentifierÍ %Í )¤hdrYT®CallExpressionÍ ,Í ‡W°MemberExpressionÍ ,Í 4KªIdentifierÍ ,Í 0¤MathKªIdentifierÍ 1Í 4£minÂÂ’T®CallExpressionÍ 5Í cW°MemberExpressionÍ 5Í =KªIdentifierÍ 5Í 9¤MathKªIdentifierÍ :Í =£maxÂÂ’S°BinaryExpressionÍ >Í GW°MemberExpressionÍ >Í CKªIdentifierÍ >Í A£extKªIdentifierÍ BÍ C¡yÂÂ¡/Q§LiteralÍ FÍ G¡2S°BinaryExpressionÍ IÍ bS°BinaryExpressionÍ IÍ ]KªIdentifierÍ IÍ R©holeInset¡+KªIdentifierÍ UÍ ]¨hdrHalfH¡+Q§LiteralÍ `Í bÌP¢80ÂS°BinaryExpressionÍ eÍ †S°BinaryExpressionÍ eÍ S°BinaryExpressionÍ eÍ vW°MemberExpressionÍ eÍ jKªIdentifierÍ eÍ h£extKªIdentifierÍ iÍ j¡yÂÂ¡-KªIdentifierÍ mÍ v©holeInset¡-KªIdentifierÍ yÍ ¨hdrHalfH¡-Q§LiteralÍ „Í †ÌP¢80Â¥constM³VariableDeclarationÍ ’Í å‘N²VariableDeclaratorÍ ˜Í äKªIdentifierÍ ˜Í ›£hdrT®CallExpressionÍ Í äW°MemberExpressionÍ Í ±KªIdentifierÍ Í ¥§libraryKªIdentifierÍ ¦Í ±«instantiateÂÂ•KªIdentifierÍ ²Í ·¥defIdQ§LiteralÍ ¹Í ½¢J1¤'J1'Ôr\•¤type¥start£end«expressions¦quasis¯TemplateLiteralÍ ¿Í Ê‘KªIdentifierÍ ÄÍ È¤pins’Ôr]•¤type¥start£end¥value¤tail¯TemplateElementÍ ÀÍ ÂÔr^’£raw¦cooked¢1x¢1xÂ]¯TemplateElementÍ ÉÍ É^  ÃO°ObjectExpressionÍ ÌÍ à’P¨PropertyÍ ÎÍ ÕÂÂÂKªIdentifierÍ ÎÍ Ï¡xKªIdentifierÍ ÑÍ Õ¤hdrX¤initP¨PropertyÍ ×Í ŞÂÂÂKªIdentifierÍ ×Í Ø¡yKªIdentifierÍ ÚÍ Ş¤hdrY¤initQ§LiteralÍ âÍ ã ¡0Â¥constV«IfStatementÍ ïÍ!vKªIdentifierÍ óÍ ö£hdrL®BlockStatementÍ øÍ!v“U³ExpressionStatementÍ!Í!,T®CallExpressionÍ!Í!+KªIdentifierÍ!Í!³bindHeaderPadsFixed’KªIdentifierÍ!Í!£hdrKªIdentifierÍ! Í!*ªassignmentÂU³ExpressionStatementÍ!:Í!ST®CallExpressionÍ!:Í!RW°MemberExpressionÍ!:Í!MW°MemberExpressionÍ!:Í!HKªIdentifierÍ!:Í!=£docKªIdentifierÍ!>Í!HªfootprintsÂÂKªIdentifierÍ!IÍ!M¤pushÂÂ‘KªIdentifierÍ!NÍ!Q£hdrÂU³ExpressionStatementÍ!aÍ!kZ°UpdateExpressionÍ!aÍ!j¢++ÂKªIdentifierÍ!aÍ!h§createdÀM³VariableDeclarationÍ!€Í"v‘N²VariableDeclaratorÍ!†Í"uKªIdentifierÍ!†Í!“­holePositionsR¯ArrayExpressionÍ!–Í"u”O°ObjectExpressionÍ!¥Í!Ã’P¨PropertyÍ!§Í!³ÂÂÂKªIdentifierÍ!§Í!¨¡xKªIdentifierÍ!ªÍ!³©holeInset¤initP¨PropertyÍ!µÍ!ÁÂÂÂKªIdentifierÍ!µÍ!¶¡yKªIdentifierÍ!¸Í!Á©holeInset¤initO°ObjectExpressionÍ!ÒÍ!ø’P¨PropertyÍ!ÔÍ!èÂÂÂKªIdentifierÍ!ÔÍ!Õ¡xS°BinaryExpressionÍ!×Í!èW°MemberExpressionÍ!×Í!ÜKªIdentifierÍ!×Í!Ú£extKªIdentifierÍ!ÛÍ!Ü¡xÂÂ¡-KªIdentifierÍ!ßÍ!è©holeInset¤initP¨PropertyÍ!êÍ!öÂÂÂKªIdentifierÍ!êÍ!ë¡yKªIdentifierÍ!íÍ!ö©holeInset¤initO°ObjectExpressionÍ"Í"-’P¨PropertyÍ"	Í"ÂÂÂKªIdentifierÍ"	Í"
-¡xKªIdentifierÍ"Í"©holeInset¤initP¨PropertyÍ"Í"+ÂÂÂKªIdentifierÍ"Í"¡yS°BinaryExpressionÍ"Í"+W°MemberExpressionÍ"Í"KªIdentifierÍ"Í"£extKªIdentifierÍ"Í"¡yÂÂ¡-KªIdentifierÍ""Í"+©holeInset¤initO°ObjectExpressionÍ"<Í"j’P¨PropertyÍ">Í"RÂÂÂKªIdentifierÍ">Í"?¡xS°BinaryExpressionÍ"AÍ"RW°MemberExpressionÍ"AÍ"FKªIdentifierÍ"AÍ"D£extKªIdentifierÍ"EÍ"F¡xÂÂ¡-KªIdentifierÍ"IÍ"R©holeInset¤initP¨PropertyÍ"TÍ"hÂÂÂKªIdentifierÍ"TÍ"U¡yS°BinaryExpressionÍ"WÍ"hW°MemberExpressionÍ"WÍ"\KªIdentifierÍ"WÍ"Z£extKªIdentifierÍ"[Í"\¡yÂÂ¡-KªIdentifierÍ"_Í"h©holeInset¤init¥constM³VariableDeclarationÍ"€Í"‹‘N²VariableDeclaratorÍ"„Í"ŠKªIdentifierÍ"„Í"†¢hiQ§LiteralÍ"‰Í"Š¡1£letX®ForOfStatementÍ"•Í&ÉÂM³VariableDeclarationÍ"šÍ"¢‘N²VariableDeclaratorÍ" Í"¢KªIdentifierÍ" Í"¢¢hpÀ¥constKªIdentifierÍ"¦Í"³­holePositionsL®BlockStatementÍ"µÍ&É˜M³VariableDeclarationÍ"ÄÍ"Ú‘N²VariableDeclaratorÍ"ÊÍ"ÙKªIdentifierÍ"ÊÍ"Î¤href\¯TemplateLiteralÍ"ÑÍ"Ù‘KªIdentifierÍ"ÕÍ"×¢hi’]¯TemplateElementÍ"ÒÍ"Ó^¡H¡HÂ]¯TemplateElementÍ"ØÍ"Ø^  Ã¥constV«IfStatementÍ"èÍ#AT®CallExpressionÍ"ìÍ"ıKªIdentifierÍ"ìÍ"ò¦hasRef’KªIdentifierÍ"óÍ"ö£docKªIdentifierÍ"øÍ"ü¤hrefÂL®BlockStatementÍ"ÿÍ#A’U³ExpressionStatementÍ#Í#Z°UpdateExpressionÍ#Í#¢++ÂKªIdentifierÍ#Í#¢hiÔr_”¤type¥start£end¥label±ContinueStatementÍ#)Í#2ÀÀM³VariableDeclarationÍ#OÍ#a‘N²VariableDeclaratorÍ#SÍ#`KªIdentifierÍ#SÍ#X¥clashQ§LiteralÍ#[Í#`Â¥false£letX®ForOfStatementÍ#oÍ$´ÂM³VariableDeclarationÍ#tÍ#|‘N²VariableDeclaratorÍ#zÍ#|KªIdentifierÍ#zÍ#|¢fpÀ¥constW°MemberExpressionÍ#€Í#KªIdentifierÍ#€Í#ƒ£docKªIdentifierÍ#„Í#ªfootprintsÂÂL®BlockStatementÍ#Í$´’V«IfStatementÍ#£Í#îS°BinaryExpressionÍ#§Í#¹W°MemberExpressionÍ#§Í#°KªIdentifierÍ#§Í#©¢fpKªIdentifierÍ#ªÍ#°¦refDesÂÂ£===Q§LiteralÍ#µÍ#¹¢J1¤'J1'L®BlockStatementÍ#»Í#î‘_±ContinueStatementÍ#ÒÍ#ÛÀÀV«IfStatementÍ$ Í$¥S±LogicalExpressionÍ$Í$PS°BinaryExpressionÍ$Í$(T®CallExpressionÍ$Í$"W°MemberExpressionÍ$Í$KªIdentifierÍ$Í$¤MathKªIdentifierÍ$	Í$£absÂÂ‘S°BinaryExpressionÍ$Í$!W°MemberExpressionÍ$Í$W°MemberExpressionÍ$Í$KªIdentifierÍ$Í$¢fpKªIdentifierÍ$Í$¨positionÂÂKªIdentifierÍ$Í$¡xÂÂ¡-W°MemberExpressionÍ$Í$!KªIdentifierÍ$Í$¢hpKªIdentifierÍ$ Í$!¡xÂÂÂ¡<Q§LiteralÍ$%Í$(Ìd£100¢&&S°BinaryExpressionÍ$,Í$PT®CallExpressionÍ$,Í$JW°MemberExpressionÍ$,Í$4KªIdentifierÍ$,Í$0¤MathKªIdentifierÍ$1Í$4£absÂÂ‘S°BinaryExpressionÍ$5Í$IW°MemberExpressionÍ$5Í$BW°MemberExpressionÍ$5Í$@KªIdentifierÍ$5Í$7¢fpKªIdentifierÍ$8Í$@¨positionÂÂKªIdentifierÍ$AÍ$B¡yÂÂ¡-W°MemberExpressionÍ$EÍ$IKªIdentifierÍ$EÍ$G¢hpKªIdentifierÍ$HÍ$I¡yÂÂÂ¡<Q§LiteralÍ$MÍ$PÌd£100L®BlockStatementÍ$RÍ$¥’U³ExpressionStatementÍ$iÍ$v[´AssignmentExpressionÍ$iÍ$u¡=KªIdentifierÍ$iÍ$n¥clashQ§LiteralÍ$qÍ$uÃ¤true_®BreakStatementÍ$ŒÍ$’ÀÀV«IfStatementÍ$ÂÍ%KªIdentifierÍ$ÆÍ$Ë¥clashL®BlockStatementÍ$ÍÍ%’U³ExpressionStatementÍ$àÍ$åZ°UpdateExpressionÍ$àÍ$ä¢++ÂKªIdentifierÍ$àÍ$â¢hi_±ContinueStatementÍ$÷Í% ÀÀM³VariableDeclarationÍ%Í%]‘N²VariableDeclaratorÍ%#Í%\KªIdentifierÍ%#Í%'¤holeT®CallExpressionÍ%*Í%\W°MemberExpressionÍ%*Í%=KªIdentifierÍ%*Í%1§libraryKªIdentifierÍ%2Í%=«instantiateÂÂ•Q§LiteralÍ%>Í%H¨FP_MOUNTª'FP_MOUNT'KªIdentifierÍ%JÍ%N¤hrefQ§LiteralÍ%PÍ%T¢MH¤'MH'KªIdentifierÍ%VÍ%X¢hpQ§LiteralÍ%ZÍ%[ ¡0Â¥constV«IfStatementÍ%kÍ&«KªIdentifierÍ%oÍ%s¤holeL®BlockStatementÍ%uÍ&«“V«IfStatementÍ%ˆÍ&TKªIdentifierÍ%ŒÍ%£gndL®BlockStatementÍ%‘Í&T‘X®ForOfStatementÍ%¨Í&AÂM³VariableDeclarationÍ%­Í%¶‘N²VariableDeclaratorÍ%³Í%¶KªIdentifierÍ%³Í%¶£padÀ¥constW°MemberExpressionÍ%ºÍ%ÃKªIdentifierÍ%ºÍ%¾¤holeKªIdentifierÍ%¿Í%Ã¤padsÂÂL®BlockStatementÍ%ÅÍ&A’U³ExpressionStatementÍ%àÍ%ö[´AssignmentExpressionÍ%àÍ%õ¡=W°MemberExpressionÍ%àÍ%éKªIdentifierÍ%àÍ%ã£padKªIdentifierÍ%äÍ%é¥netIdÂÂW°MemberExpressionÍ%ìÍ%õKªIdentifierÍ%ìÍ%ï£gndKªIdentifierÍ%ğÍ%õ¥netIdÂÂU³ExpressionStatementÍ&Í&*[´AssignmentExpressionÍ&Í&)¡=W°MemberExpressionÍ&Í&KªIdentifierÍ&Í&£padKªIdentifierÍ&Í&§netNameÂÂW°MemberExpressionÍ&Í&)KªIdentifierÍ&Í&!£gndKªIdentifierÍ&"Í&)§netNameÂÂÀU³ExpressionStatementÍ&fÍ&€T®CallExpressionÍ&fÍ&W°MemberExpressionÍ&fÍ&yW°MemberExpressionÍ&fÍ&tKªIdentifierÍ&fÍ&i£docKªIdentifierÍ&jÍ&tªfootprintsÂÂKªIdentifierÍ&uÍ&y¤pushÂÂ‘KªIdentifierÍ&zÍ&~¤holeÂU³ExpressionStatementÍ&’Í&œZ°UpdateExpressionÍ&’Í&›¢++ÂKªIdentifierÍ&’Í&™§createdÀU³ExpressionStatementÍ&¹Í&¾Z°UpdateExpressionÍ&¹Í&½¢++ÂKªIdentifierÍ&¹Í&»¢hiL®BlockStatementÍ&ÛÍ(¿’X®ForOfStatementÍ&æÍ'—ÂM³VariableDeclarationÍ&ëÍ&ó‘N²VariableDeclaratorÍ&ñÍ&óKªIdentifierÍ&ñÍ&ó¢fpÀ¥constW°MemberExpressionÍ&÷Í'KªIdentifierÍ&÷Í&ú£docKªIdentifierÍ&ûÍ'ªfootprintsÂÂL®BlockStatementÍ'Í'—‘V«IfStatementÍ'Í'ŒS°BinaryExpressionÍ'Í',W°MemberExpressionÍ'Í'#KªIdentifierÍ'Í'¢fpKªIdentifierÍ'Í'#¦refDesÂÂ£===Q§LiteralÍ'(Í',¢J1¤'J1'L®BlockStatementÍ'.Í'Œ’U³ExpressionStatementÍ'AÍ'eT®CallExpressionÍ'AÍ'dKªIdentifierÍ'AÍ'T³bindHeaderPadsFixed’KªIdentifierÍ'UÍ'W¢fpKªIdentifierÍ'YÍ'cªassignmentÂ_®BreakStatementÍ'wÍ'}ÀÀX®ForOfStatementÍ'¡Í(¸ÂM³VariableDeclarationÍ'¦Í'®‘N²VariableDeclaratorÍ'¬Í'®KªIdentifierÍ'¬Í'®¢fpÀ¥constW°MemberExpressionÍ'²Í'ÀKªIdentifierÍ'²Í'µ£docKªIdentifierÍ'¶Í'ÀªfootprintsÂÂL®BlockStatementÍ'ÂÍ(¸’V«IfStatementÍ'ÑÍ( S±LogicalExpressionÍ'ÕÍ'óZ¯UnaryExpressionÍ'ÕÍ'ë¡!ÃT®CallExpressionÍ'ÖÍ'ëKªIdentifierÍ'ÖÍ'àªisMountRef‘W°MemberExpressionÍ'áÍ'êKªIdentifierÍ'áÍ'ã¢fpKªIdentifierÍ'äÍ'ê¦refDesÂÂÂ¢||Z¯UnaryExpressionÍ'ïÍ'ó¡!ÃKªIdentifierÍ'ğÍ'ó£gndL®BlockStatementÍ'õÍ( ‘_±ContinueStatementÍ(Í(ÀÀX®ForOfStatementÍ(.Í(­ÂM³VariableDeclarationÍ(3Í(<‘N²VariableDeclaratorÍ(9Í(<KªIdentifierÍ(9Í(<£padÀ¥constW°MemberExpressionÍ(@Í(GKªIdentifierÍ(@Í(B¢fpKªIdentifierÍ(CÍ(G¤padsÂÂL®BlockStatementÍ(IÍ(­’U³ExpressionStatementÍ(\Í(r[´AssignmentExpressionÍ(\Í(q¡=W°MemberExpressionÍ(\Í(eKªIdentifierÍ(\Í(_£padKªIdentifierÍ(`Í(e¥netIdÂÂW°MemberExpressionÍ(hÍ(qKªIdentifierÍ(hÍ(k£gndKªIdentifierÍ(lÍ(q¥netIdÂÂU³ExpressionStatementÍ(„Í([´AssignmentExpressionÍ(„Í(¡=W°MemberExpressionÍ(„Í(KªIdentifierÍ(„Í(‡£padKªIdentifierÍ(ˆÍ(§netNameÂÂW°MemberExpressionÍ(’Í(KªIdentifierÍ(’Í(•£gndKªIdentifierÍ(–Í(§netNameÂÂX®ForOfStatementÍ(ôÍ*GÂM³VariableDeclarationÍ(ùÍ)‘N²VariableDeclaratorÍ(ÿÍ)KªIdentifierÍ(ÿÍ)¢fpÀ¥constW°MemberExpressionÍ)Í)KªIdentifierÍ)Í)£docKªIdentifierÍ)	Í)ªfootprintsÂÂL®BlockStatementÍ)Í*G“V«IfStatementÍ) Í)`S°BinaryExpressionÍ)$Í);W°MemberExpressionÍ)$Í),KªIdentifierÍ)$Í)&¢fpKªIdentifierÍ)'Í),¥defIdÂÂ£!==Q§LiteralÍ)1Í);¨FP_MOUNTª'FP_MOUNT'L®BlockStatementÍ)=Í)`‘_±ContinueStatementÍ)LÍ)UÀÀU³ExpressionStatementÍ)jÍ)”T®CallExpressionÍ)jÍ)“W°MemberExpressionÍ)jÍ)ƒKªIdentifierÍ)jÍ)q§libraryKªIdentifierÍ)rÍ)ƒ±resyncPadsFromDefÂÂ’KªIdentifierÍ)„Í)†¢fpQ§LiteralÍ)ˆÍ)’¨FP_MOUNTª'FP_MOUNT'ÂV«IfStatementÍ)Í*@KªIdentifierÍ)¢Í)¥£gndL®BlockStatementÍ)§Í*@‘X®ForOfStatementÍ)¶Í*5ÂM³VariableDeclarationÍ)»Í)Ä‘N²VariableDeclaratorÍ)ÁÍ)ÄKªIdentifierÍ)ÁÍ)Ä£padÀ¥constW°MemberExpressionÍ)ÈÍ)ÏKªIdentifierÍ)ÈÍ)Ê¢fpKªIdentifierÍ)ËÍ)Ï¤padsÂÂL®BlockStatementÍ)ÑÍ*5’U³ExpressionStatementÍ)äÍ)ú[´AssignmentExpressionÍ)äÍ)ù¡=W°MemberExpressionÍ)äÍ)íKªIdentifierÍ)äÍ)ç£padKªIdentifierÍ)èÍ)í¥netIdÂÂW°MemberExpressionÍ)ğÍ)ùKªIdentifierÍ)ğÍ)ó£gndKªIdentifierÍ)ôÍ)ù¥netIdÂÂU³ExpressionStatementÍ*Í*&[´AssignmentExpressionÍ*Í*%¡=W°MemberExpressionÍ*Í*KªIdentifierÍ*Í*£padKªIdentifierÍ*Í*§netNameÂÂW°MemberExpressionÍ*Í*%KªIdentifierÍ*Í*£gndKªIdentifierÍ*Í*%§netNameÂÂÀU³ExpressionStatementÍ*MÍ*aT®CallExpressionÍ*MÍ*`KªIdentifierÍ*MÍ*[®rebuildPcbNets‘KªIdentifierÍ*\Í*_£docÂM³VariableDeclarationÍ*gÍ*›‘N²VariableDeclaratorÍ*mÍ*šKªIdentifierÍ*mÍ*|¯connectorNetIdsT®CallExpressionÍ*Í*šKªIdentifierÍ*Í*•¶collectConnectorNetIds‘KªIdentifierÍ*–Í*™£docÂ¥constM³VariableDeclarationÍ*¡Í*¾‘N²VariableDeclaratorÍ*§Í*½KªIdentifierÍ*§Í*¯¨addedNewS°BinaryExpressionÍ*²Í*½KªIdentifierÍ*²Í*¹§created¡>Q§LiteralÍ*¼Í*½ ¡0¥constM³VariableDeclarationÍ*ÄÍ*Õ‘N²VariableDeclaratorÍ*ÈÍ*ÔKªIdentifierÍ*ÈÍ*Ï§messageQ§LiteralÍ*ÒÍ*Ô ¢''£letV«IfStatementÍ*ÛÍ,µS±LogicalExpressionÍ*ßÍ+ KªIdentifierÍ*ßÍ*ç¨addedNew¢||S°BinaryExpressionÍ*ëÍ+ W°MemberExpressionÍ*ëÍ*üKªIdentifierÍ*ëÍ*õªassignmentKªIdentifierÍ*öÍ*ü¦lengthÂÂ¡>Q§LiteralÍ*ÿÍ+  ¡0L®BlockStatementÍ+Í,µ”M³VariableDeclarationÍ+Í+"‘N²VariableDeclaratorÍ+Í+!KªIdentifierÍ+Í+©railPartsR¯ArrayExpressionÍ+Í+!¥constÔr`—¤type¥start£end¤init¤test¦update¤body¬ForStatementÍ+,Í+´M³VariableDeclarationÍ+1Í+:‘N²VariableDeclaratorÍ+5Í+:KªIdentifierÍ+5Í+6¡iQ§LiteralÍ+9Í+: ¡0£letS°BinaryExpressionÍ+<Í+^KªIdentifierÍ+<Í+=¡i¡<T®CallExpressionÍ+@Í+^W°MemberExpressionÍ+@Í+HKªIdentifierÍ+@Í+D¤MathKªIdentifierÍ+EÍ+H£minÂÂ’W°MemberExpressionÍ+IÍ+ZKªIdentifierÍ+IÍ+SªassignmentKªIdentifierÍ+TÍ+Z¦lengthÂÂQ§LiteralÍ+\Í+]¡4ÂZ°UpdateExpressionÍ+`Í+c¢++ÂKªIdentifierÍ+`Í+a¡iL®BlockStatementÍ+eÍ+´‘U³ExpressionStatementÍ+tÍ+©T®CallExpressionÍ+tÍ+¨W°MemberExpressionÍ+tÍ+‚KªIdentifierÍ+tÍ+}©railPartsKªIdentifierÍ+~Í+‚¤pushÂÂ‘\¯TemplateLiteralÍ+ƒÍ+§’S°BinaryExpressionÍ+‡Í+ŒKªIdentifierÍ+‡Í+ˆ¡i¡+Q§LiteralÍ+‹Í+Œ¡1W°MemberExpressionÍ+Í+¥W°MemberExpressionÍ+Í+KªIdentifierÍ+Í+šªassignmentKªIdentifierÍ+›Í+œ¡iÃÂKªIdentifierÍ+Í+¥§netNameÂÂ“]¯TemplateElementÍ+„Í+…^¡P¡PÂ]¯TemplateElementÍ+Í+^¡=¡=Â]¯TemplateElementÍ+¦Í+¦^  ÃÂV«IfStatementÍ+¾Í,(KªIdentifierÍ+ÂÍ+Ê¨addedNewL®BlockStatementÍ+ÌÍ,(‘U³ExpressionStatementÍ+ÛÍ,[´AssignmentExpressionÍ+ÛÍ,¡=KªIdentifierÍ+ÛÍ+â§message\¯TemplateLiteralÍ+åÍ,’KªIdentifierÍ+÷Í+ş§createdT®CallExpressionÍ,Í,W°MemberExpressionÍ,Í,KªIdentifierÍ,Í,©railPartsKªIdentifierÍ,Í,¤joinÂÂ‘Q§LiteralÍ,Í,£ | ¥' | 'Â“]¯TemplateElementÍ+æÍ+õ^Ù#å·²æ·»åŠ æ¿è¾¹å¤–æ¥ J1/å®‰è£…å­” Ù#å·²æ·»åŠ æ¿è¾¹å¤–æ¥ J1/å®‰è£…å­” Â]¯TemplateElementÍ+ÿÍ,^§ ä»¶ï¼ˆ§ ä»¶ï¼ˆÂ]¯TemplateElementÍ,Í,^£ï¼‰£ï¼‰ÃÀU³ExpressionStatementÍ,2Í,®T®CallExpressionÍ,2Í,­KªIdentifierÍ,2Í,:¨tracePcb’Q§LiteralÍ,;Í,N±BOARD_ACCESSORIES³'BOARD_ACCESSORIES'\¯TemplateLiteralÍ,PÍ,¬”KªIdentifierÍ,YÍ,`§createdKªIdentifierÍ,gÍ,l¥defIdT®CallExpressionÍ,wÍ,ŠW°MemberExpressionÍ,wÍ,…KªIdentifierÍ,wÍ,€©railPartsKªIdentifierÍ,Í,…¤joinÂÂ‘Q§LiteralÍ,†Í,‰¡,£','ÂW°MemberExpressionÍ,™Í,ªKªIdentifierÍ,™Í,£ªassignmentKªIdentifierÍ,¤Í,ª¦lengthÂÂ•]¯TemplateElementÍ,QÍ,W^¦added=¦added=Â]¯TemplateElementÍ,aÍ,e^¤ J1=¤ J1=Â]¯TemplateElementÍ,mÍ,u^¨ rails=[¨ rails=[Â]¯TemplateElementÍ,‹Í,—^¬] totalPins=¬] totalPins=Â]¯TemplateElementÍ,«Í,«^  ÃÂÀM³VariableDeclarationÍ,»Í-5‘N²VariableDeclaratorÍ,ÁÍ-4KªIdentifierÍ,ÁÍ,Ç¦resultO°ObjectExpressionÍ,ÊÍ-4“P¨PropertyÍ,ÕÍ,åÂÂÂKªIdentifierÍ,ÕÍ,Ü§messageKªIdentifierÍ,ŞÍ,å§message¤initP¨PropertyÍ,ğÍ-ÂÂÂKªIdentifierÍ,ğÍ,ø¨addedNewKªIdentifierÍ,úÍ-¨addedNew¤initP¨PropertyÍ-Í--ÂÂÂKªIdentifierÍ-Í-¯connectorNetIdsKªIdentifierÍ-Í--¯connectorNetIds¤init¥constY¯ReturnStatementÍ-;Í-IKªIdentifierÍ-BÍ-H¦resultÀI¶ExportNamedDeclarationÍ-NÍ.ËJ³FunctionDeclarationÍ-UÍ.ËKªIdentifierÍ-^Í-p²clearCopperForNetsÂÂÂ’KªIdentifierÍ-qÍ-t£docKªIdentifierÍ-vÍ-|¦netIdsL®BlockStatementÍ-~Í.Ë–V«IfStatementÍ-…Í-¹S°BinaryExpressionÍ-‰Í-œW°MemberExpressionÍ-‰Í-–KªIdentifierÍ-‰Í-¦netIdsKªIdentifierÍ-Í-–¦lengthÂÂ£===Q§LiteralÍ-›Í-œ ¡0L®BlockStatementÍ-Í-¹‘Y¯ReturnStatementÍ-©Í-²Q§LiteralÍ-°Í-± ¡0ÀM³VariableDeclarationÍ-¿Í-Û‘N²VariableDeclaratorÍ-ÅÍ-ÚKªIdentifierÍ-ÅÍ-È£setÔra•¤type¥start£end¦callee©arguments­NewExpressionÍ-ËÍ-ÚKªIdentifierÍ-ÏÍ-Ò£Set‘KªIdentifierÍ-ÓÍ-Ù¦netIds¥constM³VariableDeclarationÍ-áÍ.‘N²VariableDeclaratorÍ-çÍ.KªIdentifierÍ-çÍ-í¦beforeS°BinaryExpressionÍ-ğÍ.W°MemberExpressionÍ-ğÍ.W°MemberExpressionÍ-ğÍ-úKªIdentifierÍ-ğÍ-ó£docKªIdentifierÍ-ôÍ-ú¦tracksÂÂKªIdentifierÍ-ûÍ.¦lengthÂÂ¡+W°MemberExpressionÍ.Í.W°MemberExpressionÍ.Í.KªIdentifierÍ.Í.£docKªIdentifierÍ.Í.¤viasÂÂKªIdentifierÍ.Í.¦lengthÂÂ¥constU³ExpressionStatementÍ.Í.S[´AssignmentExpressionÍ.Í.R¡=W°MemberExpressionÍ.Í.$KªIdentifierÍ.Í.£docKªIdentifierÍ.Í.$¦tracksÂÂT®CallExpressionÍ.'Í.RW°MemberExpressionÍ.'Í.8W°MemberExpressionÍ.'Í.1KªIdentifierÍ.'Í.*£docKªIdentifierÍ.+Í.1¦tracksÂÂKªIdentifierÍ.2Í.8¦filterÂÂ‘J·ArrowFunctionExpressionÍ.9Í.QÀÃÂÂ‘KªIdentifierÍ.:Í.;¡tZ¯UnaryExpressionÍ.@Í.Q¡!ÃT®CallExpressionÍ.AÍ.QW°MemberExpressionÍ.AÍ.HKªIdentifierÍ.AÍ.D£setKªIdentifierÍ.EÍ.H£hasÂÂ‘W°MemberExpressionÍ.IÍ.PKªIdentifierÍ.IÍ.J¡tKªIdentifierÍ.KÍ.P¥netIdÂÂÂÂU³ExpressionStatementÍ.YÍ.[´AssignmentExpressionÍ.YÍ.¡=W°MemberExpressionÍ.YÍ.aKªIdentifierÍ.YÍ.\£docKªIdentifierÍ.]Í.a¤viasÂÂT®CallExpressionÍ.dÍ.W°MemberExpressionÍ.dÍ.sW°MemberExpressionÍ.dÍ.lKªIdentifierÍ.dÍ.g£docKªIdentifierÍ.hÍ.l¤viasÂÂKªIdentifierÍ.mÍ.s¦filterÂÂ‘J·ArrowFunctionExpressionÍ.tÍ.ŒÀÃÂÂ‘KªIdentifierÍ.uÍ.v¡vZ¯UnaryExpressionÍ.{Í.Œ¡!ÃT®CallExpressionÍ.|Í.ŒW°MemberExpressionÍ.|Í.ƒKªIdentifierÍ.|Í.£setKªIdentifierÍ.€Í.ƒ£hasÂÂ‘W°MemberExpressionÍ.„Í.‹KªIdentifierÍ.„Í.…¡vKªIdentifierÍ.†Í.‹¥netIdÂÂÂÂY¯ReturnStatementÍ.”Í.ÈS°BinaryExpressionÍ.›Í.ÇS°BinaryExpressionÍ.›Í.µKªIdentifierÍ.›Í.¡¦before¡-W°MemberExpressionÍ.¤Í.µW°MemberExpressionÍ.¤Í.®KªIdentifierÍ.¤Í.§£docKªIdentifierÍ.¨Í.®¦tracksÂÂKªIdentifierÍ.¯Í.µ¦lengthÂÂ¡-W°MemberExpressionÍ.¸Í.ÇW°MemberExpressionÍ.¸Í.ÀKªIdentifierÍ.¸Í.»£docKªIdentifierÍ.¼Í.À¤viasÂÂKªIdentifierÍ.ÁÍ.Ç¦lengthÂÂÀI¶ExportNamedDeclarationÍ.ÍÍ/uJ³FunctionDeclarationÍ.ÔÍ/uKªIdentifierÍ.İÍ.ê­findDocGndNetÂÂÂ‘KªIdentifierÍ.ëÍ.î£docL®BlockStatementÍ.ğÍ/u’X®ForOfStatementÍ.÷Í/`ÂM³VariableDeclarationÍ.üÍ/‘N²VariableDeclaratorÍ/Í/KªIdentifierÍ/Í/¡nÀ¥constW°MemberExpressionÍ/Í/KªIdentifierÍ/Í/
-£docKªIdentifierÍ/Í/¤netsÂÂL®BlockStatementÍ/Í/`‘V«IfStatementÍ/Í/YT®CallExpressionÍ/ Í/4KªIdentifierÍ/ Í/,¬isGndNetName‘W°MemberExpressionÍ/-Í/3KªIdentifierÍ/-Í/.¡nKªIdentifierÍ//Í/3¤nameÂÂÂL®BlockStatementÍ/6Í/Y‘Y¯ReturnStatementÍ/EÍ/NKªIdentifierÍ/LÍ/M¡nÀY¯ReturnStatementÍ/fÍ/rQ§LiteralÍ/mÍ/qÀ¤nullÀI¶ExportNamedDeclarationÍ/Í1GJ³FunctionDeclarationÍ/—Í1GKªIdentifierÍ/ Í/¿¿accessoryHintsFromSchematicNetsÂÂÂ‘KªIdentifierÍ/ÀÍ/Ä¤netsL®BlockStatementÍ/ÆÍ1G”M³VariableDeclarationÍ/ÍÍ/Ü‘N²VariableDeclaratorÍ/ÓÍ/ÛKªIdentifierÍ/ÓÍ/Ö£outR¯ArrayExpressionÍ/ÙÍ/Û¥constV«IfStatementÍ/âÍ0
-Z¯UnaryExpressionÍ/æÍ/ë¡!ÃKªIdentifierÍ/çÍ/ë¤netsL®BlockStatementÍ/íÍ0
-‘Y¯ReturnStatementÍ/øÍ0KªIdentifierÍ/ÿÍ0£outÀX®ForOfStatementÍ0Í13ÂM³VariableDeclarationÍ0Í0‘N²VariableDeclaratorÍ0Í0KªIdentifierÍ0Í0¡nÀ¥constKªIdentifierÍ0 Í0$¤netsL®BlockStatementÍ0&Í13”V«IfStatementÍ01Í0tS±LogicalExpressionÍ05Í0OZ¯UnaryExpressionÍ05Í0:¡!ÃW°MemberExpressionÍ06Í0:KªIdentifierÍ06Í07¡nKªIdentifierÍ08Í0:¢idÂÂ¢||S°BinaryExpressionÍ0>Í0OW°MemberExpressionÍ0>Í0IW°MemberExpressionÍ0>Í0BKªIdentifierÍ0>Í0?¡nKªIdentifierÍ0@Í0B¢idÂÂKªIdentifierÍ0CÍ0I¦lengthÂÂ£===Q§LiteralÍ0NÍ0O ¡0L®BlockStatementÍ0QÍ0t‘_±ContinueStatementÍ0`Í0iÀÀM³VariableDeclarationÍ0~Í0–‘N²VariableDeclaratorÍ0„Í0•KªIdentifierÍ0„Í0Š¦pinIdsW°MemberExpressionÍ0Í0•KªIdentifierÍ0Í0¡nKªIdentifierÍ0Í0•¦pinIdsÂÂ¥constM³VariableDeclarationÍ0 Í0İ‘N²VariableDeclaratorÍ0¦Í0ÜKªIdentifierÍ0¦Í0±«schPinCountVµConditionalExpressionÍ0´Í0ÜS°BinaryExpressionÍ0´Í0ÈKªIdentifierÍ0´Í0º¦pinIds£!==KªIdentifierÍ0¿Í0È©undefinedW°MemberExpressionÍ0ËÍ0ØKªIdentifierÍ0ËÍ0Ñ¦pinIdsKªIdentifierÍ0ÒÍ0Ø¦lengthÂÂQ§LiteralÍ0ÛÍ0Ü ¡0¥constU³ExpressionStatementÍ0çÍ1,T®CallExpressionÍ0çÍ1+W°MemberExpressionÍ0çÍ0ïKªIdentifierÍ0çÍ0ê£outKªIdentifierÍ0ëÍ0ï¤pushÂÂ‘O°ObjectExpressionÍ0ğÍ1*“P¨PropertyÍ0òÍ0úÂÂÂKªIdentifierÍ0òÍ0ô¢idW°MemberExpressionÍ0öÍ0úKªIdentifierÍ0öÍ0÷¡nKªIdentifierÍ0øÍ0ú¢idÂÂ¤initP¨PropertyÍ0üÍ1ÂÂÂKªIdentifierÍ0üÍ1 ¤nameS±LogicalExpressionÍ1Í1W°MemberExpressionÍ1Í1KªIdentifierÍ1Í1¡nKªIdentifierÍ1Í1¤nameÂÂ¢??Q§LiteralÍ1Í1 ¢''¤initP¨PropertyÍ1Í1(ÂÂÂKªIdentifierÍ1Í1«schPinCountKªIdentifierÍ1Í1(«schPinCount¤initÂY¯ReturnStatementÍ19Í1DKªIdentifierÍ1@Í1C£outÀ“Ôrb•¤type¥start£endªspecifiers¦source±ImportDeclaration ÌE‘Ôrc•¤type¥start£end¨imported¥local¯ImportSpecifier	%KªIdentifier	%¼getGlobalPcbFootprintLibraryKªIdentifier	%¼getGlobalPcbFootprintLibraryQ§Literal-ÌDµ./PcbFootprintLibrary·'./PcbFootprintLibrary'b±ImportDeclarationÌGÌu‘c¯ImportSpecifierÌPÌ^KªIdentifierÌPÌ^®rebuildPcbNetsKªIdentifierÌPÌ^®rebuildPcbNetsQ§LiteralÌfÌt¬./PcbNetUtil®'./PcbNetUtil'b±ImportDeclarationÌwÌ ‘c¯ImportSpecifierÌ€ÌˆKªIdentifierÌ€Ìˆ¨tracePcbKªIdentifierÌ€Ìˆ¨tracePcbQ§LiteralÌÌŸ­./PcbTraceLog¯'./PcbTraceLog'

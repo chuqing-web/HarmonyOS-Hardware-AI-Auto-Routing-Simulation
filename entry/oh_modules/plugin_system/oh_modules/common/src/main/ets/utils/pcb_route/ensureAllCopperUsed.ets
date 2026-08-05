@@ -1,5 +1,6 @@
 /**
  * 硬门禁：Cu 栈每一铜层须有 track 或同层 zone
+ * filler 短段须过 clearance，否则跳过（勿注入短路）
  */
 import {
   PcbDocument, PcbLayerId, PcbTrack, PcbVia, PcbViaKind, copperLayersFromStack
@@ -9,7 +10,8 @@ import {
   PcbLayerRole, PcbNetPlanEntry, PcbNetPlanResult, PcbRoutePolicy
 } from '../../types/PcbAiRouteTypes';
 import { IdUtil } from '../IdUtil';
-import { trackWidthForNet } from './PcbClearanceOracle';
+import { pathClearBlockReason, trackWidthForNet, viaClearAt } from './PcbClearanceOracle';
+import { tracePcbWarn } from '../PcbTraceLog';
 
 export function ensureAllCopperUsed(
   doc: PcbDocument,
@@ -65,7 +67,6 @@ function pickNetForRole(
       return n;
     }
   }
-  // signal / stub：挂已布信号或任意已布网
   for (let i = 0; i < netPlan.nets.length; i++) {
     const n = netPlan.nets[i];
     if (routed.indexOf(n.netId) >= 0) {
@@ -81,7 +82,7 @@ function pickNetForRole(
 }
 
 /**
- * 为声明但未用到的铜层补真实短段（挂已有电气网，禁止空网 dummy）
+ * 为声明但未用到的铜层补真实短段（挂已有电气网）；须过 clearance，失败则跳过该层
  */
 export function fillUnusedCopperLayers(
   doc: PcbDocument,
@@ -110,6 +111,8 @@ export function fillUnusedCopperLayers(
     cy = Math.round(sy / outline.length / grid) * grid;
   }
 
+  const copperAll = copperLayersFromStack(doc.layerStack);
+
   for (let mi = 0; mi < missing.length; mi++) {
     const lid = missing[mi];
     const role = policy.layerRoles[lid as string] as PcbLayerRole | undefined;
@@ -123,35 +126,51 @@ export function fillUnusedCopperLayers(
     const width = Math.max(trackWidthForNet(doc, ne.netId), grid);
     const horiz = role === 'signal_h' || role === 'power_h' || role === 'gnd_bus' ||
       role === 'vcc_bus' || role === 'stub';
-    const yOff = mi * grid * 4;
-    const a: Point2D = horiz
-      ? { x: cx - grid * 8, y: cy + yOff }
-      : { x: cx + yOff, y: cy - grid * 8 };
-    const b: Point2D = horiz
-      ? { x: cx + grid * 8, y: cy + yOff }
-      : { x: cx + yOff, y: cy + grid * 8 };
-    tracks.push({
-      id: IdUtil.generate('trk'),
-      layer: lid,
-      start: a,
-      end: b,
-      width,
-      netId: ne.netId,
-      netName: ne.netName
-    });
-    // 若 filler 层与 stub/信号层不同，补 via 接到已有层，保证可达
-    const stub = findRoleLayer(policy, 'stub') ?? findRoleLayer(policy, 'signal_h');
-    if (stub && stub !== lid) {
-      vias.push({
-        id: IdUtil.generate('via'),
-        position: { x: a.x, y: a.y },
-        drill: doc.metadata.designRules.minViaDrill,
-        diameter: doc.metadata.designRules.minViaDrill + 8,
+
+    let placed = false;
+    const yBases = [mi * grid * 4, mi * grid * 4 + grid * 10, -mi * grid * 4 - grid * 8];
+    for (let yi = 0; yi < yBases.length && !placed; yi++) {
+      const yOff = yBases[yi];
+      const a: Point2D = horiz
+        ? { x: cx - grid * 8, y: cy + yOff }
+        : { x: cx + yOff, y: cy - grid * 8 };
+      const b: Point2D = horiz
+        ? { x: cx + grid * 8, y: cy + yOff }
+        : { x: cx + yOff, y: cy + grid * 8 };
+      const block = pathClearBlockReason(doc, lid, a, b, ne.netId, width, tracks, vias);
+      if (block !== null) {
+        continue;
+      }
+      tracks.push({
+        id: IdUtil.generate('trk'),
+        layer: lid,
+        start: a,
+        end: b,
+        width,
         netId: ne.netId,
-        netName: ne.netName,
-        layers: copperLayersFromStack(doc.layerStack),
-        kind: PcbViaKind.THROUGH
+        netName: ne.netName
       });
+      const stub = findRoleLayer(policy, 'stub') ?? findRoleLayer(policy, 'signal_h');
+      if (stub && stub !== lid) {
+        const diameter = doc.metadata.designRules.minViaDrill + 8;
+        if (viaClearAt(doc, a, ne.netId, diameter, copperAll, tracks, vias)) {
+          vias.push({
+            id: IdUtil.generate('via'),
+            position: { x: a.x, y: a.y },
+            drill: doc.metadata.designRules.minViaDrill,
+            diameter,
+            netId: ne.netId,
+            netName: ne.netName,
+            layers: copperAll,
+            kind: PcbViaKind.THROUGH
+          });
+        }
+      }
+      placed = true;
+    }
+    if (!placed) {
+      tracePcbWarn('AI_CU_FILL',
+        `skip filler on ${lid as string} — no clear corridor for ${ne.netName}`);
     }
   }
 }

@@ -226,28 +226,18 @@
       "dynamic": false,
       "maskedByOverrideDependencyMap": false
     },
-    "schematic_editor@file:features/schematic_editor": {
-      "storePath": "features/schematic_editor",
-      "dependencies": {
-        "common": "common"
-      },
-      "dynamicDependencies": {},
-      "dev": false,
-      "dynamic": false,
-      "maskedByOverrideDependencyMap": false
-    },
-    "simulation_kernel@file:features/simulation_kernel": {
-      "storePath": "features/simulation_kernel",
-      "dependencies": {
-        "common": "common"
-      },
-      "dynamicDependencies": {},
-      "dev": false,
-      "dynamic": false,
-      "maskedByOverrideDependencyMap": false
-    },
     "component_library@file:features/component_library": {
       "storePath": "features/component_library",
+      "dependencies": {
+        "common": "common"
+      },
+      "dynamicDependencies": {},
+      "dev": false,
+      "dynamic": false,
+      "maskedByOverrideDependencyMap": false
+    },
+    "schematic_editor@file:features/schematic_editor": {
+      "storePath": "features/schematic_editor",
       "dependencies": {
         "common": "common"
       },
@@ -266,18 +256,8 @@
       "dynamic": false,
       "maskedByOverrideDependencyMap": false
     },
-    "instruments@file:features/instruments": {
-      "storePath": "features/instruments",
-      "dependencies": {
-        "common": "common"
-      },
-      "dynamicDependencies": {},
-      "dev": false,
-      "dynamic": false,
-      "maskedByOverrideDependencyMap": false
-    },
-    "file_persistence@file:features/file_persistence": {
-      "storePath": "features/file_persistence",
+    "simulation_kernel@file:features/simulation_kernel": {
+      "storePath": "features/simulation_kernel",
       "dependencies": {
         "common": "common"
       },
@@ -296,8 +276,28 @@
       "dynamic": false,
       "maskedByOverrideDependencyMap": false
     },
+    "file_persistence@file:features/file_persistence": {
+      "storePath": "features/file_persistence",
+      "dependencies": {
+        "common": "common"
+      },
+      "dynamicDependencies": {},
+      "dev": false,
+      "dynamic": false,
+      "maskedByOverrideDependencyMap": false
+    },
     "plugin_system@file:features/plugin_system": {
       "storePath": "features/plugin_system",
+      "dependencies": {
+        "common": "common"
+      },
+      "dynamicDependencies": {},
+      "dev": false,
+      "dynamic": false,
+      "maskedByOverrideDependencyMap": false
+    },
+    "instruments@file:features/instruments": {
+      "storePath": "features/instruments",
       "dependencies": {
         "common": "common"
       },

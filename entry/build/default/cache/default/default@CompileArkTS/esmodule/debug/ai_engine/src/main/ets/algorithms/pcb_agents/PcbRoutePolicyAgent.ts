@@ -1,10 +1,12 @@
-import { AiCapability, Logger, INSTR_TRACE_TAG, copperLayersFromStack, policyCoversCopperLayers, validateLayerRoleSemantics } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
+import { Logger, INSTR_TRACE_TAG, copperLayersFromStack, policyCoversCopperLayers, validateLayerRoleSemantics } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
 import type { IAiApiManager } from 'ai_api_manager';
 import { PromptLoader } from "@bundle:com.elecdraw.aischsim/entry@ai_engine/ets/prompts/PromptLoader";
 import type { PcbRouteBlackboard } from './PcbRouteBlackboard';
 import { PcbDocSummarizer } from "@bundle:com.elecdraw.aischsim/entry@ai_engine/ets/algorithms/pcb_agents/PcbDocSummarizer";
 import { parsePcbRoutePolicy } from "@bundle:com.elecdraw.aischsim/entry@ai_engine/ets/algorithms/pcb_agents/PcbLlmParsers";
 import type { PcbAgentStageResult } from './PcbPlacementAgent';
+import { pcbStageChatOpts } from "@bundle:com.elecdraw.aischsim/entry@ai_engine/ets/algorithms/pcb_agents/PcbChatOpts";
+import { pcbImpureReplyReason } from "@bundle:com.elecdraw.aischsim/entry@ai_engine/ets/algorithms/pcb_agents/PcbLlmReplyGuard";
 export class PcbRoutePolicyAgent {
     async run(bb: PcbRouteBlackboard, api: IAiApiManager, priorFailHint?: string): Promise<PcbAgentStageResult> {
         Logger.info(INSTR_TRACE_TAG, `[AI_PCB] stage=route_policy begin runId=${bb.runId}`);
@@ -16,7 +18,7 @@ export class PcbRoutePolicyAgent {
             return { ok: false, reason: 'pcb_route prompt missing' };
         }
         const netSummary = bb.netPlan.nets.map(n => `${n.netName}:${n.kind}/${n.routeMode}/p${n.priority}`).join(',');
-        let boardSummary = PcbDocSummarizer.boardSummary(bb.workDoc);
+        let boardSummary = PcbDocSummarizer.boardDiagSnapshot(bb.workDoc, bb.geometry);
         if (priorFailHint && priorFailHint.length > 0) {
             boardSummary = `${boardSummary}\n【上轮失败须修正】${priorFailHint}`;
         }
@@ -25,18 +27,18 @@ export class PcbRoutePolicyAgent {
             { key: 'net_plan_summary', value: netSummary },
             { key: 'board_summary', value: boardSummary }
         ]);
-        const apiRes = await api.chat(prompt, {
-            capability: AiCapability.PCB_AUTO_ROUTE,
-            temperature: 0.05,
-            disableThinking: false
-        });
+        const apiRes = await api.chat(prompt, pcbStageChatOpts(bb.enableReasoning, 0.05));
         if (!apiRes.success || !apiRes.data) {
             return { ok: false, reason: apiRes.error ?? 'route_policy LLM failed' };
         }
         bb.usedLlm = true;
+        const impure = pcbImpureReplyReason('route_policy', apiRes.data);
+        if (impure) {
+            return { ok: false, reason: impure };
+        }
         const policy = parsePcbRoutePolicy(apiRes.data);
         if (!policy) {
-            return { ok: false, reason: 'route_policy LLM JSON invalid' };
+            return { ok: false, reason: `route_policy LLM JSON invalid (${PromptLoader.describeJsonImpurity(apiRes.data)})` };
         }
         const copper = copperLayersFromStack(bb.workDoc.layerStack);
         const missing = policyCoversCopperLayers(policy, copper);

@@ -14,8 +14,27 @@ import { PcbNetPlanAgent } from './PcbNetPlanAgent';
 import { PcbRoutePolicyAgent } from './PcbRoutePolicyAgent';
 import { PcbGeometryAgent } from './PcbGeometryAgent';
 import { PcbQaAgent, PcbDrcRunner } from './PcbQaAgent';
+import { shouldSkipQaAfterGeometryFail } from './PcbLlmReplyGuard';
 
 const PCB_KEEP_RETRY_OUTER: number = 3;
+
+/** 网络/传输类失败（与布局规则失败区分，避免掩盖「已有 LLM 回复」） */
+function isNetworkishFailReason(reason: string): boolean {
+  const m = reason.toLowerCase();
+  return m.indexOf('request failed') >= 0
+    || m.indexOf('timeout') >= 0
+    || m.indexOf('超时') >= 0
+    || m.indexOf('2300') >= 0
+    || m.indexOf('network') >= 0
+    || m.indexOf('connect') >= 0
+    || m.indexOf('代理') >= 0
+    || m.indexOf('http') >= 0
+    || m.indexOf('cancelled') >= 0
+    || m.indexOf('empty content') >= 0
+    || m.indexOf('non-json body') >= 0
+    || m.indexOf('llm failed') >= 0
+    || m.indexOf('placement llm failed') >= 0;
+}
 
 /** 可软接受的 residual：仅少量未布网；硬 DRC / 缺铜 / 信号失败拒写 */
 function isSoftAcceptableResidual(kind: PcbResidualKind, reason: string): boolean {
@@ -46,12 +65,14 @@ export class PcbRouteCoordinator {
     api: IAiApiManager,
     runDrc: PcbDrcRunner,
     isCancel?: () => boolean,
-    onProgress?: ProgressCallback
+    onProgress?: ProgressCallback,
+    enableReasoning: boolean = false
   ): Promise<PcbAiRouteResult> {
     const runId = IdUtil.generate('pcbai');
     Logger.info(INSTR_TRACE_TAG,
-      `[AI_PCB] START runId=${runId} fp=${sourceDoc.footprints.length} nets=${sourceDoc.nets.length}`);
-    this.bb.reset(runId, sourceDoc);
+      `[AI_PCB] START runId=${runId} fp=${sourceDoc.footprints.length} nets=${sourceDoc.nets.length}` +
+      ` reasoning=${enableReasoning}`);
+    this.bb.reset(runId, sourceDoc, enableReasoning);
     onProgress?.(makeProgress(8, 'PCB AI 准备'));
 
     if (isCancel && isCancel()) {
@@ -97,9 +118,17 @@ export class PcbRouteCoordinator {
         continue;
       }
 
-      onProgress?.(makeProgress(65 + outer * 3, 'PCB 几何布线'));
-      const p4 = this.geometry.run(this.bb);
+      onProgress?.(makeProgress(65 + outer * 3, 'PCB 几何布线(LLM)'));
+      const p4 = await this.keepRetry('geometry', isCancel, failHint ?? '',
+        (hint) => this.geometry.run(this.bb, api, hint.length > 0 ? hint : failHint));
       if (!p4.ok) {
+        if (shouldSkipQaAfterGeometryFail(p4.reason)) {
+          Logger.warn(INSTR_TRACE_TAG,
+            `[AI_PCB] geometry not applied → skip qa_repair outer=${outer + 1} | ${p4.reason}`);
+          lastQaReason = p4.reason;
+          lastResidualKind = 'signal_fail';
+          continue;
+        }
         Logger.warn(INSTR_TRACE_TAG,
           `[AI_PCB] geometry soft-fail → qa_repair | ${p4.reason}`);
       }
@@ -145,6 +174,7 @@ export class PcbRouteCoordinator {
   ): Promise<PcbAgentStageResult> {
     let last: PcbAgentStageResult = { ok: false, reason: `${stage} not run` };
     let hint = initialHint;
+    let layoutFailReason = '';
     for (let outer = 0; outer < PCB_KEEP_RETRY_OUTER; outer++) {
       if (isCancel && isCancel()) {
         return { ok: false, reason: 'cancelled' };
@@ -154,8 +184,18 @@ export class PcbRouteCoordinator {
         return last;
       }
       hint = last.reason;
+      // 区分布局规则失败 vs 后续网络失败，避免「明明有回复却报网络」
+      if (!isNetworkishFailReason(last.reason)) {
+        layoutFailReason = last.reason;
+      }
       Logger.warn(INSTR_TRACE_TAG,
         `[AI_PCB] KEEP_RETRY ${stage} outer=${outer + 1}/${PCB_KEEP_RETRY_OUTER} | ${last.reason}`);
+    }
+    if (layoutFailReason.length > 0 && isNetworkishFailReason(last.reason)) {
+      return {
+        ok: false,
+        reason: `${layoutFailReason}；其后重试网络失败: ${last.reason}`
+      };
     }
     return last;
   }

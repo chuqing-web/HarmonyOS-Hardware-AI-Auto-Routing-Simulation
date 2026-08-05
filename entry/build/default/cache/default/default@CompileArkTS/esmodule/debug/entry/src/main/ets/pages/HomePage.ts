@@ -17,6 +17,10 @@ interface HomePage_Params {
     newsItems?: ProteusHomeNewsItem[];
     aboutInfo?: HomeAboutSnapshot;
     newsHighlight?: boolean;
+    newsLoading?: boolean;
+    newsStatusMessage?: string;
+    hasNewsUpdate?: boolean;
+    newsBusyTag?: string;
     showMigrationGuide?: boolean;
     showHelpDialog?: boolean;
     helpDialogTitle?: string;
@@ -29,6 +33,7 @@ interface HomePage_Params {
     githubHasToken?: boolean;
     githubBoundLogin?: string;
     githubShowDeviceCode?: boolean;
+    githubAllowAutoClose?: boolean;
     announcement?: HomeAnnouncement;
     announcementLoading?: boolean;
     wizardModulesHint?: string;
@@ -40,6 +45,8 @@ interface HomePage_Params {
     newsHighlightTimer?: number;
     launchGuard?: boolean;
     wizardLaunchTarget?: string;
+    cachedReleases?: GitHubReleaseDto[];
+    releasesLoaded?: boolean;
 }
 import type { BusinessError } from "@ohos:base";
 import type Want from "@ohos:app.ability.Want";
@@ -47,10 +54,12 @@ import type common from "@ohos:app.ability.common";
 import picker from "@ohos:file.picker";
 import fileUri from "@ohos:file.fileuri";
 import fs from "@ohos:file.fs";
-import { APP_VERSION_CODE, APP_VERSION_NAME, appVersionLabel, Logger, GitHubDeviceAuth, GitHubOAuthConfig, GitHubStarVerifier, StarCheckKind, LicenseManager, FeatureGate, EventBus, ModuleEvent } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
+import { APP_VERSION_NAME, appVersionLabel, Logger, GitHubDeviceAuth, GitHubOAuthConfig, GitHubStarVerifier, StarCheckKind, LicenseManager, FeatureGate, EventBus, ModuleEvent } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
 import { AppService } from "@bundle:com.elecdraw.aischsim/entry/ets/services/AppService";
 import { HomeAnnouncementService } from "@bundle:com.elecdraw.aischsim/entry/ets/services/HomeAnnouncementService";
 import type { HomeAnnouncement } from "@bundle:com.elecdraw.aischsim/entry/ets/services/HomeAnnouncementService";
+import { HomeReleaseService } from "@bundle:com.elecdraw.aischsim/entry/ets/services/HomeReleaseService";
+import type { GitHubReleaseDto, HomeReleaseFetchResult } from "@bundle:com.elecdraw.aischsim/entry/ets/services/HomeReleaseService";
 import { PROTEUS_THEME_REV_KEY } from "@bundle:com.elecdraw.aischsim/entry/ets/theme/ThemeManager";
 import { ProteusHomeColors, ProteusHomeDownloadBtn, ProteusHomeIconLink, ProteusHomeInlineLink, ProteusHomePanel, ProteusHomeRecentRow, ProteusHomeTopBar, ProteusHomeWizardDialog, ProteusHomeBottomStrip, ProteusHomeTextDialog, ProteusHomeBackdrop, ProteusHomeAboutRow, ProteusHomeHelpDialog, ProteusHomeSectionTitle, ProteusHomeSectionDivider, ProteusHomeNewsRow, ProteusHomeAnnouncementPanel } from "@bundle:com.elecdraw.aischsim/entry/ets/components/proteus/ProteusHomeWidgets";
 import type { ProteusHomeNewsItem } from "@bundle:com.elecdraw.aischsim/entry/ets/components/proteus/ProteusHomeWidgets";
@@ -167,8 +176,6 @@ const HELP_HOME_TEXT: string = 'AI-SCH Design Suite 操作手册\n' +
     '· 版本号见首页顶栏与 About 区域\n' +
     '· Announcement panel on the right can show server-pushed image + text notices\n' +
     '· 更多教程：Start → Open Sample 或右侧教学面板\n';
-const UPDATES_INFO_TEXT: string = '版本更新通过应用分发渠道发布。\n\n' +
-    '当前运行版本已在 News 列表中标记为 In Use。如需教程工程，请使用 Start → Open Sample。';
 interface HomeProjectEntry {
     path: string;
     name: string;
@@ -192,10 +199,14 @@ class HomePage extends ViewPU {
         this.__wizardStep = new ObservedPropertySimplePU(0, this, "wizardStep");
         this.__wizardProjectName = new ObservedPropertySimplePU('', this, "wizardProjectName");
         this.__showSamples = new ObservedPropertySimplePU(false, this, "showSamples");
-        this.__ignoreBeta = new ObservedPropertySimplePU(false, this, "ignoreBeta");
+        this.__ignoreBeta = new ObservedPropertySimplePU(true, this, "ignoreBeta");
         this.__newsItems = new ObservedPropertyObjectPU([], this, "newsItems");
         this.__aboutInfo = new ObservedPropertyObjectPU(defaultHomeAboutSnapshot(), this, "aboutInfo");
         this.__newsHighlight = new ObservedPropertySimplePU(false, this, "newsHighlight");
+        this.__newsLoading = new ObservedPropertySimplePU(false, this, "newsLoading");
+        this.__newsStatusMessage = new ObservedPropertySimplePU('', this, "newsStatusMessage");
+        this.__hasNewsUpdate = new ObservedPropertySimplePU(false, this, "hasNewsUpdate");
+        this.__newsBusyTag = new ObservedPropertySimplePU('', this, "newsBusyTag");
         this.__showMigrationGuide = new ObservedPropertySimplePU(false, this, "showMigrationGuide");
         this.__showHelpDialog = new ObservedPropertySimplePU(false, this, "showHelpDialog");
         this.__helpDialogTitle = new ObservedPropertySimplePU('', this, "helpDialogTitle");
@@ -208,6 +219,7 @@ class HomePage extends ViewPU {
         this.__githubHasToken = new ObservedPropertySimplePU(false, this, "githubHasToken");
         this.__githubBoundLogin = new ObservedPropertySimplePU('', this, "githubBoundLogin");
         this.__githubShowDeviceCode = new ObservedPropertySimplePU(false, this, "githubShowDeviceCode");
+        this.githubAllowAutoClose = false;
         this.__announcement = new ObservedPropertyObjectPU(HomeAnnouncementService.defaultAnnouncement(), this, "announcement");
         this.__announcementLoading = new ObservedPropertySimplePU(false, this, "announcementLoading");
         this.__wizardModulesHint = new ObservedPropertySimplePU('Schematic · Simulation', this, "wizardModulesHint");
@@ -219,6 +231,8 @@ class HomePage extends ViewPU {
         this.newsHighlightTimer = -1;
         this.launchGuard = false;
         this.wizardLaunchTarget = 'default';
+        this.cachedReleases = [];
+        this.releasesLoaded = false;
         this.setInitiallyProvidedValue(params);
         this.finalizeConstruction();
     }
@@ -265,6 +279,18 @@ class HomePage extends ViewPU {
         if (params.newsHighlight !== undefined) {
             this.newsHighlight = params.newsHighlight;
         }
+        if (params.newsLoading !== undefined) {
+            this.newsLoading = params.newsLoading;
+        }
+        if (params.newsStatusMessage !== undefined) {
+            this.newsStatusMessage = params.newsStatusMessage;
+        }
+        if (params.hasNewsUpdate !== undefined) {
+            this.hasNewsUpdate = params.hasNewsUpdate;
+        }
+        if (params.newsBusyTag !== undefined) {
+            this.newsBusyTag = params.newsBusyTag;
+        }
         if (params.showMigrationGuide !== undefined) {
             this.showMigrationGuide = params.showMigrationGuide;
         }
@@ -301,6 +327,9 @@ class HomePage extends ViewPU {
         if (params.githubShowDeviceCode !== undefined) {
             this.githubShowDeviceCode = params.githubShowDeviceCode;
         }
+        if (params.githubAllowAutoClose !== undefined) {
+            this.githubAllowAutoClose = params.githubAllowAutoClose;
+        }
         if (params.announcement !== undefined) {
             this.announcement = params.announcement;
         }
@@ -334,6 +363,12 @@ class HomePage extends ViewPU {
         if (params.wizardLaunchTarget !== undefined) {
             this.wizardLaunchTarget = params.wizardLaunchTarget;
         }
+        if (params.cachedReleases !== undefined) {
+            this.cachedReleases = params.cachedReleases;
+        }
+        if (params.releasesLoaded !== undefined) {
+            this.releasesLoaded = params.releasesLoaded;
+        }
     }
     updateStateVars(params: HomePage_Params) {
     }
@@ -353,6 +388,10 @@ class HomePage extends ViewPU {
         this.__newsItems.purgeDependencyOnElmtId(rmElmtId);
         this.__aboutInfo.purgeDependencyOnElmtId(rmElmtId);
         this.__newsHighlight.purgeDependencyOnElmtId(rmElmtId);
+        this.__newsLoading.purgeDependencyOnElmtId(rmElmtId);
+        this.__newsStatusMessage.purgeDependencyOnElmtId(rmElmtId);
+        this.__hasNewsUpdate.purgeDependencyOnElmtId(rmElmtId);
+        this.__newsBusyTag.purgeDependencyOnElmtId(rmElmtId);
         this.__showMigrationGuide.purgeDependencyOnElmtId(rmElmtId);
         this.__showHelpDialog.purgeDependencyOnElmtId(rmElmtId);
         this.__helpDialogTitle.purgeDependencyOnElmtId(rmElmtId);
@@ -386,6 +425,10 @@ class HomePage extends ViewPU {
         this.__newsItems.aboutToBeDeleted();
         this.__aboutInfo.aboutToBeDeleted();
         this.__newsHighlight.aboutToBeDeleted();
+        this.__newsLoading.aboutToBeDeleted();
+        this.__newsStatusMessage.aboutToBeDeleted();
+        this.__hasNewsUpdate.aboutToBeDeleted();
+        this.__newsBusyTag.aboutToBeDeleted();
         this.__showMigrationGuide.aboutToBeDeleted();
         this.__showHelpDialog.aboutToBeDeleted();
         this.__helpDialogTitle.aboutToBeDeleted();
@@ -510,6 +553,34 @@ class HomePage extends ViewPU {
     set newsHighlight(newValue: boolean) {
         this.__newsHighlight.set(newValue);
     }
+    private __newsLoading: ObservedPropertySimplePU<boolean>;
+    get newsLoading() {
+        return this.__newsLoading.get();
+    }
+    set newsLoading(newValue: boolean) {
+        this.__newsLoading.set(newValue);
+    }
+    private __newsStatusMessage: ObservedPropertySimplePU<string>;
+    get newsStatusMessage() {
+        return this.__newsStatusMessage.get();
+    }
+    set newsStatusMessage(newValue: string) {
+        this.__newsStatusMessage.set(newValue);
+    }
+    private __hasNewsUpdate: ObservedPropertySimplePU<boolean>;
+    get hasNewsUpdate() {
+        return this.__hasNewsUpdate.get();
+    }
+    set hasNewsUpdate(newValue: boolean) {
+        this.__hasNewsUpdate.set(newValue);
+    }
+    private __newsBusyTag: ObservedPropertySimplePU<string>;
+    get newsBusyTag() {
+        return this.__newsBusyTag.get();
+    }
+    set newsBusyTag(newValue: string) {
+        this.__newsBusyTag.set(newValue);
+    }
     private __showMigrationGuide: ObservedPropertySimplePU<boolean>;
     get showMigrationGuide() {
         return this.__showMigrationGuide.get();
@@ -596,6 +667,8 @@ class HomePage extends ViewPU {
     set githubShowDeviceCode(newValue: boolean) {
         this.__githubShowDeviceCode.set(newValue);
     }
+    /** 仅新授权成功时可自动关窗；管理账户时保持打开 */
+    private githubAllowAutoClose: boolean;
     private __announcement: ObservedPropertyObjectPU<HomeAnnouncement>;
     get announcement() {
         return this.__announcement.get();
@@ -632,6 +705,8 @@ class HomePage extends ViewPU {
     private launchGuard: boolean;
     /** New Project 向导完成后的目标：default | pcb | simulation */
     private wizardLaunchTarget: string;
+    private cachedReleases: GitHubReleaseDto[];
+    private releasesLoaded: boolean;
     onPageShow(): void {
         this.launchGuard = false;
         void this.reloadOnShow();
@@ -665,7 +740,7 @@ class HomePage extends ViewPU {
         await this.appService.waitLicenseBootstrap();
         this.userProjectDir = this.appService.getUserProjectDir();
         this.recoveryFiles = await this.appService.checkRecoveryFiles();
-        this.initNewsItems();
+        this.newsItems = [HomeReleaseService.sampleNewsItem()];
         this.refreshLists();
         this.refreshAboutInfo();
         if (this.recentEntries.length > 0) {
@@ -674,15 +749,50 @@ class HomePage extends ViewPU {
         this.ready = true;
         Logger.info('HomePage', `ready ver=${appVersionLabel()} recent=${this.recentEntries.length}`);
         void this.loadAnnouncement();
+        void this.loadNewsReleases();
     }
-    private initNewsItems(): void {
-        this.newsItems = [
-            { description: `AI-SCH Professional 1.2 [1.2.0]`, releaseDate: '17/06/2026', uscValid: 'Yes', actionLabel: 'Download' },
-            { description: `AI-SCH Professional ${APP_VERSION_NAME} [${APP_VERSION_CODE}]`, releaseDate: '24/02/2026', uscValid: 'Yes', actionLabel: 'In Use' },
-            { description: 'AI-SCH Professional 1.0 SP2 [1.0.2]', releaseDate: '21/08/2025', uscValid: 'Yes', actionLabel: 'Download' },
-            { description: 'AI-SCH Professional 1.0 SP1 [1.0.1]', releaseDate: '22/10/2024', uscValid: 'Yes', actionLabel: 'Download' },
-            { description: 'Sample tutorials (Test_Template)', releaseDate: '—', uscValid: '—', actionLabel: 'Open' }
-        ];
+    private async loadNewsReleases(): Promise<void> {
+        this.newsLoading = true;
+        this.newsStatusMessage = '正在获取 Release…';
+        try {
+            const result = await HomeReleaseService.fetchReleases();
+            this.cachedReleases = result.releases;
+            this.releasesLoaded = result.ok || result.releases.length > 0;
+            this.applyNewsResult(HomeReleaseService.buildResult(result.releases, this.ignoreBeta), result.networkError, result.statusMessage);
+        }
+        finally {
+            this.newsLoading = false;
+        }
+    }
+    private applyNewsResult(result: HomeReleaseFetchResult, networkError: boolean, fallbackStatus: string): void {
+        const items: ProteusHomeNewsItem[] = [];
+        for (let i = 0; i < result.items.length; i++) {
+            items.push(result.items[i]);
+        }
+        items.push(HomeReleaseService.sampleNewsItem());
+        this.newsItems = items;
+        this.hasNewsUpdate = result.hasUpdate;
+        if (networkError) {
+            this.newsStatusMessage = fallbackStatus.length > 0 ? fallbackStatus : '网络不稳定';
+            this.newsItems = [HomeReleaseService.sampleNewsItem()];
+            this.hasNewsUpdate = false;
+        }
+        else if (result.empty) {
+            this.newsStatusMessage = result.statusMessage.length > 0 ? result.statusMessage : '暂无 Release';
+        }
+        else {
+            this.newsStatusMessage = '';
+        }
+        if (this.hasNewsUpdate) {
+            this.newsHighlight = true;
+        }
+    }
+    private rebuildNewsFromCache(): void {
+        if (!this.releasesLoaded && this.cachedReleases.length === 0) {
+            return;
+        }
+        const result = HomeReleaseService.buildResult(this.cachedReleases, this.ignoreBeta);
+        this.applyNewsResult(result, false, '');
     }
     private async loadAnnouncement(): Promise<void> {
         this.announcementLoading = true;
@@ -725,9 +835,10 @@ class HomePage extends ViewPU {
         this.githubUserCode = '';
         this.githubUnlockBusy = false;
         this.githubShowDeviceCode = false;
+        this.githubAllowAutoClose = false;
         void this.prepareGitHubUnlockDialog();
     }
-    /** 打开对话框：若已记住账户则直接检测 Star，跳过重新登录 */
+    /** 打开对话框：有账户则同步 Star，窗口保持打开以便删除/切换账号 */
     private async prepareGitHubUnlockDialog(): Promise<void> {
         try {
             const ctx = getContext(this) as common.UIAbilityContext;
@@ -741,12 +852,19 @@ class HomePage extends ViewPU {
                 return;
             }
             this.githubUnlockStatus = login.length > 0
-                ? `已记住账户 @${login}，正在检测 Star…`
-                : '已记住账户，正在检测 Star…';
-            await this.recheckGitHubStar();
-            // 检测后刷新绑定显示
+                ? `已登录 @${login}，正在同步 Star 状态…`
+                : '已记住账户，正在同步 Star 状态…';
+            await this.recheckGitHubStar(false);
             this.githubBoundLogin = await GitHubDeviceAuth.getStoredLogin();
             this.githubHasToken = (await GitHubDeviceAuth.getStoredToken()).length > 0;
+            if (this.githubHasToken) {
+                const pro = LicenseManager.getInstance().isStarUnlocked();
+                this.githubUnlockStatus = this.githubBoundLogin.length > 0
+                    ? (pro
+                        ? `已登录 @${this.githubBoundLogin} · 专业版 · 可删除或切换账号`
+                        : `已登录 @${this.githubBoundLogin} · 未 Star · 可删除或切换账号`)
+                    : (pro ? '已登录 · 专业版 · 可删除或切换账号' : '已登录 · 可删除或切换账号');
+            }
         }
         catch (e) {
             this.githubUnlockStatus = `读取账户失败: ${e}`;
@@ -758,6 +876,7 @@ class HomePage extends ViewPU {
         this.showGitHubUnlock = false;
         this.githubUnlockBusy = false;
         this.githubShowDeviceCode = false;
+        this.githubAllowAutoClose = false;
     }
     private async startGitHubDeviceFlow(): Promise<void> {
         if (this.githubUnlockBusy) {
@@ -765,6 +884,7 @@ class HomePage extends ViewPU {
         }
         this.githubUnlockBusy = true;
         this.githubShowDeviceCode = true;
+        this.githubAllowAutoClose = true;
         this.githubUnlockStatus = '正在申请设备码…';
         try {
             const ctx = getContext(this) as common.UIAbilityContext;
@@ -804,9 +924,11 @@ class HomePage extends ViewPU {
             });
             this.refreshAboutInfo();
             if (star.kind === StarCheckKind.STARRED) {
-                this.githubUnlockStatus = star.message + '（账户已记住，下次启动自动检测）';
+                this.githubUnlockStatus = star.message + '（账户已记住）';
                 this.githubUnlockBusy = false;
-                this.showGitHubUnlock = false;
+                if (this.githubAllowAutoClose) {
+                    this.showGitHubUnlock = false;
+                }
                 return;
             }
             if (star.kind === StarCheckKind.NOT_STARRED) {
@@ -822,13 +944,16 @@ class HomePage extends ViewPU {
         }
         this.githubUnlockBusy = false;
     }
-    private async recheckGitHubStar(): Promise<void> {
+    /**
+     * @param autoCloseOnPro 管理账户时传 false，避免窗口立刻关掉看不到删除/切换
+     */
+    private async recheckGitHubStar(autoCloseOnPro: boolean = true): Promise<void> {
         if (this.githubUnlockBusy) {
             return;
         }
         this.githubUnlockBusy = true;
         this.githubUnlockStatus = this.githubBoundLogin.length > 0
-            ? `使用已记住账户 @${this.githubBoundLogin} 检测中…`
+            ? `使用账户 @${this.githubBoundLogin} 检测中…`
             : '正在检测 Star…';
         try {
             const ctx = getContext(this) as common.UIAbilityContext;
@@ -838,11 +963,15 @@ class HomePage extends ViewPU {
             this.refreshAboutInfo();
             this.githubUnlockStatus = msg;
             if (LicenseManager.getInstance().isStarUnlocked()) {
-                this.githubUnlockStatus = msg + '（账户已记住）';
-                this.showGitHubUnlock = false;
+                this.githubUnlockStatus = msg + (this.githubBoundLogin.length > 0
+                    ? ` · @${this.githubBoundLogin}`
+                    : '');
+                if (autoCloseOnPro && this.githubAllowAutoClose) {
+                    this.showGitHubUnlock = false;
+                }
             }
             else if (!this.githubHasToken) {
-                this.githubUnlockStatus = '授权已失效，请重新授权一次';
+                this.githubUnlockStatus = '授权已失效，请重新授权或切换账号';
             }
         }
         catch (e) {
@@ -850,26 +979,70 @@ class HomePage extends ViewPU {
         }
         this.githubUnlockBusy = false;
     }
+    /** 删除本地 GitHub 登录（降回免费版） */
     private async clearRememberedGitHubAccount(): Promise<void> {
         if (this.githubUnlockBusy) {
             return;
         }
+        this.githubUnlockBusy = true;
         try {
             const ctx = getContext(this) as common.UIAbilityContext;
             await GitHubDeviceAuth.init(ctx);
             await GitHubDeviceAuth.clearToken();
             LicenseManager.getInstance().setStarUnlock(false, '');
             FeatureGate.refresh();
+            EventBus.getInstance().publish({
+                event: ModuleEvent.LICENSE_CHANGED,
+                source: 'entry',
+                timestamp: Date.now(),
+                data: LicenseManager.getInstance().getStatus()
+            });
             this.githubHasToken = false;
             this.githubBoundLogin = '';
             this.githubUserCode = '';
             this.githubShowDeviceCode = false;
+            this.githubAllowAutoClose = false;
             this.refreshAboutInfo();
-            this.githubUnlockStatus = '已清除记住的账户，请重新授权';
+            this.githubUnlockStatus = '已删除本地 GitHub 登录，当前为免费版。可重新授权。';
+            this.appService.onStatusMessage('已退出 GitHub 登录 · 免费版');
         }
         catch (e) {
-            this.githubUnlockStatus = `清除失败: ${e}`;
+            this.githubUnlockStatus = `删除账号失败: ${e}`;
         }
+        this.githubUnlockBusy = false;
+    }
+    /** 切换账号：先删除当前登录，再走 Device Flow */
+    private async switchGitHubAccount(): Promise<void> {
+        if (this.githubUnlockBusy) {
+            return;
+        }
+        this.githubUnlockBusy = true;
+        this.githubUnlockStatus = '正在退出当前账号…';
+        try {
+            const ctx = getContext(this) as common.UIAbilityContext;
+            await GitHubDeviceAuth.init(ctx);
+            await GitHubDeviceAuth.clearToken();
+            LicenseManager.getInstance().setStarUnlock(false, '');
+            FeatureGate.refresh();
+            EventBus.getInstance().publish({
+                event: ModuleEvent.LICENSE_CHANGED,
+                source: 'entry',
+                timestamp: Date.now(),
+                data: LicenseManager.getInstance().getStatus()
+            });
+            this.githubHasToken = false;
+            this.githubBoundLogin = '';
+            this.githubUserCode = '';
+            this.refreshAboutInfo();
+        }
+        catch (e) {
+            this.githubUnlockStatus = `切换账号准备失败: ${e}`;
+            this.githubUnlockBusy = false;
+            return;
+        }
+        this.githubUnlockBusy = false;
+        this.githubUnlockStatus = '请用新 GitHub 账号完成授权';
+        await this.startGitHubDeviceFlow();
     }
     private refreshLists(): void {
         this.recentEntries = this.buildRecentEntries();
@@ -1141,6 +1314,13 @@ class HomePage extends ViewPU {
         this.showSamples = false;
         this.selectedPath = this.recentEntries.length > 0 ? this.recentEntries[0].path : '';
     }
+    private newsRowLabel(item: ProteusHomeNewsItem): string {
+        const tag = item.tagName ?? '';
+        if (this.newsBusyTag.length > 0 && tag.length > 0 && this.newsBusyTag === tag) {
+            return 'Downloading…';
+        }
+        return item.actionLabel;
+    }
     private handleNewsAction(item: ProteusHomeNewsItem): void {
         if (item.actionLabel === 'In Use') {
             return;
@@ -1149,8 +1329,52 @@ class HomePage extends ViewPU {
             this.openSampleList();
             return;
         }
-        if (item.actionLabel === 'Download') {
-            this.openHelpDialog('Software Updates', UPDATES_INFO_TEXT);
+        if (item.actionLabel === 'Unavailable') {
+            this.openHelpDialog('Software Updates', '该版本需恰好包含 1 个 .hap 资源才可下载。\n请检查 GitHub Release Assets。');
+            return;
+        }
+        if (item.actionLabel === 'Download' || item.actionLabel === 'Update') {
+            void this.downloadAndInstallRelease(item);
+        }
+    }
+    private async downloadAndInstallRelease(item: ProteusHomeNewsItem): Promise<void> {
+        const url = (item.downloadUrl ?? '').trim();
+        const fileName = (item.hapFileName ?? 'update.hap').trim();
+        if (url.length === 0) {
+            this.openHelpDialog('Software Updates', '缺少下载地址。');
+            return;
+        }
+        if (this.newsBusyTag.length > 0) {
+            return;
+        }
+        this.newsBusyTag = item.tagName ?? fileName;
+        try {
+            const ctx = this.getUIContext().getHostContext() as common.UIAbilityContext;
+            this.newsStatusMessage = `正在下载 ${fileName}…`;
+            const dl = await HomeReleaseService.downloadHap(ctx, url, fileName);
+            if (!dl.ok) {
+                this.openHelpDialog('Software Updates', dl.message);
+                this.newsStatusMessage = dl.message;
+                return;
+            }
+            this.newsStatusMessage = '正在调起系统安装…';
+            const started = await HomeReleaseService.trySystemInstall(ctx, dl.localPath);
+            if (started) {
+                this.newsStatusMessage = '已调起安装器，请按系统提示完成安装';
+                this.openHelpDialog('Software Updates', `已下载并尝试调起系统安装。\n\n本地路径：\n${dl.localPath}`);
+            }
+            else {
+                this.newsStatusMessage = '已保存，请手动安装';
+                this.openHelpDialog('Software Updates', `已保存 HAP，但无法自动调起安装器（可能缺少系统权限）。\n\n请用文件管理器打开：\n${dl.localPath}`);
+            }
+        }
+        catch (e) {
+            Logger.warn('HomePage', `downloadAndInstall: ${e}`);
+            this.openHelpDialog('Software Updates', `更新失败: ${e}`);
+            this.newsStatusMessage = '更新失败';
+        }
+        finally {
+            this.newsBusyTag = '';
         }
     }
     private canOpenSelected(): boolean {
@@ -1182,13 +1406,15 @@ class HomePage extends ViewPU {
                                     if (isInitialRender) {
                                         let componentCall = new ProteusHomeTopBar(this, {
                                             titleLine: 'Schematic & Simulation Suite',
-                                            versionLabel: `Version ${APP_VERSION_NAME}`
-                                        }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 757, col: 11 });
+                                            versionLabel: `Version ${APP_VERSION_NAME}`,
+                                            showUpdateBadge: this.hasNewsUpdate
+                                        }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 925, col: 11 });
                                         ViewPU.create(componentCall);
                                         let paramsLambda = () => {
                                             return {
                                                 titleLine: 'Schematic & Simulation Suite',
-                                                versionLabel: `Version ${APP_VERSION_NAME}`
+                                                versionLabel: `Version ${APP_VERSION_NAME}`,
+                                                showUpdateBadge: this.hasNewsUpdate
                                             };
                                         };
                                         componentCall.paramsGenerator_ = paramsLambda;
@@ -1196,7 +1422,8 @@ class HomePage extends ViewPU {
                                     else {
                                         this.updateStateVarsOfChildByElmtId(elmtId, {
                                             titleLine: 'Schematic & Simulation Suite',
-                                            versionLabel: `Version ${APP_VERSION_NAME}`
+                                            versionLabel: `Version ${APP_VERSION_NAME}`,
+                                            showUpdateBadge: this.hasNewsUpdate
                                         });
                                     }
                                 }, { name: "ProteusHomeTopBar" });
@@ -1221,7 +1448,7 @@ class HomePage extends ViewPU {
                             {
                                 this.observeComponentCreation2((elmtId, isInitialRender) => {
                                     if (isInitialRender) {
-                                        let componentCall = new ProteusHomeBottomStrip(this, { statusLine: this.aboutInfo.platformLine }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 775, col: 11 });
+                                        let componentCall = new ProteusHomeBottomStrip(this, { statusLine: this.aboutInfo.platformLine }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 944, col: 11 });
                                         ViewPU.create(componentCall);
                                         let paramsLambda = () => {
                                             return {
@@ -1239,7 +1466,7 @@ class HomePage extends ViewPU {
                             }
                             Column.pop();
                         }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 755, col: 7 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 923, col: 7 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -1255,13 +1482,15 @@ class HomePage extends ViewPU {
                                         if (isInitialRender) {
                                             let componentCall = new ProteusHomeTopBar(this, {
                                                 titleLine: 'Schematic & Simulation Suite',
-                                                versionLabel: `Version ${APP_VERSION_NAME}`
-                                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 757, col: 11 });
+                                                versionLabel: `Version ${APP_VERSION_NAME}`,
+                                                showUpdateBadge: this.hasNewsUpdate
+                                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 925, col: 11 });
                                             ViewPU.create(componentCall);
                                             let paramsLambda = () => {
                                                 return {
                                                     titleLine: 'Schematic & Simulation Suite',
-                                                    versionLabel: `Version ${APP_VERSION_NAME}`
+                                                    versionLabel: `Version ${APP_VERSION_NAME}`,
+                                                    showUpdateBadge: this.hasNewsUpdate
                                                 };
                                             };
                                             componentCall.paramsGenerator_ = paramsLambda;
@@ -1269,7 +1498,8 @@ class HomePage extends ViewPU {
                                         else {
                                             this.updateStateVarsOfChildByElmtId(elmtId, {
                                                 titleLine: 'Schematic & Simulation Suite',
-                                                versionLabel: `Version ${APP_VERSION_NAME}`
+                                                versionLabel: `Version ${APP_VERSION_NAME}`,
+                                                showUpdateBadge: this.hasNewsUpdate
                                             });
                                         }
                                     }, { name: "ProteusHomeTopBar" });
@@ -1294,7 +1524,7 @@ class HomePage extends ViewPU {
                                 {
                                     this.observeComponentCreation2((elmtId, isInitialRender) => {
                                         if (isInitialRender) {
-                                            let componentCall = new ProteusHomeBottomStrip(this, { statusLine: this.aboutInfo.platformLine }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 775, col: 11 });
+                                            let componentCall = new ProteusHomeBottomStrip(this, { statusLine: this.aboutInfo.platformLine }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 944, col: 11 });
                                             ViewPU.create(componentCall);
                                             let paramsLambda = () => {
                                                 return {
@@ -1342,7 +1572,7 @@ class HomePage extends ViewPU {
                                     onBack: () => { this.wizardStep = 0; },
                                     onNext: () => { this.wizardStep = 1; },
                                     onFinish: () => { this.confirmWizardFinish(); }
-                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 783, col: 9 });
+                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 952, col: 9 });
                                 ViewPU.create(componentCall);
                                 let paramsLambda = () => {
                                     return {
@@ -1393,7 +1623,7 @@ class HomePage extends ViewPU {
                                     title: 'Migration Guide',
                                     body: MIGRATION_GUIDE_TEXT,
                                     onClose: () => { this.showMigrationGuide = false; }
-                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 801, col: 9 });
+                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 970, col: 9 });
                                 ViewPU.create(componentCall);
                                 let paramsLambda = () => {
                                     return {
@@ -1433,7 +1663,7 @@ class HomePage extends ViewPU {
                                     primaryLabel: this.helpDialogPrimaryLabel,
                                     onPrimary: () => { this.runHelpDialogPrimary(); },
                                     onClose: () => { this.closeHelpDialog(); }
-                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 809, col: 9 });
+                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 978, col: 9 });
                                 ViewPU.create(componentCall);
                                 let paramsLambda = () => {
                                     return {
@@ -1537,7 +1767,7 @@ class HomePage extends ViewPU {
         this.observeComponentCreation2((elmtId, isInitialRender) => {
             If.create();
             // 已记住账户
-            if (this.githubHasToken) {
+            if (this.githubHasToken && !this.githubShowDeviceCode) {
                 this.ifElseBranchUpdateFunction(0, () => {
                     this.observeComponentCreation2((elmtId, isInitialRender) => {
                         Column.create();
@@ -1549,7 +1779,7 @@ class HomePage extends ViewPU {
                         Column.alignItems(HorizontalAlign.Start);
                     }, Column);
                     this.observeComponentCreation2((elmtId, isInitialRender) => {
-                        Text.create('已记住账户');
+                        Text.create('当前 GitHub 账户');
                         Text.fontSize(9);
                         Text.fontColor(ProteusHomeColors.TEXT_DIM);
                         Text.width('100%');
@@ -1567,16 +1797,80 @@ class HomePage extends ViewPU {
                     }, Text);
                     Text.pop();
                     this.observeComponentCreation2((elmtId, isInitialRender) => {
-                        Text.create('下次启动将自动用此账户检测 Star，无需再次登录');
+                        Text.create('启动时将用此账户静默检测 Star。可删除登录或切换到其他账号。');
                         Text.fontSize(9);
                         Text.fontColor(ProteusHomeColors.TEXT_DIM);
                         Text.width('100%');
+                        Text.margin({ bottom: 8 });
                     }, Text);
                     Text.pop();
+                    this.observeComponentCreation2((elmtId, isInitialRender) => {
+                        Row.create({ space: 8 });
+                        Row.width('100%');
+                    }, Row);
+                    {
+                        this.observeComponentCreation2((elmtId, isInitialRender) => {
+                            if (isInitialRender) {
+                                let componentCall = new ProteusHomeDownloadBtn(this, {
+                                    label: '切换账号',
+                                    primary: true,
+                                    btnEnabled: !this.githubUnlockBusy,
+                                    onAction: () => { void this.switchGitHubAccount(); }
+                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 1049, col: 17 });
+                                ViewPU.create(componentCall);
+                                let paramsLambda = () => {
+                                    return {
+                                        label: '切换账号',
+                                        primary: true,
+                                        btnEnabled: !this.githubUnlockBusy,
+                                        onAction: () => { void this.switchGitHubAccount(); }
+                                    };
+                                };
+                                componentCall.paramsGenerator_ = paramsLambda;
+                            }
+                            else {
+                                this.updateStateVarsOfChildByElmtId(elmtId, {
+                                    label: '切换账号',
+                                    primary: true,
+                                    btnEnabled: !this.githubUnlockBusy
+                                });
+                            }
+                        }, { name: "ProteusHomeDownloadBtn" });
+                    }
+                    {
+                        this.observeComponentCreation2((elmtId, isInitialRender) => {
+                            if (isInitialRender) {
+                                let componentCall = new ProteusHomeDownloadBtn(this, {
+                                    label: '删除账号',
+                                    primary: false,
+                                    btnEnabled: !this.githubUnlockBusy,
+                                    onAction: () => { void this.clearRememberedGitHubAccount(); }
+                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 1055, col: 17 });
+                                ViewPU.create(componentCall);
+                                let paramsLambda = () => {
+                                    return {
+                                        label: '删除账号',
+                                        primary: false,
+                                        btnEnabled: !this.githubUnlockBusy,
+                                        onAction: () => { void this.clearRememberedGitHubAccount(); }
+                                    };
+                                };
+                                componentCall.paramsGenerator_ = paramsLambda;
+                            }
+                            else {
+                                this.updateStateVarsOfChildByElmtId(elmtId, {
+                                    label: '删除账号',
+                                    primary: false,
+                                    btnEnabled: !this.githubUnlockBusy
+                                });
+                            }
+                        }, { name: "ProteusHomeDownloadBtn" });
+                    }
+                    Row.pop();
                     Column.pop();
                 });
             }
-            else {
+            else if (!this.githubHasToken && !this.githubShowDeviceCode) {
                 this.ifElseBranchUpdateFunction(1, () => {
                     this.observeComponentCreation2((elmtId, isInitialRender) => {
                         Text.create('首次解锁（仅需一次）');
@@ -1591,6 +1885,23 @@ class HomePage extends ViewPU {
                     this.GitHubUnlockStepRow.bind(this)('2', '输入设备码完成授权（账户将被记住）');
                     this.GitHubUnlockStepRow.bind(this)('3', 'Star 仓库后自动成为专业版');
                     this.GitHubUnlockStepRow.bind(this)('4', '之后每次启动联网自动复验，无需再登录');
+                });
+            }
+            else if (this.githubShowDeviceCode) {
+                this.ifElseBranchUpdateFunction(2, () => {
+                    this.observeComponentCreation2((elmtId, isInitialRender) => {
+                        Text.create('请在浏览器用目标 GitHub 账号登录，并输入下方设备码');
+                        Text.fontSize(10);
+                        Text.fontColor(ProteusHomeColors.TEXT);
+                        Text.width('100%');
+                        Text.margin({ bottom: 6 });
+                    }, Text);
+                    Text.pop();
+                });
+            }
+            // 仅在重新授权流程中显示设备码
+            else {
+                this.ifElseBranchUpdateFunction(3, () => {
                 });
             }
         }, If);
@@ -1697,15 +2008,15 @@ class HomePage extends ViewPU {
                                     label: this.githubUnlockBusy ? '检测中…' : '检测 Star',
                                     primary: true,
                                     btnEnabled: !this.githubUnlockBusy,
-                                    onAction: () => { void this.recheckGitHubStar(); }
-                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 960, col: 13 });
+                                    onAction: () => { void this.recheckGitHubStar(false); }
+                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 1151, col: 13 });
                                 ViewPU.create(componentCall);
                                 let paramsLambda = () => {
                                     return {
                                         label: this.githubUnlockBusy ? '检测中…' : '检测 Star',
                                         primary: true,
                                         btnEnabled: !this.githubUnlockBusy,
-                                        onAction: () => { void this.recheckGitHubStar(); }
+                                        onAction: () => { void this.recheckGitHubStar(false); }
                                     };
                                 };
                                 componentCall.paramsGenerator_ = paramsLambda;
@@ -1727,7 +2038,7 @@ class HomePage extends ViewPU {
                                     primary: false,
                                     btnEnabled: true,
                                     onAction: () => this.openExternalUrl(GitHubOAuthConfig.REPO_URL)
-                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 966, col: 13 });
+                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 1157, col: 13 });
                                 ViewPU.create(componentCall);
                                 let paramsLambda = () => {
                                     return {
@@ -1760,7 +2071,7 @@ class HomePage extends ViewPU {
                                     primary: true,
                                     btnEnabled: !this.githubUnlockBusy,
                                     onAction: () => { void this.startGitHubDeviceFlow(); }
-                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 973, col: 13 });
+                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 1164, col: 13 });
                                 ViewPU.create(componentCall);
                                 let paramsLambda = () => {
                                     return {
@@ -1789,7 +2100,7 @@ class HomePage extends ViewPU {
                                     primary: false,
                                     btnEnabled: this.githubVerifyUri.length > 0 && !this.githubUnlockBusy,
                                     onAction: () => this.openExternalUrl(this.githubVerifyUri)
-                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 979, col: 13 });
+                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 1170, col: 13 });
                                 ViewPU.create(componentCall);
                                 let paramsLambda = () => {
                                     return {
@@ -1818,7 +2129,7 @@ class HomePage extends ViewPU {
                                     primary: false,
                                     btnEnabled: true,
                                     onAction: () => this.openExternalUrl(GitHubOAuthConfig.REPO_URL)
-                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 985, col: 13 });
+                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 1176, col: 13 });
                                 ViewPU.create(componentCall);
                                 let paramsLambda = () => {
                                     return {
@@ -1852,76 +2163,6 @@ class HomePage extends ViewPU {
             Row.backgroundColor(ProteusHomeColors.PANEL_INSET);
         }, Row);
         this.observeComponentCreation2((elmtId, isInitialRender) => {
-            If.create();
-            if (this.githubHasToken && !this.githubShowDeviceCode) {
-                this.ifElseBranchUpdateFunction(0, () => {
-                    {
-                        this.observeComponentCreation2((elmtId, isInitialRender) => {
-                            if (isInitialRender) {
-                                let componentCall = new ProteusHomeDownloadBtn(this, {
-                                    label: '换账号重新授权',
-                                    primary: false,
-                                    btnEnabled: !this.githubUnlockBusy,
-                                    onAction: () => { void this.startGitHubDeviceFlow(); }
-                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 999, col: 13 });
-                                ViewPU.create(componentCall);
-                                let paramsLambda = () => {
-                                    return {
-                                        label: '换账号重新授权',
-                                        primary: false,
-                                        btnEnabled: !this.githubUnlockBusy,
-                                        onAction: () => { void this.startGitHubDeviceFlow(); }
-                                    };
-                                };
-                                componentCall.paramsGenerator_ = paramsLambda;
-                            }
-                            else {
-                                this.updateStateVarsOfChildByElmtId(elmtId, {
-                                    label: '换账号重新授权',
-                                    primary: false,
-                                    btnEnabled: !this.githubUnlockBusy
-                                });
-                            }
-                        }, { name: "ProteusHomeDownloadBtn" });
-                    }
-                    {
-                        this.observeComponentCreation2((elmtId, isInitialRender) => {
-                            if (isInitialRender) {
-                                let componentCall = new ProteusHomeDownloadBtn(this, {
-                                    label: '清除账户',
-                                    primary: false,
-                                    btnEnabled: !this.githubUnlockBusy,
-                                    onAction: () => { void this.clearRememberedGitHubAccount(); }
-                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 1005, col: 13 });
-                                ViewPU.create(componentCall);
-                                let paramsLambda = () => {
-                                    return {
-                                        label: '清除账户',
-                                        primary: false,
-                                        btnEnabled: !this.githubUnlockBusy,
-                                        onAction: () => { void this.clearRememberedGitHubAccount(); }
-                                    };
-                                };
-                                componentCall.paramsGenerator_ = paramsLambda;
-                            }
-                            else {
-                                this.updateStateVarsOfChildByElmtId(elmtId, {
-                                    label: '清除账户',
-                                    primary: false,
-                                    btnEnabled: !this.githubUnlockBusy
-                                });
-                            }
-                        }, { name: "ProteusHomeDownloadBtn" });
-                    }
-                });
-            }
-            else {
-                this.ifElseBranchUpdateFunction(1, () => {
-                });
-            }
-        }, If);
-        If.pop();
-        this.observeComponentCreation2((elmtId, isInitialRender) => {
             Blank.create();
         }, Blank);
         Blank.pop();
@@ -1933,7 +2174,7 @@ class HomePage extends ViewPU {
                         primary: false,
                         btnEnabled: true,
                         onAction: () => this.closeGitHubUnlockDialog()
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 1013, col: 11 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 1190, col: 11 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -2000,7 +2241,7 @@ class HomePage extends ViewPU {
         {
             this.observeComponentCreation2((elmtId, isInitialRender) => {
                 if (isInitialRender) {
-                    let componentCall = new ProteusHomeSectionTitle(this, { title: 'Getting Started' }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 1060, col: 7 });
+                    let componentCall = new ProteusHomeSectionTitle(this, { title: 'Getting Started' }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 1237, col: 7 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -2037,7 +2278,7 @@ class HomePage extends ViewPU {
                         label: 'Simulation',
                         requireDoubleClick: true,
                         onAction: () => this.openSimulation()
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 1067, col: 9 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 1244, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -2063,7 +2304,7 @@ class HomePage extends ViewPU {
                         label: 'PCB Layout',
                         requireDoubleClick: true,
                         onAction: () => { this.openPcbLayout(); }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 1072, col: 9 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 1249, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -2086,7 +2327,7 @@ class HomePage extends ViewPU {
         {
             this.observeComponentCreation2((elmtId, isInitialRender) => {
                 if (isInitialRender) {
-                    let componentCall = new ProteusHomeSectionDivider(this, {}, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 1082, col: 7 });
+                    let componentCall = new ProteusHomeSectionDivider(this, {}, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 1259, col: 7 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {};
@@ -2101,7 +2342,7 @@ class HomePage extends ViewPU {
         {
             this.observeComponentCreation2((elmtId, isInitialRender) => {
                 if (isInitialRender) {
-                    let componentCall = new ProteusHomeSectionTitle(this, { title: 'Start' }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 1083, col: 7 });
+                    let componentCall = new ProteusHomeSectionTitle(this, { title: 'Start' }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 1260, col: 7 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -2143,7 +2384,7 @@ class HomePage extends ViewPU {
                                 let componentCall = new ProteusHomeInlineLink(this, {
                                     label: 'Back to Recent Projects',
                                     onAction: () => this.backToRecentList()
-                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 1090, col: 13 });
+                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 1267, col: 13 });
                                 ViewPU.create(componentCall);
                                 let paramsLambda = () => {
                                     return {
@@ -2234,7 +2475,7 @@ class HomePage extends ViewPU {
                                             let componentCall = new ProteusHomeInlineLink(this, {
                                                 label: 'New Project…',
                                                 onAction: () => this.startNewProjectWizard()
-                                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 1121, col: 17 });
+                                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 1298, col: 17 });
                                             ViewPU.create(componentCall);
                                             let paramsLambda = () => {
                                                 return {
@@ -2290,7 +2531,7 @@ class HomePage extends ViewPU {
                                             warn: e.isRecovery,
                                             onSelect: () => { this.selectedPath = e.path; },
                                             onOpen: () => { this.openProjectPath(e.path, e.isRecovery); }
-                                        }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 1136, col: 19 });
+                                        }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 1313, col: 19 });
                                         ViewPU.create(componentCall);
                                         let paramsLambda = () => {
                                             return {
@@ -2336,7 +2577,7 @@ class HomePage extends ViewPU {
                         primary: true,
                         btnEnabled: this.canOpenSelected(),
                         onAction: () => this.openSelected()
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 1164, col: 11 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 1341, col: 11 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -2363,7 +2604,7 @@ class HomePage extends ViewPU {
         {
             this.observeComponentCreation2((elmtId, isInitialRender) => {
                 if (isInitialRender) {
-                    let componentCall = new ProteusHomeSectionDivider(this, {}, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 1178, col: 7 });
+                    let componentCall = new ProteusHomeSectionDivider(this, {}, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 1355, col: 7 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {};
@@ -2378,7 +2619,7 @@ class HomePage extends ViewPU {
         {
             this.observeComponentCreation2((elmtId, isInitialRender) => {
                 if (isInitialRender) {
-                    let componentCall = new ProteusHomeSectionTitle(this, { title: 'Help' }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 1179, col: 7 });
+                    let componentCall = new ProteusHomeSectionTitle(this, { title: 'Help' }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 1356, col: 7 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -2403,7 +2644,7 @@ class HomePage extends ViewPU {
         {
             this.observeComponentCreation2((elmtId, isInitialRender) => {
                 if (isInitialRender) {
-                    let componentCall = new ProteusHomeIconLink(this, { label: 'Help Home', onAction: () => this.openHelpHome() }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 1181, col: 9 });
+                    let componentCall = new ProteusHomeIconLink(this, { label: 'Help Home', onAction: () => this.openHelpHome() }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 1358, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -2424,7 +2665,7 @@ class HomePage extends ViewPU {
         {
             this.observeComponentCreation2((elmtId, isInitialRender) => {
                 if (isInitialRender) {
-                    let componentCall = new ProteusHomeSectionDivider(this, {}, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 1187, col: 7 });
+                    let componentCall = new ProteusHomeSectionDivider(this, {}, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 1364, col: 7 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {};
@@ -2439,7 +2680,7 @@ class HomePage extends ViewPU {
         {
             this.observeComponentCreation2((elmtId, isInitialRender) => {
                 if (isInitialRender) {
-                    let componentCall = new ProteusHomeSectionTitle(this, { title: 'About' }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 1188, col: 7 });
+                    let componentCall = new ProteusHomeSectionTitle(this, { title: 'About' }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 1365, col: 7 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -2503,7 +2744,7 @@ class HomePage extends ViewPU {
                         label: 'Licence',
                         value: this.aboutInfo.licenseTierLine,
                         warn: this.aboutInfo.isEvaluation
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 1212, col: 11 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 1389, col: 11 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -2530,7 +2771,7 @@ class HomePage extends ViewPU {
                         label: 'Registered To',
                         value: this.aboutInfo.registeredToLine,
                         warn: this.aboutInfo.isEvaluation
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 1217, col: 11 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 1394, col: 11 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -2557,7 +2798,7 @@ class HomePage extends ViewPU {
                         label: 'Customer No.',
                         value: this.aboutInfo.customerNumberLine,
                         warn: this.aboutInfo.isEvaluation
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 1222, col: 11 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 1399, col: 11 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -2584,7 +2825,7 @@ class HomePage extends ViewPU {
                         label: 'Licence Expires',
                         value: this.aboutInfo.licenseExpiresLine,
                         warn: this.aboutInfo.isEvaluation
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 1227, col: 11 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 1404, col: 11 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -2606,9 +2847,11 @@ class HomePage extends ViewPU {
         }
         Column.pop();
         this.observeComponentCreation2((elmtId, isInitialRender) => {
-            Text.create(this.aboutInfo.isStarPro || !this.aboutInfo.isEvaluation
-                ? '专业版已激活'
-                : 'GitHub Star 解锁专业版…');
+            Text.create(this.aboutInfo.isStarPro
+                ? '专业版 · 管理 GitHub 账户…'
+                : (this.aboutInfo.isEvaluation
+                    ? 'GitHub Star 解锁专业版…'
+                    : '管理 GitHub 账户…'));
             Text.fontSize(8);
             Text.fontColor(ProteusHomeColors.LINK);
             Text.decoration({ type: TextDecorationType.Underline, color: ProteusHomeColors.LINK });
@@ -2638,7 +2881,7 @@ class HomePage extends ViewPU {
         {
             this.observeComponentCreation2((elmtId, isInitialRender) => {
                 if (isInitialRender) {
-                    let componentCall = new ProteusHomeInlineLink(this, { label: 'Open Project', onAction: () => { void this.handleOpenProject(); } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 1268, col: 7 });
+                    let componentCall = new ProteusHomeInlineLink(this, { label: 'Open Project', onAction: () => { void this.handleOpenProject(); } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 1447, col: 7 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -2664,7 +2907,7 @@ class HomePage extends ViewPU {
         {
             this.observeComponentCreation2((elmtId, isInitialRender) => {
                 if (isInitialRender) {
-                    let componentCall = new ProteusHomeInlineLink(this, { label: 'New Project', onAction: () => this.startNewProjectWizard() }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 1272, col: 7 });
+                    let componentCall = new ProteusHomeInlineLink(this, { label: 'New Project', onAction: () => this.startNewProjectWizard() }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 1451, col: 7 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -2690,7 +2933,7 @@ class HomePage extends ViewPU {
         {
             this.observeComponentCreation2((elmtId, isInitialRender) => {
                 if (isInitialRender) {
-                    let componentCall = new ProteusHomeInlineLink(this, { label: 'Open Sample', onAction: () => this.openSampleList() }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 1276, col: 7 });
+                    let componentCall = new ProteusHomeInlineLink(this, { label: 'Open Sample', onAction: () => this.openSampleList() }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 1455, col: 7 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -2726,7 +2969,7 @@ class HomePage extends ViewPU {
                         publishedAt: this.announcement.publishedAt,
                         loading: this.announcementLoading,
                         panelWeight: 2.6
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 1285, col: 7 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 1464, col: 7 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -2756,7 +2999,10 @@ class HomePage extends ViewPU {
             this.observeComponentCreation2((elmtId, isInitialRender) => {
                 if (isInitialRender) {
                     let componentCall = new ProteusHomePanel(this, {
-                        title: 'News', panelWeight: 1, highlighted: this.newsHighlight,
+                        title: 'News',
+                        panelWeight: 1,
+                        highlighted: this.newsHighlight || this.hasNewsUpdate,
+                        showBadge: this.hasNewsUpdate,
                         body: () => {
                             this.observeComponentCreation2((elmtId, isInitialRender) => {
                                 Column.create();
@@ -2764,6 +3010,26 @@ class HomePage extends ViewPU {
                                 Column.height('100%');
                                 Column.alignItems(HorizontalAlign.Start);
                             }, Column);
+                            this.observeComponentCreation2((elmtId, isInitialRender) => {
+                                If.create();
+                                if (this.newsStatusMessage.length > 0) {
+                                    this.ifElseBranchUpdateFunction(0, () => {
+                                        this.observeComponentCreation2((elmtId, isInitialRender) => {
+                                            Text.create(this.newsStatusMessage);
+                                            Text.fontSize(9);
+                                            Text.fontColor(ProteusHomeColors.TEXT_DIM);
+                                            Text.width('100%');
+                                            Text.padding({ left: 8, right: 8, top: 4, bottom: 2 });
+                                        }, Text);
+                                        Text.pop();
+                                    });
+                                }
+                                else {
+                                    this.ifElseBranchUpdateFunction(1, () => {
+                                    });
+                                }
+                            }, If);
+                            If.pop();
                             this.observeComponentCreation2((elmtId, isInitialRender) => {
                                 Row.create();
                                 Row.width('100%');
@@ -2826,20 +3092,26 @@ class HomePage extends ViewPU {
                                                     description: item.description,
                                                     releaseDate: item.releaseDate,
                                                     uscValid: item.uscValid,
-                                                    actionLabel: item.actionLabel,
+                                                    actionLabel: this.newsRowLabel(item),
                                                     isCurrent: item.actionLabel === 'In Use',
+                                                    highlightUpdate: item.highlightUpdate === true,
                                                     showButton: item.actionLabel !== 'In Use',
+                                                    btnEnabled: item.actionLabel !== 'Unavailable' &&
+                                                        this.newsBusyTag.length === 0,
                                                     onAction: () => { this.handleNewsAction(item); }
-                                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 1326, col: 17 });
+                                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 1517, col: 17 });
                                                 ViewPU.create(componentCall);
                                                 let paramsLambda = () => {
                                                     return {
                                                         description: item.description,
                                                         releaseDate: item.releaseDate,
                                                         uscValid: item.uscValid,
-                                                        actionLabel: item.actionLabel,
+                                                        actionLabel: this.newsRowLabel(item),
                                                         isCurrent: item.actionLabel === 'In Use',
+                                                        highlightUpdate: item.highlightUpdate === true,
                                                         showButton: item.actionLabel !== 'In Use',
+                                                        btnEnabled: item.actionLabel !== 'Unavailable' &&
+                                                            this.newsBusyTag.length === 0,
                                                         onAction: () => { this.handleNewsAction(item); }
                                                     };
                                                 };
@@ -2850,15 +3122,18 @@ class HomePage extends ViewPU {
                                                     description: item.description,
                                                     releaseDate: item.releaseDate,
                                                     uscValid: item.uscValid,
-                                                    actionLabel: item.actionLabel,
+                                                    actionLabel: this.newsRowLabel(item),
                                                     isCurrent: item.actionLabel === 'In Use',
-                                                    showButton: item.actionLabel !== 'In Use'
+                                                    highlightUpdate: item.highlightUpdate === true,
+                                                    showButton: item.actionLabel !== 'In Use',
+                                                    btnEnabled: item.actionLabel !== 'Unavailable' &&
+                                                        this.newsBusyTag.length === 0
                                                 });
                                             }
                                         }, { name: "ProteusHomeNewsRow" });
                                     }
                                 };
-                                this.forEachUpdateFunction(elmtId, this.newsItems, forEachItemGenFunction, (item: ProteusHomeNewsItem, idx: number) => `n_${idx}`, false, true);
+                                this.forEachUpdateFunction(elmtId, this.newsItems, forEachItemGenFunction, (item: ProteusHomeNewsItem, idx: number) => `n_${item.tagName ?? item.actionLabel}_${idx}`, false, true);
                             }, ForEach);
                             ForEach.pop();
                             Column.pop();
@@ -2874,7 +3149,10 @@ class HomePage extends ViewPU {
                                 Toggle.width(13);
                                 Toggle.height(13);
                                 Toggle.margin({ right: 4 });
-                                Toggle.onChange((on: boolean) => { this.ignoreBeta = on; });
+                                Toggle.onChange((on: boolean) => {
+                                    this.ignoreBeta = on;
+                                    this.rebuildNewsFromCache();
+                                });
                             }, Toggle);
                             Toggle.pop();
                             this.observeComponentCreation2((elmtId, isInitialRender) => {
@@ -2886,13 +3164,14 @@ class HomePage extends ViewPU {
                             Row.pop();
                             Column.pop();
                         }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 1294, col: 7 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 1473, col: 7 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
                             title: 'News',
                             panelWeight: 1,
-                            highlighted: this.newsHighlight,
+                            highlighted: this.newsHighlight || this.hasNewsUpdate,
+                            showBadge: this.hasNewsUpdate,
                             body: () => {
                                 this.observeComponentCreation2((elmtId, isInitialRender) => {
                                     Column.create();
@@ -2900,6 +3179,26 @@ class HomePage extends ViewPU {
                                     Column.height('100%');
                                     Column.alignItems(HorizontalAlign.Start);
                                 }, Column);
+                                this.observeComponentCreation2((elmtId, isInitialRender) => {
+                                    If.create();
+                                    if (this.newsStatusMessage.length > 0) {
+                                        this.ifElseBranchUpdateFunction(0, () => {
+                                            this.observeComponentCreation2((elmtId, isInitialRender) => {
+                                                Text.create(this.newsStatusMessage);
+                                                Text.fontSize(9);
+                                                Text.fontColor(ProteusHomeColors.TEXT_DIM);
+                                                Text.width('100%');
+                                                Text.padding({ left: 8, right: 8, top: 4, bottom: 2 });
+                                            }, Text);
+                                            Text.pop();
+                                        });
+                                    }
+                                    else {
+                                        this.ifElseBranchUpdateFunction(1, () => {
+                                        });
+                                    }
+                                }, If);
+                                If.pop();
                                 this.observeComponentCreation2((elmtId, isInitialRender) => {
                                     Row.create();
                                     Row.width('100%');
@@ -2962,20 +3261,26 @@ class HomePage extends ViewPU {
                                                         description: item.description,
                                                         releaseDate: item.releaseDate,
                                                         uscValid: item.uscValid,
-                                                        actionLabel: item.actionLabel,
+                                                        actionLabel: this.newsRowLabel(item),
                                                         isCurrent: item.actionLabel === 'In Use',
+                                                        highlightUpdate: item.highlightUpdate === true,
                                                         showButton: item.actionLabel !== 'In Use',
+                                                        btnEnabled: item.actionLabel !== 'Unavailable' &&
+                                                            this.newsBusyTag.length === 0,
                                                         onAction: () => { this.handleNewsAction(item); }
-                                                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 1326, col: 17 });
+                                                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 1517, col: 17 });
                                                     ViewPU.create(componentCall);
                                                     let paramsLambda = () => {
                                                         return {
                                                             description: item.description,
                                                             releaseDate: item.releaseDate,
                                                             uscValid: item.uscValid,
-                                                            actionLabel: item.actionLabel,
+                                                            actionLabel: this.newsRowLabel(item),
                                                             isCurrent: item.actionLabel === 'In Use',
+                                                            highlightUpdate: item.highlightUpdate === true,
                                                             showButton: item.actionLabel !== 'In Use',
+                                                            btnEnabled: item.actionLabel !== 'Unavailable' &&
+                                                                this.newsBusyTag.length === 0,
                                                             onAction: () => { this.handleNewsAction(item); }
                                                         };
                                                     };
@@ -2986,15 +3291,18 @@ class HomePage extends ViewPU {
                                                         description: item.description,
                                                         releaseDate: item.releaseDate,
                                                         uscValid: item.uscValid,
-                                                        actionLabel: item.actionLabel,
+                                                        actionLabel: this.newsRowLabel(item),
                                                         isCurrent: item.actionLabel === 'In Use',
-                                                        showButton: item.actionLabel !== 'In Use'
+                                                        highlightUpdate: item.highlightUpdate === true,
+                                                        showButton: item.actionLabel !== 'In Use',
+                                                        btnEnabled: item.actionLabel !== 'Unavailable' &&
+                                                            this.newsBusyTag.length === 0
                                                     });
                                                 }
                                             }, { name: "ProteusHomeNewsRow" });
                                         }
                                     };
-                                    this.forEachUpdateFunction(elmtId, this.newsItems, forEachItemGenFunction, (item: ProteusHomeNewsItem, idx: number) => `n_${idx}`, false, true);
+                                    this.forEachUpdateFunction(elmtId, this.newsItems, forEachItemGenFunction, (item: ProteusHomeNewsItem, idx: number) => `n_${item.tagName ?? item.actionLabel}_${idx}`, false, true);
                                 }, ForEach);
                                 ForEach.pop();
                                 Column.pop();
@@ -3010,7 +3318,10 @@ class HomePage extends ViewPU {
                                     Toggle.width(13);
                                     Toggle.height(13);
                                     Toggle.margin({ right: 4 });
-                                    Toggle.onChange((on: boolean) => { this.ignoreBeta = on; });
+                                    Toggle.onChange((on: boolean) => {
+                                        this.ignoreBeta = on;
+                                        this.rebuildNewsFromCache();
+                                    });
                                 }, Toggle);
                                 Toggle.pop();
                                 this.observeComponentCreation2((elmtId, isInitialRender) => {
@@ -3028,7 +3339,10 @@ class HomePage extends ViewPU {
                 }
                 else {
                     this.updateStateVarsOfChildByElmtId(elmtId, {
-                        title: 'News', panelWeight: 1, highlighted: this.newsHighlight
+                        title: 'News',
+                        panelWeight: 1,
+                        highlighted: this.newsHighlight || this.hasNewsUpdate,
+                        showBadge: this.hasNewsUpdate
                     });
                 }
             }, { name: "ProteusHomePanel" });

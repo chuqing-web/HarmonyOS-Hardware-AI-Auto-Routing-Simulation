@@ -29,6 +29,7 @@
 | `11_pcb_net_plan.md` | `pcb_net_plan` | `PcbNetPlanPrompt.ets` | `PcbNetPlanAgent` |
 | `12_pcb_route.md` | `pcb_route` | `PcbRoutePrompt.ets` | `PcbRoutePolicyAgent` |
 | `13_pcb_qa_repair.md` | `pcb_qa_repair` | `PcbQaRepairPrompt.ets` | `PcbQaAgent` |
+| `14_pcb_geometry.md` | `pcb_geometry` | `PcbGeometryPrompt.ets` | `PcbGeometryAgent` |
 
 ## md 结构
 

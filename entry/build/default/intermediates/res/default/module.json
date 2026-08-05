@@ -2,15 +2,15 @@
 	"app":	{
 		"bundleName":	"com.elecdraw.aischsim",
 		"vendor":	"ElecDraw",
-		"versionCode":	1001000,
-		"versionName":	"1.1.0",
+		"versionCode":	1001001,
+		"versionName":	"1.1.1",
 		"icon":	"$media:app_icon",
 		"label":	"$string:app_name",
 		"description":	"$string:app_description",
 		"apiReleaseType":	"Release",
 		"compileSdkVersion":	"6.1.1.125",
-		"targetAPIVersion":	50000012,
-		"minAPIVersion":	50000012,
+		"targetAPIVersion":	60101024,
+		"minAPIVersion":	60101024,
 		"compileSdkType":	"HarmonyOS",
 		"targetMinorAPIVersion":	0,
 		"targetPatchAPIVersion":	0,
@@ -46,20 +46,12 @@
 						"actions":	["action.system.home"]
 					}],
 				"descriptionId":	83886083,
-				"iconId":	83886174,
+				"iconId":	83886179,
 				"labelId":	83886084,
-				"startWindowIconId":	83886176,
-				"startWindowBackgroundId":	83886171
+				"startWindowIconId":	83886181,
+				"startWindowBackgroundId":	83886175
 			}],
 		"requestPermissions":	[{
-				"name":	"ohos.permission.sec.ACCESS_UDID",
-				"reason":	"$string:udid_permission_reason",
-				"usedScene":	{
-					"abilities":	["EntryAbility"],
-					"when":	"inuse"
-				},
-				"reasonId":	83886170
-			}, {
 				"name":	"ohos.permission.INTERNET",
 				"reason":	"$string:internet_permission_reason",
 				"usedScene":	{
@@ -93,7 +85,7 @@
 				"reasonId":	83886087
 			}],
 		"packageName":	"entry",
-		"virtualMachine":	"ark12.0.2.0",
+		"virtualMachine":	"ark24.0.0.0",
 		"compileMode":	"esmodule",
 		"dependencies":	[]
 	}

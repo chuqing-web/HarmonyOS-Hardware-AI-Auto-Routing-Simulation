@@ -25,6 +25,10 @@ export interface PcbPlacementPlan {
     placements: PcbPlacementItem[];
     groups?: PcbPlacementGroup[];
     lockedIds?: string[];
+    /** 板框宽（mil，原点左下/左上矩形），由 LLM 决定 */
+    boardWidthMil?: number;
+    /** 板框高（mil） */
+    boardHeightMil?: number;
     reason?: string;
 }
 export interface PcbNetPlanEntry {
@@ -80,6 +84,42 @@ export interface PcbGeometrySeg {
     track?: PcbTrack;
     via?: PcbVia;
 }
+/** LLM 走线折线（points 为正交折点，单位 mil） */
+export interface PcbLlmTrackPath {
+    netId: string;
+    netName: string;
+    layer: string;
+    points: Point2D[];
+    width?: number;
+}
+/** LLM 过孔 */
+export interface PcbLlmViaSpec {
+    netId: string;
+    netName: string;
+    x: number;
+    y: number;
+    fromLayer?: string;
+    toLayer?: string;
+}
+/** LLM pcb_geometry 输出 — 模型决定拐弯与过孔位置 */
+export interface PcbLlmGeometryPlan {
+    fromLlm: boolean;
+    tracks: PcbLlmTrackPath[];
+    vias: PcbLlmViaSpec[];
+    reason?: string;
+}
+/** 单网几何失败明细（供 QA / LLM 诊断，不含整板折点清单） */
+export interface PcbGeoFailDetail {
+    netId: string;
+    netName: string;
+    /** 失败焊盘对世界坐标 */
+    from: Point2D;
+    to: Point2D;
+    /** 简短原因：pad_block / track_block / via_block / no_path */
+    cause: string;
+    /** 障碍物摘要，如 pad U1.3@510,480 layer=B.Cu */
+    blocker?: string;
+}
 export interface PcbGeometryResult {
     ok: boolean;
     tracks: PcbTrack[];
@@ -88,6 +128,8 @@ export interface PcbGeometryResult {
     failedNetIds: string[];
     missingCopperLayers: PcbLayerId[];
     reason: string;
+    /** 几何失败诊断（截断后供 prompt） */
+    failDetails?: PcbGeoFailDetail[];
 }
 export interface PcbAiRouteResult {
     success: boolean;

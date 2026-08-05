@@ -9,7 +9,8 @@
 1. 只输出一个 JSON 对象：第一字符 { ，最后字符 }
 2. 禁止 JSON 外任何文字（说明/推理/markdown/代码围栏）
 3. 可内部思考，不得写入回复正文
-4. layout / route：另关 thinking，且不注入拓扑反模式（防长文）
+4. 思考必须短促：优先把额度留给 content JSON；禁止把 max_tokens 耗尽在 reasoning
+5. layout / route：另关 thinking，且不注入拓扑反模式（防长文）
 ```
 
 ## 仪器拓扑铁律

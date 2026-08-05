@@ -2,6 +2,7 @@ import { IdUtil } from "@bundle:com.elecdraw.aischsim/entry@common/ets/utils/IdU
 import type { Point2D } from '../types/CommonTypes';
 import { PcbPadShape, PcbPadType, PcbLayerId } from "@bundle:com.elecdraw.aischsim/entry@common/ets/types/PcbTypes";
 import type { PcbFootprintDef, PcbPad, PcbFootprintInst } from "@bundle:com.elecdraw.aischsim/entry@common/ets/types/PcbTypes";
+import { tracePcbWarn } from "@bundle:com.elecdraw.aischsim/entry@common/ets/utils/PcbTraceLog";
 const MIL = 1;
 function smdPad(num: string, x: number, y: number, w: number, h: number): PcbPad {
     return {
@@ -928,6 +929,9 @@ export class PcbFootprintLibrary {
             lib.includes('signal_gen')) {
             return 'FP_THT2';
         }
+        // 无规则命中：静默回退 FP_0805 会掩盖脚数/几何全错（PIN_COUNT / PIN_BIND 难辨），
+        // 此处显式审计，提示补库或改封装参数
+        tracePcbWarn('FP_FALLBACK_0805', `lib=${libraryId} fp=${footprintStr} — 未命中封装规则，回退 FP_0805`);
         return 'FP_0805';
     }
     /** 克隆封装定义生成板上实例（深拷贝焊盘） */

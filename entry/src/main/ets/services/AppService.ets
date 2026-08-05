@@ -7,7 +7,7 @@ import { SimulationKernelImpl, ISimulationKernel, KernelFrameSnapshot } from 'si
 import { SimWorkerHost } from './sim/SimWorkerHost';
 import { SimFramePlain } from './sim/SimProtocol';
 import { HexDebuggerImpl, IHexDebugger, McuBehaviorSimulator } from 'hex_debugger';
-import { AiApiManagerImpl, IAiApiManager } from 'ai_api_manager';
+import { AiApiManagerImpl, IAiApiManager, StickyTransportSnapshot } from 'ai_api_manager';
 import {
   AiEngineImpl, IAiEngine, TeachingService, LabTemplate, PcbLabTemplate, ChatHistoryEntry, FaultDiagnoser,
   classifyCircuitIntent, resolveHysteresisSafeAmplitude, schematicLikelyHysteresisComparator,
@@ -29,6 +29,7 @@ import { ThemeManager } from '../theme/ThemeManager';
 import { ProteusFonts } from '../theme/ProteusTheme';
 import { PlatformPrefsStore } from '../utils/PlatformPrefsStore';
 import { AiApiVaultStore } from '../utils/AiApiVaultStore';
+import { AiTransportStickyStore, StickyTransportEntry } from '../utils/AiTransportStickyStore';
 import {
   ProjectFile, EventBus, ModuleEvent, ModuleEventPayload,
   CallbackRegistry, SchTopology, WaveData, ErcError, AiApiConfig,
@@ -257,6 +258,7 @@ export class AppService {
     ThemeManager.getInstance().init(baseDir);
     PlatformPrefsStore.getInstance().init(baseDir);
     AiApiVaultStore.getInstance().init(baseDir);
+    this.initAiTransportSticky(baseDir);
     this.applyPlatformPrefsFromStore();
     (this.filePersistence as FilePersistenceImpl).setAppBaseDir(baseDir);
     this.filePersistence.initCollaboration(baseDir);
@@ -1777,6 +1779,43 @@ export class AppService {
     Logger.info(INSTR_TRACE_TAG,
       `[AI_API] vault startup restored ${okCount}/${configs.length} configs` +
       ` path=${vault.getVaultPath()}`);
+    // 金库重载后再次注入 sticky（clearAllConfigs 已保留内存 sticky；此处兜底磁盘）
+    this.rehydrateAiTransportSticky();
+  }
+
+  /** 跨进程粘性传输：上次测试成功的 proxy/DNS 档落盘，启动后优先复用 */
+  private initAiTransportSticky(baseDir: string): void {
+    const store = AiTransportStickyStore.getInstance();
+    store.init(baseDir);
+    const mgr = this.aiApiManager as AiApiManagerImpl;
+    mgr.setStickyPersistHandler((entries: StickyTransportSnapshot[]) => {
+      const disk: StickyTransportEntry[] = [];
+      for (let i = 0; i < entries.length; i++) {
+        disk.push({
+          apiId: entries[i].apiId,
+          usingProxy: entries[i].usingProxy,
+          usePublicDns: entries[i].usePublicDns
+        });
+      }
+      store.saveAll(disk);
+    });
+    this.rehydrateAiTransportSticky();
+  }
+
+  private rehydrateAiTransportSticky(): void {
+    const loaded = AiTransportStickyStore.getInstance().loadAll();
+    if (loaded.length === 0) {
+      return;
+    }
+    const snap: StickyTransportSnapshot[] = [];
+    for (let i = 0; i < loaded.length; i++) {
+      snap.push({
+        apiId: loaded[i].apiId,
+        usingProxy: loaded[i].usingProxy,
+        usePublicDns: loaded[i].usePublicDns
+      });
+    }
+    (this.aiApiManager as AiApiManagerImpl).importStickyTransports(snap);
   }
 
   /**
@@ -2578,7 +2617,8 @@ export class AppService {
       const api = await this.aiEngine.aiPcbAutoRoute(
         doc,
         (d) => editor.runDrcForDoc(d),
-        (p) => this.handlePcbAiProgress(p)
+        (p) => this.handlePcbAiProgress(p),
+        this.aiEnableReasoning
       );
       if (this.aiGenCancelRequested) {
         this.onStatusMessage('PCB AI 布线已取消');

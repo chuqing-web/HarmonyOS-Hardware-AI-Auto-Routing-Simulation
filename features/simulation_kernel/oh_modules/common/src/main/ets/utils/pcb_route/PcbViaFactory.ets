@@ -65,11 +65,12 @@ export function createViaAt(
   const tracks = existingTracks ?? doc.tracks;
   const vias = existingVias ?? doc.vias;
   if (!viaClearAt(doc, finalPos, netId, diameter, layers, tracks, vias)) {
-    const offsets = [
-      [grid, 0], [-grid, 0], [0, grid], [0, -grid],
-      [grid * 2, 0], [-grid * 2, 0], [0, grid * 2], [0, -grid * 2],
-      [grid, grid], [-grid, grid], [grid, -grid], [-grid, -grid]
-    ];
+    const offsets: number[][] = [];
+    const rings = [1, 2, 3, 4, 6, 8, 12, 16];
+    for (let ri = 0; ri < rings.length; ri++) {
+      const r = grid * rings[ri];
+      offsets.push([r, 0], [-r, 0], [0, r], [0, -r], [r, r], [-r, r], [r, -r], [-r, -r]);
+    }
     let found = false;
     for (let i = 0; i < offsets.length; i++) {
       const cand: Point2D = { x: pos.x + offsets[i][0], y: pos.y + offsets[i][1] };

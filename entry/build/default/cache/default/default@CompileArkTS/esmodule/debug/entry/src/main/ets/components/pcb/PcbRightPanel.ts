@@ -685,7 +685,8 @@ export class PcbRightPanel extends ViewPU {
                                     aiBusy: this.__aiBusy,
                                     aiProgress: this.__aiProgress,
                                     aiStage: this.__aiStage,
-                                    onRouteDone: () => { this.onAiRouteDone(); }
+                                    onRouteDone: () => { this.onAiRouteDone(); },
+                                    onSetCopperCount: (n: number) => { this.onSetCopperCount(n); }
                                 }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbRightPanel.ets", line: 144, col: 11 });
                                 ViewPU.create(componentCall);
                                 let paramsLambda = () => {
@@ -694,7 +695,8 @@ export class PcbRightPanel extends ViewPU {
                                         aiBusy: this.aiBusy,
                                         aiProgress: this.aiProgress,
                                         aiStage: this.aiStage,
-                                        onRouteDone: () => { this.onAiRouteDone(); }
+                                        onRouteDone: () => { this.onAiRouteDone(); },
+                                        onSetCopperCount: (n: number) => { this.onSetCopperCount(n); }
                                     };
                                 };
                                 componentCall.paramsGenerator_ = paramsLambda;
@@ -723,7 +725,7 @@ export class PcbRightPanel extends ViewPU {
                         label: '属性', tooltip: '属性面板', icon: ProteusIconName.SETTINGS,
                         selected: this.activeTab === PcbRightTab.PROPERTIES,
                         onSelect: () => { this.activeTab = PcbRightTab.PROPERTIES; }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbRightPanel.ets", line: 156, col: 11 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbRightPanel.ets", line: 157, col: 11 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -751,7 +753,7 @@ export class PcbRightPanel extends ViewPU {
                         label: 'DRC', tooltip: '设计规则检查', icon: ProteusIconName.ERC,
                         selected: this.activeTab === PcbRightTab.DRC,
                         onSelect: () => { this.activeTab = PcbRightTab.DRC; }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbRightPanel.ets", line: 161, col: 11 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbRightPanel.ets", line: 162, col: 11 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -782,7 +784,7 @@ export class PcbRightPanel extends ViewPU {
                             this.fpDefs = getGlobalPcbFootprintLibrary().listDefs();
                             this.activeTab = PcbRightTab.LIBRARY;
                         }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbRightPanel.ets", line: 166, col: 11 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbRightPanel.ets", line: 167, col: 11 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -813,7 +815,7 @@ export class PcbRightPanel extends ViewPU {
                         label: '层栈', tooltip: '铜层 / 过孔 / 层栈', icon: ProteusIconName.LAYER,
                         selected: this.activeTab === PcbRightTab.STACK,
                         onSelect: () => { this.activeTab = PcbRightTab.STACK; }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbRightPanel.ets", line: 174, col: 11 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbRightPanel.ets", line: 175, col: 11 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -841,7 +843,7 @@ export class PcbRightPanel extends ViewPU {
                         label: 'Gerber', tooltip: 'Gerber 预览与导出', icon: ProteusIconName.SEARCH,
                         selected: this.activeTab === PcbRightTab.GERBER,
                         onSelect: () => { this.activeTab = PcbRightTab.GERBER; }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbRightPanel.ets", line: 179, col: 11 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbRightPanel.ets", line: 180, col: 11 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -869,7 +871,7 @@ export class PcbRightPanel extends ViewPU {
                         label: '教学', tooltip: 'PCB 教学模板', icon: ProteusIconName.LABEL,
                         selected: this.activeTab === PcbRightTab.TEACHING,
                         onSelect: () => { this.activeTab = PcbRightTab.TEACHING; }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbRightPanel.ets", line: 184, col: 11 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbRightPanel.ets", line: 185, col: 11 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -897,7 +899,7 @@ export class PcbRightPanel extends ViewPU {
                         label: 'AI', tooltip: 'AI 布线', icon: ProteusIconName.AI_ROUTE,
                         selected: this.activeTab === PcbRightTab.AI_ROUTE,
                         onSelect: () => { this.activeTab = PcbRightTab.AI_ROUTE; }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbRightPanel.ets", line: 189, col: 11 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbRightPanel.ets", line: 190, col: 11 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -931,7 +933,7 @@ export class PcbRightPanel extends ViewPU {
         {
             this.observeComponentCreation2((elmtId, isInitialRender) => {
                 if (isInitialRender) {
-                    let componentCall = new ProteusPanelTitle(this, { title: 'Selection' }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbRightPanel.ets", line: 212, col: 7 });
+                    let componentCall = new ProteusPanelTitle(this, { title: 'Selection' }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbRightPanel.ets", line: 213, col: 7 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -1000,7 +1002,7 @@ export class PcbRightPanel extends ViewPU {
                     {
                         this.observeComponentCreation2((elmtId, isInitialRender) => {
                             if (isInitialRender) {
-                                let componentCall = new ProteusPanelTitle(this, { title: '覆铜编辑' }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbRightPanel.ets", line: 239, col: 9 });
+                                let componentCall = new ProteusPanelTitle(this, { title: '覆铜编辑' }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbRightPanel.ets", line: 240, col: 9 });
                                 ViewPU.create(componentCall);
                                 let paramsLambda = () => {
                                     return {
@@ -1046,7 +1048,7 @@ export class PcbRightPanel extends ViewPU {
                                     label: '优先级-',
                                     widthVal: 72,
                                     onAction: () => { this.onZonePriority(-1); }
-                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbRightPanel.ets", line: 247, col: 11 });
+                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbRightPanel.ets", line: 248, col: 11 });
                                 ViewPU.create(componentCall);
                                 let paramsLambda = () => {
                                     return {
@@ -1072,7 +1074,7 @@ export class PcbRightPanel extends ViewPU {
                                     label: '优先级+',
                                     widthVal: 72,
                                     onAction: () => { this.onZonePriority(1); }
-                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbRightPanel.ets", line: 252, col: 11 });
+                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbRightPanel.ets", line: 253, col: 11 });
                                 ViewPU.create(componentCall);
                                 let paramsLambda = () => {
                                     return {
@@ -1103,7 +1105,7 @@ export class PcbRightPanel extends ViewPU {
                                     label: '热焊盘',
                                     widthVal: 72,
                                     onAction: () => { this.onZoneThermal(); }
-                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbRightPanel.ets", line: 260, col: 11 });
+                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbRightPanel.ets", line: 261, col: 11 });
                                 ViewPU.create(componentCall);
                                 let paramsLambda = () => {
                                     return {
@@ -1129,7 +1131,7 @@ export class PcbRightPanel extends ViewPU {
                                     label: '刷新挖空',
                                     widthVal: 72,
                                     onAction: () => { this.onZoneRefreshCutouts(); }
-                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbRightPanel.ets", line: 265, col: 11 });
+                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbRightPanel.ets", line: 266, col: 11 });
                                 ViewPU.create(componentCall);
                                 let paramsLambda = () => {
                                     return {
@@ -1168,7 +1170,7 @@ export class PcbRightPanel extends ViewPU {
         {
             this.observeComponentCreation2((elmtId, isInitialRender) => {
                 if (isInitialRender) {
-                    let componentCall = new ProteusPanelTitle(this, { title: 'Design Rules Check' }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbRightPanel.ets", line: 281, col: 7 });
+                    let componentCall = new ProteusPanelTitle(this, { title: 'Design Rules Check' }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbRightPanel.ets", line: 282, col: 7 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -1280,7 +1282,7 @@ export class PcbRightPanel extends ViewPU {
         {
             this.observeComponentCreation2((elmtId, isInitialRender) => {
                 if (isInitialRender) {
-                    let componentCall = new ProteusPanelTitle(this, { title: 'Footprint Library' }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbRightPanel.ets", line: 325, col: 7 });
+                    let componentCall = new ProteusPanelTitle(this, { title: 'Footprint Library' }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbRightPanel.ets", line: 326, col: 7 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -1378,7 +1380,7 @@ export class PcbRightPanel extends ViewPU {
         {
             this.observeComponentCreation2((elmtId, isInitialRender) => {
                 if (isInitialRender) {
-                    let componentCall = new ProteusPanelTitle(this, { title: '铜层层数' }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbRightPanel.ets", line: 365, col: 9 });
+                    let componentCall = new ProteusPanelTitle(this, { title: '铜层层数' }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbRightPanel.ets", line: 366, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -1405,7 +1407,7 @@ export class PcbRightPanel extends ViewPU {
                         label: '2L',
                         widthVal: 48,
                         onAction: () => { this.onSetCopperCount(2); }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbRightPanel.ets", line: 367, col: 11 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbRightPanel.ets", line: 368, col: 11 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -1431,7 +1433,7 @@ export class PcbRightPanel extends ViewPU {
                         label: '4L',
                         widthVal: 48,
                         onAction: () => { this.onSetCopperCount(4); }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbRightPanel.ets", line: 372, col: 11 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbRightPanel.ets", line: 373, col: 11 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -1457,7 +1459,7 @@ export class PcbRightPanel extends ViewPU {
                         label: '6L',
                         widthVal: 48,
                         onAction: () => { this.onSetCopperCount(6); }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbRightPanel.ets", line: 377, col: 11 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbRightPanel.ets", line: 378, col: 11 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -1483,7 +1485,7 @@ export class PcbRightPanel extends ViewPU {
                         label: '8L',
                         widthVal: 48,
                         onAction: () => { this.onSetCopperCount(8); }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbRightPanel.ets", line: 382, col: 11 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbRightPanel.ets", line: 383, col: 11 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -1513,7 +1515,7 @@ export class PcbRightPanel extends ViewPU {
         {
             this.observeComponentCreation2((elmtId, isInitialRender) => {
                 if (isInitialRender) {
-                    let componentCall = new ProteusPanelTitle(this, { title: '显示过滤' }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbRightPanel.ets", line: 394, col: 9 });
+                    let componentCall = new ProteusPanelTitle(this, { title: '显示过滤' }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbRightPanel.ets", line: 395, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -1540,7 +1542,7 @@ export class PcbRightPanel extends ViewPU {
                         label: '叠加',
                         widthVal: 56,
                         onAction: () => { this.onSetAppearanceOverlay(); }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbRightPanel.ets", line: 396, col: 11 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbRightPanel.ets", line: 397, col: 11 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -1566,7 +1568,7 @@ export class PcbRightPanel extends ViewPU {
                         label: '变暗',
                         widthVal: 56,
                         onAction: () => { this.onSetAppearanceDim(); }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbRightPanel.ets", line: 401, col: 11 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbRightPanel.ets", line: 402, col: 11 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -1592,7 +1594,7 @@ export class PcbRightPanel extends ViewPU {
                         label: '仅活动',
                         widthVal: 56,
                         onAction: () => { this.onSetAppearanceActiveOnly(); }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbRightPanel.ets", line: 406, col: 11 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbRightPanel.ets", line: 407, col: 11 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -1615,7 +1617,7 @@ export class PcbRightPanel extends ViewPU {
         {
             this.observeComponentCreation2((elmtId, isInitialRender) => {
                 if (isInitialRender) {
-                    let componentCall = new ProteusPanelTitle(this, { title: '布线拐角' }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbRightPanel.ets", line: 414, col: 9 });
+                    let componentCall = new ProteusPanelTitle(this, { title: '布线拐角' }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbRightPanel.ets", line: 415, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -1642,7 +1644,7 @@ export class PcbRightPanel extends ViewPU {
                         label: '90°',
                         widthVal: 56,
                         onAction: () => { this.onSetRouteCorner(PcbRouteCornerMode.ORTHO90); }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbRightPanel.ets", line: 416, col: 11 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbRightPanel.ets", line: 417, col: 11 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -1668,7 +1670,7 @@ export class PcbRightPanel extends ViewPU {
                         label: '45°',
                         widthVal: 56,
                         onAction: () => { this.onSetRouteCorner(PcbRouteCornerMode.ORTHO45); }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbRightPanel.ets", line: 421, col: 11 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbRightPanel.ets", line: 422, col: 11 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -1694,7 +1696,7 @@ export class PcbRightPanel extends ViewPU {
                         label: '圆弧',
                         widthVal: 56,
                         onAction: () => { this.onSetRouteCorner(PcbRouteCornerMode.ARC); }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbRightPanel.ets", line: 426, col: 11 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbRightPanel.ets", line: 427, col: 11 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -1725,7 +1727,7 @@ export class PcbRightPanel extends ViewPU {
         {
             this.observeComponentCreation2((elmtId, isInitialRender) => {
                 if (isInitialRender) {
-                    let componentCall = new ProteusPanelTitle(this, { title: '过孔类型 / 跨度' }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbRightPanel.ets", line: 439, col: 9 });
+                    let componentCall = new ProteusPanelTitle(this, { title: '过孔类型 / 跨度' }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbRightPanel.ets", line: 440, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -1752,7 +1754,7 @@ export class PcbRightPanel extends ViewPU {
                         label: '通孔',
                         widthVal: 56,
                         onAction: () => { this.onSetViaKind(PcbViaKind.THROUGH); }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbRightPanel.ets", line: 441, col: 11 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbRightPanel.ets", line: 442, col: 11 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -1778,7 +1780,7 @@ export class PcbRightPanel extends ViewPU {
                         label: '盲孔',
                         widthVal: 56,
                         onAction: () => { this.onSetViaKind(PcbViaKind.BLIND); }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbRightPanel.ets", line: 446, col: 11 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbRightPanel.ets", line: 447, col: 11 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -1804,7 +1806,7 @@ export class PcbRightPanel extends ViewPU {
                         label: '埋孔',
                         widthVal: 56,
                         onAction: () => { this.onSetViaKind(PcbViaKind.BURIED); }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbRightPanel.ets", line: 451, col: 11 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbRightPanel.ets", line: 452, col: 11 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -1857,7 +1859,7 @@ export class PcbRightPanel extends ViewPU {
         {
             this.observeComponentCreation2((elmtId, isInitialRender) => {
                 if (isInitialRender) {
-                    let componentCall = new ProteusPanelTitle(this, { title: '物理层栈' }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbRightPanel.ets", line: 478, col: 9 });
+                    let componentCall = new ProteusPanelTitle(this, { title: '物理层栈' }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbRightPanel.ets", line: 479, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {

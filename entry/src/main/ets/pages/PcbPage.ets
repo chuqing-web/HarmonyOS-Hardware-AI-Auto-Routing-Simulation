@@ -1533,6 +1533,9 @@ struct PcbPage {
           getPcbDocument: () => this.getEditor().getDocument(),
           onExportGerber: () => { this.exportGerber(); },
           onAiRouteDone: () => {
+            this.refreshLayers();
+            this.syncActiveLayerFromEditor();
+            this.syncStackUiFromEditor();
             this.syncPcbToProject();
             this.canvasVersion++;
             this.unsavedChanges = true;
@@ -1540,8 +1543,9 @@ struct PcbPage {
             const doc = this.getEditor().getDocument();
             const tc = doc?.tracks.length ?? 0;
             const vc = doc?.vias.length ?? 0;
-            this.statusMessage = `PCB AI 布线完成: ${tc} 段, ${vc} 过孔`;
-            tracePcbOp('AI_PCB_ROUTE', `ok tracks=${tc} vias=${vc}`);
+            const cu = doc?.layerStack?.copperCount ?? this.copperCount;
+            this.statusMessage = `PCB AI 布线完成: ${tc} 段, ${vc} 过孔 · Cu=${cu}`;
+            tracePcbOp('AI_PCB_ROUTE', `ok tracks=${tc} vias=${vc} cu=${cu}`);
           },
           onZonePriority: (delta: number) => { this.adjustSelectedZonePriority(delta); },
           onZoneThermal: () => { this.toggleSelectedZoneThermal(); },

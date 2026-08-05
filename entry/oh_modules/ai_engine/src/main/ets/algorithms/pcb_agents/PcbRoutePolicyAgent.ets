@@ -3,7 +3,7 @@
  * 覆盖铜层 key + 相对 netPlan 的语义角色校验
  */
 import {
-  AiCapability, Logger, INSTR_TRACE_TAG, copperLayersFromStack,
+  Logger, INSTR_TRACE_TAG, copperLayersFromStack,
   policyCoversCopperLayers, validateLayerRoleSemantics
 } from 'common';
 import { IAiApiManager } from 'ai_api_manager';
@@ -12,6 +12,8 @@ import { PcbRouteBlackboard } from './PcbRouteBlackboard';
 import { PcbDocSummarizer } from './PcbDocSummarizer';
 import { parsePcbRoutePolicy } from './PcbLlmParsers';
 import { PcbAgentStageResult } from './PcbPlacementAgent';
+import { pcbStageChatOpts } from './PcbChatOpts';
+import { pcbImpureReplyReason } from './PcbLlmReplyGuard';
 
 export class PcbRoutePolicyAgent {
   async run(bb: PcbRouteBlackboard, api: IAiApiManager,
@@ -26,7 +28,7 @@ export class PcbRoutePolicyAgent {
     }
     const netSummary = bb.netPlan.nets.map(n =>
       `${n.netName}:${n.kind}/${n.routeMode}/p${n.priority}`).join(',');
-    let boardSummary = PcbDocSummarizer.boardSummary(bb.workDoc);
+    let boardSummary = PcbDocSummarizer.boardDiagSnapshot(bb.workDoc, bb.geometry);
     if (priorFailHint && priorFailHint.length > 0) {
       boardSummary = `${boardSummary}\n【上轮失败须修正】${priorFailHint}`;
     }
@@ -35,18 +37,18 @@ export class PcbRoutePolicyAgent {
       { key: 'net_plan_summary', value: netSummary },
       { key: 'board_summary', value: boardSummary }
     ]);
-    const apiRes = await api.chat(prompt, {
-      capability: AiCapability.PCB_AUTO_ROUTE,
-      temperature: 0.05,
-      disableThinking: false
-    });
+    const apiRes = await api.chat(prompt, pcbStageChatOpts(bb.enableReasoning, 0.05));
     if (!apiRes.success || !apiRes.data) {
       return { ok: false, reason: apiRes.error ?? 'route_policy LLM failed' };
     }
     bb.usedLlm = true;
+    const impure = pcbImpureReplyReason('route_policy', apiRes.data);
+    if (impure) {
+      return { ok: false, reason: impure };
+    }
     const policy = parsePcbRoutePolicy(apiRes.data);
     if (!policy) {
-      return { ok: false, reason: 'route_policy LLM JSON invalid' };
+      return { ok: false, reason: `route_policy LLM JSON invalid (${PromptLoader.describeJsonImpurity(apiRes.data)})` };
     }
     const copper = copperLayersFromStack(bb.workDoc.layerStack);
     const missing = policyCoversCopperLayers(policy, copper);

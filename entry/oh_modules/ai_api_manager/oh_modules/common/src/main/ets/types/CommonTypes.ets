@@ -348,6 +348,8 @@ export interface AiApiConfig {
   proxyUrl?: string;
   customHeaders?: Record<string, string>;
   capabilityBinding?: Record<string, string>;
+  /** SSE 流式回复：长生成持续回包，绕开网关/代理的非流式响应上限与空闲掐断 */
+  stream?: boolean;
   remark?: string;
   lastStatus?: ApiConnectionStatus;
   lastTestedAt?: string;

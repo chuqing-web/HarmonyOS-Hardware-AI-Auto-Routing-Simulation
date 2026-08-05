@@ -3,8 +3,12 @@ import { PromptTemplate } from '../PromptTypes';
 
 export const PCB_QA_REPAIR_PROMPT: PromptTemplate = {
   id: 'pcb_qa_repair_v1',
-  version: '1.3.0',
-  system: `你是 PCB 布线 QA 修复决策器。根据 DRC/缺层/失败网报告决定如何修复。禁止输出走线坐标。禁止要求「忽略违规继续交付」。
+  version: '1.4.0',
+  system: `你是 PCB 布线 QA 修复决策器。根据 DRC/缺层/失败网报告与焊盘坐标诊断决定如何修复。禁止输出走线坐标（折点/过孔由后续 pcb_geometry LLM 重布）。禁止要求「忽略违规继续交付」。
+
+【诊断字段】
+- DRC/失败报告可能含：几何失败明细（net + 焊盘对坐标 + pad_block/track_block 障碍）、板态焊盘详表（xy/layers/type/MOUNT）
+- MOUNT 安装孔焊盘不参与强制连通；勿因角孔失败反复 rip 全网
 
 【layerRolePatch】
 - key 必须是铜层名（如 F.Cu / B.Cu / In1.Cu），禁止用网络名（GND/VCC）作 key
@@ -20,10 +24,12 @@ export const PCB_QA_REPAIR_PROMPT: PromptTemplate = {
 - key=netId|网名；value=mil（相对 pad 均值 Y）。同层多电源错开：如 GND=-80, VCC=80
 
 【raiseCopperTo】
-- 仅当 Cu=2 且多电源+信号持续冲突：设为 4/6/8，并在同一 JSON 用 layerRolePatch 填满新层（含 stub）
+- Cu=2 且多网 clearance/path 持续失败（报告含 pad_block 或 signal nets failed≥2）：优先 raiseCopperTo=4，并用 layerRolePatch 填满新层（含 stub；建议 In1=gnd_bus, In2=vcc_bus, B=signal_h, F=stub）
+- 禁止只 rip 空转而不升层/不重摆
 
 【信号 clearance/path 失败】
-- 优先 ripNetIds=失败网（可用网名），必要时 rePlaceFootprintIds；不要用「把 F.Cu 从 stub 改成 signal_h」冒充修复
+- 优先根据失败明细：异网焊盘共线 → rePlaceFootprintIds（挪开阻挡封装）；障碍为 pad_block 时勿只 rip
+- ripNetIds=失败网可配合 raiseCopperTo / rePlace；不要用「把 F.Cu 从 stub 改成 signal_h」冒充修复
 - 内层已有 signal_h/signal_v 时，勿再抢外层 stub
 
 【缺 bus 角色】

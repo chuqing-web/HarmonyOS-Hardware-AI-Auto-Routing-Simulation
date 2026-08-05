@@ -57,8 +57,8 @@ function viaOnLayer(v: PcbVia, layer: PcbLayerId): boolean {
     }
     return v.layers.indexOf(layer) >= 0;
 }
-/** 候选线段与已有异网同层走线 / via / 焊盘是否冲突 */
-export function pathClearOfTracks(doc: PcbDocument, layer: PcbLayerId, a: Point2D, b: Point2D, netId: string, width: number, existing: PcbTrack[], existingVias?: PcbVia[]): boolean {
+/** 阻挡原因；null = 畅通 */
+export function pathClearBlockReason(doc: PcbDocument, layer: PcbLayerId, a: Point2D, b: Point2D, netId: string, width: number, existing: PcbTrack[], existingVias?: PcbVia[]): string | null {
     const need = clearanceForNet(doc, netId) + width / 2;
     for (let i = 0; i < existing.length; i++) {
         const t = existing[i];
@@ -69,7 +69,8 @@ export function pathClearOfTracks(doc: PcbDocument, layer: PcbLayerId, a: Point2
             continue;
         }
         if (segClearance(a, b, t.start, t.end) < need + t.width / 2) {
-            return false;
+            return `track_block net=${t.netName || t.netId} on ${layer as string}` +
+                ` @(${Math.round(t.start.x)},${Math.round(t.start.y)})-(${Math.round(t.end.x)},${Math.round(t.end.y)})`;
         }
     }
     if (existingVias) {
@@ -82,7 +83,7 @@ export function pathClearOfTracks(doc: PcbDocument, layer: PcbLayerId, a: Point2
                 continue;
             }
             if (distPointSeg(v.position, a, b) < need + v.diameter / 2) {
-                return false;
+                return `via_block net=${v.netName || v.netId} @(${Math.round(v.position.x)},${Math.round(v.position.y)})`;
             }
         }
     }
@@ -92,18 +93,31 @@ export function pathClearOfTracks(doc: PcbDocument, layer: PcbLayerId, a: Point2
             if (pNet.length > 0 && pNet === netId) {
                 continue;
             }
-            const onLayer = pad.layers.indexOf(layer) >= 0 || pad.layers.length === 0;
-            if (!onLayer) {
-                continue;
-            }
+            // 异网焊盘对所有铜层构成障碍：禁止在对层从 SMD 焊盘正下方穿过，
+            // 否则同网落 via/贴盘时会与已有铜短路（Cu=2 常见致命问题）。
             const pos = padWorldPosition(fp, pad);
             const padR = Math.max(pad.size.x, pad.size.y) / 2;
-            if (distPointSeg(pos, a, b) < need + padR) {
-                return false;
+            // float 焊盘（未绑网）仍挡线，但用缩小半径，减轻 sch→pcb 大量 unbound 的误杀
+            const effectiveR = pNet.length === 0 ? padR * 0.55 : padR;
+            const thr = need + effectiveR;
+            // 端点邻域放行：密集布局下邻脚间距常 < clearance，否则焊盘无法出线
+            const da = Math.sqrt((pos.x - a.x) * (pos.x - a.x) + (pos.y - a.y) * (pos.y - a.y));
+            const db = Math.sqrt((pos.x - b.x) * (pos.x - b.x) + (pos.y - b.y) * (pos.y - b.y));
+            if (da < thr || db < thr) {
+                continue;
+            }
+            if (distPointSeg(pos, a, b) < thr) {
+                return `pad_block ${fp.refDes}.${pad.number}` +
+                    `(${pad.netName || pNet || 'float'})@${Math.round(pos.x)},${Math.round(pos.y)}` +
+                    ` r=${Math.round(effectiveR)} layer=${layer as string}`;
             }
         }
     }
-    return true;
+    return null;
+}
+/** 候选线段与已有异网同层走线 / via / 焊盘是否冲突 */
+export function pathClearOfTracks(doc: PcbDocument, layer: PcbLayerId, a: Point2D, b: Point2D, netId: string, width: number, existing: PcbTrack[], existingVias?: PcbVia[]): boolean {
+    return pathClearBlockReason(doc, layer, a, b, netId, width, existing, existingVias) === null;
 }
 /** via 中心是否与异网 via/pad/track 冲突 */
 export function viaClearAt(doc: PcbDocument, pos: Point2D, netId: string, diameter: number, layers: PcbLayerId[], existingTracks: PcbTrack[], existingVias: PcbVia[]): boolean {
@@ -142,9 +156,10 @@ export function viaClearAt(doc: PcbDocument, pos: Point2D, netId: string, diamet
             }
             const posPad = padWorldPosition(fp, pad);
             const padR = Math.max(pad.size.x, pad.size.y) / 2;
+            const effectiveR = pNet.length === 0 ? padR * 0.55 : padR;
             const dx = posPad.x - pos.x;
             const dy = posPad.y - pos.y;
-            if (Math.sqrt(dx * dx + dy * dy) < need + padR) {
+            if (Math.sqrt(dx * dx + dy * dy) < need + effectiveR) {
                 return false;
             }
         }

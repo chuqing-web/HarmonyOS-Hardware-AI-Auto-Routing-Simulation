@@ -1,1690 +1,0 @@
-Ôr@Ÿªassertions¤code´customTransformCache¬dependencies¢id¤meta±moduleSideEffects¬originalCode±originalSourcemap«resolvedIds®sourcemapChainµsyntheticNamedExportsµtransformDependencies®transformFiles¨cacheAstÔrAÚVÛexport function defaultCircuitIntent() {
-    return {
-        needsPowerRails: true,
-        hasMcuMinSystem: false,
-        mutualLedIndicator: false,
-        blinkOscillator: false,
-        relayContactTopo: false,
-        seriesRcCharge: false,
-        dualSupply: false,
-        preferredVccVoltage: '',
-        preferredVeeVoltage: '',
-        needsSignalGen: false,
-        signalWaveform: 'sine',
-        preferredSignalFrequency: '',
-        preferredSignalDuty: '',
-        hasInstruments: false,
-        needsLedSeriesR: false,
-        needsI2cPullup: false,
-        needsOpAmpFeedback: false,
-        passiveOnly: false,
-        reasons: []
-    };
-}
-/** ä¸²è” RC å……æ”¾ç”µ / Ï„ è§‚æµ‹ï¼ˆç¦å¥—äº’æ–¥ç»§ç”µå™¨ï¼‰ */
-function isSeriesRcChargePrompt(prompt) {
-    const zh = prompt ?? '';
-    const lower = zh.toLowerCase();
-    if (isMutualLedSwitchPrompt(prompt)) {
-        return false;
-    }
-    return zh.indexOf('å……æ”¾ç”µ') >= 0 || zh.indexOf('æ—¶é—´å¸¸æ•°') >= 0 ||
-        zh.indexOf('æŒ‡æ•°æ³¢å½¢') >= 0 || zh.indexOf('Ï„=RC') >= 0 || zh.indexOf('Ï„ï¼RC') >= 0 ||
-        zh.indexOf('tau=RC') >= 0 || lower.indexOf('time constant') >= 0 ||
-        lower.indexOf('rc charge') >= 0 || lower.indexOf('rc discharge') >= 0 ||
-        (zh.indexOf('RC') >= 0 && (zh.indexOf('ç”µå®¹') >= 0 || zh.indexOf('ç”µé˜»') >= 0) &&
-            (zh.indexOf('å……ç”µ') >= 0 || zh.indexOf('æ”¾ç”µ') >= 0 || zh.indexOf('æ³¢å½¢') >= 0));
-}
-function pushReason(intent, reason) {
-    if (intent.reasons.indexOf(reason) < 0) {
-        intent.reasons.push(reason);
-    }
-}
-function isBlinkLike(zh, lower) {
-    return zh.indexOf('é—ªçƒ') >= 0 || zh.indexOf('äº¤æ›¿') >= 0 ||
-        zh.indexOf('æŒ¯è¡') >= 0 || zh.indexOf('å¤šè°') >= 0 ||
-        zh.indexOf('è·‘é©¬') >= 0 ||
-        lower.indexOf('blink') >= 0 || lower.indexOf('flash') >= 0 ||
-        lower.indexOf('astable') >= 0 || lower.indexOf('multivibrator') >= 0;
-}
-function isMutualLedSwitchPrompt(prompt) {
-    const zh = prompt ?? '';
-    const lower = zh.toLowerCase();
-    const dualColor = (zh.indexOf('ç»¿') >= 0 && zh.indexOf('çº¢') >= 0) ||
-        (lower.indexOf('green') >= 0 && lower.indexOf('red') >= 0) ||
-        (zh.indexOf('åŒ') >= 0 && (zh.indexOf('LED') >= 0 || lower.indexOf('led') >= 0)) ||
-        zh.indexOf('çº¢ç»¿ç¯') >= 0;
-    const mutual = (zh.indexOf('æ‰“å¼€') >= 0 && zh.indexOf('é—­åˆ') >= 0) ||
-        (zh.indexOf('æ–­å¼€') >= 0 && (zh.indexOf('é—­åˆ') >= 0 || zh.indexOf('æ¥é€š') >= 0)) ||
-        (zh.indexOf('æ¾å¼€') >= 0 && zh.indexOf('æŒ‰ä¸‹') >= 0) ||
-        (lower.indexOf('open') >= 0 && lower.indexOf('close') >= 0) ||
-        zh.indexOf('äº’æ–¥') >= 0 ||
-        ((zh.indexOf('å¸¸å¼€') >= 0 || zh.indexOf('å¸¸é—­') >= 0) && dualColor);
-    // äº’æ–¥åŒè‰²ä¼˜å…ˆäº blinkï¼šçº¢ç»¿ç¯é—ªçƒä»å¯èƒ½æ˜¯ SPDT äº’æ–¥æŒ‡ç¤º
-    if (mutual && (dualColor || zh.indexOf('LED') >= 0 || lower.indexOf('led') >= 0 ||
-        zh.indexOf('ç¯') >= 0)) {
-        return true;
-    }
-    if (isBlinkLike(zh, lower)) {
-        return false;
-    }
-    return false;
-}
-/** é€‰å‹å‰ï¼šä»…æ ¹æ®ç”¨æˆ·æç¤ºç²—åˆ†æ„å›¾ */
-export function classifyCircuitIntent(prompt) {
-    const intent = defaultCircuitIntent();
-    const zh = prompt ?? '';
-    const lower = zh.toLowerCase();
-    if (isMutualLedSwitchPrompt(prompt)) {
-        intent.mutualLedIndicator = true;
-        intent.relayContactTopo = true;
-        intent.blinkOscillator = false;
-        pushReason(intent, 'mutual_led_switch');
-    }
-    else if (isBlinkLike(zh, lower)) {
-        intent.blinkOscillator = true;
-        pushReason(intent, 'blink_keyword');
-    }
-    if (isSeriesRcChargePrompt(prompt)) {
-        intent.seriesRcCharge = true;
-        intent.mutualLedIndicator = false;
-        intent.relayContactTopo = false;
-        pushReason(intent, 'series_rc_charge');
-    }
-    if (isMutualLedSwitchPrompt(prompt) && !intent.seriesRcCharge) {
-        intent.mutualLedIndicator = true;
-        intent.relayContactTopo = true;
-        intent.needsLedSeriesR = true;
-        pushReason(intent, 'mutual_led_switch');
-    }
-    else if (intent.blinkOscillator || intent.seriesRcCharge) {
-        intent.mutualLedIndicator = false;
-        intent.relayContactTopo = false;
-    }
-    if (zh.indexOf('STM32') >= 0 || zh.indexOf('å•ç‰‡æœº') >= 0 || zh.indexOf('MCU') >= 0 ||
-        zh.indexOf('8051') >= 0 || zh.indexOf('AT89') >= 0 || zh.indexOf('STC') >= 0 ||
-        lower.indexOf('arduino') >= 0 || lower.indexOf('mcu') >= 0) {
-        intent.hasMcuMinSystem = true;
-        pushReason(intent, 'mcu_keyword');
-    }
-    if (zh.indexOf('LED') >= 0 || lower.indexOf('led') >= 0 || zh.indexOf('ç¯') >= 0 ||
-        zh.indexOf('å‘å…‰') >= 0) {
-        intent.needsLedSeriesR = true;
-        pushReason(intent, 'led_keyword');
-    }
-    if (zh.indexOf('I2C') >= 0 || lower.indexOf('i2c') >= 0 || zh.indexOf('IÂ²C') >= 0) {
-        intent.needsI2cPullup = true;
-        pushReason(intent, 'i2c_keyword');
-    }
-    if (zh.indexOf('è¿æ”¾') >= 0 || zh.indexOf('æ”¾å¤§å™¨') >= 0 || lower.indexOf('opamp') >= 0 ||
-        lower.indexOf('op-amp') >= 0 || zh.indexOf('LM358') >= 0 || zh.indexOf('LM324') >= 0 ||
-        zh.indexOf('741') >= 0 || zh.indexOf('TL082') >= 0) {
-        intent.needsOpAmpFeedback = true;
-        pushReason(intent, 'opamp_keyword');
-    }
-    applyPowerAndSignalIntent(intent, prompt);
-    if (zh.indexOf('ç”µå‹è¡¨') >= 0 || zh.indexOf('ç”µæµè¡¨') >= 0 || zh.indexOf('ç¤ºæ³¢å™¨') >= 0 ||
-        zh.indexOf('é€»è¾‘åˆ†æ') >= 0 || zh.indexOf('æµ‹ç”µæµ') >= 0 || zh.indexOf('æµ‹ç”µå‹') >= 0 ||
-        lower.indexOf('voltmeter') >= 0 || lower.indexOf('ammeter') >= 0 ||
-        lower.indexOf('scope') >= 0) {
-        intent.hasInstruments = true;
-        pushReason(intent, 'instrument_keyword');
-    }
-    if (zh.indexOf('æ— ç”µæº') >= 0 || zh.indexOf('æµ®ç©ºæ•™å­¦') >= 0 ||
-        (zh.indexOf('æ— æº') >= 0 && zh.indexOf('æ— ç”µæº') >= 0)) {
-        intent.needsPowerRails = false;
-        pushReason(intent, 'no_power_keyword');
-    }
-    if (!intent.hasMcuMinSystem && !intent.needsLedSeriesR && !intent.needsOpAmpFeedback &&
-        !intent.hasInstruments && (zh.indexOf('ç”µé˜»') >= 0 || zh.indexOf('ç”µå®¹') >= 0) &&
-        zh.indexOf('ç”µæº') < 0) {
-        // ä¸å¼ºåˆ¶ passiveOnlyï¼›ä»…ä½œå¼±ä¿¡å·
-    }
-    return intent;
-}
-/** è§£æç”µæºç”µå‹ / åŒç”µæº / ä¿¡å·å‘ç”Ÿå™¨æ„å›¾ */
-function applyPowerAndSignalIntent(intent, prompt) {
-    const zh = prompt ?? '';
-    const lower = zh.toLowerCase();
-    // åŒç”µæº / VEE
-    if (zh.indexOf('åŒç”µæº') >= 0 || zh.indexOf('æ­£è´Ÿç”µæº') >= 0 || zh.indexOf('è´Ÿå‹') >= 0 ||
-        zh.indexOf('VEE') >= 0 || lower.indexOf('vee') >= 0 ||
-        zh.indexOf('Â±') >= 0 || zh.indexOf('+/-') >= 0 || lower.indexOf('+/-') >= 0 ||
-        lower.indexOf('dual supply') >= 0 || lower.indexOf('split supply') >= 0 ||
-        /[Â±]\s*1?2\s*v/i.test(zh) || /[Â±]\s*5\s*v/i.test(zh) ||
-        /-12\s*v/i.test(zh) || /-5\s*v/i.test(zh)) {
-        intent.dualSupply = true;
-        intent.needsPowerRails = true;
-        pushReason(intent, 'dual_supply');
-    }
-    // è¿æ”¾é»˜è®¤å€¾å‘åŒç”µæºï¼ˆå¯è¢«å•ç”µæºæç¤ºè¦†ç›–ï¼‰
-    if (intent.needsOpAmpFeedback && !intent.dualSupply) {
-        if (zh.indexOf('å•ç”µæº') >= 0 || lower.indexOf('single supply') >= 0 ||
-            zh.indexOf('å•ä¾›') >= 0) {
-            // ä¿æŒå•ç”µæº
-        }
-        else if (zh.indexOf('åŒç”µæº') >= 0 || zh.indexOf('Â±') >= 0 || zh.indexOf('VEE') >= 0) {
-            intent.dualSupply = true;
-            pushReason(intent, 'opamp_dual');
-        }
-    }
-    // VCC ç”µå‹
-    const vccM = zh.match(/(?:VCC|VDD|ç”µæº|ä¾›ç”µ)\s*(?:=|ä¸º|:|ï¼š)?\s*(3\.3|5|12)\s*V/i) ||
-        zh.match(/\b(3\.3|5|12)\s*V\b/i);
-    if (vccM) {
-        intent.preferredVccVoltage = `${vccM[1]}V`;
-        pushReason(intent, `vcc=${intent.preferredVccVoltage}`);
-    }
-    // VEE ç”µå‹
-    const veeM = zh.match(/(?:VEE|è´Ÿå‹|è´Ÿç”µæº)\s*(?:=|ä¸º|:|ï¼š)?\s*(-?1?2|-?5)\s*V/i) ||
-        zh.match(/(-\s*12|-\s*5)\s*V/i);
-    if (veeM) {
-        let v = veeM[1].replace(/\s/g, '');
-        if (!v.startsWith('-')) {
-            v = `-${v}`;
-        }
-        intent.preferredVeeVoltage = `${v}V`;
-        intent.dualSupply = true;
-        pushReason(intent, `vee=${intent.preferredVeeVoltage}`);
-    }
-    else if (intent.dualSupply && intent.preferredVeeVoltage.length === 0) {
-        intent.preferredVeeVoltage = '-12V';
-    }
-    // ä¿¡å·å‘ç”Ÿå™¨
-    const wantSig = zh.indexOf('ä¿¡å·å‘ç”Ÿ') >= 0 || zh.indexOf('å‡½æ•°å‘ç”Ÿ') >= 0 ||
-        zh.indexOf('ä¿¡å·æº') >= 0 || lower.indexOf('signal gen') >= 0 ||
-        lower.indexOf('function gen') >= 0 || lower.indexOf('waveform gen') >= 0 ||
-        (zh.indexOf('æ¿€åŠ±') >= 0 && (zh.indexOf('æ­£å¼¦') >= 0 || zh.indexOf('æ–¹æ³¢') >= 0 ||
-            zh.indexOf('ä¸‰è§’') >= 0));
-    if (wantSig) {
-        intent.needsSignalGen = true;
-        intent.hasInstruments = true;
-        pushReason(intent, 'signal_gen');
-    }
-    // æ¿€åŠ±æ³¢å½¢ï¼šä¼˜å…ˆã€Œè¾“å…¥/æ¿€åŠ±/ä¿¡å·æºã€è¯­å¢ƒï¼›ã€Œæ•´å½¢/è¾“å‡ºæ–¹æ³¢ã€ä¸è¦†ç›–æ­£å¼¦æ¿€åŠ±
-    const hasSine = zh.indexOf('æ­£å¼¦') >= 0 || lower.indexOf('sine') >= 0;
-    const hasSquare = zh.indexOf('æ–¹æ³¢') >= 0 || lower.indexOf('square') >= 0;
-    const hasTri = zh.indexOf('ä¸‰è§’') >= 0 || lower.indexOf('triangle') >= 0;
-    const hasSaw = zh.indexOf('é”¯é½¿') >= 0 || lower.indexOf('saw') >= 0;
-    const hasPulse = zh.indexOf('è„‰å†²') >= 0 || lower.indexOf('pulse') >= 0;
-    const squareAsOutputOnly = hasSquare && hasSine && (zh.indexOf('æ•´å½¢') >= 0 || zh.indexOf('æ»å›') >= 0 || zh.indexOf('æ¯”è¾ƒå™¨') >= 0 ||
-        zh.indexOf('è¾“å‡º') >= 0 || zh.indexOf('å‰Šæ³¢') >= 0 ||
-        /è¾“å…¥\s*æ­£å¼¦|æ­£å¼¦\s*æ³¢?\s*ä¿¡å·|æ­£å¼¦\s*æ¿€åŠ±/.test(zh));
-    const exciteCtx = (wave) => {
-        const i = zh.indexOf(wave);
-        if (i < 0) {
-            return false;
-        }
-        const win = zh.substring(Math.max(0, i - 8), Math.min(zh.length, i + wave.length + 8));
-        return win.indexOf('è¾“å…¥') >= 0 || win.indexOf('æ¿€åŠ±') >= 0 || win.indexOf('ä¿¡å·æº') >= 0 ||
-            win.indexOf('ä¿¡å·å‘ç”Ÿ') >= 0 || win.indexOf('å‡½æ•°å‘ç”Ÿ') >= 0;
-    };
-    if (hasSine && (exciteCtx('æ­£å¼¦') || squareAsOutputOnly || !hasSquare)) {
-        intent.signalWaveform = 'sine';
-        if (wantSig || exciteCtx('æ­£å¼¦')) {
-            intent.needsSignalGen = true;
-        }
-    }
-    else if (hasSquare && !squareAsOutputOnly) {
-        intent.signalWaveform = 'square';
-        if (wantSig || zh.indexOf('æ³¢å½¢') >= 0 || exciteCtx('æ–¹æ³¢')) {
-            intent.needsSignalGen = true;
-        }
-    }
-    else if (hasTri) {
-        intent.signalWaveform = 'triangle';
-        if (wantSig || zh.indexOf('æ³¢å½¢') >= 0) {
-            intent.needsSignalGen = true;
-        }
-    }
-    else if (hasSaw) {
-        intent.signalWaveform = 'saw';
-        if (wantSig || zh.indexOf('æ³¢å½¢') >= 0) {
-            intent.needsSignalGen = true;
-        }
-    }
-    else if (hasPulse) {
-        intent.signalWaveform = 'pulse';
-        if (wantSig || zh.indexOf('æ³¢å½¢') >= 0) {
-            intent.needsSignalGen = true;
-        }
-    }
-    else if (hasSine) {
-        intent.signalWaveform = 'sine';
-        if (wantSig) {
-            intent.needsSignalGen = true;
-        }
-    }
-    // é¢‘ç‡ï¼š1kHz / 500Hz / é¢‘ç‡=10kHz
-    const freqM = zh.match(/(?:é¢‘ç‡|freq(?:uency)?)\s*(?:=|ä¸º|:|ï¼š)?\s*([\d.]+\s*[kKmM]?[Hh][Zz]?)/i) ||
-        zh.match(/([\d.]+\s*[kKmM]?[Hh][Zz])/);
-    if (freqM && (intent.needsSignalGen || wantSig || zh.indexOf('æ–¹æ³¢') >= 0 ||
-        zh.indexOf('æ­£å¼¦') >= 0 || zh.indexOf('ä¸‰è§’') >= 0)) {
-        let f = freqM[1].replace(/\s/g, '');
-        if (!/[Hh][Zz]$/i.test(f)) {
-            f = `${f}Hz`;
-        }
-        intent.preferredSignalFrequency = f;
-        pushReason(intent, `sigFreq=${f}`);
-    }
-    // å ç©ºæ¯”ï¼šå ç©ºæ¯”50% / duty=25 / 25%å ç©º
-    const dutyM = zh.match(/(?:å ç©ºæ¯”|duty(?:\s*cycle)?)\s*(?:=|ä¸º|:|ï¼š)?\s*([\d.]+)\s*%?/i) ||
-        zh.match(/([\d.]+)\s*%\s*(?:å ç©º|duty)/i);
-    if (dutyM) {
-        const n = parseFloat(dutyM[1]);
-        if (Number.isFinite(n) && n > 0 && n <= 100) {
-            intent.preferredSignalDuty = `${n}%`;
-            if (intent.needsSignalGen || wantSig) {
-                pushReason(intent, `sigDuty=${intent.preferredSignalDuty}`);
-            }
-        }
-    }
-}
-function collectBomIds(out) {
-    const list = out.deviceRequireList ?? [];
-    const ids = [];
-    for (let i = 0; i < list.length; i++) {
-        const m = (list[i].explicitModel ?? '').trim();
-        const t = (list[i].devType ?? '').trim();
-        if (m.length > 0) {
-            ids.push(m.toUpperCase());
-        }
-        if (t.length > 0) {
-            ids.push(t.toUpperCase());
-        }
-    }
-    return ids;
-}
-/** é€‰å‹åï¼šç”¨ BOM ç²¾ä¿®æ„å›¾ï¼ˆä¸å› ã€ŒåŒLED+SWã€æ¨æ–­äº’æ–¥ï¼‰ */
-export function refineCircuitIntent(prompt, out, matched) {
-    const intent = classifyCircuitIntent(prompt);
-    const ids = collectBomIds(out);
-    if (matched && matched.length > 0) {
-        for (let i = 0; i < matched.length; i++) {
-            const mid = matched[i].libDevId ?? '';
-            if (mid.length > 0) {
-                ids.push(mid.toUpperCase());
-            }
-        }
-    }
-    const hasMcuBom = ids.some(m => m.indexOf('STM32') >= 0 || m.indexOf('AT89') >= 0 || m.indexOf('STC') >= 0 ||
-        m.indexOf('MCU') >= 0);
-    if (hasMcuBom) {
-        intent.hasMcuMinSystem = true;
-        pushReason(intent, 'mcu_bom');
-    }
-    const ledN = ids.filter(m => m.indexOf('LED') >= 0).length;
-    if (ledN > 0) {
-        intent.needsLedSeriesR = true;
-        pushReason(intent, 'led_bom');
-    }
-    const hasRelay = ids.some(m => m.indexOf('RELAY') >= 0);
-    const hasR = ids.some(m => m.startsWith('R_'));
-    const hasC = ids.some(m => m.startsWith('C_'));
-    if (intent.seriesRcCharge || (hasR && hasC && isSeriesRcChargePrompt(prompt))) {
-        intent.seriesRcCharge = true;
-        intent.relayContactTopo = false;
-        intent.mutualLedIndicator = false;
-        pushReason(intent, 'series_rc_bom');
-    }
-    if (hasRelay && intent.mutualLedIndicator && !intent.seriesRcCharge) {
-        intent.relayContactTopo = true;
-        pushReason(intent, 'relay_bom_mutual');
-    }
-    else if (hasRelay && !intent.blinkOscillator && ledN >= 2 && intent.mutualLedIndicator &&
-        !intent.seriesRcCharge) {
-        intent.relayContactTopo = true;
-    }
-    else if (hasRelay && (intent.blinkOscillator || intent.seriesRcCharge)) {
-        // é—ªçƒ / RC å……æ”¾ç”µå¶å¸¦ç»§ç”µå™¨ä¹Ÿä¸å¼ºè¡Œè§¦ç‚¹åŒè‰²é“å¾‹
-        intent.relayContactTopo = false;
-    }
-    const hasI2cBom = (out.deviceRequireList ?? []).some(r => (r.func ?? '').toUpperCase().indexOf('I2C') >= 0 ||
-        (r.devType ?? '').toUpperCase().indexOf('I2C') >= 0 ||
-        (r.explicitModel ?? '').toUpperCase().indexOf('I2C') >= 0 ||
-        (r.explicitModel ?? '').toUpperCase().indexOf('OLED') >= 0 ||
-        (r.explicitModel ?? '').toUpperCase().indexOf('EEPROM') >= 0);
-    if (hasI2cBom) {
-        intent.needsI2cPullup = true;
-        pushReason(intent, 'i2c_bom');
-    }
-    const hasOp = ids.some(m => m.indexOf('LM358') >= 0 || m.indexOf('LM324') >= 0 || m.indexOf('OPAMP') >= 0);
-    if (hasOp) {
-        intent.needsOpAmpFeedback = true;
-        pushReason(intent, 'opamp_bom');
-    }
-    const hasInstr = ids.some(m => m.indexOf('VOLTMETER') >= 0 || m.indexOf('AMMETER') >= 0 ||
-        m.indexOf('OSCILLOSCOPE') >= 0 || m.indexOf('LOGIC_ANALYZER') >= 0 ||
-        m.indexOf('UART_TERMINAL') >= 0);
-    if (hasInstr) {
-        intent.hasInstruments = true;
-        pushReason(intent, 'instrument_bom');
-    }
-    const hasVcc = ids.some(m => m === 'VCC');
-    const hasGnd = ids.some(m => m === 'GND');
-    const hasVee = ids.some(m => m === 'VEE' || m.indexOf('VEE') >= 0);
-    const hasSig = ids.some(m => m.indexOf('SIGNAL_GEN') >= 0);
-    if (hasVcc || hasGnd || hasVee) {
-        intent.needsPowerRails = true;
-    }
-    if (hasVee) {
-        intent.dualSupply = true;
-        pushReason(intent, 'vee_bom');
-    }
-    if (hasSig) {
-        intent.needsSignalGen = true;
-        intent.hasInstruments = true;
-        pushReason(intent, 'signal_gen_bom');
-        // BOM æ˜¾å¼ waveform è¦†ç›–å¯å‘å¼ï¼ˆé¿å…ã€Œè¾“å‡ºæ–¹æ³¢ã€è¯¯åˆ¤æ¿€åŠ±ï¼‰
-        const list = out.deviceRequireList ?? [];
-        for (let i = 0; i < list.length; i++) {
-            const id = `${list[i].explicitModel ?? ''} ${list[i].devType ?? ''}`.toUpperCase();
-            if (id.indexOf('SIGNAL_GEN') < 0) {
-                continue;
-            }
-            const wf = (list[i].paramConstraint?.get('waveform') ?? '').trim().toLowerCase();
-            if (wf === 'sine' || wf === 'square' || wf === 'triangle' || wf === 'saw' || wf === 'pulse') {
-                intent.signalWaveform = wf;
-                pushReason(intent, `sigWfBom=${wf}`);
-            }
-            const freq = (list[i].paramConstraint?.get('frequency') ?? '').trim();
-            if (freq.length > 0) {
-                intent.preferredSignalFrequency = freq;
-            }
-            const duty = (list[i].paramConstraint?.get('dutyCycle') ?? '').trim();
-            if (duty.length > 0) {
-                intent.preferredSignalDuty = duty;
-            }
-            break;
-        }
-    }
-    // è¿æ”¾ BOM + æœªå£°æ˜å•ç”µæº â†’ å€¾å‘åŒç”µæº
-    if (intent.needsOpAmpFeedback && !intent.dualSupply) {
-        const zh = prompt ?? '';
-        if (zh.indexOf('å•ç”µæº') < 0 && zh.toLowerCase().indexOf('single supply') < 0) {
-            // ä¸å¼ºåˆ¶ dualï¼Œä»…å½“æç¤ºå«åŒç”µæº/Â± æ—¶å·²åœ¨ classify è®¾ç½®
-        }
-    }
-    intent.passiveOnly = !intent.hasMcuMinSystem && !intent.hasInstruments &&
-        !intent.needsOpAmpFeedback && ledN === 0 && !hasRelay;
-    // é—ªçƒ / RC ä¼˜å…ˆå¦å†³äº’æ–¥
-    if (intent.blinkOscillator || intent.seriesRcCharge) {
-        intent.mutualLedIndicator = false;
-        intent.relayContactTopo = false;
-    }
-    return intent;
-}
-/** ä»å·²æ‘†æ”¾æ‹“æ‰‘å†ç²¾ä¿®ï¼ˆnet_plan / PostGen å‰ï¼‰ */
-export function refineIntentFromTopo(intent, topo) {
-    const next = copyIntent(intent);
-    const hasRelay = topo.deviceList.some(d => d.libDevId === 'RELAY_SPDT' || (d.libDevId ?? '').toUpperCase().indexOf('RELAY') >= 0);
-    const ledN = topo.deviceList.filter(d => d.libDevId.startsWith('LED_')).length;
-    const hasMcu = topo.deviceList.some(d => {
-        const id = (d.libDevId ?? '').toUpperCase();
-        return id.indexOf('STM32') >= 0 || id.indexOf('AT89') >= 0 || id.indexOf('STC') >= 0;
-    });
-    if (hasMcu) {
-        next.hasMcuMinSystem = true;
-    }
-    if (ledN > 0) {
-        next.needsLedSeriesR = true;
-    }
-    if (next.seriesRcCharge) {
-        next.mutualLedIndicator = false;
-        next.relayContactTopo = false;
-    }
-    else if (hasRelay && next.mutualLedIndicator) {
-        next.relayContactTopo = true;
-    }
-    else if (hasRelay && next.blinkOscillator) {
-        next.relayContactTopo = false;
-    }
-    return next;
-}
-export function copyIntent(src) {
-    return {
-        needsPowerRails: src.needsPowerRails,
-        hasMcuMinSystem: src.hasMcuMinSystem,
-        mutualLedIndicator: src.mutualLedIndicator,
-        blinkOscillator: src.blinkOscillator,
-        relayContactTopo: src.relayContactTopo,
-        seriesRcCharge: src.seriesRcCharge,
-        dualSupply: src.dualSupply,
-        preferredVccVoltage: src.preferredVccVoltage,
-        preferredVeeVoltage: src.preferredVeeVoltage,
-        needsSignalGen: src.needsSignalGen,
-        signalWaveform: src.signalWaveform,
-        preferredSignalFrequency: src.preferredSignalFrequency,
-        preferredSignalDuty: src.preferredSignalDuty,
-        hasInstruments: src.hasInstruments,
-        needsLedSeriesR: src.needsLedSeriesR,
-        needsI2cPullup: src.needsI2cPullup,
-        needsOpAmpFeedback: src.needsOpAmpFeedback,
-        passiveOnly: src.passiveOnly,
-        reasons: src.reasons.slice()
-    };
-}
-export function formatIntentLog(intent) {
-    return `power=${intent.needsPowerRails} mcu=${intent.hasMcuMinSystem}` +
-        ` mutual=${intent.mutualLedIndicator} blink=${intent.blinkOscillator}` +
-        ` relayTopo=${intent.relayContactTopo} seriesRc=${intent.seriesRcCharge}` +
-        ` dual=${intent.dualSupply} vcc=${intent.preferredVccVoltage || '-'}` +
-        ` vee=${intent.preferredVeeVoltage || '-'} sig=${intent.needsSignalGen}/${intent.signalWaveform}` +
-        `@${intent.preferredSignalFrequency || '1kHz'}/duty=${intent.preferredSignalDuty || '50%'}` +
-        ` instr=${intent.hasInstruments}` +
-        ` ledR=${intent.needsLedSeriesR} i2c=${intent.needsI2cPullup}` +
-        ` opamp=${intent.needsOpAmpFeedback} reasons=${intent.reasons.join(',')}`;
-}
-/** HARD æ®‹å·®æŒ‡çº¹ï¼šå¿½ç•¥æ•°å­—æ³¢åŠ¨ï¼Œæ’åºåæ‹¼æ¥ */
-export function hardResidualFingerprint(hard) {
-    const norm = hard.map(s => s.replace(/\d+/g, '#').replace(/\s+/g, ' ').trim());
-    norm.sort();
-    return norm.join('|');
-}
-export function splitEmpty() {
-    return { hard: [], soft: [] };
-}
-export function mergeSplit(a, b) {
-    return { hard: a.hard.concat(b.hard), soft: a.soft.concat(b.soft) };
-}
-export function allCritiqueLines(split) {
-    const lines = [];
-    for (let i = 0; i < split.hard.length; i++) {
-        lines.push(`[HARD] ${split.hard[i]}`);
-    }
-    for (let j = 0; j < split.soft.length; j++) {
-        lines.push(`[SOFT] ${split.soft[j]}`);
-    }
-    return lines;
-}
-/** å…¼å®¹æ—§ isMutualLedSwitchPrompt è°ƒç”¨ */
-export function intentIsMutualLedSwitch(prompt) {
-    return isMutualLedSwitchPrompt(prompt);
-}
-//# sourceMappingURL=CircuitIntent.js.mapÂÙYC:\Projects\ElecDraw_Harmony\features\ai_engine\src\main\ets\algorithms\CircuitIntent.etsÔrB›ªmoduleName±isLocalDependency¯isNodeEntryFile§pkgPath±belongProjectPath§pkgNameªpkgVersion±dependencyPkgInfo°belongModulePath¬shouldEmitJs¯hostModulesInfo©ai_engineÃÂÙ/C:\Projects\ElecDraw_Harmony\features\ai_engine¼C:\Projects\ElecDraw_Harmony©ai_engine¥1.0.0Ô  Ù/C:\Projects\ElecDraw_Harmony\features\ai_engineÃ‘ÔrC’²hostDependencyName®hostModuleName¯./CircuitIntent©ai_engineÃÚV†/**
- * CircuitIntent â€” æµæ°´çº¿ç»Ÿä¸€æ„å›¾ä¸­æ¢
- * é€‰å‹å‰ç²—åˆ† / BOM åç²¾ä¿®ï¼›ä¾› prompt æ³¨å…¥ã€HARD/SOFT critiqueã€PostGen é—¨æ§å…±ç”¨ã€‚
- */
-import { DeviceSelectLlmOutput, MatchedDevice, SchTopology } from 'common';
-
-export interface CircuitIntent {
-  needsPowerRails: boolean;
-  hasMcuMinSystem: boolean;
-  mutualLedIndicator: boolean;
-  blinkOscillator: boolean;
-  relayContactTopo: boolean;
-  /** ä¸²è” RC å……æ”¾ç”µï¼ˆè§‚æµ‹ Ï„=RC / æŒ‡æ•°æ³¢å½¢ï¼‰â€” ç¦ RELAYï¼Œä¼˜å…ˆ SW_PUSH */
-  seriesRcCharge: boolean;
-  /** è¿æ”¾/æ¨¡æ‹ŸåŒç”µæºï¼šéœ€è¦ VEE è´Ÿå‹è½¨ */
-  dualSupply: boolean;
-  /** ç”¨æˆ·æŒ‡å®šçš„æ­£ç”µæºç”µå‹æ–‡æ¡ˆï¼ˆå¦‚ 3.3V / 5V / 12Vï¼‰ï¼Œç©º=é»˜è®¤ */
-  preferredVccVoltage: string;
-  /** ç”¨æˆ·æŒ‡å®šçš„è´Ÿç”µæºç”µå‹æ–‡æ¡ˆï¼ˆå¦‚ -12V / -5Vï¼‰ï¼Œç©º=é»˜è®¤ -12V */
-  preferredVeeVoltage: string;
-  /** éœ€è¦åŸç†å›¾ SIGNAL_GENï¼ˆæ­£å¼¦/æ–¹æ³¢/ä¸‰è§’ï¼‰ */
-  needsSignalGen: boolean;
-  /** SIGNAL_GEN æ³¢å½¢ï¼šsine|square|triangle|saw|pulse */
-  signalWaveform: string;
-  /** SIGNAL_GEN é¢‘ç‡æ–‡æ¡ˆï¼ˆå¦‚ 1kHz / 500Hzï¼‰ï¼Œç©º=é»˜è®¤ 1kHz */
-  preferredSignalFrequency: string;
-  /** SIGNAL_GEN å ç©ºæ¯”æ–‡æ¡ˆï¼ˆå¦‚ 50% / 25ï¼‰ï¼Œç©º=é»˜è®¤ 50%ï¼›æ–¹æ³¢/è„‰å†²æœ‰æ•ˆ */
-  preferredSignalDuty: string;
-  hasInstruments: boolean;
-  needsLedSeriesR: boolean;
-  needsI2cPullup: boolean;
-  needsOpAmpFeedback: boolean;
-  passiveOnly: boolean;
-  reasons: string[];
-}
-
-export interface CritiqueSplit {
-  hard: string[];
-  soft: string[];
-}
-
-export function defaultCircuitIntent(): CircuitIntent {
-  return {
-    needsPowerRails: true,
-    hasMcuMinSystem: false,
-    mutualLedIndicator: false,
-    blinkOscillator: false,
-    relayContactTopo: false,
-    seriesRcCharge: false,
-    dualSupply: false,
-    preferredVccVoltage: '',
-    preferredVeeVoltage: '',
-    needsSignalGen: false,
-    signalWaveform: 'sine',
-    preferredSignalFrequency: '',
-    preferredSignalDuty: '',
-    hasInstruments: false,
-    needsLedSeriesR: false,
-    needsI2cPullup: false,
-    needsOpAmpFeedback: false,
-    passiveOnly: false,
-    reasons: []
-  };
-}
-
-/** ä¸²è” RC å……æ”¾ç”µ / Ï„ è§‚æµ‹ï¼ˆç¦å¥—äº’æ–¥ç»§ç”µå™¨ï¼‰ */
-function isSeriesRcChargePrompt(prompt: string): boolean {
-  const zh = prompt ?? '';
-  const lower = zh.toLowerCase();
-  if (isMutualLedSwitchPrompt(prompt)) {
-    return false;
-  }
-  return zh.indexOf('å……æ”¾ç”µ') >= 0 || zh.indexOf('æ—¶é—´å¸¸æ•°') >= 0 ||
-    zh.indexOf('æŒ‡æ•°æ³¢å½¢') >= 0 || zh.indexOf('Ï„=RC') >= 0 || zh.indexOf('Ï„ï¼RC') >= 0 ||
-    zh.indexOf('tau=RC') >= 0 || lower.indexOf('time constant') >= 0 ||
-    lower.indexOf('rc charge') >= 0 || lower.indexOf('rc discharge') >= 0 ||
-    (zh.indexOf('RC') >= 0 && (zh.indexOf('ç”µå®¹') >= 0 || zh.indexOf('ç”µé˜»') >= 0) &&
-      (zh.indexOf('å……ç”µ') >= 0 || zh.indexOf('æ”¾ç”µ') >= 0 || zh.indexOf('æ³¢å½¢') >= 0));
-}
-
-function pushReason(intent: CircuitIntent, reason: string): void {
-  if (intent.reasons.indexOf(reason) < 0) {
-    intent.reasons.push(reason);
-  }
-}
-
-function isBlinkLike(zh: string, lower: string): boolean {
-  return zh.indexOf('é—ªçƒ') >= 0 || zh.indexOf('äº¤æ›¿') >= 0 ||
-    zh.indexOf('æŒ¯è¡') >= 0 || zh.indexOf('å¤šè°') >= 0 ||
-    zh.indexOf('è·‘é©¬') >= 0 ||
-    lower.indexOf('blink') >= 0 || lower.indexOf('flash') >= 0 ||
-    lower.indexOf('astable') >= 0 || lower.indexOf('multivibrator') >= 0;
-}
-
-function isMutualLedSwitchPrompt(prompt: string): boolean {
-  const zh = prompt ?? '';
-  const lower = zh.toLowerCase();
-  const dualColor =
-    (zh.indexOf('ç»¿') >= 0 && zh.indexOf('çº¢') >= 0) ||
-    (lower.indexOf('green') >= 0 && lower.indexOf('red') >= 0) ||
-    (zh.indexOf('åŒ') >= 0 && (zh.indexOf('LED') >= 0 || lower.indexOf('led') >= 0)) ||
-    zh.indexOf('çº¢ç»¿ç¯') >= 0;
-  const mutual =
-    (zh.indexOf('æ‰“å¼€') >= 0 && zh.indexOf('é—­åˆ') >= 0) ||
-    (zh.indexOf('æ–­å¼€') >= 0 && (zh.indexOf('é—­åˆ') >= 0 || zh.indexOf('æ¥é€š') >= 0)) ||
-    (zh.indexOf('æ¾å¼€') >= 0 && zh.indexOf('æŒ‰ä¸‹') >= 0) ||
-    (lower.indexOf('open') >= 0 && lower.indexOf('close') >= 0) ||
-    zh.indexOf('äº’æ–¥') >= 0 ||
-    ((zh.indexOf('å¸¸å¼€') >= 0 || zh.indexOf('å¸¸é—­') >= 0) && dualColor);
-  // äº’æ–¥åŒè‰²ä¼˜å…ˆäº blinkï¼šçº¢ç»¿ç¯é—ªçƒä»å¯èƒ½æ˜¯ SPDT äº’æ–¥æŒ‡ç¤º
-  if (mutual && (dualColor || zh.indexOf('LED') >= 0 || lower.indexOf('led') >= 0 ||
-    zh.indexOf('ç¯') >= 0)) {
-    return true;
-  }
-  if (isBlinkLike(zh, lower)) {
-    return false;
-  }
-  return false;
-}
-
-/** é€‰å‹å‰ï¼šä»…æ ¹æ®ç”¨æˆ·æç¤ºç²—åˆ†æ„å›¾ */
-export function classifyCircuitIntent(prompt: string): CircuitIntent {
-  const intent = defaultCircuitIntent();
-  const zh = prompt ?? '';
-  const lower = zh.toLowerCase();
-
-  if (isMutualLedSwitchPrompt(prompt)) {
-    intent.mutualLedIndicator = true;
-    intent.relayContactTopo = true;
-    intent.blinkOscillator = false;
-    pushReason(intent, 'mutual_led_switch');
-  } else if (isBlinkLike(zh, lower)) {
-    intent.blinkOscillator = true;
-    pushReason(intent, 'blink_keyword');
-  }
-
-  if (isSeriesRcChargePrompt(prompt)) {
-    intent.seriesRcCharge = true;
-    intent.mutualLedIndicator = false;
-    intent.relayContactTopo = false;
-    pushReason(intent, 'series_rc_charge');
-  }
-
-  if (isMutualLedSwitchPrompt(prompt) && !intent.seriesRcCharge) {
-    intent.mutualLedIndicator = true;
-    intent.relayContactTopo = true;
-    intent.needsLedSeriesR = true;
-    pushReason(intent, 'mutual_led_switch');
-  } else if (intent.blinkOscillator || intent.seriesRcCharge) {
-    intent.mutualLedIndicator = false;
-    intent.relayContactTopo = false;
-  }
-
-  if (zh.indexOf('STM32') >= 0 || zh.indexOf('å•ç‰‡æœº') >= 0 || zh.indexOf('MCU') >= 0 ||
-    zh.indexOf('8051') >= 0 || zh.indexOf('AT89') >= 0 || zh.indexOf('STC') >= 0 ||
-    lower.indexOf('arduino') >= 0 || lower.indexOf('mcu') >= 0) {
-    intent.hasMcuMinSystem = true;
-    pushReason(intent, 'mcu_keyword');
-  }
-
-  if (zh.indexOf('LED') >= 0 || lower.indexOf('led') >= 0 || zh.indexOf('ç¯') >= 0 ||
-    zh.indexOf('å‘å…‰') >= 0) {
-    intent.needsLedSeriesR = true;
-    pushReason(intent, 'led_keyword');
-  }
-
-  if (zh.indexOf('I2C') >= 0 || lower.indexOf('i2c') >= 0 || zh.indexOf('IÂ²C') >= 0) {
-    intent.needsI2cPullup = true;
-    pushReason(intent, 'i2c_keyword');
-  }
-
-  if (zh.indexOf('è¿æ”¾') >= 0 || zh.indexOf('æ”¾å¤§å™¨') >= 0 || lower.indexOf('opamp') >= 0 ||
-    lower.indexOf('op-amp') >= 0 || zh.indexOf('LM358') >= 0 || zh.indexOf('LM324') >= 0 ||
-    zh.indexOf('741') >= 0 || zh.indexOf('TL082') >= 0) {
-    intent.needsOpAmpFeedback = true;
-    pushReason(intent, 'opamp_keyword');
-  }
-
-  applyPowerAndSignalIntent(intent, prompt);
-
-  if (zh.indexOf('ç”µå‹è¡¨') >= 0 || zh.indexOf('ç”µæµè¡¨') >= 0 || zh.indexOf('ç¤ºæ³¢å™¨') >= 0 ||
-    zh.indexOf('é€»è¾‘åˆ†æ') >= 0 || zh.indexOf('æµ‹ç”µæµ') >= 0 || zh.indexOf('æµ‹ç”µå‹') >= 0 ||
-    lower.indexOf('voltmeter') >= 0 || lower.indexOf('ammeter') >= 0 ||
-    lower.indexOf('scope') >= 0) {
-    intent.hasInstruments = true;
-    pushReason(intent, 'instrument_keyword');
-  }
-
-  if (zh.indexOf('æ— ç”µæº') >= 0 || zh.indexOf('æµ®ç©ºæ•™å­¦') >= 0 ||
-    (zh.indexOf('æ— æº') >= 0 && zh.indexOf('æ— ç”µæº') >= 0)) {
-    intent.needsPowerRails = false;
-    pushReason(intent, 'no_power_keyword');
-  }
-
-  if (!intent.hasMcuMinSystem && !intent.needsLedSeriesR && !intent.needsOpAmpFeedback &&
-    !intent.hasInstruments && (zh.indexOf('ç”µé˜»') >= 0 || zh.indexOf('ç”µå®¹') >= 0) &&
-    zh.indexOf('ç”µæº') < 0) {
-    // ä¸å¼ºåˆ¶ passiveOnlyï¼›ä»…ä½œå¼±ä¿¡å·
-  }
-
-  return intent;
-}
-
-/** è§£æç”µæºç”µå‹ / åŒç”µæº / ä¿¡å·å‘ç”Ÿå™¨æ„å›¾ */
-function applyPowerAndSignalIntent(intent: CircuitIntent, prompt: string): void {
-  const zh = prompt ?? '';
-  const lower = zh.toLowerCase();
-
-  // åŒç”µæº / VEE
-  if (zh.indexOf('åŒç”µæº') >= 0 || zh.indexOf('æ­£è´Ÿç”µæº') >= 0 || zh.indexOf('è´Ÿå‹') >= 0 ||
-    zh.indexOf('VEE') >= 0 || lower.indexOf('vee') >= 0 ||
-    zh.indexOf('Â±') >= 0 || zh.indexOf('+/-') >= 0 || lower.indexOf('+/-') >= 0 ||
-    lower.indexOf('dual supply') >= 0 || lower.indexOf('split supply') >= 0 ||
-    /[Â±]\s*1?2\s*v/i.test(zh) || /[Â±]\s*5\s*v/i.test(zh) ||
-    /-12\s*v/i.test(zh) || /-5\s*v/i.test(zh)) {
-    intent.dualSupply = true;
-    intent.needsPowerRails = true;
-    pushReason(intent, 'dual_supply');
-  }
-  // è¿æ”¾é»˜è®¤å€¾å‘åŒç”µæºï¼ˆå¯è¢«å•ç”µæºæç¤ºè¦†ç›–ï¼‰
-  if (intent.needsOpAmpFeedback && !intent.dualSupply) {
-    if (zh.indexOf('å•ç”µæº') >= 0 || lower.indexOf('single supply') >= 0 ||
-      zh.indexOf('å•ä¾›') >= 0) {
-      // ä¿æŒå•ç”µæº
-    } else if (zh.indexOf('åŒç”µæº') >= 0 || zh.indexOf('Â±') >= 0 || zh.indexOf('VEE') >= 0) {
-      intent.dualSupply = true;
-      pushReason(intent, 'opamp_dual');
-    }
-  }
-
-  // VCC ç”µå‹
-  const vccM = zh.match(/(?:VCC|VDD|ç”µæº|ä¾›ç”µ)\s*(?:=|ä¸º|:|ï¼š)?\s*(3\.3|5|12)\s*V/i) ||
-    zh.match(/\b(3\.3|5|12)\s*V\b/i);
-  if (vccM) {
-    intent.preferredVccVoltage = `${vccM[1]}V`;
-    pushReason(intent, `vcc=${intent.preferredVccVoltage}`);
-  }
-  // VEE ç”µå‹
-  const veeM = zh.match(/(?:VEE|è´Ÿå‹|è´Ÿç”µæº)\s*(?:=|ä¸º|:|ï¼š)?\s*(-?1?2|-?5)\s*V/i) ||
-    zh.match(/(-\s*12|-\s*5)\s*V/i);
-  if (veeM) {
-    let v = veeM[1].replace(/\s/g, '');
-    if (!v.startsWith('-')) {
-      v = `-${v}`;
-    }
-    intent.preferredVeeVoltage = `${v}V`;
-    intent.dualSupply = true;
-    pushReason(intent, `vee=${intent.preferredVeeVoltage}`);
-  } else if (intent.dualSupply && intent.preferredVeeVoltage.length === 0) {
-    intent.preferredVeeVoltage = '-12V';
-  }
-
-  // ä¿¡å·å‘ç”Ÿå™¨
-  const wantSig = zh.indexOf('ä¿¡å·å‘ç”Ÿ') >= 0 || zh.indexOf('å‡½æ•°å‘ç”Ÿ') >= 0 ||
-    zh.indexOf('ä¿¡å·æº') >= 0 || lower.indexOf('signal gen') >= 0 ||
-    lower.indexOf('function gen') >= 0 || lower.indexOf('waveform gen') >= 0 ||
-    (zh.indexOf('æ¿€åŠ±') >= 0 && (zh.indexOf('æ­£å¼¦') >= 0 || zh.indexOf('æ–¹æ³¢') >= 0 ||
-      zh.indexOf('ä¸‰è§’') >= 0));
-  if (wantSig) {
-    intent.needsSignalGen = true;
-    intent.hasInstruments = true;
-    pushReason(intent, 'signal_gen');
-  }
-  // æ¿€åŠ±æ³¢å½¢ï¼šä¼˜å…ˆã€Œè¾“å…¥/æ¿€åŠ±/ä¿¡å·æºã€è¯­å¢ƒï¼›ã€Œæ•´å½¢/è¾“å‡ºæ–¹æ³¢ã€ä¸è¦†ç›–æ­£å¼¦æ¿€åŠ±
-  const hasSine = zh.indexOf('æ­£å¼¦') >= 0 || lower.indexOf('sine') >= 0;
-  const hasSquare = zh.indexOf('æ–¹æ³¢') >= 0 || lower.indexOf('square') >= 0;
-  const hasTri = zh.indexOf('ä¸‰è§’') >= 0 || lower.indexOf('triangle') >= 0;
-  const hasSaw = zh.indexOf('é”¯é½¿') >= 0 || lower.indexOf('saw') >= 0;
-  const hasPulse = zh.indexOf('è„‰å†²') >= 0 || lower.indexOf('pulse') >= 0;
-  const squareAsOutputOnly = hasSquare && hasSine && (
-    zh.indexOf('æ•´å½¢') >= 0 || zh.indexOf('æ»å›') >= 0 || zh.indexOf('æ¯”è¾ƒå™¨') >= 0 ||
-    zh.indexOf('è¾“å‡º') >= 0 || zh.indexOf('å‰Šæ³¢') >= 0 ||
-    /è¾“å…¥\s*æ­£å¼¦|æ­£å¼¦\s*æ³¢?\s*ä¿¡å·|æ­£å¼¦\s*æ¿€åŠ±/.test(zh)
-  );
-  const exciteCtx = (wave: string): boolean => {
-    const i = zh.indexOf(wave);
-    if (i < 0) {
-      return false;
-    }
-    const win = zh.substring(Math.max(0, i - 8), Math.min(zh.length, i + wave.length + 8));
-    return win.indexOf('è¾“å…¥') >= 0 || win.indexOf('æ¿€åŠ±') >= 0 || win.indexOf('ä¿¡å·æº') >= 0 ||
-      win.indexOf('ä¿¡å·å‘ç”Ÿ') >= 0 || win.indexOf('å‡½æ•°å‘ç”Ÿ') >= 0;
-  };
-  if (hasSine && (exciteCtx('æ­£å¼¦') || squareAsOutputOnly || !hasSquare)) {
-    intent.signalWaveform = 'sine';
-    if (wantSig || exciteCtx('æ­£å¼¦')) {
-      intent.needsSignalGen = true;
-    }
-  } else if (hasSquare && !squareAsOutputOnly) {
-    intent.signalWaveform = 'square';
-    if (wantSig || zh.indexOf('æ³¢å½¢') >= 0 || exciteCtx('æ–¹æ³¢')) {
-      intent.needsSignalGen = true;
-    }
-  } else if (hasTri) {
-    intent.signalWaveform = 'triangle';
-    if (wantSig || zh.indexOf('æ³¢å½¢') >= 0) {
-      intent.needsSignalGen = true;
-    }
-  } else if (hasSaw) {
-    intent.signalWaveform = 'saw';
-    if (wantSig || zh.indexOf('æ³¢å½¢') >= 0) {
-      intent.needsSignalGen = true;
-    }
-  } else if (hasPulse) {
-    intent.signalWaveform = 'pulse';
-    if (wantSig || zh.indexOf('æ³¢å½¢') >= 0) {
-      intent.needsSignalGen = true;
-    }
-  } else if (hasSine) {
-    intent.signalWaveform = 'sine';
-    if (wantSig) {
-      intent.needsSignalGen = true;
-    }
-  }
-  // é¢‘ç‡ï¼š1kHz / 500Hz / é¢‘ç‡=10kHz
-  const freqM = zh.match(/(?:é¢‘ç‡|freq(?:uency)?)\s*(?:=|ä¸º|:|ï¼š)?\s*([\d.]+\s*[kKmM]?[Hh][Zz]?)/i) ||
-    zh.match(/([\d.]+\s*[kKmM]?[Hh][Zz])/);
-  if (freqM && (intent.needsSignalGen || wantSig || zh.indexOf('æ–¹æ³¢') >= 0 ||
-    zh.indexOf('æ­£å¼¦') >= 0 || zh.indexOf('ä¸‰è§’') >= 0)) {
-    let f = freqM[1].replace(/\s/g, '');
-    if (!/[Hh][Zz]$/i.test(f)) {
-      f = `${f}Hz`;
-    }
-    intent.preferredSignalFrequency = f;
-    pushReason(intent, `sigFreq=${f}`);
-  }
-  // å ç©ºæ¯”ï¼šå ç©ºæ¯”50% / duty=25 / 25%å ç©º
-  const dutyM = zh.match(/(?:å ç©ºæ¯”|duty(?:\s*cycle)?)\s*(?:=|ä¸º|:|ï¼š)?\s*([\d.]+)\s*%?/i) ||
-    zh.match(/([\d.]+)\s*%\s*(?:å ç©º|duty)/i);
-  if (dutyM) {
-    const n = parseFloat(dutyM[1]);
-    if (Number.isFinite(n) && n > 0 && n <= 100) {
-      intent.preferredSignalDuty = `${n}%`;
-      if (intent.needsSignalGen || wantSig) {
-        pushReason(intent, `sigDuty=${intent.preferredSignalDuty}`);
-      }
-    }
-  }
-}
-
-function collectBomIds(out: DeviceSelectLlmOutput): string[] {
-  const list = out.deviceRequireList ?? [];
-  const ids: string[] = [];
-  for (let i = 0; i < list.length; i++) {
-    const m = (list[i].explicitModel ?? '').trim();
-    const t = (list[i].devType ?? '').trim();
-    if (m.length > 0) {
-      ids.push(m.toUpperCase());
-    }
-    if (t.length > 0) {
-      ids.push(t.toUpperCase());
-    }
-  }
-  return ids;
-}
-
-/** é€‰å‹åï¼šç”¨ BOM ç²¾ä¿®æ„å›¾ï¼ˆä¸å› ã€ŒåŒLED+SWã€æ¨æ–­äº’æ–¥ï¼‰ */
-export function refineCircuitIntent(
-  prompt: string,
-  out: DeviceSelectLlmOutput,
-  matched?: MatchedDevice[]
-): CircuitIntent {
-  const intent = classifyCircuitIntent(prompt);
-  const ids = collectBomIds(out);
-  if (matched && matched.length > 0) {
-    for (let i = 0; i < matched.length; i++) {
-      const mid = matched[i].libDevId ?? '';
-      if (mid.length > 0) {
-        ids.push(mid.toUpperCase());
-      }
-    }
-  }
-
-  const hasMcuBom = ids.some(m =>
-    m.indexOf('STM32') >= 0 || m.indexOf('AT89') >= 0 || m.indexOf('STC') >= 0 ||
-    m.indexOf('MCU') >= 0);
-  if (hasMcuBom) {
-    intent.hasMcuMinSystem = true;
-    pushReason(intent, 'mcu_bom');
-  }
-
-  const ledN = ids.filter(m => m.indexOf('LED') >= 0).length;
-  if (ledN > 0) {
-    intent.needsLedSeriesR = true;
-    pushReason(intent, 'led_bom');
-  }
-
-  const hasRelay = ids.some(m => m.indexOf('RELAY') >= 0);
-  const hasR = ids.some(m => m.startsWith('R_'));
-  const hasC = ids.some(m => m.startsWith('C_'));
-  if (intent.seriesRcCharge || (hasR && hasC && isSeriesRcChargePrompt(prompt))) {
-    intent.seriesRcCharge = true;
-    intent.relayContactTopo = false;
-    intent.mutualLedIndicator = false;
-    pushReason(intent, 'series_rc_bom');
-  }
-  if (hasRelay && intent.mutualLedIndicator && !intent.seriesRcCharge) {
-    intent.relayContactTopo = true;
-    pushReason(intent, 'relay_bom_mutual');
-  } else if (hasRelay && !intent.blinkOscillator && ledN >= 2 && intent.mutualLedIndicator &&
-    !intent.seriesRcCharge) {
-    intent.relayContactTopo = true;
-  } else if (hasRelay && (intent.blinkOscillator || intent.seriesRcCharge)) {
-    // é—ªçƒ / RC å……æ”¾ç”µå¶å¸¦ç»§ç”µå™¨ä¹Ÿä¸å¼ºè¡Œè§¦ç‚¹åŒè‰²é“å¾‹
-    intent.relayContactTopo = false;
-  }
-
-  const hasI2cBom = (out.deviceRequireList ?? []).some(r =>
-    (r.func ?? '').toUpperCase().indexOf('I2C') >= 0 ||
-    (r.devType ?? '').toUpperCase().indexOf('I2C') >= 0 ||
-    (r.explicitModel ?? '').toUpperCase().indexOf('I2C') >= 0 ||
-    (r.explicitModel ?? '').toUpperCase().indexOf('OLED') >= 0 ||
-    (r.explicitModel ?? '').toUpperCase().indexOf('EEPROM') >= 0);
-  if (hasI2cBom) {
-    intent.needsI2cPullup = true;
-    pushReason(intent, 'i2c_bom');
-  }
-
-  const hasOp = ids.some(m =>
-    m.indexOf('LM358') >= 0 || m.indexOf('LM324') >= 0 || m.indexOf('OPAMP') >= 0);
-  if (hasOp) {
-    intent.needsOpAmpFeedback = true;
-    pushReason(intent, 'opamp_bom');
-  }
-
-  const hasInstr = ids.some(m =>
-    m.indexOf('VOLTMETER') >= 0 || m.indexOf('AMMETER') >= 0 ||
-    m.indexOf('OSCILLOSCOPE') >= 0 || m.indexOf('LOGIC_ANALYZER') >= 0 ||
-    m.indexOf('UART_TERMINAL') >= 0);
-  if (hasInstr) {
-    intent.hasInstruments = true;
-    pushReason(intent, 'instrument_bom');
-  }
-
-  const hasVcc = ids.some(m => m === 'VCC');
-  const hasGnd = ids.some(m => m === 'GND');
-  const hasVee = ids.some(m => m === 'VEE' || m.indexOf('VEE') >= 0);
-  const hasSig = ids.some(m => m.indexOf('SIGNAL_GEN') >= 0);
-  if (hasVcc || hasGnd || hasVee) {
-    intent.needsPowerRails = true;
-  }
-  if (hasVee) {
-    intent.dualSupply = true;
-    pushReason(intent, 'vee_bom');
-  }
-  if (hasSig) {
-    intent.needsSignalGen = true;
-    intent.hasInstruments = true;
-    pushReason(intent, 'signal_gen_bom');
-    // BOM æ˜¾å¼ waveform è¦†ç›–å¯å‘å¼ï¼ˆé¿å…ã€Œè¾“å‡ºæ–¹æ³¢ã€è¯¯åˆ¤æ¿€åŠ±ï¼‰
-    const list = out.deviceRequireList ?? [];
-    for (let i = 0; i < list.length; i++) {
-      const id = `${list[i].explicitModel ?? ''} ${list[i].devType ?? ''}`.toUpperCase();
-      if (id.indexOf('SIGNAL_GEN') < 0) {
-        continue;
-      }
-      const wf = (list[i].paramConstraint?.get('waveform') ?? '').trim().toLowerCase();
-      if (wf === 'sine' || wf === 'square' || wf === 'triangle' || wf === 'saw' || wf === 'pulse') {
-        intent.signalWaveform = wf;
-        pushReason(intent, `sigWfBom=${wf}`);
-      }
-      const freq = (list[i].paramConstraint?.get('frequency') ?? '').trim();
-      if (freq.length > 0) {
-        intent.preferredSignalFrequency = freq;
-      }
-      const duty = (list[i].paramConstraint?.get('dutyCycle') ?? '').trim();
-      if (duty.length > 0) {
-        intent.preferredSignalDuty = duty;
-      }
-      break;
-    }
-  }
-  // è¿æ”¾ BOM + æœªå£°æ˜å•ç”µæº â†’ å€¾å‘åŒç”µæº
-  if (intent.needsOpAmpFeedback && !intent.dualSupply) {
-    const zh = prompt ?? '';
-    if (zh.indexOf('å•ç”µæº') < 0 && zh.toLowerCase().indexOf('single supply') < 0) {
-      // ä¸å¼ºåˆ¶ dualï¼Œä»…å½“æç¤ºå«åŒç”µæº/Â± æ—¶å·²åœ¨ classify è®¾ç½®
-    }
-  }
-
-  intent.passiveOnly = !intent.hasMcuMinSystem && !intent.hasInstruments &&
-    !intent.needsOpAmpFeedback && ledN === 0 && !hasRelay;
-
-  // é—ªçƒ / RC ä¼˜å…ˆå¦å†³äº’æ–¥
-  if (intent.blinkOscillator || intent.seriesRcCharge) {
-    intent.mutualLedIndicator = false;
-    intent.relayContactTopo = false;
-  }
-
-  return intent;
-}
-
-/** ä»å·²æ‘†æ”¾æ‹“æ‰‘å†ç²¾ä¿®ï¼ˆnet_plan / PostGen å‰ï¼‰ */
-export function refineIntentFromTopo(intent: CircuitIntent, topo: SchTopology): CircuitIntent {
-  const next = copyIntent(intent);
-  const hasRelay = topo.deviceList.some(d =>
-    d.libDevId === 'RELAY_SPDT' || (d.libDevId ?? '').toUpperCase().indexOf('RELAY') >= 0);
-  const ledN = topo.deviceList.filter(d => d.libDevId.startsWith('LED_')).length;
-  const hasMcu = topo.deviceList.some(d => {
-    const id = (d.libDevId ?? '').toUpperCase();
-    return id.indexOf('STM32') >= 0 || id.indexOf('AT89') >= 0 || id.indexOf('STC') >= 0;
-  });
-  if (hasMcu) {
-    next.hasMcuMinSystem = true;
-  }
-  if (ledN > 0) {
-    next.needsLedSeriesR = true;
-  }
-  if (next.seriesRcCharge) {
-    next.mutualLedIndicator = false;
-    next.relayContactTopo = false;
-  } else if (hasRelay && next.mutualLedIndicator) {
-    next.relayContactTopo = true;
-  } else if (hasRelay && next.blinkOscillator) {
-    next.relayContactTopo = false;
-  }
-  return next;
-}
-
-export function copyIntent(src: CircuitIntent): CircuitIntent {
-  return {
-    needsPowerRails: src.needsPowerRails,
-    hasMcuMinSystem: src.hasMcuMinSystem,
-    mutualLedIndicator: src.mutualLedIndicator,
-    blinkOscillator: src.blinkOscillator,
-    relayContactTopo: src.relayContactTopo,
-    seriesRcCharge: src.seriesRcCharge,
-    dualSupply: src.dualSupply,
-    preferredVccVoltage: src.preferredVccVoltage,
-    preferredVeeVoltage: src.preferredVeeVoltage,
-    needsSignalGen: src.needsSignalGen,
-    signalWaveform: src.signalWaveform,
-    preferredSignalFrequency: src.preferredSignalFrequency,
-    preferredSignalDuty: src.preferredSignalDuty,
-    hasInstruments: src.hasInstruments,
-    needsLedSeriesR: src.needsLedSeriesR,
-    needsI2cPullup: src.needsI2cPullup,
-    needsOpAmpFeedback: src.needsOpAmpFeedback,
-    passiveOnly: src.passiveOnly,
-    reasons: src.reasons.slice()
-  };
-}
-
-export function formatIntentLog(intent: CircuitIntent): string {
-  return `power=${intent.needsPowerRails} mcu=${intent.hasMcuMinSystem}` +
-    ` mutual=${intent.mutualLedIndicator} blink=${intent.blinkOscillator}` +
-    ` relayTopo=${intent.relayContactTopo} seriesRc=${intent.seriesRcCharge}` +
-    ` dual=${intent.dualSupply} vcc=${intent.preferredVccVoltage || '-'}` +
-    ` vee=${intent.preferredVeeVoltage || '-'} sig=${intent.needsSignalGen}/${intent.signalWaveform}` +
-    `@${intent.preferredSignalFrequency || '1kHz'}/duty=${intent.preferredSignalDuty || '50%'}` +
-    ` instr=${intent.hasInstruments}` +
-    ` ledR=${intent.needsLedSeriesR} i2c=${intent.needsI2cPullup}` +
-    ` opamp=${intent.needsOpAmpFeedback} reasons=${intent.reasons.join(',')}`;
-}
-
-/** HARD æ®‹å·®æŒ‡çº¹ï¼šå¿½ç•¥æ•°å­—æ³¢åŠ¨ï¼Œæ’åºåæ‹¼æ¥ */
-export function hardResidualFingerprint(hard: string[]): string {
-  const norm = hard.map(s => s.replace(/\d+/g, '#').replace(/\s+/g, ' ').trim());
-  norm.sort();
-  return norm.join('|');
-}
-
-export function splitEmpty(): CritiqueSplit {
-  return { hard: [], soft: [] };
-}
-
-export function mergeSplit(a: CritiqueSplit, b: CritiqueSplit): CritiqueSplit {
-  return { hard: a.hard.concat(b.hard), soft: a.soft.concat(b.soft) };
-}
-
-export function allCritiqueLines(split: CritiqueSplit): string[] {
-  const lines: string[] = [];
-  for (let i = 0; i < split.hard.length; i++) {
-    lines.push(`[HARD] ${split.hard[i]}`);
-  }
-  for (let j = 0; j < split.soft.length; j++) {
-    lines.push(`[SOFT] ${split.soft[j]}`);
-  }
-  return lines;
-}
-
-/** å…¼å®¹æ—§ isMutualLedSwitchPrompt è°ƒç”¨ */
-export function intentIsMutualLedSwitch(prompt: string): boolean {
-  return isMutualLedSwitchPrompt(prompt);
-}
-ÔrD•§version¨mappings¥names§sources®sourcesContentÜø‘”  ) ‘”  +‘”  ,‘”  -‘”  .‘”  /‘”  0‘”  1‘”  2‘”  3‘”  4‘”  5‘”  6‘”  7‘”  8‘”  9‘”  :‘”  ;‘”  <‘”  =‘”  ? ‘”  ÌA ‘”  ÌB ‘”  ÌC‘”  ÌD‘”  ÌE‘”  ÌF‘”  ÌG‘”  ÌH‘”  ÌJ‘”  ÌK‘”  ÌM‘”  ÌN ‘”  ÌP ‘”  ÌR‘”  ÌS‘”  ÌT ‘”  ÌV ‘”  ÌW‘”  ÌX‘”  ÌY‘”  ÌZ‘”  Ì[‘”  Ì\ ‘”  Ì^ ‘”  Ì_‘”  Ì`‘”  Ìc‘”  Ìd‘”  Ìe‘”  Ìh‘”  Ìi‘”  Ìj‘”  Ìk‘”  Ìp‘”  Ìq‘”  Ìr‘”  Ìs‘”  Ìt‘”  Ìu‘”  Ìv ‘”  Ìx ‘”  Ìy ‘”  Ìz‘”  Ì{‘”  Ì|‘”  Ì~‘”  Ì‘”  Ì€‘”  Ì‘”  Ì‚‘”  Ìƒ‘”  Ìƒ	‘”  Ì„‘”  Ì…‘”  Ì†‘”  Ìˆ‘”  Ì‰‘”  ÌŠ‘”  Ì‹‘”  ÌŒ‘”  Ì‘”  Ì‘”  Ì‘‘”  Ì’‘”  Ì“‘”  Ì”‘”  Ì”	‘”  Ì•‘”  Ì–‘”  Ì—‘”  Ì›‘”  Ìœ‘”  Ì‘”  Ì‘”  Ì¡‘”  Ì¢‘”  Ì£‘”  Ì¤‘”  Ì§‘”  Ì¨‘”  Ì©‘”  Ì­‘”  Ì®‘”  Ì¯‘”  Ì°‘”  Ì²‘”  Ì¶‘”  Ì·‘”  Ì¸‘”  Ì¹‘”  Ìº‘”  Ì¼‘”  Ì½‘”  Ì¾‘”  Ì¿‘”  ÌÀ‘”  ÌÂ‘”  ÌÄ‘”  ÌÆ‘”  ÌÈ‘”  ÌÉ ‘”  ÌË ‘”  ÌÌ ‘”  ÌÍ‘”  ÌÎ‘”  ÌÒ‘”  ÌÔ‘”  ÌÖ‘”  Ì×‘”  ÌØ‘”  ÌÙ‘”  ÌÚ‘”  Ìİ‘”  ÌŞ‘”  Ìà‘”  Ìá‘”  Ìâ‘”  Ìã‘”  Ìä‘”  Ìç‘”  Ìè‘”  Ìé‘”  Ìì‘”  Ìî‘”  Ìï‘”  Ìğ‘”  Ìñ‘”  Ìò‘”  Ìó‘”  Ìô‘”  Ìõ‘”  Ìö‘”  Ìø‘”  Ìù‘”  Ìú‘”  Ìı‘”  Ìş‘”  Ìÿ‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í	‘”  Í
-‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í ‘”  Í 	‘”  Í!‘”  Í"‘”  Í#‘”  Í$‘”  Í%‘”  Í%	‘”  Í&‘”  Í(‘”  Í)‘”  Í*‘”  Í*	‘”  Í+‘”  Í-‘”  Í.‘”  Í/‘”  Í/	‘”  Í0‘”  Í2‘”  Í3‘”  Í4‘”  Í4	‘”  Í5‘”  Í6‘”  Í7‘”  Í8‘”  Í9‘”  Í;‘”  Í<‘”  Í=‘”  Í>‘”  Í?‘”  Í@‘”  ÍA‘”  ÍB‘”  ÍC‘”  ÍD‘”  ÍE‘”  ÍG‘”  ÍH‘”  ÍI‘”  ÍK‘”  ÍL‘”  ÍM‘”  ÍO‘”  ÍP‘”  ÍQ‘”  ÍR ‘”  ÍT ‘”  ÍU‘”  ÍW‘”  ÍX‘”  ÍY‘”  ÍZ‘”  Í\‘”  Í]‘”  Í_‘”  Í`‘”  Ía‘”  Íb ‘”  Íd ‘”  Íe ‘”  Íj‘”  Ík‘”  Íl‘”  Ím‘”  Ío‘”  Íq‘”  Ír‘”  Ís‘”  Íu‘”  Íx‘”  Íy‘”  Íz‘”  Í{‘”  Í‘”  Í€‘”  Í‘”  Íƒ‘”  Í„‘”  Í…‘”  Í†‘”  Í‡‘”  Íˆ‘”  Í‰‘”  ÍŠ‘”  Í‹‘”  Í‘”  Í‘”  Í‘”  Í	‘”  Í‘‘”  Í’‘”  Í”‘”  Í•‘”  Í—‘”  Í™‘”  Íš‘”  Í›‘”  Íœ‘”  Í‘”  Í‘”  ÍŸ‘”  Í ‘”  Í¢‘”  Í¤‘”  Í¥‘”  Í¦‘”  Í§‘”  Í«‘”  Í­‘”  Í®‘”  Í¯‘”  Í°‘”  Í²‘”  Í³‘”  Íµ‘”  Í¶‘”  Í·‘”  Í¸‘”  Í¹‘”  Íº‘”  Í»‘”  Í¼‘”  Í½‘”  Í¾‘”  Í¿‘”  ÍÀ‘”  ÍÂ‘”  ÍÃ‘”  ÍÇ‘”  ÍÉ‘”  ÍÊ‘”  ÍË‘”  ÍÌ‘”  ÍÎ‘”  ÍÏ‘”  ÍĞ‘”  ÍÒ‘”  ÍÓ‘”  ÍÔ‘”  ÍÖ‘”  Í×‘”  ÍÚ‘”  Íİ‘”  ÍŞ‘”  Íä‘”  Íå‘”  Íæ‘”  Íç‘”  Íé‘”  Íê ‘”  Íì ‘”  Íí ‘”  Íî‘”  Íï‘”  Íó‘”  Íõ‘”  Íö‘”  Í÷‘”  Íø‘”  Íú‘”  Íû‘”  Íı‘”  Íş‘”  Íÿ‘”  Íÿ	‘”  Í ‘”  Í‘”  Í	‘”  Í‘”  Í‘”  Í‘”  Í ‘”  Í ‘”  Í‘”  Í ‘”  Í ‘”  Í!‘”  Í"‘”  Í$‘”  Í'‘”  Í(‘”  Í) ‘”  Í+ ‘”  Í, ‘”  Í-‘”  Í/‘”  Í0 ‘”  Í2 ‘”  Í4 ‘”  Í6 ‘”  Í8 ‘”  Í: ‘”  Í<‘”  Í=‘”  Í>‘”  Í?‘”  Í@‘”  ÍA‘”  ÍB‘”  ÍC ‘”  ÍE ‘”  ÍF ‘”  ÍG‘”  ÍH ‘ÙYC:\Projects\ElecDraw_Harmony\features\ai_engine\src\main\ets\algorithms\CircuitIntent.ets‘ÚV†/**
- * CircuitIntent â€” æµæ°´çº¿ç»Ÿä¸€æ„å›¾ä¸­æ¢
- * é€‰å‹å‰ç²—åˆ† / BOM åç²¾ä¿®ï¼›ä¾› prompt æ³¨å…¥ã€HARD/SOFT critiqueã€PostGen é—¨æ§å…±ç”¨ã€‚
- */
-import { DeviceSelectLlmOutput, MatchedDevice, SchTopology } from 'common';
-
-export interface CircuitIntent {
-  needsPowerRails: boolean;
-  hasMcuMinSystem: boolean;
-  mutualLedIndicator: boolean;
-  blinkOscillator: boolean;
-  relayContactTopo: boolean;
-  /** ä¸²è” RC å……æ”¾ç”µï¼ˆè§‚æµ‹ Ï„=RC / æŒ‡æ•°æ³¢å½¢ï¼‰â€” ç¦ RELAYï¼Œä¼˜å…ˆ SW_PUSH */
-  seriesRcCharge: boolean;
-  /** è¿æ”¾/æ¨¡æ‹ŸåŒç”µæºï¼šéœ€è¦ VEE è´Ÿå‹è½¨ */
-  dualSupply: boolean;
-  /** ç”¨æˆ·æŒ‡å®šçš„æ­£ç”µæºç”µå‹æ–‡æ¡ˆï¼ˆå¦‚ 3.3V / 5V / 12Vï¼‰ï¼Œç©º=é»˜è®¤ */
-  preferredVccVoltage: string;
-  /** ç”¨æˆ·æŒ‡å®šçš„è´Ÿç”µæºç”µå‹æ–‡æ¡ˆï¼ˆå¦‚ -12V / -5Vï¼‰ï¼Œç©º=é»˜è®¤ -12V */
-  preferredVeeVoltage: string;
-  /** éœ€è¦åŸç†å›¾ SIGNAL_GENï¼ˆæ­£å¼¦/æ–¹æ³¢/ä¸‰è§’ï¼‰ */
-  needsSignalGen: boolean;
-  /** SIGNAL_GEN æ³¢å½¢ï¼šsine|square|triangle|saw|pulse */
-  signalWaveform: string;
-  /** SIGNAL_GEN é¢‘ç‡æ–‡æ¡ˆï¼ˆå¦‚ 1kHz / 500Hzï¼‰ï¼Œç©º=é»˜è®¤ 1kHz */
-  preferredSignalFrequency: string;
-  /** SIGNAL_GEN å ç©ºæ¯”æ–‡æ¡ˆï¼ˆå¦‚ 50% / 25ï¼‰ï¼Œç©º=é»˜è®¤ 50%ï¼›æ–¹æ³¢/è„‰å†²æœ‰æ•ˆ */
-  preferredSignalDuty: string;
-  hasInstruments: boolean;
-  needsLedSeriesR: boolean;
-  needsI2cPullup: boolean;
-  needsOpAmpFeedback: boolean;
-  passiveOnly: boolean;
-  reasons: string[];
-}
-
-export interface CritiqueSplit {
-  hard: string[];
-  soft: string[];
-}
-
-export function defaultCircuitIntent(): CircuitIntent {
-  return {
-    needsPowerRails: true,
-    hasMcuMinSystem: false,
-    mutualLedIndicator: false,
-    blinkOscillator: false,
-    relayContactTopo: false,
-    seriesRcCharge: false,
-    dualSupply: false,
-    preferredVccVoltage: '',
-    preferredVeeVoltage: '',
-    needsSignalGen: false,
-    signalWaveform: 'sine',
-    preferredSignalFrequency: '',
-    preferredSignalDuty: '',
-    hasInstruments: false,
-    needsLedSeriesR: false,
-    needsI2cPullup: false,
-    needsOpAmpFeedback: false,
-    passiveOnly: false,
-    reasons: []
-  };
-}
-
-/** ä¸²è” RC å……æ”¾ç”µ / Ï„ è§‚æµ‹ï¼ˆç¦å¥—äº’æ–¥ç»§ç”µå™¨ï¼‰ */
-function isSeriesRcChargePrompt(prompt: string): boolean {
-  const zh = prompt ?? '';
-  const lower = zh.toLowerCase();
-  if (isMutualLedSwitchPrompt(prompt)) {
-    return false;
-  }
-  return zh.indexOf('å……æ”¾ç”µ') >= 0 || zh.indexOf('æ—¶é—´å¸¸æ•°') >= 0 ||
-    zh.indexOf('æŒ‡æ•°æ³¢å½¢') >= 0 || zh.indexOf('Ï„=RC') >= 0 || zh.indexOf('Ï„ï¼RC') >= 0 ||
-    zh.indexOf('tau=RC') >= 0 || lower.indexOf('time constant') >= 0 ||
-    lower.indexOf('rc charge') >= 0 || lower.indexOf('rc discharge') >= 0 ||
-    (zh.indexOf('RC') >= 0 && (zh.indexOf('ç”µå®¹') >= 0 || zh.indexOf('ç”µé˜»') >= 0) &&
-      (zh.indexOf('å……ç”µ') >= 0 || zh.indexOf('æ”¾ç”µ') >= 0 || zh.indexOf('æ³¢å½¢') >= 0));
-}
-
-function pushReason(intent: CircuitIntent, reason: string): void {
-  if (intent.reasons.indexOf(reason) < 0) {
-    intent.reasons.push(reason);
-  }
-}
-
-function isBlinkLike(zh: string, lower: string): boolean {
-  return zh.indexOf('é—ªçƒ') >= 0 || zh.indexOf('äº¤æ›¿') >= 0 ||
-    zh.indexOf('æŒ¯è¡') >= 0 || zh.indexOf('å¤šè°') >= 0 ||
-    zh.indexOf('è·‘é©¬') >= 0 ||
-    lower.indexOf('blink') >= 0 || lower.indexOf('flash') >= 0 ||
-    lower.indexOf('astable') >= 0 || lower.indexOf('multivibrator') >= 0;
-}
-
-function isMutualLedSwitchPrompt(prompt: string): boolean {
-  const zh = prompt ?? '';
-  const lower = zh.toLowerCase();
-  const dualColor =
-    (zh.indexOf('ç»¿') >= 0 && zh.indexOf('çº¢') >= 0) ||
-    (lower.indexOf('green') >= 0 && lower.indexOf('red') >= 0) ||
-    (zh.indexOf('åŒ') >= 0 && (zh.indexOf('LED') >= 0 || lower.indexOf('led') >= 0)) ||
-    zh.indexOf('çº¢ç»¿ç¯') >= 0;
-  const mutual =
-    (zh.indexOf('æ‰“å¼€') >= 0 && zh.indexOf('é—­åˆ') >= 0) ||
-    (zh.indexOf('æ–­å¼€') >= 0 && (zh.indexOf('é—­åˆ') >= 0 || zh.indexOf('æ¥é€š') >= 0)) ||
-    (zh.indexOf('æ¾å¼€') >= 0 && zh.indexOf('æŒ‰ä¸‹') >= 0) ||
-    (lower.indexOf('open') >= 0 && lower.indexOf('close') >= 0) ||
-    zh.indexOf('äº’æ–¥') >= 0 ||
-    ((zh.indexOf('å¸¸å¼€') >= 0 || zh.indexOf('å¸¸é—­') >= 0) && dualColor);
-  // äº’æ–¥åŒè‰²ä¼˜å…ˆäº blinkï¼šçº¢ç»¿ç¯é—ªçƒä»å¯èƒ½æ˜¯ SPDT äº’æ–¥æŒ‡ç¤º
-  if (mutual && (dualColor || zh.indexOf('LED') >= 0 || lower.indexOf('led') >= 0 ||
-    zh.indexOf('ç¯') >= 0)) {
-    return true;
-  }
-  if (isBlinkLike(zh, lower)) {
-    return false;
-  }
-  return false;
-}
-
-/** é€‰å‹å‰ï¼šä»…æ ¹æ®ç”¨æˆ·æç¤ºç²—åˆ†æ„å›¾ */
-export function classifyCircuitIntent(prompt: string): CircuitIntent {
-  const intent = defaultCircuitIntent();
-  const zh = prompt ?? '';
-  const lower = zh.toLowerCase();
-
-  if (isMutualLedSwitchPrompt(prompt)) {
-    intent.mutualLedIndicator = true;
-    intent.relayContactTopo = true;
-    intent.blinkOscillator = false;
-    pushReason(intent, 'mutual_led_switch');
-  } else if (isBlinkLike(zh, lower)) {
-    intent.blinkOscillator = true;
-    pushReason(intent, 'blink_keyword');
-  }
-
-  if (isSeriesRcChargePrompt(prompt)) {
-    intent.seriesRcCharge = true;
-    intent.mutualLedIndicator = false;
-    intent.relayContactTopo = false;
-    pushReason(intent, 'series_rc_charge');
-  }
-
-  if (isMutualLedSwitchPrompt(prompt) && !intent.seriesRcCharge) {
-    intent.mutualLedIndicator = true;
-    intent.relayContactTopo = true;
-    intent.needsLedSeriesR = true;
-    pushReason(intent, 'mutual_led_switch');
-  } else if (intent.blinkOscillator || intent.seriesRcCharge) {
-    intent.mutualLedIndicator = false;
-    intent.relayContactTopo = false;
-  }
-
-  if (zh.indexOf('STM32') >= 0 || zh.indexOf('å•ç‰‡æœº') >= 0 || zh.indexOf('MCU') >= 0 ||
-    zh.indexOf('8051') >= 0 || zh.indexOf('AT89') >= 0 || zh.indexOf('STC') >= 0 ||
-    lower.indexOf('arduino') >= 0 || lower.indexOf('mcu') >= 0) {
-    intent.hasMcuMinSystem = true;
-    pushReason(intent, 'mcu_keyword');
-  }
-
-  if (zh.indexOf('LED') >= 0 || lower.indexOf('led') >= 0 || zh.indexOf('ç¯') >= 0 ||
-    zh.indexOf('å‘å…‰') >= 0) {
-    intent.needsLedSeriesR = true;
-    pushReason(intent, 'led_keyword');
-  }
-
-  if (zh.indexOf('I2C') >= 0 || lower.indexOf('i2c') >= 0 || zh.indexOf('IÂ²C') >= 0) {
-    intent.needsI2cPullup = true;
-    pushReason(intent, 'i2c_keyword');
-  }
-
-  if (zh.indexOf('è¿æ”¾') >= 0 || zh.indexOf('æ”¾å¤§å™¨') >= 0 || lower.indexOf('opamp') >= 0 ||
-    lower.indexOf('op-amp') >= 0 || zh.indexOf('LM358') >= 0 || zh.indexOf('LM324') >= 0 ||
-    zh.indexOf('741') >= 0 || zh.indexOf('TL082') >= 0) {
-    intent.needsOpAmpFeedback = true;
-    pushReason(intent, 'opamp_keyword');
-  }
-
-  applyPowerAndSignalIntent(intent, prompt);
-
-  if (zh.indexOf('ç”µå‹è¡¨') >= 0 || zh.indexOf('ç”µæµè¡¨') >= 0 || zh.indexOf('ç¤ºæ³¢å™¨') >= 0 ||
-    zh.indexOf('é€»è¾‘åˆ†æ') >= 0 || zh.indexOf('æµ‹ç”µæµ') >= 0 || zh.indexOf('æµ‹ç”µå‹') >= 0 ||
-    lower.indexOf('voltmeter') >= 0 || lower.indexOf('ammeter') >= 0 ||
-    lower.indexOf('scope') >= 0) {
-    intent.hasInstruments = true;
-    pushReason(intent, 'instrument_keyword');
-  }
-
-  if (zh.indexOf('æ— ç”µæº') >= 0 || zh.indexOf('æµ®ç©ºæ•™å­¦') >= 0 ||
-    (zh.indexOf('æ— æº') >= 0 && zh.indexOf('æ— ç”µæº') >= 0)) {
-    intent.needsPowerRails = false;
-    pushReason(intent, 'no_power_keyword');
-  }
-
-  if (!intent.hasMcuMinSystem && !intent.needsLedSeriesR && !intent.needsOpAmpFeedback &&
-    !intent.hasInstruments && (zh.indexOf('ç”µé˜»') >= 0 || zh.indexOf('ç”µå®¹') >= 0) &&
-    zh.indexOf('ç”µæº') < 0) {
-    // ä¸å¼ºåˆ¶ passiveOnlyï¼›ä»…ä½œå¼±ä¿¡å·
-  }
-
-  return intent;
-}
-
-/** è§£æç”µæºç”µå‹ / åŒç”µæº / ä¿¡å·å‘ç”Ÿå™¨æ„å›¾ */
-function applyPowerAndSignalIntent(intent: CircuitIntent, prompt: string): void {
-  const zh = prompt ?? '';
-  const lower = zh.toLowerCase();
-
-  // åŒç”µæº / VEE
-  if (zh.indexOf('åŒç”µæº') >= 0 || zh.indexOf('æ­£è´Ÿç”µæº') >= 0 || zh.indexOf('è´Ÿå‹') >= 0 ||
-    zh.indexOf('VEE') >= 0 || lower.indexOf('vee') >= 0 ||
-    zh.indexOf('Â±') >= 0 || zh.indexOf('+/-') >= 0 || lower.indexOf('+/-') >= 0 ||
-    lower.indexOf('dual supply') >= 0 || lower.indexOf('split supply') >= 0 ||
-    /[Â±]\s*1?2\s*v/i.test(zh) || /[Â±]\s*5\s*v/i.test(zh) ||
-    /-12\s*v/i.test(zh) || /-5\s*v/i.test(zh)) {
-    intent.dualSupply = true;
-    intent.needsPowerRails = true;
-    pushReason(intent, 'dual_supply');
-  }
-  // è¿æ”¾é»˜è®¤å€¾å‘åŒç”µæºï¼ˆå¯è¢«å•ç”µæºæç¤ºè¦†ç›–ï¼‰
-  if (intent.needsOpAmpFeedback && !intent.dualSupply) {
-    if (zh.indexOf('å•ç”µæº') >= 0 || lower.indexOf('single supply') >= 0 ||
-      zh.indexOf('å•ä¾›') >= 0) {
-      // ä¿æŒå•ç”µæº
-    } else if (zh.indexOf('åŒç”µæº') >= 0 || zh.indexOf('Â±') >= 0 || zh.indexOf('VEE') >= 0) {
-      intent.dualSupply = true;
-      pushReason(intent, 'opamp_dual');
-    }
-  }
-
-  // VCC ç”µå‹
-  const vccM = zh.match(/(?:VCC|VDD|ç”µæº|ä¾›ç”µ)\s*(?:=|ä¸º|:|ï¼š)?\s*(3\.3|5|12)\s*V/i) ||
-    zh.match(/\b(3\.3|5|12)\s*V\b/i);
-  if (vccM) {
-    intent.preferredVccVoltage = `${vccM[1]}V`;
-    pushReason(intent, `vcc=${intent.preferredVccVoltage}`);
-  }
-  // VEE ç”µå‹
-  const veeM = zh.match(/(?:VEE|è´Ÿå‹|è´Ÿç”µæº)\s*(?:=|ä¸º|:|ï¼š)?\s*(-?1?2|-?5)\s*V/i) ||
-    zh.match(/(-\s*12|-\s*5)\s*V/i);
-  if (veeM) {
-    let v = veeM[1].replace(/\s/g, '');
-    if (!v.startsWith('-')) {
-      v = `-${v}`;
-    }
-    intent.preferredVeeVoltage = `${v}V`;
-    intent.dualSupply = true;
-    pushReason(intent, `vee=${intent.preferredVeeVoltage}`);
-  } else if (intent.dualSupply && intent.preferredVeeVoltage.length === 0) {
-    intent.preferredVeeVoltage = '-12V';
-  }
-
-  // ä¿¡å·å‘ç”Ÿå™¨
-  const wantSig = zh.indexOf('ä¿¡å·å‘ç”Ÿ') >= 0 || zh.indexOf('å‡½æ•°å‘ç”Ÿ') >= 0 ||
-    zh.indexOf('ä¿¡å·æº') >= 0 || lower.indexOf('signal gen') >= 0 ||
-    lower.indexOf('function gen') >= 0 || lower.indexOf('waveform gen') >= 0 ||
-    (zh.indexOf('æ¿€åŠ±') >= 0 && (zh.indexOf('æ­£å¼¦') >= 0 || zh.indexOf('æ–¹æ³¢') >= 0 ||
-      zh.indexOf('ä¸‰è§’') >= 0));
-  if (wantSig) {
-    intent.needsSignalGen = true;
-    intent.hasInstruments = true;
-    pushReason(intent, 'signal_gen');
-  }
-  // æ¿€åŠ±æ³¢å½¢ï¼šä¼˜å…ˆã€Œè¾“å…¥/æ¿€åŠ±/ä¿¡å·æºã€è¯­å¢ƒï¼›ã€Œæ•´å½¢/è¾“å‡ºæ–¹æ³¢ã€ä¸è¦†ç›–æ­£å¼¦æ¿€åŠ±
-  const hasSine = zh.indexOf('æ­£å¼¦') >= 0 || lower.indexOf('sine') >= 0;
-  const hasSquare = zh.indexOf('æ–¹æ³¢') >= 0 || lower.indexOf('square') >= 0;
-  const hasTri = zh.indexOf('ä¸‰è§’') >= 0 || lower.indexOf('triangle') >= 0;
-  const hasSaw = zh.indexOf('é”¯é½¿') >= 0 || lower.indexOf('saw') >= 0;
-  const hasPulse = zh.indexOf('è„‰å†²') >= 0 || lower.indexOf('pulse') >= 0;
-  const squareAsOutputOnly = hasSquare && hasSine && (
-    zh.indexOf('æ•´å½¢') >= 0 || zh.indexOf('æ»å›') >= 0 || zh.indexOf('æ¯”è¾ƒå™¨') >= 0 ||
-    zh.indexOf('è¾“å‡º') >= 0 || zh.indexOf('å‰Šæ³¢') >= 0 ||
-    /è¾“å…¥\s*æ­£å¼¦|æ­£å¼¦\s*æ³¢?\s*ä¿¡å·|æ­£å¼¦\s*æ¿€åŠ±/.test(zh)
-  );
-  const exciteCtx = (wave: string): boolean => {
-    const i = zh.indexOf(wave);
-    if (i < 0) {
-      return false;
-    }
-    const win = zh.substring(Math.max(0, i - 8), Math.min(zh.length, i + wave.length + 8));
-    return win.indexOf('è¾“å…¥') >= 0 || win.indexOf('æ¿€åŠ±') >= 0 || win.indexOf('ä¿¡å·æº') >= 0 ||
-      win.indexOf('ä¿¡å·å‘ç”Ÿ') >= 0 || win.indexOf('å‡½æ•°å‘ç”Ÿ') >= 0;
-  };
-  if (hasSine && (exciteCtx('æ­£å¼¦') || squareAsOutputOnly || !hasSquare)) {
-    intent.signalWaveform = 'sine';
-    if (wantSig || exciteCtx('æ­£å¼¦')) {
-      intent.needsSignalGen = true;
-    }
-  } else if (hasSquare && !squareAsOutputOnly) {
-    intent.signalWaveform = 'square';
-    if (wantSig || zh.indexOf('æ³¢å½¢') >= 0 || exciteCtx('æ–¹æ³¢')) {
-      intent.needsSignalGen = true;
-    }
-  } else if (hasTri) {
-    intent.signalWaveform = 'triangle';
-    if (wantSig || zh.indexOf('æ³¢å½¢') >= 0) {
-      intent.needsSignalGen = true;
-    }
-  } else if (hasSaw) {
-    intent.signalWaveform = 'saw';
-    if (wantSig || zh.indexOf('æ³¢å½¢') >= 0) {
-      intent.needsSignalGen = true;
-    }
-  } else if (hasPulse) {
-    intent.signalWaveform = 'pulse';
-    if (wantSig || zh.indexOf('æ³¢å½¢') >= 0) {
-      intent.needsSignalGen = true;
-    }
-  } else if (hasSine) {
-    intent.signalWaveform = 'sine';
-    if (wantSig) {
-      intent.needsSignalGen = true;
-    }
-  }
-  // é¢‘ç‡ï¼š1kHz / 500Hz / é¢‘ç‡=10kHz
-  const freqM = zh.match(/(?:é¢‘ç‡|freq(?:uency)?)\s*(?:=|ä¸º|:|ï¼š)?\s*([\d.]+\s*[kKmM]?[Hh][Zz]?)/i) ||
-    zh.match(/([\d.]+\s*[kKmM]?[Hh][Zz])/);
-  if (freqM && (intent.needsSignalGen || wantSig || zh.indexOf('æ–¹æ³¢') >= 0 ||
-    zh.indexOf('æ­£å¼¦') >= 0 || zh.indexOf('ä¸‰è§’') >= 0)) {
-    let f = freqM[1].replace(/\s/g, '');
-    if (!/[Hh][Zz]$/i.test(f)) {
-      f = `${f}Hz`;
-    }
-    intent.preferredSignalFrequency = f;
-    pushReason(intent, `sigFreq=${f}`);
-  }
-  // å ç©ºæ¯”ï¼šå ç©ºæ¯”50% / duty=25 / 25%å ç©º
-  const dutyM = zh.match(/(?:å ç©ºæ¯”|duty(?:\s*cycle)?)\s*(?:=|ä¸º|:|ï¼š)?\s*([\d.]+)\s*%?/i) ||
-    zh.match(/([\d.]+)\s*%\s*(?:å ç©º|duty)/i);
-  if (dutyM) {
-    const n = parseFloat(dutyM[1]);
-    if (Number.isFinite(n) && n > 0 && n <= 100) {
-      intent.preferredSignalDuty = `${n}%`;
-      if (intent.needsSignalGen || wantSig) {
-        pushReason(intent, `sigDuty=${intent.preferredSignalDuty}`);
-      }
-    }
-  }
-}
-
-function collectBomIds(out: DeviceSelectLlmOutput): string[] {
-  const list = out.deviceRequireList ?? [];
-  const ids: string[] = [];
-  for (let i = 0; i < list.length; i++) {
-    const m = (list[i].explicitModel ?? '').trim();
-    const t = (list[i].devType ?? '').trim();
-    if (m.length > 0) {
-      ids.push(m.toUpperCase());
-    }
-    if (t.length > 0) {
-      ids.push(t.toUpperCase());
-    }
-  }
-  return ids;
-}
-
-/** é€‰å‹åï¼šç”¨ BOM ç²¾ä¿®æ„å›¾ï¼ˆä¸å› ã€ŒåŒLED+SWã€æ¨æ–­äº’æ–¥ï¼‰ */
-export function refineCircuitIntent(
-  prompt: string,
-  out: DeviceSelectLlmOutput,
-  matched?: MatchedDevice[]
-): CircuitIntent {
-  const intent = classifyCircuitIntent(prompt);
-  const ids = collectBomIds(out);
-  if (matched && matched.length > 0) {
-    for (let i = 0; i < matched.length; i++) {
-      const mid = matched[i].libDevId ?? '';
-      if (mid.length > 0) {
-        ids.push(mid.toUpperCase());
-      }
-    }
-  }
-
-  const hasMcuBom = ids.some(m =>
-    m.indexOf('STM32') >= 0 || m.indexOf('AT89') >= 0 || m.indexOf('STC') >= 0 ||
-    m.indexOf('MCU') >= 0);
-  if (hasMcuBom) {
-    intent.hasMcuMinSystem = true;
-    pushReason(intent, 'mcu_bom');
-  }
-
-  const ledN = ids.filter(m => m.indexOf('LED') >= 0).length;
-  if (ledN > 0) {
-    intent.needsLedSeriesR = true;
-    pushReason(intent, 'led_bom');
-  }
-
-  const hasRelay = ids.some(m => m.indexOf('RELAY') >= 0);
-  const hasR = ids.some(m => m.startsWith('R_'));
-  const hasC = ids.some(m => m.startsWith('C_'));
-  if (intent.seriesRcCharge || (hasR && hasC && isSeriesRcChargePrompt(prompt))) {
-    intent.seriesRcCharge = true;
-    intent.relayContactTopo = false;
-    intent.mutualLedIndicator = false;
-    pushReason(intent, 'series_rc_bom');
-  }
-  if (hasRelay && intent.mutualLedIndicator && !intent.seriesRcCharge) {
-    intent.relayContactTopo = true;
-    pushReason(intent, 'relay_bom_mutual');
-  } else if (hasRelay && !intent.blinkOscillator && ledN >= 2 && intent.mutualLedIndicator &&
-    !intent.seriesRcCharge) {
-    intent.relayContactTopo = true;
-  } else if (hasRelay && (intent.blinkOscillator || intent.seriesRcCharge)) {
-    // é—ªçƒ / RC å……æ”¾ç”µå¶å¸¦ç»§ç”µå™¨ä¹Ÿä¸å¼ºè¡Œè§¦ç‚¹åŒè‰²é“å¾‹
-    intent.relayContactTopo = false;
-  }
-
-  const hasI2cBom = (out.deviceRequireList ?? []).some(r =>
-    (r.func ?? '').toUpperCase().indexOf('I2C') >= 0 ||
-    (r.devType ?? '').toUpperCase().indexOf('I2C') >= 0 ||
-    (r.explicitModel ?? '').toUpperCase().indexOf('I2C') >= 0 ||
-    (r.explicitModel ?? '').toUpperCase().indexOf('OLED') >= 0 ||
-    (r.explicitModel ?? '').toUpperCase().indexOf('EEPROM') >= 0);
-  if (hasI2cBom) {
-    intent.needsI2cPullup = true;
-    pushReason(intent, 'i2c_bom');
-  }
-
-  const hasOp = ids.some(m =>
-    m.indexOf('LM358') >= 0 || m.indexOf('LM324') >= 0 || m.indexOf('OPAMP') >= 0);
-  if (hasOp) {
-    intent.needsOpAmpFeedback = true;
-    pushReason(intent, 'opamp_bom');
-  }
-
-  const hasInstr = ids.some(m =>
-    m.indexOf('VOLTMETER') >= 0 || m.indexOf('AMMETER') >= 0 ||
-    m.indexOf('OSCILLOSCOPE') >= 0 || m.indexOf('LOGIC_ANALYZER') >= 0 ||
-    m.indexOf('UART_TERMINAL') >= 0);
-  if (hasInstr) {
-    intent.hasInstruments = true;
-    pushReason(intent, 'instrument_bom');
-  }
-
-  const hasVcc = ids.some(m => m === 'VCC');
-  const hasGnd = ids.some(m => m === 'GND');
-  const hasVee = ids.some(m => m === 'VEE' || m.indexOf('VEE') >= 0);
-  const hasSig = ids.some(m => m.indexOf('SIGNAL_GEN') >= 0);
-  if (hasVcc || hasGnd || hasVee) {
-    intent.needsPowerRails = true;
-  }
-  if (hasVee) {
-    intent.dualSupply = true;
-    pushReason(intent, 'vee_bom');
-  }
-  if (hasSig) {
-    intent.needsSignalGen = true;
-    intent.hasInstruments = true;
-    pushReason(intent, 'signal_gen_bom');
-    // BOM æ˜¾å¼ waveform è¦†ç›–å¯å‘å¼ï¼ˆé¿å…ã€Œè¾“å‡ºæ–¹æ³¢ã€è¯¯åˆ¤æ¿€åŠ±ï¼‰
-    const list = out.deviceRequireList ?? [];
-    for (let i = 0; i < list.length; i++) {
-      const id = `${list[i].explicitModel ?? ''} ${list[i].devType ?? ''}`.toUpperCase();
-      if (id.indexOf('SIGNAL_GEN') < 0) {
-        continue;
-      }
-      const wf = (list[i].paramConstraint?.get('waveform') ?? '').trim().toLowerCase();
-      if (wf === 'sine' || wf === 'square' || wf === 'triangle' || wf === 'saw' || wf === 'pulse') {
-        intent.signalWaveform = wf;
-        pushReason(intent, `sigWfBom=${wf}`);
-      }
-      const freq = (list[i].paramConstraint?.get('frequency') ?? '').trim();
-      if (freq.length > 0) {
-        intent.preferredSignalFrequency = freq;
-      }
-      const duty = (list[i].paramConstraint?.get('dutyCycle') ?? '').trim();
-      if (duty.length > 0) {
-        intent.preferredSignalDuty = duty;
-      }
-      break;
-    }
-  }
-  // è¿æ”¾ BOM + æœªå£°æ˜å•ç”µæº â†’ å€¾å‘åŒç”µæº
-  if (intent.needsOpAmpFeedback && !intent.dualSupply) {
-    const zh = prompt ?? '';
-    if (zh.indexOf('å•ç”µæº') < 0 && zh.toLowerCase().indexOf('single supply') < 0) {
-      // ä¸å¼ºåˆ¶ dualï¼Œä»…å½“æç¤ºå«åŒç”µæº/Â± æ—¶å·²åœ¨ classify è®¾ç½®
-    }
-  }
-
-  intent.passiveOnly = !intent.hasMcuMinSystem && !intent.hasInstruments &&
-    !intent.needsOpAmpFeedback && ledN === 0 && !hasRelay;
-
-  // é—ªçƒ / RC ä¼˜å…ˆå¦å†³äº’æ–¥
-  if (intent.blinkOscillator || intent.seriesRcCharge) {
-    intent.mutualLedIndicator = false;
-    intent.relayContactTopo = false;
-  }
-
-  return intent;
-}
-
-/** ä»å·²æ‘†æ”¾æ‹“æ‰‘å†ç²¾ä¿®ï¼ˆnet_plan / PostGen å‰ï¼‰ */
-export function refineIntentFromTopo(intent: CircuitIntent, topo: SchTopology): CircuitIntent {
-  const next = copyIntent(intent);
-  const hasRelay = topo.deviceList.some(d =>
-    d.libDevId === 'RELAY_SPDT' || (d.libDevId ?? '').toUpperCase().indexOf('RELAY') >= 0);
-  const ledN = topo.deviceList.filter(d => d.libDevId.startsWith('LED_')).length;
-  const hasMcu = topo.deviceList.some(d => {
-    const id = (d.libDevId ?? '').toUpperCase();
-    return id.indexOf('STM32') >= 0 || id.indexOf('AT89') >= 0 || id.indexOf('STC') >= 0;
-  });
-  if (hasMcu) {
-    next.hasMcuMinSystem = true;
-  }
-  if (ledN > 0) {
-    next.needsLedSeriesR = true;
-  }
-  if (next.seriesRcCharge) {
-    next.mutualLedIndicator = false;
-    next.relayContactTopo = false;
-  } else if (hasRelay && next.mutualLedIndicator) {
-    next.relayContactTopo = true;
-  } else if (hasRelay && next.blinkOscillator) {
-    next.relayContactTopo = false;
-  }
-  return next;
-}
-
-export function copyIntent(src: CircuitIntent): CircuitIntent {
-  return {
-    needsPowerRails: src.needsPowerRails,
-    hasMcuMinSystem: src.hasMcuMinSystem,
-    mutualLedIndicator: src.mutualLedIndicator,
-    blinkOscillator: src.blinkOscillator,
-    relayContactTopo: src.relayContactTopo,
-    seriesRcCharge: src.seriesRcCharge,
-    dualSupply: src.dualSupply,
-    preferredVccVoltage: src.preferredVccVoltage,
-    preferredVeeVoltage: src.preferredVeeVoltage,
-    needsSignalGen: src.needsSignalGen,
-    signalWaveform: src.signalWaveform,
-    preferredSignalFrequency: src.preferredSignalFrequency,
-    preferredSignalDuty: src.preferredSignalDuty,
-    hasInstruments: src.hasInstruments,
-    needsLedSeriesR: src.needsLedSeriesR,
-    needsI2cPullup: src.needsI2cPullup,
-    needsOpAmpFeedback: src.needsOpAmpFeedback,
-    passiveOnly: src.passiveOnly,
-    reasons: src.reasons.slice()
-  };
-}
-
-export function formatIntentLog(intent: CircuitIntent): string {
-  return `power=${intent.needsPowerRails} mcu=${intent.hasMcuMinSystem}` +
-    ` mutual=${intent.mutualLedIndicator} blink=${intent.blinkOscillator}` +
-    ` relayTopo=${intent.relayContactTopo} seriesRc=${intent.seriesRcCharge}` +
-    ` dual=${intent.dualSupply} vcc=${intent.preferredVccVoltage || '-'}` +
-    ` vee=${intent.preferredVeeVoltage || '-'} sig=${intent.needsSignalGen}/${intent.signalWaveform}` +
-    `@${intent.preferredSignalFrequency || '1kHz'}/duty=${intent.preferredSignalDuty || '50%'}` +
-    ` instr=${intent.hasInstruments}` +
-    ` ledR=${intent.needsLedSeriesR} i2c=${intent.needsI2cPullup}` +
-    ` opamp=${intent.needsOpAmpFeedback} reasons=${intent.reasons.join(',')}`;
-}
-
-/** HARD æ®‹å·®æŒ‡çº¹ï¼šå¿½ç•¥æ•°å­—æ³¢åŠ¨ï¼Œæ’åºåæ‹¼æ¥ */
-export function hardResidualFingerprint(hard: string[]): string {
-  const norm = hard.map(s => s.replace(/\d+/g, '#').replace(/\s+/g, ' ').trim());
-  norm.sort();
-  return norm.join('|');
-}
-
-export function splitEmpty(): CritiqueSplit {
-  return { hard: [], soft: [] };
-}
-
-export function mergeSplit(a: CritiqueSplit, b: CritiqueSplit): CritiqueSplit {
-  return { hard: a.hard.concat(b.hard), soft: a.soft.concat(b.soft) };
-}
-
-export function allCritiqueLines(split: CritiqueSplit): string[] {
-  const lines: string[] = [];
-  for (let i = 0; i < split.hard.length; i++) {
-    lines.push(`[HARD] ${split.hard[i]}`);
-  }
-  for (let j = 0; j < split.soft.length; j++) {
-    lines.push(`[SOFT] ${split.soft[j]}`);
-  }
-  return lines;
-}
-
-/** å…¼å®¹æ—§ isMutualLedSwitchPrompt è°ƒç”¨ */
-export function intentIsMutualLedSwitch(prompt: string): boolean {
-  return isMutualLedSwitchPrompt(prompt);
-}
-A‘ÔrE’§missing¦pluginÃ¦genAbcÂÔ  ÔrF”²dynamicImportCache¹exportAllDeclarationCache»exportNamedDeclarationCache«importCache›ÔrG–¤type¥start£end«declarationªspecifiers¦source¶ExportNamedDeclaration ÍªÔrH™¤type¥start£end¢idªexpression©generator¥async¦params¤body³FunctionDeclarationÍªÔrI”¤type¥start£end¤nameªIdentifier$´defaultCircuitIntentÂÂÂÔrJ”¤type¥start£end¤body®BlockStatement'Íª‘ÔrK”¤type¥start£end¨argument¯ReturnStatement.Í§ÔrL”¤type¥start£endªproperties°ObjectExpression5Í¦Ü ÔrM™¤type¥start£end¦method©shorthand¨computed£key¥value¤kind¨PropertyÌ@ÌUÂÂÂIªIdentifierÌ@ÌO¯needsPowerRailsÔrN•¤type¥start£end¥value£raw§LiteralÌQÌUÃ¤true¤initM¨PropertyÌ`ÌvÂÂÂIªIdentifierÌ`Ìo¯hasMcuMinSystemN§LiteralÌqÌvÂ¥false¤initM¨PropertyÌÌšÂÂÂIªIdentifierÌÌ“²mutualLedIndicatorN§LiteralÌ•ÌšÂ¥false¤initM¨PropertyÌ¥Ì»ÂÂÂIªIdentifierÌ¥Ì´¯blinkOscillatorN§LiteralÌ¶Ì»Â¥false¤initM¨PropertyÌÆÌİÂÂÂIªIdentifierÌÆÌÖ°relayContactTopoN§LiteralÌØÌİÂ¥false¤initM¨PropertyÌèÌıÂÂÂIªIdentifierÌèÌö®seriesRcChargeN§LiteralÌøÌıÂ¥false¤initM¨PropertyÍÍÂÂÂIªIdentifierÍÍªdualSupplyN§LiteralÍÍÂ¥false¤initM¨PropertyÍ$Í;ÂÂÂIªIdentifierÍ$Í7³preferredVccVoltageN§LiteralÍ9Í; ¢''¤initM¨PropertyÍFÍ]ÂÂÂIªIdentifierÍFÍY³preferredVeeVoltageN§LiteralÍ[Í] ¢''¤initM¨PropertyÍhÍ}ÂÂÂIªIdentifierÍhÍv®needsSignalGenN§LiteralÍxÍ}Â¥false¤initM¨PropertyÍˆÍÂÂÂIªIdentifierÍˆÍ–®signalWaveformN§LiteralÍ˜Í¤sine¦'sine'¤initM¨PropertyÍ©ÍÅÂÂÂIªIdentifierÍ©ÍÁ¸preferredSignalFrequencyN§LiteralÍÃÍÅ ¢''¤initM¨PropertyÍĞÍçÂÂÂIªIdentifierÍĞÍã³preferredSignalDutyN§LiteralÍåÍç ¢''¤initM¨PropertyÍòÍÂÂÂIªIdentifierÍòÍ ®hasInstrumentsN§LiteralÍÍÂ¥false¤initM¨PropertyÍÍ(ÂÂÂIªIdentifierÍÍ!¯needsLedSeriesRN§LiteralÍ#Í(Â¥false¤initM¨PropertyÍ3ÍHÂÂÂIªIdentifierÍ3ÍA®needsI2cPullupN§LiteralÍCÍHÂ¥false¤initM¨PropertyÍSÍlÂÂÂIªIdentifierÍSÍe²needsOpAmpFeedbackN§LiteralÍgÍlÂ¥false¤initM¨PropertyÍwÍ‰ÂÂÂIªIdentifierÍwÍ‚«passiveOnlyN§LiteralÍ„Í‰Â¥false¤initM¨PropertyÍ”ÍŸÂÂÂIªIdentifierÍ”Í›§reasonsÔrO”¤type¥start£end¨elements¯ArrayExpressionÍÍŸ¤initÀG¶ExportNamedDeclarationÍÍêH³FunctionDeclarationÍ”ÍêIªIdentifierÍÍ²µclassifyCircuitIntentÂÂÂ‘IªIdentifierÍ³Í¹¦promptJ®BlockStatementÍ»ÍêŸÔrP•¤type¥start£end¬declarations¤kind³VariableDeclarationÍÂÍè‘ÔrQ•¤type¥start£end¢id¤init²VariableDeclaratorÍÈÍçIªIdentifierÍÈÍÎ¦intentÔrR–¤type¥start£end¦callee©arguments¨optional®CallExpressionÍÑÍçIªIdentifierÍÑÍå´defaultCircuitIntentÂ¥constP³VariableDeclarationÍîÍ‘Q²VariableDeclaratorÍôÍIªIdentifierÍôÍö¢zhÔrS–¤type¥start£end¤left¨operator¥right±LogicalExpressionÍùÍIªIdentifierÍùÍÿ¦prompt¢??N§LiteralÍÍ ¢''¥constP³VariableDeclarationÍÍ+‘Q²VariableDeclaratorÍÍ*IªIdentifierÍÍ¥lowerR®CallExpressionÍÍ*ÔrT—¤type¥start£end¦object¨property¨computed¨optional°MemberExpressionÍÍ(IªIdentifierÍÍ¢zhIªIdentifierÍÍ(«toLowerCaseÂÂÂ¥constÔrU–¤type¥start£end¤testªconsequent©alternate«IfStatementÍ1Í’R®CallExpressionÍ5ÍTIªIdentifierÍ5ÍL·isMutualLedSwitchPrompt‘IªIdentifierÍMÍS¦promptÂJ®BlockStatementÍVÍ”ÔrV”¤type¥start£endªexpression³ExpressionStatementÍaÍ‚ÔrW–¤type¥start£end¨operator¤left¥right´AssignmentExpressionÍaÍ¡=T°MemberExpressionÍaÍzIªIdentifierÍaÍg¦intentIªIdentifierÍhÍz²mutualLedIndicatorÂÂN§LiteralÍ}ÍÃ¤trueV³ExpressionStatementÍŒÍ«W´AssignmentExpressionÍŒÍª¡=T°MemberExpressionÍŒÍ£IªIdentifierÍŒÍ’¦intentIªIdentifierÍ“Í£°relayContactTopoÂÂN§LiteralÍ¦ÍªÃ¤trueV³ExpressionStatementÍµÍÔW´AssignmentExpressionÍµÍÓ¡=T°MemberExpressionÍµÍËIªIdentifierÍµÍ»¦intentIªIdentifierÍ¼ÍË¯blinkOscillatorÂÂN§LiteralÍÎÍÓÂ¥falseV³ExpressionStatementÍŞÍR®CallExpressionÍŞÍIªIdentifierÍŞÍèªpushReason’IªIdentifierÍéÍï¦intentN§LiteralÍñÍ±mutual_led_switch³'mutual_led_switch'ÂU«IfStatementÍÍ’R®CallExpressionÍÍ2IªIdentifierÍÍ'«isBlinkLike’IªIdentifierÍ(Í*¢zhIªIdentifierÍ,Í1¥lowerÂJ®BlockStatementÍ4Í’’V³ExpressionStatementÍ?Í]W´AssignmentExpressionÍ?Í\¡=T°MemberExpressionÍ?ÍUIªIdentifierÍ?ÍE¦intentIªIdentifierÍFÍU¯blinkOscillatorÂÂN§LiteralÍXÍ\Ã¤trueV³ExpressionStatementÍgÍ‹R®CallExpressionÍgÍŠIªIdentifierÍgÍqªpushReason’IªIdentifierÍrÍx¦intentN§LiteralÍzÍ‰­blink_keyword¯'blink_keyword'ÂÀU«IfStatementÍ˜ÍrR®CallExpressionÍœÍºIªIdentifierÍœÍ²¶isSeriesRcChargePrompt‘IªIdentifierÍ³Í¹¦promptÂJ®BlockStatementÍ¼Ír”V³ExpressionStatementÍÇÍäW´AssignmentExpressionÍÇÍã¡=T°MemberExpressionÍÇÍÜIªIdentifierÍÇÍÍ¦intentIªIdentifierÍÎÍÜ®seriesRcChargeÂÂN§LiteralÍßÍãÃ¤trueV³ExpressionStatementÍîÍW´AssignmentExpressionÍîÍ¡=T°MemberExpressionÍîÍIªIdentifierÍîÍô¦intentIªIdentifierÍõÍ²mutualLedIndicatorÂÂN§LiteralÍ
-ÍÂ¥falseV³ExpressionStatementÍÍ:W´AssignmentExpressionÍÍ9¡=T°MemberExpressionÍÍ1IªIdentifierÍÍ ¦intentIªIdentifierÍ!Í1°relayContactTopoÂÂN§LiteralÍ4Í9Â¥falseV³ExpressionStatementÍDÍkR®CallExpressionÍDÍjIªIdentifierÍDÍNªpushReason’IªIdentifierÍOÍU¦intentN§LiteralÍWÍi°series_rc_charge²'series_rc_charge'ÂÀU«IfStatementÍxÍS±LogicalExpressionÍ|ÍµR®CallExpressionÍ|Í›IªIdentifierÍ|Í“·isMutualLedSwitchPrompt‘IªIdentifierÍ”Íš¦promptÂ¢&&ÔrX–¤type¥start£end¨operator¦prefix¨argument¯UnaryExpressionÍŸÍµ¡!ÃT°MemberExpressionÍ ÍµIªIdentifierÍ Í¦¦intentIªIdentifierÍ§Íµ®seriesRcChargeÂÂJ®BlockStatementÍ·Ím”V³ExpressionStatementÍÂÍãW´AssignmentExpressionÍÂÍâ¡=T°MemberExpressionÍÂÍÛIªIdentifierÍÂÍÈ¦intentIªIdentifierÍÉÍÛ²mutualLedIndicatorÂÂN§LiteralÍŞÍâÃ¤trueV³ExpressionStatementÍíÍW´AssignmentExpressionÍíÍ¡=T°MemberExpressionÍíÍIªIdentifierÍíÍó¦intentIªIdentifierÍôÍ°relayContactTopoÂÂN§LiteralÍÍÃ¤trueV³ExpressionStatementÍÍ4W´AssignmentExpressionÍÍ3¡=T°MemberExpressionÍÍ,IªIdentifierÍÍ¦intentIªIdentifierÍÍ,¯needsLedSeriesRÂÂN§LiteralÍ/Í3Ã¤trueV³ExpressionStatementÍ>ÍfR®CallExpressionÍ>ÍeIªIdentifierÍ>ÍHªpushReason’IªIdentifierÍIÍO¦intentN§LiteralÍQÍd±mutual_led_switch³'mutual_led_switch'ÂU«IfStatementÍxÍS±LogicalExpressionÍ|Í«T°MemberExpressionÍ|Í’IªIdentifierÍ|Í‚¦intentIªIdentifierÍƒÍ’¯blinkOscillatorÂÂ¢||T°MemberExpressionÍ–Í«IªIdentifierÍ–Íœ¦intentIªIdentifierÍÍ«®seriesRcChargeÂÂJ®BlockStatementÍ­Í’V³ExpressionStatementÍ¸ÍÚW´AssignmentExpressionÍ¸ÍÙ¡=T°MemberExpressionÍ¸ÍÑIªIdentifierÍ¸Í¾¦intentIªIdentifierÍ¿ÍÑ²mutualLedIndicatorÂÂN§LiteralÍÔÍÙÂ¥falseV³ExpressionStatementÍäÍW´AssignmentExpressionÍäÍ¡=T°MemberExpressionÍäÍûIªIdentifierÍäÍê¦intentIªIdentifierÍëÍû°relayContactTopoÂÂN§LiteralÍşÍÂ¥falseÀU«IfStatementÍÍ_S±LogicalExpressionÍÍS±LogicalExpressionÍÍäS±LogicalExpressionÍÍºS±LogicalExpressionÍÍ S±LogicalExpressionÍÍ…S±LogicalExpressionÍÍaS±LogicalExpressionÍÍGS°BinaryExpressionÍÍ-R®CallExpressionÍÍ(T°MemberExpressionÍÍIªIdentifierÍÍ¢zhIªIdentifierÍÍ§indexOfÂÂ‘N§LiteralÍ Í'¥STM32§'STM32'Â¢>=N§LiteralÍ,Í- ¡0¢||S°BinaryExpressionÍ1ÍGR®CallExpressionÍ1ÍBT°MemberExpressionÍ1Í;IªIdentifierÍ1Í3¢zhIªIdentifierÍ4Í;§indexOfÂÂ‘N§LiteralÍ<ÍA©å•ç‰‡æœº«'å•ç‰‡æœº'Â¢>=N§LiteralÍFÍG ¡0¢||S°BinaryExpressionÍKÍaR®CallExpressionÍKÍ\T°MemberExpressionÍKÍUIªIdentifierÍKÍM¢zhIªIdentifierÍNÍU§indexOfÂÂ‘N§LiteralÍVÍ[£MCU¥'MCU'Â¢>=N§LiteralÍ`Ía ¡0¢||S°BinaryExpressionÍnÍ…R®CallExpressionÍnÍ€T°MemberExpressionÍnÍxIªIdentifierÍnÍp¢zhIªIdentifierÍqÍx§indexOfÂÂ‘N§LiteralÍyÍ¤8051¦'8051'Â¢>=N§LiteralÍ„Í… ¡0¢||S°BinaryExpressionÍ‰Í R®CallExpressionÍ‰Í›T°MemberExpressionÍ‰Í“IªIdentifierÍ‰Í‹¢zhIªIdentifierÍŒÍ“§indexOfÂÂ‘N§LiteralÍ”Íš¤AT89¦'AT89'Â¢>=N§LiteralÍŸÍ  ¡0¢||S°BinaryExpressionÍ¤ÍºR®CallExpressionÍ¤ÍµT°MemberExpressionÍ¤Í®IªIdentifierÍ¤Í¦¢zhIªIdentifierÍ§Í®§indexOfÂÂ‘N§LiteralÍ¯Í´£STC¥'STC'Â¢>=N§LiteralÍ¹Íº ¡0¢||S°BinaryExpressionÍÇÍäR®CallExpressionÍÇÍßT°MemberExpressionÍÇÍÔIªIdentifierÍÇÍÌ¥lowerIªIdentifierÍÍÍÔ§indexOfÂÂ‘N§LiteralÍÕÍŞ§arduino©'arduino'Â¢>=N§LiteralÍãÍä ¡0¢||S°BinaryExpressionÍèÍR®CallExpressionÍèÍüT°MemberExpressionÍèÍõIªIdentifierÍèÍí¥lowerIªIdentifierÍîÍõ§indexOfÂÂ‘N§LiteralÍöÍû£mcu¥'mcu'Â¢>=N§LiteralÍ Í ¡0J®BlockStatementÍÍ_’V³ExpressionStatementÍÍ,W´AssignmentExpressionÍÍ+¡=T°MemberExpressionÍÍ$IªIdentifierÍÍ¦intentIªIdentifierÍÍ$¯hasMcuMinSystemÂÂN§LiteralÍ'Í+Ã¤trueV³ExpressionStatementÍ6ÍXR®CallExpressionÍ6ÍWIªIdentifierÍ6Í@ªpushReason’IªIdentifierÍAÍG¦intentN§LiteralÍIÍV«mcu_keyword­'mcu_keyword'ÂÀU«IfStatementÍeÍ4S±LogicalExpressionÍiÍÖS±LogicalExpressionÍiÍ´S±LogicalExpressionÍiÍœS°BinaryExpressionÍiÍR®CallExpressionÍiÍzT°MemberExpressionÍiÍsIªIdentifierÍiÍk¢zhIªIdentifierÍlÍs§indexOfÂÂ‘N§LiteralÍtÍy£LED¥'LED'Â¢>=N§LiteralÍ~Í ¡0¢||S°BinaryExpressionÍƒÍœR®CallExpressionÍƒÍ—T°MemberExpressionÍƒÍIªIdentifierÍƒÍˆ¥lowerIªIdentifierÍ‰Í§indexOfÂÂ‘N§LiteralÍ‘Í–£led¥'led'Â¢>=N§LiteralÍ›Íœ ¡0¢||S°BinaryExpressionÍ Í´R®CallExpressionÍ Í¯T°MemberExpressionÍ ÍªIªIdentifierÍ Í¢¢zhIªIdentifierÍ£Íª§indexOfÂÂ‘N§LiteralÍ«Í®£ç¯¥'ç¯'Â¢>=N§LiteralÍ³Í´ ¡0¢||S°BinaryExpressionÍÁÍÖR®CallExpressionÍÁÍÑT°MemberExpressionÍÁÍËIªIdentifierÍÁÍÃ¢zhIªIdentifierÍÄÍË§indexOfÂÂ‘N§LiteralÍÌÍĞ¦å‘å…‰¨'å‘å…‰'Â¢>=N§LiteralÍÕÍÖ ¡0J®BlockStatementÍØÍ4’V³ExpressionStatementÍãÍW´AssignmentExpressionÍãÍ ¡=T°MemberExpressionÍãÍùIªIdentifierÍãÍé¦intentIªIdentifierÍêÍù¯needsLedSeriesRÂÂN§LiteralÍüÍ Ã¤trueV³ExpressionStatementÍÍ-R®CallExpressionÍÍ,IªIdentifierÍÍªpushReason’IªIdentifierÍÍ¦intentN§LiteralÍÍ+«led_keyword­'led_keyword'ÂÀU«IfStatementÍ:ÍèS±LogicalExpressionÍ>Í‹S±LogicalExpressionÍ>ÍqS°BinaryExpressionÍ>ÍTR®CallExpressionÍ>ÍOT°MemberExpressionÍ>ÍHIªIdentifierÍ>Í@¢zhIªIdentifierÍAÍH§indexOfÂÂ‘N§LiteralÍIÍN£I2C¥'I2C'Â¢>=N§LiteralÍSÍT ¡0¢||S°BinaryExpressionÍXÍqR®CallExpressionÍXÍlT°MemberExpressionÍXÍeIªIdentifierÍXÍ]¥lowerIªIdentifierÍ^Íe§indexOfÂÂ‘N§LiteralÍfÍk£i2c¥'i2c'Â¢>=N§LiteralÍpÍq ¡0¢||S°BinaryExpressionÍuÍ‹R®CallExpressionÍuÍ†T°MemberExpressionÍuÍIªIdentifierÍuÍw¢zhIªIdentifierÍxÍ§indexOfÂÂ‘N§LiteralÍ€Í…¤IÂ²C¦'IÂ²C'Â¢>=N§LiteralÍŠÍ‹ ¡0J®BlockStatementÍÍè’V³ExpressionStatementÍ˜ÍµW´AssignmentExpressionÍ˜Í´¡=T°MemberExpressionÍ˜Í­IªIdentifierÍ˜Í¦intentIªIdentifierÍŸÍ­®needsI2cPullupÂÂN§LiteralÍ°Í´Ã¤trueV³ExpressionStatementÍ¿ÍáR®CallExpressionÍ¿ÍàIªIdentifierÍ¿ÍÉªpushReason’IªIdentifierÍÊÍĞ¦intentN§LiteralÍÒÍß«i2c_keyword­'i2c_keyword'ÂÀU«IfStatementÍîÍCS±LogicalExpressionÍòÍàS±LogicalExpressionÍòÍÄS±LogicalExpressionÍòÍ¡S±LogicalExpressionÍòÍ…S±LogicalExpressionÍòÍiS±LogicalExpressionÍòÍ@S±LogicalExpressionÍòÍ!S°BinaryExpressionÍòÍR®CallExpressionÍòÍT°MemberExpressionÍòÍüIªIdentifierÍòÍô¢zhIªIdentifierÍõÍü§indexOfÂÂ‘N§LiteralÍıÍ¦è¿æ”¾¨'è¿æ”¾'Â¢>=N§LiteralÍÍ ¡0¢||S°BinaryExpressionÍÍ!R®CallExpressionÍÍT°MemberExpressionÍÍIªIdentifierÍÍ¢zhIªIdentifierÍÍ§indexOfÂÂ‘N§LiteralÍÍ©æ”¾å¤§å™¨«'æ”¾å¤§å™¨'Â¢>=N§LiteralÍ Í! ¡0¢||S°BinaryExpressionÍ%Í@R®CallExpressionÍ%Í;T°MemberExpressionÍ%Í2IªIdentifierÍ%Í*¥lowerIªIdentifierÍ+Í2§indexOfÂÂ‘N§LiteralÍ3Í:¥opamp§'opamp'Â¢>=N§LiteralÍ?Í@ ¡0¢||S°BinaryExpressionÍMÍiR®CallExpressionÍMÍdT°MemberExpressionÍMÍZIªIdentifierÍMÍR¥lowerIªIdentifierÍSÍZ§indexOfÂÂ‘N§LiteralÍ[Íc¦op-amp¨'op-amp'Â¢>=N§LiteralÍhÍi ¡0¢||S°BinaryExpressionÍmÍ…R®CallExpressionÍmÍ€T°MemberExpressionÍmÍwIªIdentifierÍmÍo¢zhIªIdentifierÍpÍw§indexOfÂÂ‘N§LiteralÍxÍ¥LM358§'LM358'Â¢>=N§LiteralÍ„Í… ¡0¢||S°BinaryExpressionÍ‰Í¡R®CallExpressionÍ‰ÍœT°MemberExpressionÍ‰Í“IªIdentifierÍ‰Í‹¢zhIªIdentifierÍŒÍ“§indexOfÂÂ‘N§LiteralÍ”Í›¥LM324§'LM324'Â¢>=N§LiteralÍ Í¡ ¡0¢||S°BinaryExpressionÍ®ÍÄR®CallExpressionÍ®Í¿T°MemberExpressionÍ®Í¸IªIdentifierÍ®Í°¢zhIªIdentifierÍ±Í¸§indexOfÂÂ‘N§LiteralÍ¹Í¾£741¥'741'Â¢>=N§LiteralÍÃÍÄ ¡0¢||S°BinaryExpressionÍÈÍàR®CallExpressionÍÈÍÛT°MemberExpressionÍÈÍÒIªIdentifierÍÈÍÊ¢zhIªIdentifierÍËÍÒ§indexOfÂÂ‘N§LiteralÍÓÍÚ¥TL082§'TL082'Â¢>=N§LiteralÍßÍà ¡0J®BlockStatementÍâÍC’V³ExpressionStatementÍíÍW´AssignmentExpressionÍíÍ¡=T°MemberExpressionÍíÍIªIdentifierÍíÍó¦intentIªIdentifierÍôÍ²needsOpAmpFeedbackÂÂN§LiteralÍ	ÍÃ¤trueV³ExpressionStatementÍÍ<R®CallExpressionÍÍ;IªIdentifierÍÍ"ªpushReason’IªIdentifierÍ#Í)¦intentN§LiteralÍ+Í:­opamp_keyword¯'opamp_keyword'ÂÀV³ExpressionStatementÍIÍsR®CallExpressionÍIÍrIªIdentifierÍIÍb¹applyPowerAndSignalIntent’IªIdentifierÍcÍi¦intentIªIdentifierÍkÍq¦promptÂU«IfStatementÍyÍøS±LogicalExpressionÍ}Í”S±LogicalExpressionÍ}ÍlS±LogicalExpressionÍ}ÍKS±LogicalExpressionÍ}ÍS±LogicalExpressionÍ}ÍS±LogicalExpressionÍ}ÍëS±LogicalExpressionÍ}ÍÇS±LogicalExpressionÍ}Í­S°BinaryExpressionÍ}Í“R®CallExpressionÍ}ÍT°MemberExpressionÍ}Í‡IªIdentifierÍ}Í¢zhIªIdentifierÍ€Í‡§indexOfÂÂ‘N§LiteralÍˆÍ©ç”µå‹è¡¨«'ç”µå‹è¡¨'Â¢>=N§LiteralÍ’Í“ ¡0¢||S°BinaryExpressionÍ—Í­R®CallExpressionÍ—Í¨T°MemberExpressionÍ—Í¡IªIdentifierÍ—Í™¢zhIªIdentifierÍšÍ¡§indexOfÂÂ‘N§LiteralÍ¢Í§©ç”µæµè¡¨«'ç”µæµè¡¨'Â¢>=N§LiteralÍ¬Í­ ¡0¢||S°BinaryExpressionÍ±ÍÇR®CallExpressionÍ±ÍÂT°MemberExpressionÍ±Í»IªIdentifierÍ±Í³¢zhIªIdentifierÍ´Í»§indexOfÂÂ‘N§LiteralÍ¼ÍÁ©ç¤ºæ³¢å™¨«'ç¤ºæ³¢å™¨'Â¢>=N§LiteralÍÆÍÇ ¡0¢||S°BinaryExpressionÍÔÍëR®CallExpressionÍÔÍæT°MemberExpressionÍÔÍŞIªIdentifierÍÔÍÖ¢zhIªIdentifierÍ×ÍŞ§indexOfÂÂ‘N§LiteralÍßÍå¬é€»è¾‘åˆ†æ®'é€»è¾‘åˆ†æ'Â¢>=N§LiteralÍêÍë ¡0¢||S°BinaryExpressionÍïÍR®CallExpressionÍïÍ T°MemberExpressionÍïÍùIªIdentifierÍïÍñ¢zhIªIdentifierÍòÍù§indexOfÂÂ‘N§LiteralÍúÍÿ©æµ‹ç”µæµ«'æµ‹ç”µæµ'Â¢>=N§LiteralÍÍ ¡0¢||S°BinaryExpressionÍ	ÍR®CallExpressionÍ	ÍT°MemberExpressionÍ	ÍIªIdentifierÍ	Í¢zhIªIdentifierÍÍ§indexOfÂÂ‘N§LiteralÍÍ©æµ‹ç”µå‹«'æµ‹ç”µå‹'Â¢>=N§LiteralÍÍ ¡0¢||S°BinaryExpressionÍ,ÍKR®CallExpressionÍ,ÍFT°MemberExpressionÍ,Í9IªIdentifierÍ,Í1¥lowerIªIdentifierÍ2Í9§indexOfÂÂ‘N§LiteralÍ:ÍE©voltmeter«'voltmeter'Â¢>=N§LiteralÍJÍK ¡0¢||S°BinaryExpressionÍOÍlR®CallExpressionÍOÍgT°MemberExpressionÍOÍ\IªIdentifierÍOÍT¥lowerIªIdentifierÍUÍ\§indexOfÂÂ‘N§LiteralÍ]Íf§ammeter©'ammeter'Â¢>=N§LiteralÍkÍl ¡0¢||S°BinaryExpressionÍyÍ”R®CallExpressionÍyÍT°MemberExpressionÍyÍ†IªIdentifierÍyÍ~¥lowerIªIdentifierÍÍ†§indexOfÂÂ‘N§LiteralÍ‡Í¥scope§'scope'Â¢>=N§LiteralÍ“Í” ¡0J®BlockStatementÍ–Íø’V³ExpressionStatementÍ¡Í¾W´AssignmentExpressionÍ¡Í½¡=T°MemberExpressionÍ¡Í¶IªIdentifierÍ¡Í§¦intentIªIdentifierÍ¨Í¶®hasInstrumentsÂÂN§LiteralÍ¹Í½Ã¤trueV³ExpressionStatementÍÈÍñR®CallExpressionÍÈÍğIªIdentifierÍÈÍÒªpushReason’IªIdentifierÍÓÍÙ¦intentN§LiteralÍÛÍï²instrument_keyword´'instrument_keyword'ÂÀU«IfStatementÍşÍÕS±LogicalExpressionÍÍqS±LogicalExpressionÍÍ3S°BinaryExpressionÍÍR®CallExpressionÍÍT°MemberExpressionÍÍIªIdentifierÍÍ¢zhIªIdentifierÍÍ§indexOfÂÂ‘N§LiteralÍÍ©æ— ç”µæº«'æ— ç”µæº'Â¢>=N§LiteralÍÍ ¡0¢||S°BinaryExpressionÍÍ3R®CallExpressionÍÍ.T°MemberExpressionÍÍ&IªIdentifierÍÍ¢zhIªIdentifierÍÍ&§indexOfÂÂ‘N§LiteralÍ'Í-¬æµ®ç©ºæ•™å­¦®'æµ®ç©ºæ•™å­¦'Â¢>=N§LiteralÍ2Í3 ¡0¢||S±LogicalExpressionÍAÍpS°BinaryExpressionÍAÍVR®CallExpressionÍAÍQT°MemberExpressionÍAÍKIªIdentifierÍAÍC¢zhIªIdentifierÍDÍK§indexOfÂÂ‘N§LiteralÍLÍP¦æ— æº¨'æ— æº'Â¢>=N§LiteralÍUÍV ¡0¢&&S°BinaryExpressionÍZÍpR®CallExpressionÍZÍkT°MemberExpressionÍZÍdIªIdentifierÍZÍ\¢zhIªIdentifierÍ]Íd§indexOfÂÂ‘N§LiteralÍeÍj©æ— ç”µæº«'æ— ç”µæº'Â¢>=N§LiteralÍoÍp ¡0J®BlockStatementÍsÍÕ’V³ExpressionStatementÍ~ÍW´AssignmentExpressionÍ~Íœ¡=T°MemberExpressionÍ~Í”IªIdentifierÍ~Í„¦intentIªIdentifierÍ…Í”¯needsPowerRailsÂÂN§LiteralÍ—ÍœÂ¥falseV³ExpressionStatementÍ§ÍÎR®CallExpressionÍ§ÍÍIªIdentifierÍ§Í±ªpushReason’IªIdentifierÍ²Í¸¦intentN§LiteralÍºÍÌ°no_power_keyword²'no_power_keyword'ÂÀU«IfStatementÍÛÍÓS±LogicalExpressionÍßÍ§S±LogicalExpressionÍßÍ†S±LogicalExpressionÍßÍRS±LogicalExpressionÍßÍ/S±LogicalExpressionÍßÍX¯UnaryExpressionÍßÍö¡!ÃT°MemberExpressionÍàÍöIªIdentifierÍàÍæ¦intentIªIdentifierÍçÍö¯hasMcuMinSystemÂÂ¢&&X¯UnaryExpressionÍúÍ¡!ÃT°MemberExpressionÍûÍIªIdentifierÍûÍ¦intentIªIdentifierÍÍ¯needsLedSeriesRÂÂ¢&&X¯UnaryExpressionÍÍ/¡!ÃT°MemberExpressionÍÍ/IªIdentifierÍÍ¦intentIªIdentifierÍÍ/²needsOpAmpFeedbackÂÂ¢&&X¯UnaryExpressionÍ<ÍR¡!ÃT°MemberExpressionÍ=ÍRIªIdentifierÍ=ÍC¦intentIªIdentifierÍDÍR®hasInstrumentsÂÂ¢&&S±LogicalExpressionÍWÍ…S°BinaryExpressionÍWÍlR®CallExpressionÍWÍgT°MemberExpressionÍWÍaIªIdentifierÍWÍY¢zhIªIdentifierÍZÍa§indexOfÂÂ‘N§LiteralÍbÍf¦ç”µé˜»¨'ç”µé˜»'Â¢>=N§LiteralÍkÍl ¡0¢||S°BinaryExpressionÍpÍ…R®CallExpressionÍpÍ€T°MemberExpressionÍpÍzIªIdentifierÍpÍr¢zhIªIdentifierÍsÍz§indexOfÂÂ‘N§LiteralÍ{Í¦ç”µå®¹¨'ç”µå®¹'Â¢>=N§LiteralÍ„Í… ¡0¢&&S°BinaryExpressionÍ“Í§R®CallExpressionÍ“Í£T°MemberExpressionÍ“ÍIªIdentifierÍ“Í•¢zhIªIdentifierÍ–Í§indexOfÂÂ‘N§LiteralÍÍ¢¦ç”µæº¨'ç”µæº'Â¡<N§LiteralÍ¦Í§ ¡0J®BlockStatementÍ©ÍÓÀK¯ReturnStatementÍÙÍçIªIdentifierÍàÍæ¦intentÀG¶ExportNamedDeclarationÍ0dÍDSH³FunctionDeclarationÍ0kÍDSIªIdentifierÍ0tÍ0‡³refineCircuitIntentÂÂÂ“IªIdentifierÍ0ˆÍ0¦promptIªIdentifierÍ0Í0“£outIªIdentifierÍ0•Í0œ§matchedJ®BlockStatementÍ0ÍDSÜ P³VariableDeclarationÍ0¥Í0Ò‘Q²VariableDeclaratorÍ0«Í0ÑIªIdentifierÍ0«Í0±¦intentR®CallExpressionÍ0´Í0ÑIªIdentifierÍ0´Í0ÉµclassifyCircuitIntent‘IªIdentifierÍ0ÊÍ0Ğ¦promptÂ¥constP³VariableDeclarationÍ0ØÍ0÷‘Q²VariableDeclaratorÍ0ŞÍ0öIªIdentifierÍ0ŞÍ0á£idsR®CallExpressionÍ0äÍ0öIªIdentifierÍ0äÍ0ñ­collectBomIds‘IªIdentifierÍ0òÍ0õ£outÂ¥constU«IfStatementÍ0ıÍ1ûS±LogicalExpressionÍ1Í1IªIdentifierÍ1Í1§matched¢&&S°BinaryExpressionÍ1Í1T°MemberExpressionÍ1Í1IªIdentifierÍ1Í1§matchedIªIdentifierÍ1Í1¦lengthÂÂ¡>N§LiteralÍ1Í1 ¡0J®BlockStatementÍ1 Í1û‘ÔrY—¤type¥start£end¤init¤test¦update¤body¬ForStatementÍ1+Í1ôP³VariableDeclarationÍ10Í19‘Q²VariableDeclaratorÍ14Í19IªIdentifierÍ14Í15¡iN§LiteralÍ18Í19 ¡0£letS°BinaryExpressionÍ1;Í1MIªIdentifierÍ1;Í1<¡i¡<T°MemberExpressionÍ1?Í1MIªIdentifierÍ1?Í1F§matchedIªIdentifierÍ1GÍ1M¦lengthÂÂX°UpdateExpressionÍ1OÍ1R¢++ÂIªIdentifierÍ1OÍ1P¡iJ®BlockStatementÍ1TÍ1ô’P³VariableDeclarationÍ1cÍ1‰‘Q²VariableDeclaratorÍ1iÍ1ˆIªIdentifierÍ1iÍ1l£midS±LogicalExpressionÍ1oÍ1ˆT°MemberExpressionÍ1oÍ1‚T°MemberExpressionÍ1oÍ1yIªIdentifierÍ1oÍ1v§matchedIªIdentifierÍ1wÍ1x¡iÃÂIªIdentifierÍ1zÍ1‚¨libDevIdÂÂ¢??N§LiteralÍ1†Í1ˆ ¢''¥constU«IfStatementÍ1—Í1éS°BinaryExpressionÍ1›Í1©T°MemberExpressionÍ1›Í1¥IªIdentifierÍ1›Í1£midIªIdentifierÍ1ŸÍ1¥¦lengthÂÂ¡>N§LiteralÍ1¨Í1© ¡0J®BlockStatementÍ1«Í1é‘V³ExpressionStatementÍ1¾Í1ÚR®CallExpressionÍ1¾Í1ÙT°MemberExpressionÍ1¾Í1ÆIªIdentifierÍ1¾Í1Á£idsIªIdentifierÍ1ÂÍ1Æ¤pushÂÂ‘R®CallExpressionÍ1ÇÍ1ØT°MemberExpressionÍ1ÇÍ1ÖIªIdentifierÍ1ÇÍ1Ê£midIªIdentifierÍ1ËÍ1Ö«toUpperCaseÂÂÂÂÀÀP³VariableDeclarationÍ2Í2‘Q²VariableDeclaratorÍ2Í2IªIdentifierÍ2Í2©hasMcuBomR®CallExpressionÍ2Í2T°MemberExpressionÍ2Í2IªIdentifierÍ2Í2£idsIªIdentifierÍ2Í2¤someÂÂ‘H·ArrowFunctionExpressionÍ2Í2ÀÃÂÂ‘IªIdentifierÍ2Í2¡mS±LogicalExpressionÍ2!Í2S±LogicalExpressionÍ2!Í2kS±LogicalExpressionÍ2!Í2RS°BinaryExpressionÍ2!Í28R®CallExpressionÍ2!Í23T°MemberExpressionÍ2!Í2*IªIdentifierÍ2!Í2"¡mIªIdentifierÍ2#Í2*§indexOfÂÂ‘N§LiteralÍ2+Í22¥STM32§'STM32'Â¢>=N§LiteralÍ27Í28 ¡0¢||S°BinaryExpressionÍ2<Í2RR®CallExpressionÍ2<Í2MT°MemberExpressionÍ2<Í2EIªIdentifierÍ2<Í2=¡mIªIdentifierÍ2>Í2E§indexOfÂÂ‘N§LiteralÍ2FÍ2L¤AT89¦'AT89'Â¢>=N§LiteralÍ2QÍ2R ¡0¢||S°BinaryExpressionÍ2VÍ2kR®CallExpressionÍ2VÍ2fT°MemberExpressionÍ2VÍ2_IªIdentifierÍ2VÍ2W¡mIªIdentifierÍ2XÍ2_§indexOfÂÂ‘N§LiteralÍ2`Í2e£STC¥'STC'Â¢>=N§LiteralÍ2jÍ2k ¡0¢||S°BinaryExpressionÍ2xÍ2R®CallExpressionÍ2xÍ2ˆT°MemberExpressionÍ2xÍ2IªIdentifierÍ2xÍ2y¡mIªIdentifierÍ2zÍ2§indexOfÂÂ‘N§LiteralÍ2‚Í2‡£MCU¥'MCU'Â¢>=N§LiteralÍ2ŒÍ2 ¡0Â¥constU«IfStatementÍ2•Í2üIªIdentifierÍ2™Í2¢©hasMcuBomJ®BlockStatementÍ2¤Í2ü’V³ExpressionStatementÍ2¯Í2ÍW´AssignmentExpressionÍ2¯Í2Ì¡=T°MemberExpressionÍ2¯Í2ÅIªIdentifierÍ2¯Í2µ¦intentIªIdentifierÍ2¶Í2Å¯hasMcuMinSystemÂÂN§LiteralÍ2ÈÍ2ÌÃ¤trueV³ExpressionStatementÍ2×Í2õR®CallExpressionÍ2×Í2ôIªIdentifierÍ2×Í2áªpushReason’IªIdentifierÍ2âÍ2è¦intentN§LiteralÍ2êÍ2ó§mcu_bom©'mcu_bom'ÂÀP³VariableDeclarationÍ3Í3=‘Q²VariableDeclaratorÍ3Í3<IªIdentifierÍ3Í3¤ledNT°MemberExpressionÍ3Í3<R®CallExpressionÍ3Í35T°MemberExpressionÍ3Í3IªIdentifierÍ3Í3£idsIªIdentifierÍ3Í3¦filterÂÂ‘H·ArrowFunctionExpressionÍ3Í34ÀÃÂÂ‘IªIdentifierÍ3Í3¡mS°BinaryExpressionÍ3Í34R®CallExpressionÍ3Í3/T°MemberExpressionÍ3Í3(IªIdentifierÍ3Í3 ¡mIªIdentifierÍ3!Í3(§indexOfÂÂ‘N§LiteralÍ3)Í3.£LED¥'LED'Â¢>=N§LiteralÍ33Í34 ¡0ÂIªIdentifierÍ36Í3<¦lengthÂÂ¥constU«IfStatementÍ3CÍ3©S°BinaryExpressionÍ3GÍ3OIªIdentifierÍ3GÍ3K¤ledN¡>N§LiteralÍ3NÍ3O ¡0J®BlockStatementÍ3QÍ3©’V³ExpressionStatementÍ3\Í3zW´AssignmentExpressionÍ3\Í3y¡=T°MemberExpressionÍ3\Í3rIªIdentifierÍ3\Í3b¦intentIªIdentifierÍ3cÍ3r¯needsLedSeriesRÂÂN§LiteralÍ3uÍ3yÃ¤trueV³ExpressionStatementÍ3„Í3¢R®CallExpressionÍ3„Í3¡IªIdentifierÍ3„Í3ªpushReason’IªIdentifierÍ3Í3•¦intentN§LiteralÍ3—Í3 §led_bom©'led_bom'ÂÀP³VariableDeclarationÍ3¯Í3ç‘Q²VariableDeclaratorÍ3µÍ3æIªIdentifierÍ3µÍ3½¨hasRelayR®CallExpressionÍ3ÀÍ3æT°MemberExpressionÍ3ÀÍ3ÈIªIdentifierÍ3ÀÍ3Ã£idsIªIdentifierÍ3ÄÍ3È¤someÂÂ‘H·ArrowFunctionExpressionÍ3ÉÍ3åÀÃÂÂ‘IªIdentifierÍ3ÉÍ3Ê¡mS°BinaryExpressionÍ3ÎÍ3åR®CallExpressionÍ3ÎÍ3àT°MemberExpressionÍ3ÎÍ3×IªIdentifierÍ3ÎÍ3Ï¡mIªIdentifierÍ3ĞÍ3×§indexOfÂÂ‘N§LiteralÍ3ØÍ3ß¥RELAY§'RELAY'Â¢>=N§LiteralÍ3äÍ3å ¡0Â¥constP³VariableDeclarationÍ3íÍ4‘Q²VariableDeclaratorÍ3óÍ4IªIdentifierÍ3óÍ3÷¤hasRR®CallExpressionÍ3úÍ4T°MemberExpressionÍ3úÍ4IªIdentifierÍ3úÍ3ı£idsIªIdentifierÍ3şÍ4¤someÂÂ‘H·ArrowFunctionExpressionÍ4Í4ÀÃÂÂ‘IªIdentifierÍ4Í4¡mR®CallExpressionÍ4Í4T°MemberExpressionÍ4Í4IªIdentifierÍ4Í4	¡mIªIdentifierÍ4
-Í4ªstartsWithÂÂ‘N§LiteralÍ4Í4¢R_¤'R_'ÂÂ¥constP³VariableDeclarationÍ4"Í4Q‘Q²VariableDeclaratorÍ4(Í4PIªIdentifierÍ4(Í4,¤hasCR®CallExpressionÍ4/Í4PT°MemberExpressionÍ4/Í47IªIdentifierÍ4/Í42£idsIªIdentifierÍ43Í47¤someÂÂ‘H·ArrowFunctionExpressionÍ48Í4OÀÃÂÂ‘IªIdentifierÍ48Í49¡mR®CallExpressionÍ4=Í4OT°MemberExpressionÍ4=Í4IIªIdentifierÍ4=Í4>¡mIªIdentifierÍ4?Í4IªstartsWithÂÂ‘N§LiteralÍ4JÍ4N¢C_¤'C_'ÂÂ¥constU«IfStatementÍ4WÍ5YS±LogicalExpressionÍ4[Í4¤T°MemberExpressionÍ4[Í4pIªIdentifierÍ4[Í4a¦intentIªIdentifierÍ4bÍ4p®seriesRcChargeÂÂ¢||S±LogicalExpressionÍ4uÍ4£S±LogicalExpressionÍ4uÍ4IªIdentifierÍ4uÍ4y¤hasR¢&&IªIdentifierÍ4}Í4¤hasC¢&&R®CallExpressionÍ4…Í4£IªIdentifierÍ4…Í4›¶isSeriesRcChargePrompt‘IªIdentifierÍ4œÍ4¢¦promptÂJ®BlockStatementÍ4¦Í5Y”V³ExpressionStatementÍ4±Í4ÎW´AssignmentExpressionÍ4±Í4Í¡=T°MemberExpressionÍ4±Í4ÆIªIdentifierÍ4±Í4·¦intentIªIdentifierÍ4¸Í4Æ®seriesRcChargeÂÂN§LiteralÍ4ÉÍ4ÍÃ¤trueV³ExpressionStatementÍ4ØÍ4øW´AssignmentExpressionÍ4ØÍ4÷¡=T°MemberExpressionÍ4ØÍ4ïIªIdentifierÍ4ØÍ4Ş¦intentIªIdentifierÍ4ßÍ4ï°relayContactTopoÂÂN§LiteralÍ4òÍ4÷Â¥falseV³ExpressionStatementÍ5Í5$W´AssignmentExpressionÍ5Í5#¡=T°MemberExpressionÍ5Í5IªIdentifierÍ5Í5¦intentIªIdentifierÍ5	Í5²mutualLedIndicatorÂÂN§LiteralÍ5Í5#Â¥falseV³ExpressionStatementÍ5.Í5RR®CallExpressionÍ5.Í5QIªIdentifierÍ5.Í58ªpushReason’IªIdentifierÍ59Í5?¦intentN§LiteralÍ5AÍ5P­series_rc_bom¯'series_rc_bom'ÂÀU«IfStatementÍ5_Í7_S±LogicalExpressionÍ5cÍ5¢S±LogicalExpressionÍ5cÍ5ˆIªIdentifierÍ5cÍ5k¨hasRelay¢&&T°MemberExpressionÍ5oÍ5ˆIªIdentifierÍ5oÍ5u¦intentIªIdentifierÍ5vÍ5ˆ²mutualLedIndicatorÂÂ¢&&X¯UnaryExpressionÍ5ŒÍ5¢¡!ÃT°MemberExpressionÍ5Í5¢IªIdentifierÍ5Í5“¦intentIªIdentifierÍ5”Í5¢®seriesRcChargeÂÂJ®BlockStatementÍ5¤Í6’V³ExpressionStatementÍ5¯Í5ÎW´AssignmentExpressionÍ5¯Í5Í¡=T°MemberExpressionÍ5¯Í5ÆIªIdentifierÍ5¯Í5µ¦intentIªIdentifierÍ5¶Í5Æ°relayContactTopoÂÂN§LiteralÍ5ÉÍ5ÍÃ¤trueV³ExpressionStatementÍ5ØÍ5ÿR®CallExpressionÍ5ØÍ5şIªIdentifierÍ5ØÍ5âªpushReason’IªIdentifierÍ5ãÍ5é¦intentN§LiteralÍ5ëÍ5ı°relay_bom_mutual²'relay_bom_mutual'ÂU«IfStatementÍ6Í7_S±LogicalExpressionÍ6Í6…S±LogicalExpressionÍ6Í6bS±LogicalExpressionÍ6Í6ES±LogicalExpressionÍ6Í68IªIdentifierÍ6Í6¨hasRelay¢&&X¯UnaryExpressionÍ6!Í68¡!ÃT°MemberExpressionÍ6"Í68IªIdentifierÍ6"Í6(¦intentIªIdentifierÍ6)Í68¯blinkOscillatorÂÂ¢&&S°BinaryExpressionÍ6<Í6EIªIdentifierÍ6<Í6@¤ledN¢>=N§LiteralÍ6DÍ6E¡2¢&&T°MemberExpressionÍ6IÍ6bIªIdentifierÍ6IÍ6O¦intentIªIdentifierÍ6PÍ6b²mutualLedIndicatorÂÂ¢&&X¯UnaryExpressionÍ6oÍ6…¡!ÃT°MemberExpressionÍ6pÍ6…IªIdentifierÍ6pÍ6v¦intentIªIdentifierÍ6wÍ6…®seriesRcChargeÂÂJ®BlockStatementÍ6‡Í6¸‘V³ExpressionStatementÍ6’Í6±W´AssignmentExpressionÍ6’Í6°¡=T°MemberExpressionÍ6’Í6©IªIdentifierÍ6’Í6˜¦intentIªIdentifierÍ6™Í6©°relayContactTopoÂÂN§LiteralÍ6¬Í6°Ã¤trueU«IfStatementÍ6ÃÍ7_S±LogicalExpressionÍ6ÇÍ7IªIdentifierÍ6ÇÍ6Ï¨hasRelay¢&&S±LogicalExpressionÍ6ÔÍ7T°MemberExpressionÍ6ÔÍ6êIªIdentifierÍ6ÔÍ6Ú¦intentIªIdentifierÍ6ÛÍ6ê¯blinkOscillatorÂÂ¢||T°MemberExpressionÍ6îÍ7IªIdentifierÍ6îÍ6ô¦intentIªIdentifierÍ6õÍ7®seriesRcChargeÂÂJ®BlockStatementÍ7Í7_‘V³ExpressionStatementÍ78Í7XW´AssignmentExpressionÍ78Í7W¡=T°MemberExpressionÍ78Í7OIªIdentifierÍ78Í7>¦intentIªIdentifierÍ7?Í7O°relayContactTopoÂÂN§LiteralÍ7RÍ7WÂ¥falseÀP³VariableDeclarationÍ7eÍ8ç‘Q²VariableDeclaratorÍ7kÍ8æIªIdentifierÍ7kÍ7t©hasI2cBomR®CallExpressionÍ7wÍ8æT°MemberExpressionÍ7wÍ7™S±LogicalExpressionÍ7xÍ7“T°MemberExpressionÍ7xÍ7IªIdentifierÍ7xÍ7{£outIªIdentifierÍ7|Í7±deviceRequireListÂÂ¢??O¯ArrayExpressionÍ7‘Í7“IªIdentifierÍ7•Í7™¤someÂÂ‘H·ArrowFunctionExpressionÍ7šÍ8åÀÃÂÂ‘IªIdentifierÍ7šÍ7›¡rS±LogicalExpressionÍ7ŸÍ8åS±LogicalExpressionÍ7ŸÍ8œS±LogicalExpressionÍ7ŸÍ8US±LogicalExpressionÍ7ŸÍ8S°BinaryExpressionÍ7ŸÍ7ÏR®CallExpressionÍ7ŸÍ7ÊT°MemberExpressionÍ7ŸÍ7ÃR®CallExpressionÍ7ŸÍ7»T°MemberExpressionÍ7ŸÍ7¹S±LogicalExpressionÍ7 Í7¬T°MemberExpressionÍ7 Í7¦IªIdentifierÍ7 Í7¡¡rIªIdentifierÍ7¢Í7¦¤funcÂÂ¢??N§LiteralÍ7ªÍ7¬ ¢''IªIdentifierÍ7®Í7¹«toUpperCaseÂÂÂIªIdentifierÍ7¼Í7Ã§indexOfÂÂ‘N§LiteralÍ7ÄÍ7É£I2C¥'I2C'Â¢>=N§LiteralÍ7ÎÍ7Ï ¡0¢||S°BinaryExpressionÍ7ÜÍ8R®CallExpressionÍ7ÜÍ8
-T°MemberExpressionÍ7ÜÍ8R®CallExpressionÍ7ÜÍ7ûT°MemberExpressionÍ7ÜÍ7ùS±LogicalExpressionÍ7İÍ7ìT°MemberExpressionÍ7İÍ7æIªIdentifierÍ7İÍ7Ş¡rIªIdentifierÍ7ßÍ7æ§devTypeÂÂ¢??N§LiteralÍ7êÍ7ì ¢''IªIdentifierÍ7îÍ7ù«toUpperCaseÂÂÂIªIdentifierÍ7üÍ8§indexOfÂÂ‘N§LiteralÍ8Í8	£I2C¥'I2C'Â¢>=N§LiteralÍ8Í8 ¡0¢||S°BinaryExpressionÍ8Í8UR®CallExpressionÍ8Í8PT°MemberExpressionÍ8Í8IR®CallExpressionÍ8Í8AT°MemberExpressionÍ8Í8?S±LogicalExpressionÍ8Í82T°MemberExpressionÍ8Í8,IªIdentifierÍ8Í8¡rIªIdentifierÍ8Í8,­explicitModelÂÂ¢??N§LiteralÍ80Í82 ¢''IªIdentifierÍ84Í8?«toUpperCaseÂÂÂIªIdentifierÍ8BÍ8I§indexOfÂÂ‘N§LiteralÍ8JÍ8O£I2C¥'I2C'Â¢>=N§LiteralÍ8TÍ8U ¡0¢||S°BinaryExpressionÍ8bÍ8œR®CallExpressionÍ8bÍ8—T°MemberExpressionÍ8bÍ8R®CallExpressionÍ8bÍ8‡T°MemberExpressionÍ8bÍ8…S±LogicalExpressionÍ8cÍ8xT°MemberExpressionÍ8cÍ8rIªIdentifierÍ8cÍ8d¡rIªIdentifierÍ8eÍ8r­explicitModelÂÂ¢??N§LiteralÍ8vÍ8x ¢''IªIdentifierÍ8zÍ8…«toUpperCaseÂÂÂIªIdentifierÍ8ˆÍ8§indexOfÂÂ‘N§LiteralÍ8Í8–¤OLED¦'OLED'Â¢>=N§LiteralÍ8›Í8œ ¡0¢||S°BinaryExpressionÍ8©Í8åR®CallExpressionÍ8©Í8àT°MemberExpressionÍ8©Í8ÖR®CallExpressionÍ8©Í8ÎT°MemberExpressionÍ8©Í8ÌS±LogicalExpressionÍ8ªÍ8¿T°MemberExpressionÍ8ªÍ8¹IªIdentifierÍ8ªÍ8«¡rIªIdentifierÍ8¬Í8¹­explicitModelÂÂ¢??N§LiteralÍ8½Í8¿ ¢''IªIdentifierÍ8ÁÍ8Ì«toUpperCaseÂÂÂIªIdentifierÍ8ÏÍ8Ö§indexOfÂÂ‘N§LiteralÍ8×Í8ß¦EEPROM¨'EEPROM'Â¢>=N§LiteralÍ8äÍ8å ¡0Â¥constU«IfStatementÍ8íÍ9SIªIdentifierÍ8ñÍ8ú©hasI2cBomJ®BlockStatementÍ8üÍ9S’V³ExpressionStatementÍ9Í9$W´AssignmentExpressionÍ9Í9#¡=T°MemberExpressionÍ9Í9IªIdentifierÍ9Í9¦intentIªIdentifierÍ9Í9®needsI2cPullupÂÂN§LiteralÍ9Í9#Ã¤trueV³ExpressionStatementÍ9.Í9LR®CallExpressionÍ9.Í9KIªIdentifierÍ9.Í98ªpushReason’IªIdentifierÍ99Í9?¦intentN§LiteralÍ9AÍ9J§i2c_bom©'i2c_bom'ÂÀP³VariableDeclarationÍ9YÍ9Ä‘Q²VariableDeclaratorÍ9_Í9ÃIªIdentifierÍ9_Í9d¥hasOpR®CallExpressionÍ9gÍ9ÃT°MemberExpressionÍ9gÍ9oIªIdentifierÍ9gÍ9j£idsIªIdentifierÍ9kÍ9o¤someÂÂ‘H·ArrowFunctionExpressionÍ9pÍ9ÂÀÃÂÂ‘IªIdentifierÍ9pÍ9q¡mS±LogicalExpressionÍ9uÍ9ÂS±LogicalExpressionÍ9uÍ9§S°BinaryExpressionÍ9uÍ9ŒR®CallExpressionÍ9uÍ9‡T°MemberExpressionÍ9uÍ9~IªIdentifierÍ9uÍ9v¡mIªIdentifierÍ9wÍ9~§indexOfÂÂ‘N§LiteralÍ9Í9†¥LM358§'LM358'Â¢>=N§LiteralÍ9‹Í9Œ ¡0¢||S°BinaryExpressionÍ9Í9§R®CallExpressionÍ9Í9¢T°MemberExpressionÍ9Í9™IªIdentifierÍ9Í9‘¡mIªIdentifierÍ9’Í9™§indexOfÂÂ‘N§LiteralÍ9šÍ9¡¥LM324§'LM324'Â¢>=N§LiteralÍ9¦Í9§ ¡0¢||S°BinaryExpressionÍ9«Í9ÂR®CallExpressionÍ9«Í9½T°MemberExpressionÍ9«Í9´IªIdentifierÍ9«Í9¬¡mIªIdentifierÍ9­Í9´§indexOfÂÂ‘N§LiteralÍ9µÍ9¼¥OPAMP§'OPAMP'Â¢>=N§LiteralÍ9ÁÍ9Â ¡0Â¥constU«IfStatementÍ9ÊÍ:2IªIdentifierÍ9ÎÍ9Ó¥hasOpJ®BlockStatementÍ9ÕÍ:2’V³ExpressionStatementÍ9àÍ:W´AssignmentExpressionÍ9àÍ: ¡=T°MemberExpressionÍ9àÍ9ùIªIdentifierÍ9àÍ9æ¦intentIªIdentifierÍ9çÍ9ù²needsOpAmpFeedbackÂÂN§LiteralÍ9üÍ: Ã¤trueV³ExpressionStatementÍ:Í:+R®CallExpressionÍ:Í:*IªIdentifierÍ:Í:ªpushReason’IªIdentifierÍ:Í:¦intentN§LiteralÍ:Í:)©opamp_bom«'opamp_bom'ÂÀP³VariableDeclarationÍ:8Í;‘Q²VariableDeclaratorÍ:>Í;IªIdentifierÍ:>Í:F¨hasInstrR®CallExpressionÍ:IÍ;T°MemberExpressionÍ:IÍ:QIªIdentifierÍ:IÍ:L£idsIªIdentifierÍ:MÍ:Q¤someÂÂ‘H·ArrowFunctionExpressionÍ:RÍ;
-ÀÃÂÂ‘IªIdentifierÍ:RÍ:S¡mS±LogicalExpressionÍ:WÍ;
-S±LogicalExpressionÍ:WÍ:ŞS±LogicalExpressionÍ:WÍ:ºS±LogicalExpressionÍ:WÍ:S°BinaryExpressionÍ:WÍ:rR®CallExpressionÍ:WÍ:mT°MemberExpressionÍ:WÍ:`IªIdentifierÍ:WÍ:X¡mIªIdentifierÍ:YÍ:`§indexOfÂÂ‘N§LiteralÍ:aÍ:l©VOLTMETER«'VOLTMETER'Â¢>=N§LiteralÍ:qÍ:r ¡0¢||S°BinaryExpressionÍ:vÍ:R®CallExpressionÍ:vÍ:ŠT°MemberExpressionÍ:vÍ:IªIdentifierÍ:vÍ:w¡mIªIdentifierÍ:xÍ:§indexOfÂÂ‘N§LiteralÍ:€Í:‰§AMMETER©'AMMETER'Â¢>=N§LiteralÍ:Í: ¡0¢||S°BinaryExpressionÍ:œÍ:ºR®CallExpressionÍ:œÍ:µT°MemberExpressionÍ:œÍ:¥IªIdentifierÍ:œÍ:¡mIªIdentifierÍ:Í:¥§indexOfÂÂ‘N§LiteralÍ:¦Í:´¬OSCILLOSCOPE®'OSCILLOSCOPE'Â¢>=N§LiteralÍ:¹Í:º ¡0¢||S°BinaryExpressionÍ:¾Í:ŞR®CallExpressionÍ:¾Í:ÙT°MemberExpressionÍ:¾Í:ÇIªIdentifierÍ:¾Í:¿¡mIªIdentifierÍ:ÀÍ:Ç§indexOfÂÂ‘N§LiteralÍ:ÈÍ:Ø®LOGIC_ANALYZER°'LOGIC_ANALYZER'Â¢>=N§LiteralÍ:İÍ:Ş ¡0¢||S°BinaryExpressionÍ:ëÍ;
-R®CallExpressionÍ:ëÍ;T°MemberExpressionÍ:ëÍ:ôIªIdentifierÍ:ëÍ:ì¡mIªIdentifierÍ:íÍ:ô§indexOfÂÂ‘N§LiteralÍ:õÍ;­UART_TERMINAL¯'UART_TERMINAL'Â¢>=N§LiteralÍ;	Í;
- ¡0Â¥constU«IfStatementÍ;Í;~IªIdentifierÍ;Í;¨hasInstrJ®BlockStatementÍ; Í;~’V³ExpressionStatementÍ;+Í;HW´AssignmentExpressionÍ;+Í;G¡=T°MemberExpressionÍ;+Í;@IªIdentifierÍ;+Í;1¦intentIªIdentifierÍ;2Í;@®hasInstrumentsÂÂN§LiteralÍ;CÍ;GÃ¤trueV³ExpressionStatementÍ;RÍ;wR®CallExpressionÍ;RÍ;vIªIdentifierÍ;RÍ;\ªpushReason’IªIdentifierÍ;]Í;c¦intentN§LiteralÍ;eÍ;u®instrument_bom°'instrument_bom'ÂÀP³VariableDeclarationÍ;„Í;®‘Q²VariableDeclaratorÍ;ŠÍ;­IªIdentifierÍ;ŠÍ;¦hasVccR®CallExpressionÍ;“Í;­T°MemberExpressionÍ;“Í;›IªIdentifierÍ;“Í;–£idsIªIdentifierÍ;—Í;›¤someÂÂ‘H·ArrowFunctionExpressionÍ;œÍ;¬ÀÃÂÂ‘IªIdentifierÍ;œÍ;¡mS°BinaryExpressionÍ;¡Í;¬IªIdentifierÍ;¡Í;¢¡m£===N§LiteralÍ;§Í;¬£VCC¥'VCC'Â¥constP³VariableDeclarationÍ;´Í;Ş‘Q²VariableDeclaratorÍ;ºÍ;İIªIdentifierÍ;ºÍ;À¦hasGndR®CallExpressionÍ;ÃÍ;İT°MemberExpressionÍ;ÃÍ;ËIªIdentifierÍ;ÃÍ;Æ£idsIªIdentifierÍ;ÇÍ;Ë¤someÂÂ‘H·ArrowFunctionExpressionÍ;ÌÍ;ÜÀÃÂÂ‘IªIdentifierÍ;ÌÍ;Í¡mS°BinaryExpressionÍ;ÑÍ;ÜIªIdentifierÍ;ÑÍ;Ò¡m£===N§LiteralÍ;×Í;Ü£GND¥'GND'Â¥constP³VariableDeclarationÍ;äÍ<'‘Q²VariableDeclaratorÍ;êÍ<&IªIdentifierÍ;êÍ;ğ¦hasVeeR®CallExpressionÍ;óÍ<&T°MemberExpressionÍ;óÍ;ûIªIdentifierÍ;óÍ;ö£idsIªIdentifierÍ;÷Í;û¤someÂÂ‘H·ArrowFunctionExpressionÍ;üÍ<%ÀÃÂÂ‘IªIdentifierÍ;üÍ;ı¡mS±LogicalExpressionÍ<Í<%S°BinaryExpressionÍ<Í<IªIdentifierÍ<Í<¡m£===N§LiteralÍ<Í<£VEE¥'VEE'¢||S°BinaryExpressionÍ<Í<%R®CallExpressionÍ<Í< T°MemberExpressionÍ<Í<IªIdentifierÍ<Í<¡mIªIdentifierÍ<Í<§indexOfÂÂ‘N§LiteralÍ<Í<£VEE¥'VEE'Â¢>=N§LiteralÍ<$Í<% ¡0Â¥constP³VariableDeclarationÍ<-Í<h‘Q²VariableDeclaratorÍ<3Í<gIªIdentifierÍ<3Í<9¦hasSigR®CallExpressionÍ<<Í<gT°MemberExpressionÍ<<Í<DIªIdentifierÍ<<Í<?£idsIªIdentifierÍ<@Í<D¤someÂÂ‘H·ArrowFunctionExpressionÍ<EÍ<fÀÃÂÂ‘IªIdentifierÍ<EÍ<F¡mS°BinaryExpressionÍ<JÍ<fR®CallExpressionÍ<JÍ<aT°MemberExpressionÍ<JÍ<SIªIdentifierÍ<JÍ<K¡mIªIdentifierÍ<LÍ<S§indexOfÂÂ‘N§LiteralÍ<TÍ<`ªSIGNAL_GEN¬'SIGNAL_GEN'Â¢>=N§LiteralÍ<eÍ<f ¡0Â¥constU«IfStatementÍ<nÍ<¾S±LogicalExpressionÍ<rÍ<ŒS±LogicalExpressionÍ<rÍ<‚IªIdentifierÍ<rÍ<x¦hasVcc¢||IªIdentifierÍ<|Í<‚¦hasGnd¢||IªIdentifierÍ<†Í<Œ¦hasVeeJ®BlockStatementÍ<Í<¾‘V³ExpressionStatementÍ<™Í<·W´AssignmentExpressionÍ<™Í<¶¡=T°MemberExpressionÍ<™Í<¯IªIdentifierÍ<™Í<Ÿ¦intentIªIdentifierÍ< Í<¯¯needsPowerRailsÂÂN§LiteralÍ<²Í<¶Ã¤trueÀU«IfStatementÍ<ÄÍ=#IªIdentifierÍ<ÈÍ<Î¦hasVeeJ®BlockStatementÍ<ĞÍ=#’V³ExpressionStatementÍ<ÛÍ<ôW´AssignmentExpressionÍ<ÛÍ<ó¡=T°MemberExpressionÍ<ÛÍ<ìIªIdentifierÍ<ÛÍ<á¦intentIªIdentifierÍ<âÍ<ìªdualSupplyÂÂN§LiteralÍ<ïÍ<óÃ¤trueV³ExpressionStatementÍ<şÍ=R®CallExpressionÍ<şÍ=IªIdentifierÍ<şÍ=ªpushReason’IªIdentifierÍ=	Í=¦intentN§LiteralÍ=Í=§vee_bom©'vee_bom'ÂÀU«IfStatementÍ=)ÍAâIªIdentifierÍ=-Í=3¦hasSigJ®BlockStatementÍ=5ÍAâ•V³ExpressionStatementÍ=@Í=]W´AssignmentExpressionÍ=@Í=\¡=T°MemberExpressionÍ=@Í=UIªIdentifierÍ=@Í=F¦intentIªIdentifierÍ=GÍ=U®needsSignalGenÂÂN§LiteralÍ=XÍ=\Ã¤trueV³ExpressionStatementÍ=gÍ=„W´AssignmentExpressionÍ=gÍ=ƒ¡=T°MemberExpressionÍ=gÍ=|IªIdentifierÍ=gÍ=m¦intentIªIdentifierÍ=nÍ=|®hasInstrumentsÂÂN§LiteralÍ=Í=ƒÃ¤trueV³ExpressionStatementÍ=Í=³R®CallExpressionÍ=Í=²IªIdentifierÍ=Í=˜ªpushReason’IªIdentifierÍ=™Í=Ÿ¦intentN§LiteralÍ=¡Í=±®signal_gen_bom°'signal_gen_bom'ÂP³VariableDeclarationÍ=íÍ>‘Q²VariableDeclaratorÍ=óÍ>IªIdentifierÍ=óÍ=÷¤listS±LogicalExpressionÍ=úÍ>T°MemberExpressionÍ=úÍ>IªIdentifierÍ=úÍ=ı£outIªIdentifierÍ=şÍ>±deviceRequireListÂÂ¢??O¯ArrayExpressionÍ>Í>¥constY¬ForStatementÍ> ÍAÛP³VariableDeclarationÍ>%Í>.‘Q²VariableDeclaratorÍ>)Í>.IªIdentifierÍ>)Í>*¡iN§LiteralÍ>-Í>. ¡0£letS°BinaryExpressionÍ>0Í>?IªIdentifierÍ>0Í>1¡i¡<T°MemberExpressionÍ>4Í>?IªIdentifierÍ>4Í>8¤listIªIdentifierÍ>9Í>?¦lengthÂÂX°UpdateExpressionÍ>AÍ>D¢++ÂIªIdentifierÍ>AÍ>B¡iJ®BlockStatementÍ>FÍAÛ™P³VariableDeclarationÍ>UÍ>¨‘Q²VariableDeclaratorÍ>[Í>§IªIdentifierÍ>[Í>]¢idR®CallExpressionÍ>`Í>§T°MemberExpressionÍ>`Í>¥ÔrZ•¤type¥start£end«expressions¦quasis¯TemplateLiteralÍ>`Í>™’S±LogicalExpressionÍ>cÍ>~T°MemberExpressionÍ>cÍ>xT°MemberExpressionÍ>cÍ>jIªIdentifierÍ>cÍ>g¤listIªIdentifierÍ>hÍ>i¡iÃÂIªIdentifierÍ>kÍ>x­explicitModelÂÂ¢??N§LiteralÍ>|Í>~ ¢''S±LogicalExpressionÍ>‚Í>—T°MemberExpressionÍ>‚Í>‘T°MemberExpressionÍ>‚Í>‰IªIdentifierÍ>‚Í>†¤listIªIdentifierÍ>‡Í>ˆ¡iÃÂIªIdentifierÍ>ŠÍ>‘§devTypeÂÂ¢??N§LiteralÍ>•Í>— ¢''“Ôr[•¤type¥start£end¥value¤tail¯TemplateElementÍ>aÍ>aÔr\’£raw¦cooked  Â[¯TemplateElementÍ>Í>€\¡ ¡ Â[¯TemplateElementÍ>˜Í>˜\  ÃIªIdentifierÍ>šÍ>¥«toUpperCaseÂÂÂ¥constU«IfStatementÍ>¶Í?S°BinaryExpressionÍ>ºÍ>ÖR®CallExpressionÍ>ºÍ>ÒT°MemberExpressionÍ>ºÍ>ÄIªIdentifierÍ>ºÍ>¼¢idIªIdentifierÍ>½Í>Ä§indexOfÂÂ‘N§LiteralÍ>ÅÍ>ÑªSIGNAL_GEN¬'SIGNAL_GEN'Â¡<N§LiteralÍ>ÕÍ>Ö ¡0J®BlockStatementÍ>ØÍ?‘Ôr]”¤type¥start£end¥label±ContinueStatementÍ>ëÍ>ôÀÀP³VariableDeclarationÍ?Í?b‘Q²VariableDeclaratorÍ?Í?aIªIdentifierÍ?Í?¢wfR®CallExpressionÍ?Í?aT°MemberExpressionÍ?Í?_R®CallExpressionÍ?Í?ST°MemberExpressionÍ?Í?QS±LogicalExpressionÍ?Í?KV¯ChainExpressionÍ?Í?ER®CallExpressionÍ?Í?ET°MemberExpressionÍ?Í?9T°MemberExpressionÍ?Í?4T°MemberExpressionÍ?Í?$IªIdentifierÍ?Í?!¤listIªIdentifierÍ?"Í?#¡iÃÂIªIdentifierÍ?%Í?4¯paramConstraintÂÂIªIdentifierÍ?6Í?9£getÂÃ‘N§LiteralÍ?:Í?D¨waveformª'waveform'Â¢??N§LiteralÍ?IÍ?K ¢''IªIdentifierÍ?MÍ?Q¤trimÂÂÂIªIdentifierÍ?TÍ?_«toLowerCaseÂÂÂ¥constU«IfStatementÍ?pÍ@AS±LogicalExpressionÍ?tÍ?ËS±LogicalExpressionÍ?tÍ?¹S±LogicalExpressionÍ?tÍ?©S±LogicalExpressionÍ?tÍ?”S°BinaryExpressionÍ?tÍ?IªIdentifierÍ?tÍ?v¢wf£===N§LiteralÍ?{Í?¤sine¦'sine'¢||S°BinaryExpressionÍ?…Í?”IªIdentifierÍ?…Í?‡¢wf£===N§LiteralÍ?ŒÍ?”¦square¨'square'¢||S°BinaryExpressionÍ?˜Í?©IªIdentifierÍ?˜Í?š¢wf£===N§LiteralÍ?ŸÍ?©¨triangleª'triangle'¢||S°BinaryExpressionÍ?­Í?¹IªIdentifierÍ?­Í?¯¢wf£===N§LiteralÍ?´Í?¹£saw¥'saw'¢||S°BinaryExpressionÍ?½Í?ËIªIdentifierÍ?½Í?¿¢wf£===N§LiteralÍ?ÄÍ?Ë¥pulse§'pulse'J®BlockStatementÍ?ÍÍ@A’V³ExpressionStatementÍ?àÍ?ûW´AssignmentExpressionÍ?àÍ?ú¡=T°MemberExpressionÍ?àÍ?õIªIdentifierÍ?àÍ?æ¦intentIªIdentifierÍ?çÍ?õ®signalWaveformÂÂIªIdentifierÍ?øÍ?ú¢wfV³ExpressionStatementÍ@Í@2R®CallExpressionÍ@Í@1IªIdentifierÍ@Í@ªpushReason’IªIdentifierÍ@Í@¦intentZ¯TemplateLiteralÍ@ Í@0‘IªIdentifierÍ@,Í@.¢wf’[¯TemplateElementÍ@!Í@*\©sigWfBom=©sigWfBom=Â[¯TemplateElementÍ@/Í@/\  ÃÂÀP³VariableDeclarationÍ@OÍ@•‘Q²VariableDeclaratorÍ@UÍ@”IªIdentifierÍ@UÍ@Y¤freqR®CallExpressionÍ@\Í@”T°MemberExpressionÍ@\Í@’S±LogicalExpressionÍ@]Í@ŒV¯ChainExpressionÍ@]Í@†R®CallExpressionÍ@]Í@†T°MemberExpressionÍ@]Í@yT°MemberExpressionÍ@]Í@tT°MemberExpressionÍ@]Í@dIªIdentifierÍ@]Í@a¤listIªIdentifierÍ@bÍ@c¡iÃÂIªIdentifierÍ@eÍ@t¯paramConstraintÂÂIªIdentifierÍ@vÍ@y£getÂÃ‘N§LiteralÍ@zÍ@…©frequency«'frequency'Â¢??N§LiteralÍ@ŠÍ@Œ ¢''IªIdentifierÍ@Í@’¤trimÂÂÂ¥constU«IfStatementÍ@£ÍAS°BinaryExpressionÍ@§Í@¶T°MemberExpressionÍ@§Í@²IªIdentifierÍ@§Í@«¤freqIªIdentifierÍ@¬Í@²¦lengthÂÂ¡>N§LiteralÍ@µÍ@¶ ¡0J®BlockStatementÍ@¸ÍA‘V³ExpressionStatementÍ@ËÍ@òW´AssignmentExpressionÍ@ËÍ@ñ¡=T°MemberExpressionÍ@ËÍ@êIªIdentifierÍ@ËÍ@Ñ¦intentIªIdentifierÍ@ÒÍ@ê¸preferredSignalFrequencyÂÂIªIdentifierÍ@íÍ@ñ¤freqÀP³VariableDeclarationÍAÍAU‘Q²VariableDeclaratorÍAÍATIªIdentifierÍAÍA¤dutyR®CallExpressionÍAÍATT°MemberExpressionÍAÍARS±LogicalExpressionÍAÍALV¯ChainExpressionÍAÍAFR®CallExpressionÍAÍAFT°MemberExpressionÍAÍA9T°MemberExpressionÍAÍA4T°MemberExpressionÍAÍA$IªIdentifierÍAÍA!¤listIªIdentifierÍA"ÍA#¡iÃÂIªIdentifierÍA%ÍA4¯paramConstraintÂÂIªIdentifierÍA6ÍA9£getÂÃ‘N§LiteralÍA:ÍAE©dutyCycle«'dutyCycle'Â¢??N§LiteralÍAJÍAL ¢''IªIdentifierÍANÍAR¤trimÂÂÂ¥constU«IfStatementÍAcÍA¼S°BinaryExpressionÍAgÍAvT°MemberExpressionÍAgÍArIªIdentifierÍAgÍAk¤dutyIªIdentifierÍAlÍAr¦lengthÂÂ¡>N§LiteralÍAuÍAv ¡0J®BlockStatementÍAxÍA¼‘V³ExpressionStatementÍA‹ÍA­W´AssignmentExpressionÍA‹ÍA¬¡=T°MemberExpressionÍA‹ÍA¥IªIdentifierÍA‹ÍA‘¦intentIªIdentifierÍA’ÍA¥³preferredSignalDutyÂÂIªIdentifierÍA¨ÍA¬¤dutyÀ]®BreakStatementÍAÊÍAĞÀÀU«IfStatementÍBÍBıS±LogicalExpressionÍBÍB;T°MemberExpressionÍBÍB%IªIdentifierÍBÍB¦intentIªIdentifierÍBÍB%²needsOpAmpFeedbackÂÂ¢&&X¯UnaryExpressionÍB)ÍB;¡!ÃT°MemberExpressionÍB*ÍB;IªIdentifierÍB*ÍB0¦intentIªIdentifierÍB1ÍB;ªdualSupplyÂÂJ®BlockStatementÍB=ÍBı’P³VariableDeclarationÍBHÍB`‘Q²VariableDeclaratorÍBNÍB_IªIdentifierÍBNÍBP¢zhS±LogicalExpressionÍBSÍB_IªIdentifierÍBSÍBY¦prompt¢??N§LiteralÍB]ÍB_ ¢''¥constU«IfStatementÍBjÍBöS±LogicalExpressionÍBnÍB´S°BinaryExpressionÍBnÍBƒR®CallExpressionÍBnÍBT°MemberExpressionÍBnÍBxIªIdentifierÍBnÍBp¢zhIªIdentifierÍBqÍBx§indexOfÂÂ‘N§LiteralÍByÍB~©å•ç”µæº«'å•ç”µæº'Â¡<N§LiteralÍB‚ÍBƒ ¡0¢&&S°BinaryExpressionÍB‡ÍB´R®CallExpressionÍB‡ÍB°T°MemberExpressionÍB‡ÍBŸR®CallExpressionÍB‡ÍB—T°MemberExpressionÍB‡ÍB•IªIdentifierÍB‡ÍB‰¢zhIªIdentifierÍBŠÍB•«toLowerCaseÂÂÂIªIdentifierÍB˜ÍBŸ§indexOfÂÂ‘N§LiteralÍB ÍB¯­single supply¯'single supply'Â¡<N§LiteralÍB³ÍB´ ¡0J®BlockStatementÍB¶ÍBöÀÀV³ExpressionStatementÍCÍCŒW´AssignmentExpressionÍCÍC‹¡=T°MemberExpressionÍCÍCIªIdentifierÍCÍC	¦intentIªIdentifierÍC
-ÍC«passiveOnlyÂÂS±LogicalExpressionÍCÍC‹S±LogicalExpressionÍCÍC~S±LogicalExpressionÍCÍCpS±LogicalExpressionÍCÍCIX¯UnaryExpressionÍCÍC/¡!ÃT°MemberExpressionÍCÍC/IªIdentifierÍCÍC¦intentIªIdentifierÍC ÍC/¯hasMcuMinSystemÂÂ¢&&X¯UnaryExpressionÍC3ÍCI¡!ÃT°MemberExpressionÍC4ÍCIIªIdentifierÍC4ÍC:¦intentIªIdentifierÍC;ÍCI®hasInstrumentsÂÂ¢&&X¯UnaryExpressionÍCVÍCp¡!ÃT°MemberExpressionÍCWÍCpIªIdentifierÍCWÍC]¦intentIªIdentifierÍC^ÍCp²needsOpAmpFeedbackÂÂ¢&&S°BinaryExpressionÍCtÍC~IªIdentifierÍCtÍCx¤ledN£===N§LiteralÍC}ÍC~ ¡0¢&&X¯UnaryExpressionÍC‚ÍC‹¡!ÃIªIdentifierÍCƒÍC‹¨hasRelayU«IfStatementÍC©ÍD<S±LogicalExpressionÍC­ÍCÜT°MemberExpressionÍC­ÍCÃIªIdentifierÍC­ÍC³¦intentIªIdentifierÍC´ÍCÃ¯blinkOscillatorÂÂ¢||T°MemberExpressionÍCÇÍCÜIªIdentifierÍCÇÍCÍ¦intentIªIdentifierÍCÎÍCÜ®seriesRcChargeÂÂJ®BlockStatementÍCŞÍD<’V³ExpressionStatementÍCéÍDW´AssignmentExpressionÍCéÍD
-¡=T°MemberExpressionÍCéÍDIªIdentifierÍCéÍCï¦intentIªIdentifierÍCğÍD²mutualLedIndicatorÂÂN§LiteralÍDÍD
-Â¥falseV³ExpressionStatementÍDÍD5W´AssignmentExpressionÍDÍD4¡=T°MemberExpressionÍDÍD,IªIdentifierÍDÍD¦intentIªIdentifierÍDÍD,°relayContactTopoÂÂN§LiteralÍD/ÍD4Â¥falseÀK¯ReturnStatementÍDBÍDPIªIdentifierÍDIÍDO¦intentÀG¶ExportNamedDeclarationÍD}ÍHVH³FunctionDeclarationÍD„ÍHVIªIdentifierÍDÍD¡´refineIntentFromTopoÂÂÂ’IªIdentifierÍD¢ÍD¨¦intentIªIdentifierÍDªÍD®¤topoJ®BlockStatementÍD°ÍHV˜P³VariableDeclarationÍD·ÍD×‘Q²VariableDeclaratorÍD½ÍDÖIªIdentifierÍD½ÍDÁ¤nextR®CallExpressionÍDÄÍDÖIªIdentifierÍDÄÍDÎªcopyIntent‘IªIdentifierÍDÏÍDÕ¦intentÂ¥constP³VariableDeclarationÍDİÍE_‘Q²VariableDeclaratorÍDãÍE^IªIdentifierÍDãÍDë¨hasRelayR®CallExpressionÍDîÍE^T°MemberExpressionÍDîÍET°MemberExpressionÍDîÍDıIªIdentifierÍDîÍDò¤topoIªIdentifierÍDóÍDıªdeviceListÂÂIªIdentifierÍDşÍE¤someÂÂ‘H·ArrowFunctionExpressionÍEÍE]ÀÃÂÂ‘IªIdentifierÍEÍE¡dS±LogicalExpressionÍEÍE]S°BinaryExpressionÍEÍE#T°MemberExpressionÍEÍEIªIdentifierÍEÍE	¡dIªIdentifierÍE
-ÍE¨libDevIdÂÂ£===N§LiteralÍEÍE#ªRELAY_SPDT¬'RELAY_SPDT'¢||S°BinaryExpressionÍE'ÍE]R®CallExpressionÍE'ÍEXT°MemberExpressionÍE'ÍEOR®CallExpressionÍE'ÍEGT°MemberExpressionÍE'ÍEES±LogicalExpressionÍE(ÍE8T°MemberExpressionÍE(ÍE2IªIdentifierÍE(ÍE)¡dIªIdentifierÍE*ÍE2¨libDevIdÂÂ¢??N§LiteralÍE6ÍE8 ¢''IªIdentifierÍE:ÍEE«toUpperCaseÂÂÂIªIdentifierÍEHÍEO§indexOfÂÂ‘N§LiteralÍEPÍEW¥RELAY§'RELAY'Â¢>=N§LiteralÍE\ÍE] ¡0Â¥constP³VariableDeclarationÍEeÍE´‘Q²VariableDeclaratorÍEkÍE³IªIdentifierÍEkÍEo¤ledNT°MemberExpressionÍErÍE³R®CallExpressionÍErÍE¬T°MemberExpressionÍErÍEˆT°MemberExpressionÍErÍEIªIdentifierÍErÍEv¤topoIªIdentifierÍEwÍEªdeviceListÂÂIªIdentifierÍE‚ÍEˆ¦filterÂÂ‘H·ArrowFunctionExpressionÍE‰ÍE«ÀÃÂÂ‘IªIdentifierÍE‰ÍEŠ¡dR®CallExpressionÍEÍE«T°MemberExpressionÍEÍE£T°MemberExpressionÍEÍE˜IªIdentifierÍEÍE¡dIªIdentifierÍEÍE˜¨libDevIdÂÂIªIdentifierÍE™ÍE£ªstartsWithÂÂ‘N§LiteralÍE¤ÍEª¤LED_¦'LED_'ÂÂIªIdentifierÍE­ÍE³¦lengthÂÂ¥constP³VariableDeclarationÍEºÍF‚‘Q²VariableDeclaratorÍEÀÍFIªIdentifierÍEÀÍEÆ¦hasMcuR®CallExpressionÍEÉÍFT°MemberExpressionÍEÉÍEİT°MemberExpressionÍEÉÍEØIªIdentifierÍEÉÍEÍ¤topoIªIdentifierÍEÎÍEØªdeviceListÂÂIªIdentifierÍEÙÍEİ¤someÂÂ‘H·ArrowFunctionExpressionÍEŞÍF€ÀÂÂÂ‘IªIdentifierÍEŞÍEß¡dJ®BlockStatementÍEãÍF€’P³VariableDeclarationÍEîÍF‘Q²VariableDeclaratorÍEôÍFIªIdentifierÍEôÍEö¢idR®CallExpressionÍEùÍFT°MemberExpressionÍEùÍFS±LogicalExpressionÍEúÍF
-T°MemberExpressionÍEúÍFIªIdentifierÍEúÍEû¡dIªIdentifierÍEüÍF¨libDevIdÂÂ¢??N§LiteralÍFÍF
- ¢''IªIdentifierÍFÍF«toUpperCaseÂÂÂ¥constK¯ReturnStatementÍF$ÍFyS±LogicalExpressionÍF+ÍFxS±LogicalExpressionÍF+ÍF^S°BinaryExpressionÍF+ÍFCR®CallExpressionÍF+ÍF>T°MemberExpressionÍF+ÍF5IªIdentifierÍF+ÍF-¢idIªIdentifierÍF.ÍF5§indexOfÂÂ‘N§LiteralÍF6ÍF=¥STM32§'STM32'Â¢>=N§LiteralÍFBÍFC ¡0¢||S°BinaryExpressionÍFGÍF^R®CallExpressionÍFGÍFYT°MemberExpressionÍFGÍFQIªIdentifierÍFGÍFI¢idIªIdentifierÍFJÍFQ§indexOfÂÂ‘N§LiteralÍFRÍFX¤AT89¦'AT89'Â¢>=N§LiteralÍF]ÍF^ ¡0¢||S°BinaryExpressionÍFbÍFxR®CallExpressionÍFbÍFsT°MemberExpressionÍFbÍFlIªIdentifierÍFbÍFd¢idIªIdentifierÍFeÍFl§indexOfÂÂ‘N§LiteralÍFmÍFr£STC¥'STC'Â¢>=N§LiteralÍFwÍFx ¡0Â¥constU«IfStatementÍFˆÍFÂIªIdentifierÍFŒÍF’¦hasMcuJ®BlockStatementÍF”ÍFÂ‘V³ExpressionStatementÍFŸÍF»W´AssignmentExpressionÍFŸÍFº¡=T°MemberExpressionÍFŸÍF³IªIdentifierÍFŸÍF£¤nextIªIdentifierÍF¤ÍF³¯hasMcuMinSystemÂÂN§LiteralÍF¶ÍFºÃ¤trueÀU«IfStatementÍFÈÍGS°BinaryExpressionÍFÌÍFÔIªIdentifierÍFÌÍFĞ¤ledN¡>N§LiteralÍFÓÍFÔ ¡0J®BlockStatementÍFÖÍG‘V³ExpressionStatementÍFáÍFıW´AssignmentExpressionÍFáÍFü¡=T°MemberExpressionÍFáÍFõIªIdentifierÍFáÍFå¤nextIªIdentifierÍFæÍFõ¯needsLedSeriesRÂÂN§LiteralÍFøÍFüÃ¤trueÀU«IfStatementÍG
-ÍHAT°MemberExpressionÍGÍG!IªIdentifierÍGÍG¤nextIªIdentifierÍGÍG!®seriesRcChargeÂÂJ®BlockStatementÍG#ÍG}’V³ExpressionStatementÍG.ÍGNW´AssignmentExpressionÍG.ÍGM¡=T°MemberExpressionÍG.ÍGEIªIdentifierÍG.ÍG2¤nextIªIdentifierÍG3ÍGE²mutualLedIndicatorÂÂN§LiteralÍGHÍGMÂ¥falseV³ExpressionStatementÍGXÍGvW´AssignmentExpressionÍGXÍGu¡=T°MemberExpressionÍGXÍGmIªIdentifierÍGXÍG\¤nextIªIdentifierÍG]ÍGm°relayContactTopoÂÂN§LiteralÍGpÍGuÂ¥falseU«IfStatementÍGˆÍHAS±LogicalExpressionÍGŒÍG¯IªIdentifierÍGŒÍG”¨hasRelay¢&&T°MemberExpressionÍG˜ÍG¯IªIdentifierÍG˜ÍGœ¤nextIªIdentifierÍGÍG¯²mutualLedIndicatorÂÂJ®BlockStatementÍG±ÍGà‘V³ExpressionStatementÍG¼ÍGÙW´AssignmentExpressionÍG¼ÍGØ¡=T°MemberExpressionÍG¼ÍGÑIªIdentifierÍG¼ÍGÀ¤nextIªIdentifierÍGÁÍGÑ°relayContactTopoÂÂN§LiteralÍGÔÍGØÃ¤trueU«IfStatementÍGëÍHAS±LogicalExpressionÍGïÍHIªIdentifierÍGïÍG÷¨hasRelay¢&&T°MemberExpressionÍGûÍHIªIdentifierÍGûÍGÿ¤nextIªIdentifierÍH ÍH¯blinkOscillatorÂÂJ®BlockStatementÍHÍHA‘V³ExpressionStatementÍHÍH:W´AssignmentExpressionÍHÍH9¡=T°MemberExpressionÍHÍH1IªIdentifierÍHÍH ¤nextIªIdentifierÍH!ÍH1°relayContactTopoÂÂN§LiteralÍH4ÍH9Â¥falseÀK¯ReturnStatementÍHGÍHSIªIdentifierÍHNÍHR¤nextÀG¶ExportNamedDeclarationÍHXÍL"H³FunctionDeclarationÍH_ÍL"IªIdentifierÍHhÍHrªcopyIntentÂÂÂ‘IªIdentifierÍHsÍHv£srcJ®BlockStatementÍHxÍL"‘K¯ReturnStatementÍHÍLL°ObjectExpressionÍH†ÍLÜ M¨PropertyÍH‘ÍHµÂÂÂIªIdentifierÍH‘ÍH ¯needsPowerRailsT°MemberExpressionÍH¢ÍHµIªIdentifierÍH¢ÍH¥£srcIªIdentifierÍH¦ÍHµ¯needsPowerRailsÂÂ¤initM¨PropertyÍHÀÍHäÂÂÂIªIdentifierÍHÀÍHÏ¯hasMcuMinSystemT°MemberExpressionÍHÑÍHäIªIdentifierÍHÑÍHÔ£srcIªIdentifierÍHÕÍHä¯hasMcuMinSystemÂÂ¤initM¨PropertyÍHïÍIÂÂÂIªIdentifierÍHïÍI²mutualLedIndicatorT°MemberExpressionÍIÍIIªIdentifierÍIÍI£srcIªIdentifierÍIÍI²mutualLedIndicatorÂÂ¤initM¨PropertyÍI$ÍIHÂÂÂIªIdentifierÍI$ÍI3¯blinkOscillatorT°MemberExpressionÍI5ÍIHIªIdentifierÍI5ÍI8£srcIªIdentifierÍI9ÍIH¯blinkOscillatorÂÂ¤initM¨PropertyÍISÍIyÂÂÂIªIdentifierÍISÍIc°relayContactTopoT°MemberExpressionÍIeÍIyIªIdentifierÍIeÍIh£srcIªIdentifierÍIiÍIy°relayContactTopoÂÂ¤initM¨PropertyÍI„ÍI¦ÂÂÂIªIdentifierÍI„ÍI’®seriesRcChargeT°MemberExpressionÍI”ÍI¦IªIdentifierÍI”ÍI—£srcIªIdentifierÍI˜ÍI¦®seriesRcChargeÂÂ¤initM¨PropertyÍI±ÍIËÂÂÂIªIdentifierÍI±ÍI»ªdualSupplyT°MemberExpressionÍI½ÍIËIªIdentifierÍI½ÍIÀ£srcIªIdentifierÍIÁÍIËªdualSupplyÂÂ¤initM¨PropertyÍIÖÍJÂÂÂIªIdentifierÍIÖÍIé³preferredVccVoltageT°MemberExpressionÍIëÍJIªIdentifierÍIëÍIî£srcIªIdentifierÍIïÍJ³preferredVccVoltageÂÂ¤initM¨PropertyÍJÍJ9ÂÂÂIªIdentifierÍJÍJ ³preferredVeeVoltageT°MemberExpressionÍJ"ÍJ9IªIdentifierÍJ"ÍJ%£srcIªIdentifierÍJ&ÍJ9³preferredVeeVoltageÂÂ¤initM¨PropertyÍJDÍJfÂÂÂIªIdentifierÍJDÍJR®needsSignalGenT°MemberExpressionÍJTÍJfIªIdentifierÍJTÍJW£srcIªIdentifierÍJXÍJf®needsSignalGenÂÂ¤initM¨PropertyÍJqÍJ“ÂÂÂIªIdentifierÍJqÍJ®signalWaveformT°MemberExpressionÍJÍJ“IªIdentifierÍJÍJ„£srcIªIdentifierÍJ…ÍJ“®signalWaveformÂÂ¤initM¨PropertyÍJÍJÔÂÂÂIªIdentifierÍJÍJ¶¸preferredSignalFrequencyT°MemberExpressionÍJ¸ÍJÔIªIdentifierÍJ¸ÍJ»£srcIªIdentifierÍJ¼ÍJÔ¸preferredSignalFrequencyÂÂ¤initM¨PropertyÍJßÍKÂÂÂIªIdentifierÍJßÍJò³preferredSignalDutyT°MemberExpressionÍJôÍKIªIdentifierÍJôÍJ÷£srcIªIdentifierÍJøÍK³preferredSignalDutyÂÂ¤initM¨PropertyÍKÍK8ÂÂÂIªIdentifierÍKÍK$®hasInstrumentsT°MemberExpressionÍK&ÍK8IªIdentifierÍK&ÍK)£srcIªIdentifierÍK*ÍK8®hasInstrumentsÂÂ¤initM¨PropertyÍKCÍKgÂÂÂIªIdentifierÍKCÍKR¯needsLedSeriesRT°MemberExpressionÍKTÍKgIªIdentifierÍKTÍKW£srcIªIdentifierÍKXÍKg¯needsLedSeriesRÂÂ¤initM¨PropertyÍKrÍK”ÂÂÂIªIdentifierÍKrÍK€®needsI2cPullupT°MemberExpressionÍK‚ÍK”IªIdentifierÍK‚ÍK…£srcIªIdentifierÍK†ÍK”®needsI2cPullupÂÂ¤initM¨PropertyÍKŸÍKÉÂÂÂIªIdentifierÍKŸÍK±²needsOpAmpFeedbackT°MemberExpressionÍK³ÍKÉIªIdentifierÍK³ÍK¶£srcIªIdentifierÍK·ÍKÉ²needsOpAmpFeedbackÂÂ¤initM¨PropertyÍKÔÍKğÂÂÂIªIdentifierÍKÔÍKß«passiveOnlyT°MemberExpressionÍKáÍKğIªIdentifierÍKáÍKä£srcIªIdentifierÍKåÍKğ«passiveOnlyÂÂ¤initM¨PropertyÍKûÍLÂÂÂIªIdentifierÍKûÍL§reasonsR®CallExpressionÍLÍLT°MemberExpressionÍLÍLT°MemberExpressionÍLÍLIªIdentifierÍLÍL£srcIªIdentifierÍLÍL§reasonsÂÂIªIdentifierÍLÍL¥sliceÂÂÂ¤initÀG¶ExportNamedDeclarationÍL$ÍO5H³FunctionDeclarationÍL+ÍO5IªIdentifierÍL4ÍLC¯formatIntentLogÂÂÂ‘IªIdentifierÍLDÍLJ¦intentJ®BlockStatementÍLLÍO5‘K¯ReturnStatementÍLSÍO2S°BinaryExpressionÍLZÍO1S°BinaryExpressionÍLZÍNÜS°BinaryExpressionÍLZÍN’S°BinaryExpressionÍLZÍNeS°BinaryExpressionÍLZÍMşS°BinaryExpressionÍLZÍM‘S°BinaryExpressionÍLZÍM@S°BinaryExpressionÍLZÍLëZ¯TemplateLiteralÍLZÍL™’T°MemberExpressionÍLcÍLyIªIdentifierÍLcÍLi¦intentIªIdentifierÍLjÍLy¯needsPowerRailsÂÂT°MemberExpressionÍLÍL—IªIdentifierÍLÍL‡¦intentIªIdentifierÍLˆÍL—¯hasMcuMinSystemÂÂ“[¯TemplateElementÍL[ÍLa\¦power=¦power=Â[¯TemplateElementÍLzÍL\¥ mcu=¥ mcu=Â[¯TemplateElementÍL˜ÍL˜\  Ã¡+Z¯TemplateLiteralÍL¥ÍLë’T°MemberExpressionÍL°ÍLÉIªIdentifierÍL°ÍL¶¦intentIªIdentifierÍL·ÍLÉ²mutualLedIndicatorÂÂT°MemberExpressionÍLÓÍLéIªIdentifierÍLÓÍLÙ¦intentIªIdentifierÍLÚÍLé¯blinkOscillatorÂÂ“[¯TemplateElementÍL¦ÍL®\¨ mutual=¨ mutual=Â[¯TemplateElementÍLÊÍLÑ\§ blink=§ blink=Â[¯TemplateElementÍLêÍLê\  Ã¡+Z¯TemplateLiteralÍL÷ÍM@’T°MemberExpressionÍMÍMIªIdentifierÍMÍM¦intentIªIdentifierÍMÍM°relayContactTopoÂÂT°MemberExpressionÍM)ÍM>IªIdentifierÍM)ÍM/¦intentIªIdentifierÍM0ÍM>®seriesRcChargeÂÂ“[¯TemplateElementÍLøÍM\« relayTopo=« relayTopo=Â[¯TemplateElementÍMÍM'\ª seriesRc=ª seriesRc=Â[¯TemplateElementÍM?ÍM?\  Ã¡+Z¯TemplateLiteralÍMLÍM‘’T°MemberExpressionÍMUÍMfIªIdentifierÍMUÍM[¦intentIªIdentifierÍM\ÍMfªdualSupplyÂÂS±LogicalExpressionÍMnÍMT°MemberExpressionÍMnÍMˆIªIdentifierÍMnÍMt¦intentIªIdentifierÍMuÍMˆ³preferredVccVoltageÂÂ¢||N§LiteralÍMŒÍM¡-£'-'“[¯TemplateElementÍMMÍMS\¦ dual=¦ dual=Â[¯TemplateElementÍMgÍMl\¥ vcc=¥ vcc=Â[¯TemplateElementÍMÍM\  Ã¡+Z¯TemplateLiteralÍMÍMş“S±LogicalExpressionÍM¥ÍMÆT°MemberExpressionÍM¥ÍM¿IªIdentifierÍM¥ÍM«¦intentIªIdentifierÍM¬ÍM¿³preferredVeeVoltageÂÂ¢||N§LiteralÍMÃÍMÆ¡-£'-'T°MemberExpressionÍMÎÍMãIªIdentifierÍMÎÍMÔ¦intentIªIdentifierÍMÕÍMã®needsSignalGenÂÂT°MemberExpressionÍMçÍMüIªIdentifierÍMçÍMí¦intentIªIdentifierÍMîÍMü®signalWaveformÂÂ”[¯TemplateElementÍMÍM£\¥ vee=¥ vee=Â[¯TemplateElementÍMÇÍMÌ\¥ sig=¥ sig=Â[¯TemplateElementÍMäÍMå\¡/¡/Â[¯TemplateElementÍMıÍMı\  Ã¡+Z¯TemplateLiteralÍN
-ÍNe’S±LogicalExpressionÍNÍN7T°MemberExpressionÍNÍN-IªIdentifierÍNÍN¦intentIªIdentifierÍNÍN-¸preferredSignalFrequencyÂÂ¢||N§LiteralÍN1ÍN7¤1kHz¦'1kHz'S±LogicalExpressionÍN@ÍNcT°MemberExpressionÍN@ÍNZIªIdentifierÍN@ÍNF¦intentIªIdentifierÍNGÍNZ³preferredSignalDutyÂÂ¢||N§LiteralÍN^ÍNc£50%¥'50%'“[¯TemplateElementÍNÍN\¡@¡@Â[¯TemplateElementÍN8ÍN>\¦/duty=¦/duty=Â[¯TemplateElementÍNdÍNd\  Ã¡+Z¯TemplateLiteralÍNqÍN’‘T°MemberExpressionÍN{ÍNIªIdentifierÍN{ÍN¦intentIªIdentifierÍN‚ÍN®hasInstrumentsÂÂ’[¯TemplateElementÍNrÍNy\§ instr=§ instr=Â[¯TemplateElementÍN‘ÍN‘\  Ã¡+Z¯TemplateLiteralÍNÍNÜ’T°MemberExpressionÍN§ÍN½IªIdentifierÍN§ÍN­¦intentIªIdentifierÍN®ÍN½¯needsLedSeriesRÂÂT°MemberExpressionÍNÅÍNÚIªIdentifierÍNÅÍNË¦intentIªIdentifierÍNÌÍNÚ®needsI2cPullupÂÂ“[¯TemplateElementÍNŸÍN¥\¦ ledR=¦ ledR=Â[¯TemplateElementÍN¾ÍNÃ\¥ i2c=¥ i2c=Â[¯TemplateElementÍNÛÍNÛ\  Ã¡+Z¯TemplateLiteralÍNèÍO1’T°MemberExpressionÍNòÍOIªIdentifierÍNòÍNø¦intentIªIdentifierÍNùÍO²needsOpAmpFeedbackÂÂR®CallExpressionÍOÍO/T°MemberExpressionÍOÍO*T°MemberExpressionÍOÍO%IªIdentifierÍOÍO¦intentIªIdentifierÍOÍO%§reasonsÂÂIªIdentifierÍO&ÍO*¤joinÂÂ‘N§LiteralÍO+ÍO.¡,£','Â“[¯TemplateElementÍNéÍNğ\§ opamp=§ opamp=Â[¯TemplateElementÍOÍO\© reasons=© reasons=Â[¯TemplateElementÍO0ÍO0\  ÃÀG¶ExportNamedDeclarationÍOVÍPH³FunctionDeclarationÍO]ÍPIªIdentifierÍOfÍO}·hardResidualFingerprintÂÂÂ‘IªIdentifierÍO~ÍO‚¤hardJ®BlockStatementÍO„ÍP“P³VariableDeclarationÍO‹ÍOÚ‘Q²VariableDeclaratorÍO‘ÍOÙIªIdentifierÍO‘ÍO•¤normR®CallExpressionÍO˜ÍOÙT°MemberExpressionÍO˜ÍO IªIdentifierÍO˜ÍOœ¤hardIªIdentifierÍOÍO £mapÂÂ‘H·ArrowFunctionExpressionÍO¡ÍOØÀÃÂÂ‘IªIdentifierÍO¡ÍO¢¡sR®CallExpressionÍO¦ÍOØT°MemberExpressionÍO¦ÍOÖR®CallExpressionÍO¦ÍOÑT°MemberExpressionÍO¦ÍOÄR®CallExpressionÍO¦ÍO¼T°MemberExpressionÍO¦ÍO¯IªIdentifierÍO¦ÍO§¡sIªIdentifierÍO¨ÍO¯§replaceÂÂ’Ôr^–¤type¥start£end¥value£raw¥regex§LiteralÍO°ÍO¶’£\d+¡g¦/\d+/gÔr_’§pattern¥flags£\d+¡gN§LiteralÍO¸ÍO»¡#£'#'ÂIªIdentifierÍO½ÍOÄ§replaceÂÂ’^§LiteralÍOÅÍOË’£\s+¡g¦/\s+/g_£\s+¡gN§LiteralÍOÍÍOĞ¡ £' 'ÂIªIdentifierÍOÒÍOÖ¤trimÂÂÂÂ¥constV³ExpressionStatementÍOàÍOìR®CallExpressionÍOàÍOëT°MemberExpressionÍOàÍOéIªIdentifierÍOàÍOä¤normIªIdentifierÍOåÍOé¤sortÂÂÂK¯ReturnStatementÍOòÍPR®CallExpressionÍOùÍPT°MemberExpressionÍOùÍPIªIdentifierÍOùÍOı¤normIªIdentifierÍOşÍP¤joinÂÂ‘N§LiteralÍPÍP¡|£'|'ÂÀG¶ExportNamedDeclarationÍPÍPRH³FunctionDeclarationÍPÍPRIªIdentifierÍPÍP'ªsplitEmptyÂÂÂJ®BlockStatementÍP*ÍPR‘K¯ReturnStatementÍP1ÍPOL°ObjectExpressionÍP8ÍPN’M¨PropertyÍP:ÍPBÂÂÂIªIdentifierÍP:ÍP>¤hardO¯ArrayExpressionÍP@ÍPB¤initM¨PropertyÍPDÍPLÂÂÂIªIdentifierÍPDÍPH¤softO¯ArrayExpressionÍPJÍPL¤initÀG¶ExportNamedDeclarationÍPTÍPÃH³FunctionDeclarationÍP[ÍPÃIªIdentifierÍPdÍPnªmergeSplitÂÂÂ’IªIdentifierÍPoÍPp¡aIªIdentifierÍPrÍPs¡bJ®BlockStatementÍPuÍPÃ‘K¯ReturnStatementÍP|ÍPÀL°ObjectExpressionÍPƒÍP¿’M¨PropertyÍP…ÍP ÂÂÂIªIdentifierÍP…ÍP‰¤hardR®CallExpressionÍP‹ÍP T°MemberExpressionÍP‹ÍP˜T°MemberExpressionÍP‹ÍP‘IªIdentifierÍP‹ÍPŒ¡aIªIdentifierÍPÍP‘¤hardÂÂIªIdentifierÍP’ÍP˜¦concatÂÂ‘T°MemberExpressionÍP™ÍPŸIªIdentifierÍP™ÍPš¡bIªIdentifierÍP›ÍPŸ¤hardÂÂÂ¤initM¨PropertyÍP¢ÍP½ÂÂÂIªIdentifierÍP¢ÍP¦¤softR®CallExpressionÍP¨ÍP½T°MemberExpressionÍP¨ÍPµT°MemberExpressionÍP¨ÍP®IªIdentifierÍP¨ÍP©¡aIªIdentifierÍPªÍP®¤softÂÂIªIdentifierÍP¯ÍPµ¦concatÂÂ‘T°MemberExpressionÍP¶ÍP¼IªIdentifierÍP¶ÍP·¡bIªIdentifierÍP¸ÍP¼¤softÂÂÂ¤initÀG¶ExportNamedDeclarationÍPÅÍQïH³FunctionDeclarationÍPÌÍQïIªIdentifierÍPÕÍPå°allCritiqueLinesÂÂÂ‘IªIdentifierÍPæÍPë¥splitJ®BlockStatementÍPíÍQï”P³VariableDeclarationÍPôÍQ‘Q²VariableDeclaratorÍPúÍQIªIdentifierÍPúÍPÿ¥linesO¯ArrayExpressionÍQÍQ¥constY¬ForStatementÍQÍQoP³VariableDeclarationÍQÍQ‘Q²VariableDeclaratorÍQÍQIªIdentifierÍQÍQ¡iN§LiteralÍQÍQ ¡0£letS°BinaryExpressionÍQÍQ0IªIdentifierÍQÍQ¡i¡<T°MemberExpressionÍQÍQ0T°MemberExpressionÍQÍQ)IªIdentifierÍQÍQ$¥splitIªIdentifierÍQ%ÍQ)¤hardÂÂIªIdentifierÍQ*ÍQ0¦lengthÂÂX°UpdateExpressionÍQ2ÍQ5¢++ÂIªIdentifierÍQ2ÍQ3¡iJ®BlockStatementÍQ7ÍQo‘V³ExpressionStatementÍQBÍQhR®CallExpressionÍQBÍQgT°MemberExpressionÍQBÍQLIªIdentifierÍQBÍQG¥linesIªIdentifierÍQHÍQL¤pushÂÂ‘Z¯TemplateLiteralÍQMÍQf‘T°MemberExpressionÍQWÍQdT°MemberExpressionÍQWÍQaIªIdentifierÍQWÍQ\¥splitIªIdentifierÍQ]ÍQa¤hardÂÂIªIdentifierÍQbÍQc¡iÃÂ’[¯TemplateElementÍQNÍQU\§[HARD] §[HARD] Â[¯TemplateElementÍQeÍQe\  ÃÂY¬ForStatementÍQuÍQÙP³VariableDeclarationÍQzÍQƒ‘Q²VariableDeclaratorÍQ~ÍQƒIªIdentifierÍQ~ÍQ¡jN§LiteralÍQ‚ÍQƒ ¡0£letS°BinaryExpressionÍQ…ÍQšIªIdentifierÍQ…ÍQ†¡j¡<T°MemberExpressionÍQ‰ÍQšT°MemberExpressionÍQ‰ÍQ“IªIdentifierÍQ‰ÍQ¥splitIªIdentifierÍQÍQ“¤softÂÂIªIdentifierÍQ”ÍQš¦lengthÂÂX°UpdateExpressionÍQœÍQŸ¢++ÂIªIdentifierÍQœÍQ¡jJ®BlockStatementÍQ¡ÍQÙ‘V³ExpressionStatementÍQ¬ÍQÒR®CallExpressionÍQ¬ÍQÑT°MemberExpressionÍQ¬ÍQ¶IªIdentifierÍQ¬ÍQ±¥linesIªIdentifierÍQ²ÍQ¶¤pushÂÂ‘Z¯TemplateLiteralÍQ·ÍQĞ‘T°MemberExpressionÍQÁÍQÎT°MemberExpressionÍQÁÍQËIªIdentifierÍQÁÍQÆ¥splitIªIdentifierÍQÇÍQË¤softÂÂIªIdentifierÍQÌÍQÍ¡jÃÂ’[¯TemplateElementÍQ¸ÍQ¿\§[SOFT] §[SOFT] Â[¯TemplateElementÍQÏÍQÏ\  ÃÂK¯ReturnStatementÍQßÍQìIªIdentifierÍQæÍQë¥linesÀG¶ExportNamedDeclarationÍRÍRyH³FunctionDeclarationÍRÍRyIªIdentifierÍR(ÍR?·intentIsMutualLedSwitchÂÂÂ‘IªIdentifierÍR@ÍRF¦promptJ®BlockStatementÍRHÍRy‘K¯ReturnStatementÍROÍRvR®CallExpressionÍRVÍRuIªIdentifierÍRVÍRm·isMutualLedSwitchPrompt‘IªIdentifierÍRnÍRt¦promptÂÀ

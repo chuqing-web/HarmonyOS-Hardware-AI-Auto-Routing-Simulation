@@ -4,7 +4,8 @@
 import {
   PcbPlacementPlan, PcbPlacementItem, PcbPlacementGroup, PcbNetPlanResult, PcbNetPlanEntry,
   PcbRoutePolicy, PcbQaRepairPlan, PcbLayerRole, PcbRouteMode, PcbNetKind,
-  PcbViaKind, Logger, INSTR_TRACE_TAG
+  PcbViaKind, PcbLlmGeometryPlan, PcbLlmTrackPath, PcbLlmViaSpec, Point2D,
+  Logger, INSTR_TRACE_TAG
 } from 'common';
 import { PromptLoader } from '../../prompts/PromptLoader';
 
@@ -158,11 +159,36 @@ export function parsePcbPlacementPlan(raw: string): PcbPlacementPlan | null {
       }
     }
   }
+  // 板框尺寸：boardWidthMil/boardHeightMil 或 boardSize.{width,height} / width+height
+  let boardWidthMil: number | undefined = undefined;
+  let boardHeightMil: number | undefined = undefined;
+  const bw = asNumber(json['boardWidthMil'] ?? json['board_width_mil'] ?? json['boardWidth'] ??
+    json['widthMil'] ?? json['width_mil']);
+  const bh = asNumber(json['boardHeightMil'] ?? json['board_height_mil'] ?? json['boardHeight'] ??
+    json['heightMil'] ?? json['height_mil']);
+  if (bw > 0 && bh > 0) {
+    boardWidthMil = bw;
+    boardHeightMil = bh;
+  } else {
+    const bs = json['boardSize'] ?? json['board_size'] ?? json['board'];
+    if (bs !== null && typeof bs === 'object' && !Array.isArray(bs)) {
+      const o = bs as Record<string, Object>;
+      const w2 = asNumber(o['widthMil'] ?? o['width_mil'] ?? o['width'] ?? o['w']);
+      const h2 = asNumber(o['heightMil'] ?? o['height_mil'] ?? o['height'] ?? o['h']);
+      if (w2 > 0 && h2 > 0) {
+        boardWidthMil = w2;
+        boardHeightMil = h2;
+      }
+    }
+  }
+
   return {
     fromLlm: true,
     placements,
     lockedIds,
-    groups: groups.length > 0 ? groups : undefined
+    groups: groups.length > 0 ? groups : undefined,
+    boardWidthMil,
+    boardHeightMil
   };
 }
 
@@ -332,5 +358,131 @@ export function parsePcbQaRepair(raw: string): PcbQaRepairPlan | null {
     busYOffsetPatch,
     raiseCopperTo,
     notes: asString(json['notes'])
+  };
+}
+
+function parsePoint(v: Object | undefined | null): Point2D | null {
+  if (v === undefined || v === null) {
+    return null;
+  }
+  if (Array.isArray(v)) {
+    const arr = v as Object[];
+    if (arr.length < 2) {
+      return null;
+    }
+    const x = asNumber(arr[0], NaN);
+    const y = asNumber(arr[1], NaN);
+    if (isNaN(x) || isNaN(y) || Math.abs(x) > 50000 || Math.abs(y) > 50000) {
+      return null;
+    }
+    return { x, y };
+  }
+  if (typeof v === 'object') {
+    const o = v as Record<string, Object>;
+    const x = asNumber(o['x'] ?? o['X'], NaN);
+    const y = asNumber(o['y'] ?? o['Y'], NaN);
+    if (isNaN(x) || isNaN(y)) {
+      return null;
+    }
+    // 拒绝离谱坐标（单位混淆 / 幻觉）
+    if (Math.abs(x) > 50000 || Math.abs(y) > 50000) {
+      return null;
+    }
+    return { x, y };
+  }
+  return null;
+}
+
+export function parsePcbGeometryPlan(raw: string): PcbLlmGeometryPlan | null {
+  const json = PromptLoader.extractJson<Record<string, Object>>(raw);
+  if (!json) {
+    Logger.warn(INSTR_TRACE_TAG,
+      `[AI_PCB] geometry parse null | ${PromptLoader.describeJsonImpurity(raw)}`);
+    return null;
+  }
+  let skippedShort = 0;
+  let skippedNoNet = 0;
+  const tracks: PcbLlmTrackPath[] = [];
+  const tracksRaw = json['tracks'] ?? json['Tracks'];
+  if (Array.isArray(tracksRaw)) {
+    for (let i = 0; i < (tracksRaw as Object[]).length; i++) {
+      const t = (tracksRaw as Object[])[i] as Record<string, Object>;
+      if (!t || typeof t !== 'object') {
+        continue;
+      }
+      const ptsRaw = t['points'] ?? t['pts'] ?? t['path'];
+      const points: Point2D[] = [];
+      if (Array.isArray(ptsRaw)) {
+        for (let j = 0; j < (ptsRaw as Object[]).length; j++) {
+          const p = parsePoint((ptsRaw as Object[])[j]);
+          if (p && !isNaN(p.x) && !isNaN(p.y)) {
+            points.push(p);
+          }
+        }
+      }
+      if (points.length < 2) {
+        skippedShort++;
+        continue;
+      }
+      const netId = asString(t['netId'] ?? t['net_id']);
+      const netName = asString(t['netName'] ?? t['net_name'] ?? t['net']);
+      if (netId.length === 0 && netName.length === 0) {
+        skippedNoNet++;
+        continue;
+      }
+      const widthRaw = t['width'];
+      const width = (widthRaw !== undefined && widthRaw !== null) ?
+        asNumber(widthRaw, 0) : undefined;
+      tracks.push({
+        netId,
+        netName,
+        layer: asString(t['layer'] ?? t['Layer']),
+        points,
+        width: (width !== undefined && width > 0) ? width : undefined
+      });
+    }
+  }
+  const vias: PcbLlmViaSpec[] = [];
+  const viasRaw = json['vias'] ?? json['Vias'];
+  if (Array.isArray(viasRaw)) {
+    for (let i = 0; i < (viasRaw as Object[]).length; i++) {
+      const v = (viasRaw as Object[])[i] as Record<string, Object>;
+      if (!v || typeof v !== 'object') {
+        continue;
+      }
+      const x = asNumber(v['x'] ?? v['X'], NaN);
+      const y = asNumber(v['y'] ?? v['Y'], NaN);
+      if (isNaN(x) || isNaN(y) || Math.abs(x) > 50000 || Math.abs(y) > 50000) {
+        continue;
+      }
+      const netId = asString(v['netId'] ?? v['net_id']);
+      const netName = asString(v['netName'] ?? v['net_name'] ?? v['net']);
+      if (netId.length === 0 && netName.length === 0) {
+        skippedNoNet++;
+        continue;
+      }
+      vias.push({
+        netId,
+        netName,
+        x,
+        y,
+        fromLayer: asString(v['fromLayer'] ?? v['from_layer'] ?? 'F.Cu') || undefined,
+        toLayer: asString(v['toLayer'] ?? v['to_layer'] ?? 'B.Cu') || undefined
+      });
+    }
+  }
+  if (skippedShort > 0 || skippedNoNet > 0) {
+    Logger.warn(INSTR_TRACE_TAG,
+      `[AI_PCB] geometry parse skips shortSeg=${skippedShort} noNet=${skippedNoNet}`);
+  }
+  if (tracks.length === 0 && vias.length === 0) {
+    Logger.warn(INSTR_TRACE_TAG, '[AI_PCB] geometry LLM JSON empty tracks/vias');
+    return null;
+  }
+  return {
+    fromLlm: true,
+    tracks,
+    vias,
+    reason: asString(json['reason'] ?? json['notes'])
   };
 }

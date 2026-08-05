@@ -2,13 +2,15 @@
  * PcbNetPlanAgent — LLM 网络策略（禁止本地启发式冒充）
  * 覆盖率：pads≥2 的网必须全部有条目；power/gnd 缺失硬失败
  */
-import { AiCapability, Logger, INSTR_TRACE_TAG } from 'common';
+import { Logger, INSTR_TRACE_TAG } from 'common';
 import { IAiApiManager } from 'ai_api_manager';
 import { PromptLoader } from '../../prompts/PromptLoader';
 import { PcbRouteBlackboard } from './PcbRouteBlackboard';
 import { PcbDocSummarizer } from './PcbDocSummarizer';
 import { parsePcbNetPlan } from './PcbLlmParsers';
 import { PcbAgentStageResult } from './PcbPlacementAgent';
+import { pcbStageChatOpts } from './PcbChatOpts';
+import { pcbImpureReplyReason } from './PcbLlmReplyGuard';
 
 export class PcbNetPlanAgent {
   async run(bb: PcbRouteBlackboard, api: IAiApiManager,
@@ -25,23 +27,26 @@ export class PcbNetPlanAgent {
     if (priorFailHint && priorFailHint.length > 0) {
       netList = `${netList}\n【上轮失败须修正】${priorFailHint}`;
     }
+    const padSummary =
+      `${PcbDocSummarizer.padSummary(bb.workDoc)}\n` +
+      `【焊盘详表】\n${PcbDocSummarizer.padDetailSummary(bb.workDoc, 48)}`;
     const prompt = PromptLoader.render(tpl, [
       { key: 'copper_layers', value: PcbDocSummarizer.copperLayers(bb.workDoc) },
       { key: 'net_list', value: netList },
-      { key: 'pad_summary', value: PcbDocSummarizer.padSummary(bb.workDoc) }
+      { key: 'pad_summary', value: padSummary }
     ]);
-    const apiRes = await api.chat(prompt, {
-      capability: AiCapability.PCB_AUTO_ROUTE,
-      temperature: 0.05,
-      disableThinking: false
-    });
+    const apiRes = await api.chat(prompt, pcbStageChatOpts(bb.enableReasoning, 0.05));
     if (!apiRes.success || !apiRes.data) {
       return { ok: false, reason: apiRes.error ?? 'net_plan LLM failed' };
     }
     bb.usedLlm = true;
+    const impure = pcbImpureReplyReason('net_plan', apiRes.data);
+    if (impure) {
+      return { ok: false, reason: impure };
+    }
     const plan = parsePcbNetPlan(apiRes.data);
     if (!plan) {
-      return { ok: false, reason: 'net_plan LLM JSON invalid' };
+      return { ok: false, reason: `net_plan LLM JSON invalid (${PromptLoader.describeJsonImpurity(apiRes.data)})` };
     }
 
     const padCountByNet: Map<string, number> = new Map();
@@ -117,35 +122,28 @@ export class PcbNetPlanAgent {
         `[AI_PCB] net_plan soft-miss ${missingMust}/${mustRoute.length} routable nets`);
     }
 
-    // Cu=2 且有信号网时：多电源/地 forcePour 易总线 clearance 失败 → 归一为 forceTrack
-    const cu = bb.workDoc.layerStack?.copperCount ?? 2;
-    if (cu <= 2) {
-      let hasSignalTrack = false;
-      let pourCount = 0;
+    // LLM 几何无 zone 阶段：forcePour 一律按 forceTrack（宽总线亦由折线表达）
+    let pourCount = 0;
+    for (let i = 0; i < plan.nets.length; i++) {
+      if (plan.nets[i].routeMode === 'forcePour') {
+        pourCount++;
+      }
+    }
+    if (pourCount > 0) {
       for (let i = 0; i < plan.nets.length; i++) {
         const e = plan.nets[i];
-        if (e.kind === 'signal' && e.routeMode !== 'defer') {
-          hasSignalTrack = true;
+        if (e.routeMode !== 'forcePour') {
+          continue;
         }
-        if ((e.kind === 'gnd' || e.kind === 'power') && e.routeMode === 'forcePour') {
-          pourCount++;
+        Logger.warn(INSTR_TRACE_TAG,
+          `[AI_PCB] net_plan demote ${e.netName} forcePour→forceTrack (no zone stage)`);
+        e.routeMode = 'forceTrack';
+        if (!e.layerHint || e.layerHint.length === 0) {
+          e.layerHint = e.kind === 'gnd' ? 'stub' :
+            (e.kind === 'power' ? 'signal_h' : 'signal_h');
         }
-      }
-      if (hasSignalTrack && pourCount > 0) {
-        for (let i = 0; i < plan.nets.length; i++) {
-          const e = plan.nets[i];
-          if ((e.kind === 'gnd' || e.kind === 'power') && e.routeMode === 'forcePour') {
-            Logger.warn(INSTR_TRACE_TAG,
-              `[AI_PCB] net_plan Cu=2 demote ${e.netName} forcePour→forceTrack`);
-            e.routeMode = 'forceTrack';
-            if (!e.layerHint || e.layerHint.length === 0) {
-              e.layerHint = e.kind === 'gnd' ? 'stub' : 'signal_h';
-            }
-            // 同层多电源预置 Y 错开
-            if (e.busYOffset === undefined) {
-              e.busYOffset = e.kind === 'gnd' ? -60 : (pourCount > 1 ? 60 : 40);
-            }
-          }
+        if ((e.kind === 'gnd' || e.kind === 'power') && e.busYOffset === undefined) {
+          e.busYOffset = e.kind === 'gnd' ? -60 : 60;
         }
       }
     }

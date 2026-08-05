@@ -4,7 +4,7 @@
  */
 import { AppService } from '../services/AppService';
 import { AiApiConfig, AiProviderType, LoadBalanceMode, Logger, INSTR_TRACE_TAG, Result } from 'common';
-import { ProteusClassicBtn, ProteusChipGrid, ProteusTextInput } from './proteus/ProteusWidgets';
+import { ProteusClassicBtn, ProteusChipGrid, ProteusTextInput, ProteusSwitch } from './proteus/ProteusWidgets';
 import { ProteusColors, ProteusDimens, ProteusFonts } from '../theme/ProteusTheme';
 
 interface ApiFormatOption {
@@ -30,6 +30,7 @@ export struct AiApiConfigSection {
   @State newApiUrl: string = '';
   @State newApiFormat: string = 'openai';
   @State newAuthField: string = '';
+  @State newApiStream: boolean = false;
   @State selectedProvider: AiProviderType = AiProviderType.DEEPSEEK;
   @State apiFormatIdx: number = 2;
   @State editingApiId: string = '';
@@ -84,6 +85,7 @@ export struct AiApiConfigSection {
     this.newApiKey = '';
     this.newApiUrl = '';
     this.newApiModel = '';
+    this.newApiStream = false;
     this.newAuthField = this.selectedProvider === AiProviderType.CLAUDE ? 'x-api-key' : '';
   }
 
@@ -99,6 +101,7 @@ export struct AiApiConfigSection {
     this.newApiKey = '';
     this.newApiUrl = src.baseUrl;
     this.newApiModel = src.model;
+    this.newApiStream = src.stream === true;
     this.selectedProvider = src.provider;
     let pIdx = 0;
     for (let i = 0; i < this.providerTypes.length; i++) {
@@ -188,18 +191,21 @@ export struct AiApiConfigSection {
         if (useHeaders) {
           upd = this.appService.aiApiManager.updateApi(this.editingApiId, {
             name: nameVal, provider: this.selectedProvider, baseUrl: urlVal,
-            model: modelVal, apiKey: keyTrim, customHeaders: headers, remark: remarkVal
+            model: modelVal, apiKey: keyTrim, customHeaders: headers, remark: remarkVal,
+            stream: this.newApiStream
           });
         } else {
           upd = this.appService.aiApiManager.updateApi(this.editingApiId, {
             name: nameVal, provider: this.selectedProvider, baseUrl: urlVal,
-            model: modelVal, apiKey: keyTrim, remark: remarkVal
+            model: modelVal, apiKey: keyTrim, remark: remarkVal,
+            stream: this.newApiStream
           });
         }
       } else {
         upd = this.appService.aiApiManager.updateApi(this.editingApiId, {
           name: nameVal, provider: this.selectedProvider, baseUrl: urlVal,
-          model: modelVal, remark: remarkVal
+          model: modelVal, remark: remarkVal,
+          stream: this.newApiStream
         });
       }
       if (!upd.success) {
@@ -222,9 +228,10 @@ export struct AiApiConfigSection {
     }
     const config = tmpl.data;
     config.apiKey = this.newApiKey;
-    config.model = this.newApiModel || config.model;
-    config.name = this.newApiName || config.name || 'New API';
-    config.baseUrl = this.newApiUrl || config.baseUrl;
+    config.model = (this.newApiModel || config.model).trim();
+    config.name = (this.newApiName || config.name || 'New API').trim();
+    config.baseUrl = (this.newApiUrl || config.baseUrl).trim();
+    config.stream = this.newApiStream;
     if (this.newAuthField.length > 0 && this.newApiKey.length > 0) {
       const lower = this.newAuthField.toLowerCase();
       if (lower !== 'bearer' && lower !== 'authorization') {
@@ -389,6 +396,19 @@ export struct AiApiConfigSection {
               text: this.newApiModel,
               onChange: (v: string) => { this.newApiModel = v; }
             }).layoutWeight(1)
+          }.width('100%').alignItems(VerticalAlign.Center).margin({ bottom: 4 })
+
+          Row() {
+            Text('流式回复（SSE）')
+              .fontSize(ProteusFonts.PARAM_KEY).fontColor(ProteusColors.TEXT_LABEL)
+              .width(ProteusDimens.PARAM_LABEL_WIDTH)
+            Text('长生成持续回包，绕开网关/代理响应上限')
+              .fontSize(9).fontColor(ProteusColors.TEXT_SECONDARY)
+              .layoutWeight(1)
+            ProteusSwitch({
+              isOn: this.newApiStream,
+              onChange: (on: boolean) => { this.newApiStream = on; }
+            })
           }.width('100%').alignItems(VerticalAlign.Center).margin({ bottom: 4 })
 
           ProteusClassicBtn({

@@ -29,12 +29,15 @@ function extractFootprint(comp: ComponentInstance): string {
 function extractValue(comp: ComponentInstance): string {
     return paramMapGet(comp.parameters, 'value', paramMapGet(comp.parameters, 'Value', comp.libraryId));
 }
-/** 跳过电源/地/探针/仪器等不可布局器件 */
+/** 跳过电源/地/探针/仪器等不可布局器件 — 与 export.mjs isLayoutable 对齐（含 vac/完整仪器清单） */
 function isLayoutable(comp: ComponentInstance): boolean {
     const lib = comp.libraryId.toLowerCase();
     if (lib.startsWith('gnd') || lib.startsWith('vcc') || lib.startsWith('vee') ||
-        lib.startsWith('power') || lib.includes('probe') || lib.includes('instrument') ||
-        lib.includes('oscilloscope') || lib.includes('multimeter') || lib.includes('generator')) {
+        lib.startsWith('vac') || lib.startsWith('power') || lib.includes('probe') ||
+        lib.includes('instrument') || lib.includes('oscilloscope') || lib.includes('multimeter') ||
+        lib.includes('generator') || lib.includes('voltmeter') || lib.includes('ammeter') ||
+        lib.includes('power_meter') || lib.includes('freq_counter') || lib.includes('logic_analyzer') ||
+        lib.includes('uart_terminal') || lib.includes('virtual_meter') || lib.includes('signal_gen')) {
         return false;
     }
     if (comp.refDes.startsWith('#'))
@@ -80,9 +83,14 @@ export class PcbForwardAnnotator {
         let placed = 0;
         let skipped = 0;
         const existingBySchId: Map<string, PcbFootprintInst> = new Map();
+        /** 无 schematicCompId 的既有封装（仪器探针 / 手布外设）：更新时保留，勿整表替换丢掉 */
+        const orphanKeep: PcbFootprintInst[] = [];
         for (const fp of doc.footprints) {
             if (fp.schematicCompId) {
                 existingBySchId.set(fp.schematicCompId, fp);
+            }
+            else {
+                orphanKeep.push(fp);
             }
         }
         const newFootprints: PcbFootprintInst[] = [];
@@ -146,7 +154,7 @@ export class PcbForwardAnnotator {
                 messages.push(`无法创建封装: ${comp.refDes}`);
             }
         }
-        doc.footprints = newFootprints;
+        doc.footprints = newFootprints.concat(orphanKeep);
         // 焊盘局部坐标变化后，把仍挂在旧焊盘世界坐标上的走线端点一起挪过去
         for (let i = 0; i < pendingFpIds.length; i++) {
             const fpSet: Set<string> = new Set([pendingFpIds[i]]);
@@ -214,15 +222,20 @@ export class PcbForwardAnnotator {
         }
         return this.annotateFromSchematic(schematic, existing);
     }
-    /** 将原理图网络名绑定到焊盘（compId:pinId 标准引脚引用） */
+    /** 将原理图网络名绑定到焊盘（compId:pinId + libraryId 脚位表） */
     private bindNetsFromSchematic(schematic: SchematicDocument, doc: PcbDocument): void {
+        const libByComp: Map<string, string> = new Map();
+        for (const comp of schematic.components) {
+            libByComp.set(comp.id, comp.libraryId);
+        }
         const netByCompPad: Map<string, PcbNetRef> = new Map();
         for (const net of schematic.nets) {
             for (const pinRef of net.pinIds) {
                 const parsed = parsePinRef(pinRef);
                 if (!parsed)
                     continue;
-                registerSchPinToPadNet(netByCompPad, parsed.compId, parsed.pinId, parsed.pinName, net.id, net.name);
+                const libId = libByComp.get(parsed.compId) ?? '';
+                registerSchPinToPadNet(netByCompPad, parsed.compId, parsed.pinId, parsed.pinName, net.id, net.name, libId);
             }
         }
         for (const fp of doc.footprints) {

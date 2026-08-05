@@ -7,10 +7,16 @@ interface PcbAiRoutePanel_Params {
     aiProgress?: number;
     aiStage?: string;
     onRouteDone?: () => void;
+    /** 确认层数时同步层栈 UI（与层栈 Tab 的 onSetCopperCount 同源） */
+    onSetCopperCount?: (n: number) => void;
     apiSectionExpanded?: boolean;
     apiRefreshTick?: number;
     logs?: AiGenLogEntry[];
     logSeq?: number;
+    enableReasoning?: boolean;
+    showLayerConfirm?: boolean;
+    boardCopperCount?: number;
+    confirmCopperCount?: number;
     appService?: AppService;
 }
 import { AppService } from "@bundle:com.elecdraw.aischsim/entry/ets/services/AppService";
@@ -18,8 +24,10 @@ import type { AiGenLogEntry } from "@bundle:com.elecdraw.aischsim/entry/ets/serv
 import { Logger, INSTR_TRACE_TAG } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
 import type { AiApiConfig, ProgressInfo } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
 import { AiApiConfigSection } from "@bundle:com.elecdraw.aischsim/entry/ets/components/AiApiConfigSection";
-import { ProteusClassicBtn } from "@bundle:com.elecdraw.aischsim/entry/ets/components/proteus/ProteusWidgets";
+import { ProteusClassicBtn, ProteusChipGrid } from "@bundle:com.elecdraw.aischsim/entry/ets/components/proteus/ProteusWidgets";
 import { ProteusColors, ProteusFonts } from "@bundle:com.elecdraw.aischsim/entry/ets/theme/ProteusTheme";
+const COPPER_OPTIONS: number[] = [2, 4, 6, 8];
+const COPPER_LABELS: string[] = ['2', '4', '6', '8'];
 export class PcbAiRoutePanel extends ViewPU {
     constructor(parent, params, __localStorage, elmtId = -1, paramsLambda = undefined, extraInfo) {
         super(parent, __localStorage, elmtId, extraInfo);
@@ -31,10 +39,15 @@ export class PcbAiRoutePanel extends ViewPU {
         this.__aiProgress = new SynchedPropertySimpleTwoWayPU(params.aiProgress, this, "aiProgress");
         this.__aiStage = new SynchedPropertySimpleTwoWayPU(params.aiStage, this, "aiStage");
         this.onRouteDone = () => { };
+        this.onSetCopperCount = (_n: number) => { };
         this.__apiSectionExpanded = new ObservedPropertySimplePU(false, this, "apiSectionExpanded");
         this.__apiRefreshTick = new ObservedPropertySimplePU(0, this, "apiRefreshTick");
         this.__logs = new ObservedPropertyObjectPU([], this, "logs");
         this.__logSeq = new ObservedPropertySimplePU(0, this, "logSeq");
+        this.__enableReasoning = new ObservedPropertySimplePU(false, this, "enableReasoning");
+        this.__showLayerConfirm = new ObservedPropertySimplePU(false, this, "showLayerConfirm");
+        this.__boardCopperCount = new ObservedPropertySimplePU(2, this, "boardCopperCount");
+        this.__confirmCopperCount = new ObservedPropertySimplePU(2, this, "confirmCopperCount");
         this.appService = AppService.getInstance();
         this.setInitiallyProvidedValue(params);
         this.finalizeConstruction();
@@ -42,6 +55,9 @@ export class PcbAiRoutePanel extends ViewPU {
     setInitiallyProvidedValue(params: PcbAiRoutePanel_Params) {
         if (params.onRouteDone !== undefined) {
             this.onRouteDone = params.onRouteDone;
+        }
+        if (params.onSetCopperCount !== undefined) {
+            this.onSetCopperCount = params.onSetCopperCount;
         }
         if (params.apiSectionExpanded !== undefined) {
             this.apiSectionExpanded = params.apiSectionExpanded;
@@ -54,6 +70,18 @@ export class PcbAiRoutePanel extends ViewPU {
         }
         if (params.logSeq !== undefined) {
             this.logSeq = params.logSeq;
+        }
+        if (params.enableReasoning !== undefined) {
+            this.enableReasoning = params.enableReasoning;
+        }
+        if (params.showLayerConfirm !== undefined) {
+            this.showLayerConfirm = params.showLayerConfirm;
+        }
+        if (params.boardCopperCount !== undefined) {
+            this.boardCopperCount = params.boardCopperCount;
+        }
+        if (params.confirmCopperCount !== undefined) {
+            this.confirmCopperCount = params.confirmCopperCount;
         }
         if (params.appService !== undefined) {
             this.appService = params.appService;
@@ -70,6 +98,10 @@ export class PcbAiRoutePanel extends ViewPU {
         this.__apiRefreshTick.purgeDependencyOnElmtId(rmElmtId);
         this.__logs.purgeDependencyOnElmtId(rmElmtId);
         this.__logSeq.purgeDependencyOnElmtId(rmElmtId);
+        this.__enableReasoning.purgeDependencyOnElmtId(rmElmtId);
+        this.__showLayerConfirm.purgeDependencyOnElmtId(rmElmtId);
+        this.__boardCopperCount.purgeDependencyOnElmtId(rmElmtId);
+        this.__confirmCopperCount.purgeDependencyOnElmtId(rmElmtId);
     }
     aboutToBeDeleted() {
         this.__statusMessage.aboutToBeDeleted();
@@ -80,6 +112,10 @@ export class PcbAiRoutePanel extends ViewPU {
         this.__apiRefreshTick.aboutToBeDeleted();
         this.__logs.aboutToBeDeleted();
         this.__logSeq.aboutToBeDeleted();
+        this.__enableReasoning.aboutToBeDeleted();
+        this.__showLayerConfirm.aboutToBeDeleted();
+        this.__boardCopperCount.aboutToBeDeleted();
+        this.__confirmCopperCount.aboutToBeDeleted();
         SubscriberManager.Get().delete(this.id__());
         this.aboutToBeDeletedInternal();
     }
@@ -112,6 +148,8 @@ export class PcbAiRoutePanel extends ViewPU {
         this.__aiStage.set(newValue);
     }
     private onRouteDone: () => void;
+    /** 确认层数时同步层栈 UI（与层栈 Tab 的 onSetCopperCount 同源） */
+    private onSetCopperCount: (n: number) => void;
     private __apiSectionExpanded: ObservedPropertySimplePU<boolean>;
     get apiSectionExpanded() {
         return this.__apiSectionExpanded.get();
@@ -140,10 +178,42 @@ export class PcbAiRoutePanel extends ViewPU {
     set logSeq(newValue: number) {
         this.__logSeq.set(newValue);
     }
+    /** 与原理图 AiSettingsPanel 共用 AppService.aiEnableReasoning */
+    private __enableReasoning: ObservedPropertySimplePU<boolean>;
+    get enableReasoning() {
+        return this.__enableReasoning.get();
+    }
+    set enableReasoning(newValue: boolean) {
+        this.__enableReasoning.set(newValue);
+    }
+    private __showLayerConfirm: ObservedPropertySimplePU<boolean>;
+    get showLayerConfirm() {
+        return this.__showLayerConfirm.get();
+    }
+    set showLayerConfirm(newValue: boolean) {
+        this.__showLayerConfirm.set(newValue);
+    }
+    /** 弹窗内当前板铜层（展示用） */
+    private __boardCopperCount: ObservedPropertySimplePU<number>;
+    get boardCopperCount() {
+        return this.__boardCopperCount.get();
+    }
+    set boardCopperCount(newValue: number) {
+        this.__boardCopperCount.set(newValue);
+    }
+    /** 弹窗内用户选择的目标铜层 */
+    private __confirmCopperCount: ObservedPropertySimplePU<number>;
+    get confirmCopperCount() {
+        return this.__confirmCopperCount.get();
+    }
+    set confirmCopperCount(newValue: number) {
+        this.__confirmCopperCount.set(newValue);
+    }
     private appService: AppService;
     aboutToAppear(): void {
         this.apiRefreshTick++;
-        this.appendLog('system', 'PCB AI route: place -> net -> layer -> geometry -> QA (shared API vault)');
+        this.enableReasoning = this.appService.aiEnableReasoning;
+        this.appendLog('system', 'PCB AI route: place → net → layer → geometry → QA（与原理图共用 API / 推理开关）');
     }
     private appendLog(role: 'user' | 'assistant' | 'system', text: string): void {
         this.logSeq++;
@@ -204,7 +274,68 @@ export class PcbAiRoutePanel extends ViewPU {
         }
         return ProteusColors.TEXT_PRIMARY;
     }
-    private async runAiRoute(): Promise<void> {
+    private toggleReasoning(): void {
+        this.enableReasoning = !this.enableReasoning;
+        this.appService.aiEnableReasoning = this.enableReasoning;
+        Logger.info(INSTR_TRACE_TAG, `[AI_PCB_UI] enableReasoning=${this.enableReasoning}`);
+        this.statusMessage = this.enableReasoning
+            ? '已开启推理：布局/网络/层角色/几何/QA 允许 thinking，并隔离 JSON（较慢）'
+            : '已关闭推理（默认，利于纯 JSON）';
+        this.appendLog('system', this.enableReasoning
+            ? '推理开 · 深度思考模式（与原理图 AI 共用）'
+            : '推理关 · 纯 JSON 模式');
+    }
+    private normalizeCopperChoice(n: number): number {
+        if (n === 4 || n === 6 || n === 8) {
+            return n;
+        }
+        return 2;
+    }
+    private copperSelectedIdx(): number {
+        for (let i = 0; i < COPPER_OPTIONS.length; i++) {
+            if (COPPER_OPTIONS[i] === this.confirmCopperCount) {
+                return i;
+            }
+        }
+        return 0;
+    }
+    /** 点「开始」：先弹层数确认；busy 时走取消 */
+    private onStartClicked(): void {
+        if (this.aiBusy) {
+            void this.runAiRoute();
+            return;
+        }
+        this.openLayerConfirm();
+    }
+    private openLayerConfirm(): void {
+        const cur = this.appService.pcbEditor.getLayerStackCopperCount();
+        this.boardCopperCount = cur;
+        this.confirmCopperCount = this.normalizeCopperChoice(cur);
+        this.showLayerConfirm = true;
+        this.appendLog('system', `确认布线铜层（当前 ${cur}）…`);
+    }
+    private cancelLayerConfirm(): void {
+        this.showLayerConfirm = false;
+        this.appendLog('system', '已取消：未启动 AI 布线');
+        this.statusMessage = '已取消 AI 布线';
+    }
+    private confirmLayerAndStart(): void {
+        const target = this.normalizeCopperChoice(this.confirmCopperCount);
+        const prev = this.boardCopperCount;
+        this.showLayerConfirm = false;
+        if (target !== prev) {
+            this.onSetCopperCount(target);
+            this.appendLog('system', `铜层确认：${prev}→${target}`);
+            Logger.info(INSTR_TRACE_TAG, `[AI_PCB_UI] copper confirm ${prev}→${target}`);
+        }
+        else {
+            this.appendLog('system', `铜层确认：保持 ${target} 层`);
+            Logger.info(INSTR_TRACE_TAG, `[AI_PCB_UI] copper confirm keep ${target}`);
+        }
+        this.statusMessage = `AI 布线铜层：${target}`;
+        void this.runAiRoute(target);
+    }
+    private async runAiRoute(confirmedCopper?: number): Promise<void> {
         if (this.aiBusy) {
             this.appService.cancelAiGenerate();
             this.appendLog('system', 'cancel requested');
@@ -217,13 +348,18 @@ export class PcbAiRoutePanel extends ViewPU {
             this.appendLog('system', 'No API config — expand API section');
             return;
         }
+        this.enableReasoning = this.appService.aiEnableReasoning;
+        const cu = confirmedCopper !== undefined
+            ? confirmedCopper
+            : this.appService.pcbEditor.getLayerStackCopperCount();
         this.aiBusy = true;
         this.aiProgress = 0;
         this.aiStage = 'placement';
-        this.appendLog('user', 'Start PCB AI route');
-        this.appendLog('system', '开始 PCB AI 布线 · 画布已锁定（place→net→layer→geometry→QA）');
+        this.appendLog('user', `Start PCB AI route · Cu=${cu} · ${this.enableReasoning ? '推理开' : '推理关'}`);
+        this.appendLog('system', `开始 PCB AI 布线 · Cu=${cu} · 画布已锁定（place→net→layer→geometry→QA）` +
+            ` · ${this.enableReasoning ? '深度思考' : '无 thinking'} · QA 仍可自动加层`);
         this.appendLog('assistant', '正在准备布局与布线…');
-        Logger.info(INSTR_TRACE_TAG, '[AI_PCB_UI] run start');
+        Logger.info(INSTR_TRACE_TAG, `[AI_PCB_UI] run start Cu=${cu} reasoning=${this.enableReasoning}`);
         const prevProgress: (p: ProgressInfo) => void = this.appService.onAiProgress;
         this.appService.onAiProgress = (p: ProgressInfo): void => {
             this.aiProgress = p.progress;
@@ -262,7 +398,160 @@ export class PcbAiRoutePanel extends ViewPU {
             this.apiRefreshTick++;
         }
     }
+    private layerConfirmDialog(parent = null) {
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            Column.create();
+            Column.width('100%');
+            Column.height('100%');
+            Column.justifyContent(FlexAlign.Center);
+            Column.alignItems(HorizontalAlign.Center);
+            Column.backgroundColor('#99000000');
+            Column.hitTestBehavior(HitTestMode.Default);
+            Column.onClick(() => {
+                // 点击遮罩不关闭，避免误触；仅按钮可取消
+            });
+        }, Column);
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            Column.create({ space: 10 });
+            Column.width('88%');
+            Column.padding({ left: 14, right: 14, top: 14, bottom: 14 });
+            Column.backgroundColor(ProteusColors.CANVAS_BG);
+            Column.border({ width: 1, color: ProteusColors.DIVIDER });
+            Column.shadow({ radius: 8, color: '#44000000', offsetX: 0, offsetY: 2 });
+        }, Column);
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            Text.create('确认布线铜层数');
+            Text.fontSize(ProteusFonts.TITLE);
+            Text.fontColor(ProteusColors.TEXT_PRIMARY);
+            Text.fontWeight(FontWeight.Medium);
+            Text.width('100%');
+        }, Text);
+        Text.pop();
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            Text.create(`当前板：${this.boardCopperCount} 层铜`);
+            Text.fontSize(11);
+            Text.fontColor(ProteusColors.SELECTED);
+            Text.width('100%');
+        }, Text);
+        Text.pop();
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            Text.create('请选择本次 AI 布线使用的铜层数：');
+            Text.fontSize(10);
+            Text.fontColor(ProteusColors.TEXT_SECONDARY);
+            Text.width('100%');
+        }, Text);
+        Text.pop();
+        {
+            this.observeComponentCreation2((elmtId, isInitialRender) => {
+                if (isInitialRender) {
+                    let componentCall = new ProteusChipGrid(this, {
+                        labels: COPPER_LABELS,
+                        selectedIdx: this.copperSelectedIdx(),
+                        colsPerRow: 4,
+                        onSelect: (idx: number) => {
+                            if (idx >= 0 && idx < COPPER_OPTIONS.length) {
+                                this.confirmCopperCount = COPPER_OPTIONS[idx];
+                            }
+                        }
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbAiRoutePanel.ets", line: 264, col: 9 });
+                    ViewPU.create(componentCall);
+                    let paramsLambda = () => {
+                        return {
+                            labels: COPPER_LABELS,
+                            selectedIdx: this.copperSelectedIdx(),
+                            colsPerRow: 4,
+                            onSelect: (idx: number) => {
+                                if (idx >= 0 && idx < COPPER_OPTIONS.length) {
+                                    this.confirmCopperCount = COPPER_OPTIONS[idx];
+                                }
+                            }
+                        };
+                    };
+                    componentCall.paramsGenerator_ = paramsLambda;
+                }
+                else {
+                    this.updateStateVarsOfChildByElmtId(elmtId, {
+                        labels: COPPER_LABELS,
+                        selectedIdx: this.copperSelectedIdx(),
+                        colsPerRow: 4
+                    });
+                }
+            }, { name: "ProteusChipGrid" });
+        }
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            Text.create('失败时 QA 仍可能自动加层（如 2→4）。');
+            Text.fontSize(9);
+            Text.fontColor(ProteusColors.TEXT_SECONDARY);
+            Text.width('100%');
+        }, Text);
+        Text.pop();
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            Row.create({ space: 8 });
+            Row.width('100%');
+            Row.justifyContent(FlexAlign.SpaceBetween);
+        }, Row);
+        {
+            this.observeComponentCreation2((elmtId, isInitialRender) => {
+                if (isInitialRender) {
+                    let componentCall = new ProteusClassicBtn(this, {
+                        label: '取消',
+                        widthVal: '48%',
+                        onAction: () => { this.cancelLayerConfirm(); }
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbAiRoutePanel.ets", line: 281, col: 11 });
+                    ViewPU.create(componentCall);
+                    let paramsLambda = () => {
+                        return {
+                            label: '取消',
+                            widthVal: '48%',
+                            onAction: () => { this.cancelLayerConfirm(); }
+                        };
+                    };
+                    componentCall.paramsGenerator_ = paramsLambda;
+                }
+                else {
+                    this.updateStateVarsOfChildByElmtId(elmtId, {
+                        label: '取消',
+                        widthVal: '48%'
+                    });
+                }
+            }, { name: "ProteusClassicBtn" });
+        }
+        {
+            this.observeComponentCreation2((elmtId, isInitialRender) => {
+                if (isInitialRender) {
+                    let componentCall = new ProteusClassicBtn(this, {
+                        label: '确认并开始',
+                        widthVal: '48%',
+                        onAction: () => { this.confirmLayerAndStart(); }
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbAiRoutePanel.ets", line: 286, col: 11 });
+                    ViewPU.create(componentCall);
+                    let paramsLambda = () => {
+                        return {
+                            label: '确认并开始',
+                            widthVal: '48%',
+                            onAction: () => { this.confirmLayerAndStart(); }
+                        };
+                    };
+                    componentCall.paramsGenerator_ = paramsLambda;
+                }
+                else {
+                    this.updateStateVarsOfChildByElmtId(elmtId, {
+                        label: '确认并开始',
+                        widthVal: '48%'
+                    });
+                }
+            }, { name: "ProteusClassicBtn" });
+        }
+        Row.pop();
+        Column.pop();
+        Column.pop();
+    }
     initialRender() {
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            Stack.create();
+            Stack.width('100%');
+            Stack.height('100%');
+        }, Stack);
         this.observeComponentCreation2((elmtId, isInitialRender) => {
             Column.create();
             Column.width('100%');
@@ -343,7 +632,8 @@ export class PcbAiRoutePanel extends ViewPU {
                 this.ifElseBranchUpdateFunction(0, () => {
                     this.observeComponentCreation2((elmtId, isInitialRender) => {
                         Text.create(this.aiStage.length > 0
-                            ? `${this.aiStage} · 画布已锁定`
+                            ? `${this.aiStage} · 画布已锁定` +
+                                (this.enableReasoning ? ' · 深度思考中' : '')
                             : '画布已锁定，禁止手动编辑');
                         Text.fontSize(9);
                         Text.fontColor(ProteusColors.TEXT_SECONDARY);
@@ -369,7 +659,7 @@ export class PcbAiRoutePanel extends ViewPU {
                                 let componentCall = new AiApiConfigSection(this, {
                                     statusMessage: this.__statusMessage,
                                     refreshTick: this.apiRefreshTick
-                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbAiRoutePanel.ets", line: 202, col: 9 });
+                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbAiRoutePanel.ets", line: 362, col: 11 });
                                 ViewPU.create(componentCall);
                                 let paramsLambda = () => {
                                     return {
@@ -475,20 +765,52 @@ export class PcbAiRoutePanel extends ViewPU {
             Text.width('100%');
         }, Text);
         Text.pop();
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            Row.create();
+            Row.width('100%');
+        }, Row);
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            Text.create(this.enableReasoning ? '● 推理开' : '○ 推理关');
+            Text.fontSize(10);
+            Text.fontColor(this.enableReasoning ? ProteusColors.ERC_OK : ProteusColors.TEXT_SECONDARY);
+            Text.padding({ left: 4, right: 8, top: 4, bottom: 4 });
+            Text.enabled(!this.aiBusy);
+            Text.onClick(() => {
+                if (!this.aiBusy) {
+                    this.toggleReasoning();
+                }
+            });
+        }, Text);
+        Text.pop();
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            Text.create('严格质量 · 禁残留交付');
+            Text.fontSize(9);
+            Text.fontColor(ProteusColors.ERC_OK);
+            Text.padding({ right: 8 });
+        }, Text);
+        Text.pop();
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            Text.create(this.enableReasoning ? '深度思考中（较慢）' : '难板可开推理');
+            Text.fontSize(9);
+            Text.fontColor(ProteusColors.TEXT_SECONDARY);
+            Text.layoutWeight(1);
+        }, Text);
+        Text.pop();
+        Row.pop();
         {
             this.observeComponentCreation2((elmtId, isInitialRender) => {
                 if (isInitialRender) {
                     let componentCall = new ProteusClassicBtn(this, {
                         label: this.aiBusy ? '布线中…' : '开始 AI 布线',
                         widthVal: '100%',
-                        onAction: () => { void this.runAiRoute(); }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbAiRoutePanel.ets", line: 244, col: 9 });
+                        onAction: () => { this.onStartClicked(); }
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbAiRoutePanel.ets", line: 427, col: 11 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
                             label: this.aiBusy ? '布线中…' : '开始 AI 布线',
                             widthVal: '100%',
-                            onAction: () => { void this.runAiRoute(); }
+                            onAction: () => { this.onStartClicked(); }
                         };
                     };
                     componentCall.paramsGenerator_ = paramsLambda;
@@ -511,7 +833,7 @@ export class PcbAiRoutePanel extends ViewPU {
                             this.logs = [];
                             this.appendLog('system', '日志已清空');
                         }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbAiRoutePanel.ets", line: 249, col: 9 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbAiRoutePanel.ets", line: 432, col: 11 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -535,6 +857,20 @@ export class PcbAiRoutePanel extends ViewPU {
         }
         Column.pop();
         Column.pop();
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            If.create();
+            if (this.showLayerConfirm) {
+                this.ifElseBranchUpdateFunction(0, () => {
+                    this.layerConfirmDialog.bind(this)();
+                });
+            }
+            else {
+                this.ifElseBranchUpdateFunction(1, () => {
+                });
+            }
+        }, If);
+        If.pop();
+        Stack.pop();
     }
     rerender() {
         this.updateDirtyElements();

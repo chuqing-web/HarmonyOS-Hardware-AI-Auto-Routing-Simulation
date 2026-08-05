@@ -7,6 +7,7 @@ import { Point2D } from '../types/CommonTypes';
 import {
   PcbFootprintDef, PcbPad, PcbPadShape, PcbPadType, PcbLayerId, PcbFootprintInst
 } from '../types/PcbTypes';
+import { tracePcbWarn } from './PcbTraceLog';
 
 const MIL = 1;
 
@@ -953,6 +954,10 @@ export class PcbFootprintLibrary {
       return 'FP_THT2';
     }
 
+    // 无规则命中：静默回退 FP_0805 会掩盖脚数/几何全错（PIN_COUNT / PIN_BIND 难辨），
+    // 此处显式审计，提示补库或改封装参数
+    tracePcbWarn('FP_FALLBACK_0805',
+      `lib=${libraryId} fp=${footprintStr} — 未命中封装规则，回退 FP_0805`);
     return 'FP_0805';
   }
 

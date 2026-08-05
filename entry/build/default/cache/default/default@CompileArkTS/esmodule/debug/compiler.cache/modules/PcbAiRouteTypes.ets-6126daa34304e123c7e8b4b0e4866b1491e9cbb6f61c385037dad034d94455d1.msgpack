@@ -84,7 +84,7 @@ export function validateLayerRoleSemantics(policy, netPlan) {
 export function policyHasStub(policy) {
     return roleInPolicy(policy, 'stub');
 }
-//# sourceMappingURL=PcbAiRouteTypes.js.mapÂÙJC:\Projects\ElecDraw_Harmony\common\src\main\ets\types\PcbAiRouteTypes.etsÔrB›ªmoduleName±isLocalDependency¯isNodeEntryFile§pkgPath±belongProjectPath§pkgNameªpkgVersion±dependencyPkgInfo¯hostModulesInfo°belongModulePath¬shouldEmitJs¦commonÃÂÙ#C:\Projects\ElecDraw_Harmony\common¼C:\Projects\ElecDraw_Harmony¦common¥1.0.0ÔrC’§pkgNameªpkgVersion¦common¥1.0.0’ÔrD’²hostDependencyName®hostModuleNameÙ$./src/main/ets/types/PcbAiRouteTypes¦commonD»../../types/PcbAiRouteTypes¦commonÙ#C:\Projects\ElecDraw_Harmony\commonÃÃÚ[/**
+//# sourceMappingURL=PcbAiRouteTypes.js.mapÂÙJC:\Projects\ElecDraw_Harmony\common\src\main\ets\types\PcbAiRouteTypes.etsÔrB›ªmoduleName±isLocalDependency¯isNodeEntryFile§pkgPath±belongProjectPath§pkgNameªpkgVersion±dependencyPkgInfo¯hostModulesInfo°belongModulePath¬shouldEmitJs¦commonÃÂÙ#C:\Projects\ElecDraw_Harmony\common¼C:\Projects\ElecDraw_Harmony¦common¥1.0.0ÔrC’§pkgNameªpkgVersion¦common¥1.0.0’ÔrD’²hostDependencyName®hostModuleNameÙ$./src/main/ets/types/PcbAiRouteTypes¦commonD»../../types/PcbAiRouteTypes¦commonÙ#C:\Projects\ElecDraw_Harmony\commonÃÃÚ/**
  * PCB AI å¸ƒçº¿ / å¸ƒå±€ç®¡çº¿ç±»å‹ â€” LLM ç­–ç•¥äº§ç‰© + å‡ ä½•æ‰§è¡Œç»“æœ
  * åæ ‡ç­–ç•¥ï¼šLLM å¯è¾“å‡ºå°è£…ä½å§¿ï¼›ç¦æ­¢è¾“å‡º track/via æŠ˜ç‚¹ã€‚
  */
@@ -123,6 +123,10 @@ export interface PcbPlacementPlan {
   placements: PcbPlacementItem[];
   groups?: PcbPlacementGroup[];
   lockedIds?: string[];
+  /** æ¿æ¡†å®½ï¼ˆmilï¼ŒåŸç‚¹å·¦ä¸‹/å·¦ä¸ŠçŸ©å½¢ï¼‰ï¼Œç”± LLM å†³å®š */
+  boardWidthMil?: number;
+  /** æ¿æ¡†é«˜ï¼ˆmilï¼‰ */
+  boardHeightMil?: number;
   reason?: string;
 }
 
@@ -185,6 +189,46 @@ export interface PcbGeometrySeg {
   via?: PcbVia;
 }
 
+/** LLM èµ°çº¿æŠ˜çº¿ï¼ˆpoints ä¸ºæ­£äº¤æŠ˜ç‚¹ï¼Œå•ä½ milï¼‰ */
+export interface PcbLlmTrackPath {
+  netId: string;
+  netName: string;
+  layer: string;
+  points: Point2D[];
+  width?: number;
+}
+
+/** LLM è¿‡å­” */
+export interface PcbLlmViaSpec {
+  netId: string;
+  netName: string;
+  x: number;
+  y: number;
+  fromLayer?: string;
+  toLayer?: string;
+}
+
+/** LLM pcb_geometry è¾“å‡º â€” æ¨¡å‹å†³å®šæ‹å¼¯ä¸è¿‡å­”ä½ç½® */
+export interface PcbLlmGeometryPlan {
+  fromLlm: boolean;
+  tracks: PcbLlmTrackPath[];
+  vias: PcbLlmViaSpec[];
+  reason?: string;
+}
+
+/** å•ç½‘å‡ ä½•å¤±è´¥æ˜ç»†ï¼ˆä¾› QA / LLM è¯Šæ–­ï¼Œä¸å«æ•´æ¿æŠ˜ç‚¹æ¸…å•ï¼‰ */
+export interface PcbGeoFailDetail {
+  netId: string;
+  netName: string;
+  /** å¤±è´¥ç„Šç›˜å¯¹ä¸–ç•Œåæ ‡ */
+  from: Point2D;
+  to: Point2D;
+  /** ç®€çŸ­åŸå› ï¼špad_block / track_block / via_block / no_path */
+  cause: string;
+  /** éšœç¢ç‰©æ‘˜è¦ï¼Œå¦‚ pad U1.3@510,480 layer=B.Cu */
+  blocker?: string;
+}
+
 export interface PcbGeometryResult {
   ok: boolean;
   tracks: PcbTrack[];
@@ -193,6 +237,8 @@ export interface PcbGeometryResult {
   failedNetIds: string[];
   missingCopperLayers: PcbLayerId[];
   reason: string;
+  /** å‡ ä½•å¤±è´¥è¯Šæ–­ï¼ˆæˆªæ–­åä¾› promptï¼‰ */
+  failDetails?: PcbGeoFailDetail[];
 }
 
 export interface PcbAiRouteResult {
@@ -317,19 +363,19 @@ export interface PcbPadEndpoint {
   padId: string;
   pos: Point2D;
 }
-ÀA“ÔrE–§version¤fileªsourceRoot§sources¥names¨mappings²PcbAiRouteTypes.js ‘³PcbAiRouteTypes.etsÜ Vš”  Ì… ” Ì…” Ì…”% Ì…%”& Ì…&”+ Ì…3”- Ì…5”3 Ì…ÌC”5 Ì…ÌE”< Ì…ÌU’” Ì†” Ì†	”” Ì‡” Ì‡” Ì‡” Ì‡’” Ìˆ” Ìˆ”” Ì‰” Ì‰” Ì‰” Ì‰”” ÌŠ” ÌŠ” ÌŠ” ÌŠ”” Ì‹” Ì‹” Ì‹” Ì‹”” ÌŒ” ÌŒ” ÌŒ” ÌŒ”” Ì” Ì” Ì” Ì”” Ì” Ì” Ì” Ì–” Ì” Ì” Ì” Ì” Ì” Ì”” Ì” Ì” Ì” Ì’” Ì‘” Ì‘’”  Ì’ ” Ì’–”  Ì” ” Ì”” Ì”” Ì”” Ì””$ Ì”ÌB™” Ì•” Ì•	” Ì•” Ì•” Ì•” Ì•” Ì•” Ì•” Ì•’”  Ì– ” Ì–’”  Ì˜ ” Ì˜˜”  Ì™ ” Ì™” Ì™”( Ì™(”) Ì™)”/ Ì™?”1 Ì™ÌA”= Ì™Ì[–” Ìš”
- Ìš” Ìš” Ìš” Ìš” ÌšÜ ” Ì›”	 Ì›” Ì›” Ì›” Ì›” Ì›” Ì›” Ì›” Ì›”$ Ì›"”% Ì›#”+ Ì›)”- Ì›+”. Ì›,”0 Ì›.”2 Ì›0™” Ìœ” Ìœ
-” Ìœ” Ìœ”  Ìœ”! Ìœ”" Ìœ”# Ìœ)”$ Ìœ*š” Ì” Ì” Ì	” Ì” Ì” Ì” Ì”" Ì”# Ì”% Ì!˜” Ì” Ì” Ì” Ì” Ì” Ì” Ì” Ì‘”	 ÌŸ‘” Ì ”” Ì¡” Ì¡	” Ì¡” Ì¡’”  Ì¢ ” Ì¢—”  Ì¤ ”	 Ì¤	” Ì¤” Ì¤” Ì¤,” Ì¤.”" Ì¤Ì@” Ì¥”
- Ì¥” Ì¥” Ì¥” Ì¥” Ì¥” Ì¥” Ì¥”# Ì¥!”$ Ì¥"”. Ì¥,”/ Ì¥-”0 Ì¥.Ü ” Ì¦”	 Ì¦” Ì¦” Ì¦” Ì¦” Ì¦” Ì¦” Ì¦” Ì¦” Ì¦” Ì¦”# Ì¦!”% Ì¦#”& Ì¦$”( Ì¦&”* Ì¦(” Ì§” Ì§” Ì§” Ì§” Ì§” Ì§”" Ì§”# Ì§”$ Ì§ ”% Ì§!”& Ì§"”+ Ì§'”/ Ì§+”1 Ì§-”” Ì¨” Ì¨” Ì¨” Ì¨‘”	 Ì©‘” Ìª”” Ì«” Ì«	” Ì«” Ì«’”  Ì¬ ” Ì¬‘”  Ì® ‘” Ì±˜”  Ì² ” Ì²” Ì²”* Ì²*”+ Ì³”1 Ì³”3 Ì´”: Ì´–” Ì¶”
- Ì¶” Ì¶” Ì¶” Ì¶” Ì¶–” Ì·” Ì·” Ì·” Ì·” Ì·” Ì·–” Ì¸” Ì¸” Ì¸” Ì¸” Ì¸” Ì¸–” Ì¹” Ì¹” Ì¹” Ì¹” Ì¹” Ì¹Ü ” Ìº”	 Ìº” Ìº” Ìº” Ìº” Ìº” Ìº” Ìº” Ìº” Ìº”  Ìº”$ Ìº"”% Ìº#”+ Ìº)”- Ìº+”. Ìº,”0 Ìº.”2 Ìº0›” Ì»” Ì»
-” Ì»” Ì»” Ì»” Ì»” Ì»” Ì»”  Ì»”! Ì»”" Ì»˜” Ì¼” Ì¼” Ì¼	” Ì¼
-” Ì¼” Ì¼”# Ì¼”% Ì¼!’” Ì½” Ì½‘”	 Ì¾˜” Ì¿” Ì¿” Ì¿	” Ì¿
-” Ì¿” Ì¿” Ì¿” Ì¿•” ÌÀ” ÌÀ” ÌÀ” ÌÀ” ÌÀ‘”	 ÌÁ˜” ÌÁ” ÌÁ” ÌÁ” ÌÁ” ÌÁ” ÌÁ”# ÌÁ!”% ÌÁ#•” ÌÂ” ÌÂ” ÌÂ” ÌÂ” ÌÂ‘”	 ÌÃ‘” ÌÃ•” ÌÄ” ÌÄ” ÌÄ” ÌÄ” ÌÄ‘”	 ÌÅ‘” ÌÆÜ ” ÌÇ”
- ÌÇ” ÌÇ” ÌÇ”" ÌÇ ”# ÌÇ!”) ÌÇ'”+ ÌÇ)”4 ÌÇ2”5 ÌÇ3”9 ÌÇ7”ÌE ÌÇÌC”ÌF ÌÇÌD”ÌL ÌÇÌJ”ÌN ÌÇÌL”ÌW ÌÇÌU”ÌX ÌÇÌVÜ ” ÌÈ” ÌÈ” ÌÈ” ÌÈ” ÌÈ”& ÌÈ"”' ÌÈ#”+ ÌÈ'”7 ÌÈ3”8 ÌÈ4”> ÌÈ:”Ì@ ÌÈ<”ÌJ ÌÈÌF”ÌK ÌÈÌG”ÌO ÌÈÌK”Ì[ ÌÈÌW”Ì\ ÌÈÌX”Ìb ÌÈÌ^”Ìd ÌÈÌ`”Ìj ÌÈÌf”Ìk ÌÈÌg”Ìl ÌÈÌhÜ ” ÌÉ”
- ÌÉ” ÌÉ” ÌÉ”" ÌÉ ”# ÌÉ!”) ÌÉ'”+ ÌÉ)”4 ÌÉ2”5 ÌÉ3”9 ÌÉ7”ÌE ÌÉÌC”ÌF ÌÉÌD”ÌL ÌÉÌJ”ÌN ÌÉÌL”ÌW ÌÉÌU”ÌX ÌÉÌVÜ ” ÌÊ” ÌÊ” ÌÊ” ÌÊ” ÌÊ”& ÌÊ"”' ÌÊ#”+ ÌÊ'”7 ÌÊ3”8 ÌÊ4”> ÌÊ:”Ì@ ÌÊ<”ÌJ ÌÊÌF”ÌK ÌÊÌG”ÌO ÌÊÌK”Ì[ ÌÊÌW”Ì\ ÌÊÌX”Ìb ÌÊÌ^”Ìd ÌÊÌ`”Ìj ÌÊÌf”Ìk ÌÊÌg”Ìl ÌÊÌh—” ÌË” ÌË” ÌË” ÌË” ÌË” ÌË” ÌË˜” ÌÌ” ÌÌ” ÌÌ	” ÌÌ” ÌÌ”8 ÌÌ4”9 ÌÌ5”: ÌÌ6‘” ÌÍ—” ÌÎ” ÌÎ” ÌÎ” ÌÎ” ÌÎ” ÌÎ”! ÌÎ˜” ÌÏ” ÌÏ” ÌÏ	” ÌÏ” ÌÏ”: ÌÏ6”; ÌÏ7”< ÌÏ8‘” ÌĞ”” ÌÑ” ÌÑ” ÌÑ” ÌÑÜ ” ÌÒ” ÌÒ
-” ÌÒ” ÌÒ”! ÌÒ”" ÌÒ”( ÌÒ$”* ÌÒ&”4 ÌÒ0”5 ÌÒ1”9 ÌÒ5”ÌE ÌÒÌA”ÌF ÌÒÌB”ÌL ÌÒÌH”ÌN ÌÒÌJ”ÌW ÌÒÌS”ÌX ÌÒÌTŸ” ÌÓ” ÌÓ” ÌÓ” ÌÓ”! ÌÓ”* ÌÓ$”+ ÌÓ%”/ ÌÓ)”; ÌÓ5”< ÌÓ6”ÌB ÌÓ<”ÌD ÌÓ>”ÌM ÌÓÌG”ÌN ÌÓÌH”ÌO ÌÓÌIÜ ” ÌÔ” ÌÔ
-” ÌÔ” ÌÔ”$ ÌÔ ”% ÌÔ!”+ ÌÔ'”- ÌÔ)”3 ÌÔ/”4 ÌÔ0”8 ÌÔ4”ÌD ÌÔÌ@”ÌE ÌÔÌA”ÌK ÌÔÌG”ÌM ÌÔÌI”ÌW ÌÔÌS”ÌX ÌÔÌT˜” ÌÕ” ÌÕ” ÌÕ” ÌÕ”! ÌÕ”+ ÌÕ%”, ÌÕ&”- ÌÕ'˜” ÌÖ” ÌÖ” ÌÖ	” ÌÖ” ÌÖ” ÌÖ” ÌÖ” ÌÖ˜” Ì×” Ì×
-” Ì×” Ì×” Ì×”= Ì×7”> Ì×8”? Ì×9‘”	 ÌØ‘” ÌÙ”” ÌÚ” ÌÚ	” ÌÚ” ÌÚ’”  ÌÛ ” ÌÛ’”  Ìİ ”" Ìİ"–”  ÌŞ ” ÌŞ” ÌŞ” ÌŞ” ÌŞ”$ ÌŞ4™” Ìß” Ìß	” Ìß” Ìß” Ìß”  Ìß”& Ìß$”' Ìß%”( Ìß&’”  Ìà ” ÌàÔrF–§version¤file§sources®sourcesContent¥names¨mappingsÀ‘À‘ÀÜ W‘”    ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”  	 ‘”  
+ÀA“ÔrE–§version¤fileªsourceRoot§sources¥names¨mappings²PcbAiRouteTypes.js ‘³PcbAiRouteTypes.etsÜ Vš”  Ì³ ” Ì³” Ì³”% Ì³%”& Ì³&”+ Ì³3”- Ì³5”3 Ì³ÌC”5 Ì³ÌE”< Ì³ÌU’” Ì´” Ì´	”” Ìµ” Ìµ” Ìµ” Ìµ’” Ì¶” Ì¶”” Ì·” Ì·” Ì·” Ì·”” Ì¸” Ì¸” Ì¸” Ì¸”” Ì¹” Ì¹” Ì¹” Ì¹”” Ìº” Ìº” Ìº” Ìº”” Ì»” Ì»” Ì»” Ì»”” Ì¼” Ì¼” Ì¼” Ì¼–” Ì½” Ì½” Ì½” Ì½” Ì½” Ì½”” Ì¾” Ì¾” Ì¾” Ì¾’” Ì¿” Ì¿’”  ÌÀ ” ÌÀ–”  ÌÂ ” ÌÂ” ÌÂ” ÌÂ” ÌÂ”$ ÌÂÌB™” ÌÃ” ÌÃ	” ÌÃ” ÌÃ” ÌÃ” ÌÃ” ÌÃ” ÌÃ” ÌÃ’”  ÌÄ ” ÌÄ’”  ÌÆ ” ÌÆ˜”  ÌÇ ” ÌÇ” ÌÇ”( ÌÇ(”) ÌÇ)”/ ÌÇ?”1 ÌÇÌA”= ÌÇÌ[–” ÌÈ”
+ ÌÈ” ÌÈ” ÌÈ” ÌÈ” ÌÈÜ ” ÌÉ”	 ÌÉ” ÌÉ” ÌÉ” ÌÉ” ÌÉ” ÌÉ” ÌÉ” ÌÉ”$ ÌÉ"”% ÌÉ#”+ ÌÉ)”- ÌÉ+”. ÌÉ,”0 ÌÉ.”2 ÌÉ0™” ÌÊ” ÌÊ
+” ÌÊ” ÌÊ”  ÌÊ”! ÌÊ”" ÌÊ”# ÌÊ)”$ ÌÊ*š” ÌË” ÌË” ÌË	” ÌË” ÌË” ÌË” ÌË”" ÌË”# ÌË”% ÌË!˜” ÌÌ” ÌÌ” ÌÌ” ÌÌ” ÌÌ” ÌÌ” ÌÌ” ÌÌ‘”	 ÌÍ‘” ÌÎ”” ÌÏ” ÌÏ	” ÌÏ” ÌÏ’”  ÌĞ ” ÌĞ—”  ÌÒ ”	 ÌÒ	” ÌÒ” ÌÒ” ÌÒ,” ÌÒ.”" ÌÒÌ@” ÌÓ”
+ ÌÓ” ÌÓ” ÌÓ” ÌÓ” ÌÓ” ÌÓ” ÌÓ”# ÌÓ!”$ ÌÓ"”. ÌÓ,”/ ÌÓ-”0 ÌÓ.Ü ” ÌÔ”	 ÌÔ” ÌÔ” ÌÔ” ÌÔ” ÌÔ” ÌÔ” ÌÔ” ÌÔ” ÌÔ” ÌÔ”# ÌÔ!”% ÌÔ#”& ÌÔ$”( ÌÔ&”* ÌÔ(” ÌÕ” ÌÕ” ÌÕ” ÌÕ” ÌÕ” ÌÕ”" ÌÕ”# ÌÕ”$ ÌÕ ”% ÌÕ!”& ÌÕ"”+ ÌÕ'”/ ÌÕ+”1 ÌÕ-”” ÌÖ” ÌÖ” ÌÖ” ÌÖ‘”	 Ì×‘” ÌØ”” ÌÙ” ÌÙ	” ÌÙ” ÌÙ’”  ÌÚ ” ÌÚ‘”  ÌÜ ‘” Ìß˜”  Ìà ” Ìà” Ìà”* Ìà*”+ Ìá”1 Ìá”3 Ìâ”: Ìâ–” Ìä”
+ Ìä” Ìä” Ìä” Ìä” Ìä–” Ìå” Ìå” Ìå” Ìå” Ìå” Ìå–” Ìæ” Ìæ” Ìæ” Ìæ” Ìæ” Ìæ–” Ìç” Ìç” Ìç” Ìç” Ìç” ÌçÜ ” Ìè”	 Ìè” Ìè” Ìè” Ìè” Ìè” Ìè” Ìè” Ìè” Ìè”  Ìè”$ Ìè"”% Ìè#”+ Ìè)”- Ìè+”. Ìè,”0 Ìè.”2 Ìè0›” Ìé” Ìé
+” Ìé” Ìé” Ìé” Ìé” Ìé” Ìé”  Ìé”! Ìé”" Ìé˜” Ìê” Ìê” Ìê	” Ìê
+” Ìê” Ìê”# Ìê”% Ìê!’” Ìë” Ìë‘”	 Ìì˜” Ìí” Ìí” Ìí	” Ìí
+” Ìí” Ìí” Ìí” Ìí•” Ìî” Ìî” Ìî” Ìî” Ìî‘”	 Ìï˜” Ìï” Ìï” Ìï” Ìï” Ìï” Ìï”# Ìï!”% Ìï#•” Ìğ” Ìğ” Ìğ” Ìğ” Ìğ‘”	 Ìñ‘” Ìñ•” Ìò” Ìò” Ìò” Ìò” Ìò‘”	 Ìó‘” ÌôÜ ” Ìõ”
+ Ìõ” Ìõ” Ìõ”" Ìõ ”# Ìõ!”) Ìõ'”+ Ìõ)”4 Ìõ2”5 Ìõ3”9 Ìõ7”ÌE ÌõÌC”ÌF ÌõÌD”ÌL ÌõÌJ”ÌN ÌõÌL”ÌW ÌõÌU”ÌX ÌõÌVÜ ” Ìö” Ìö” Ìö” Ìö” Ìö”& Ìö"”' Ìö#”+ Ìö'”7 Ìö3”8 Ìö4”> Ìö:”Ì@ Ìö<”ÌJ ÌöÌF”ÌK ÌöÌG”ÌO ÌöÌK”Ì[ ÌöÌW”Ì\ ÌöÌX”Ìb ÌöÌ^”Ìd ÌöÌ`”Ìj ÌöÌf”Ìk ÌöÌg”Ìl ÌöÌhÜ ” Ì÷”
+ Ì÷” Ì÷” Ì÷”" Ì÷ ”# Ì÷!”) Ì÷'”+ Ì÷)”4 Ì÷2”5 Ì÷3”9 Ì÷7”ÌE Ì÷ÌC”ÌF Ì÷ÌD”ÌL Ì÷ÌJ”ÌN Ì÷ÌL”ÌW Ì÷ÌU”ÌX Ì÷ÌVÜ ” Ìø” Ìø” Ìø” Ìø” Ìø”& Ìø"”' Ìø#”+ Ìø'”7 Ìø3”8 Ìø4”> Ìø:”Ì@ Ìø<”ÌJ ÌøÌF”ÌK ÌøÌG”ÌO ÌøÌK”Ì[ ÌøÌW”Ì\ ÌøÌX”Ìb ÌøÌ^”Ìd ÌøÌ`”Ìj ÌøÌf”Ìk ÌøÌg”Ìl ÌøÌh—” Ìù” Ìù” Ìù” Ìù” Ìù” Ìù” Ìù˜” Ìú” Ìú” Ìú	” Ìú” Ìú”8 Ìú4”9 Ìú5”: Ìú6‘” Ìû—” Ìü” Ìü” Ìü” Ìü” Ìü” Ìü”! Ìü˜” Ìı” Ìı” Ìı	” Ìı” Ìı”: Ìı6”; Ìı7”< Ìı8‘” Ìş”” Ìÿ” Ìÿ” Ìÿ” ÌÿÜ ” Í ” Í 
+” Í ” Í ”! Í ”" Í ”( Í $”* Í &”4 Í 0”5 Í 1”9 Í 5”ÌE Í ÌA”ÌF Í ÌB”ÌL Í ÌH”ÌN Í ÌJ”ÌW Í ÌS”ÌX Í ÌTŸ” Í” Í” Í” Í”! Í”* Í$”+ Í%”/ Í)”; Í5”< Í6”ÌB Í<”ÌD Í>”ÌM ÍÌG”ÌN ÍÌH”ÌO ÍÌIÜ ” Í” Í
+” Í” Í”$ Í ”% Í!”+ Í'”- Í)”3 Í/”4 Í0”8 Í4”ÌD ÍÌ@”ÌE ÍÌA”ÌK ÍÌG”ÌM ÍÌI”ÌW ÍÌS”ÌX ÍÌT˜” Í” Í” Í” Í”! Í”+ Í%”, Í&”- Í'˜” Í” Í” Í	” Í” Í” Í” Í” Í˜” Í” Í
+” Í” Í” Í”= Í7”> Í8”? Í9‘”	 Í‘” Í”” Í” Í	” Í” Í’”  Í	 ” Í	’”  Í ”" Í"–”  Í ” Í” Í” Í” Í”$ Í4™” Í” Í	” Í” Í” Í”  Í”& Í$”' Í%”( Í&’”  Í ” ÍÔrF–§version¤file§sources®sourcesContent¥names¨mappingsÀ‘À‘ÀÜ W‘”    ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”  	 ‘”  
  ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”    ‘”  ! ‘”  " ‘”  # ‘”  $ ‘”  % ‘”  & ‘”  ' ‘”  ( ‘”  ) ‘”  * ‘”  + ‘”  , ‘”  - ‘”  . ‘”  / ‘”  0 ‘”  1 ‘”  2 ‘”  3 ‘”  4 ‘”  5 ‘”  6 ‘”  7 ‘”  8 ‘”  9 ‘”  : ‘”  ; ‘”  < ‘”  = ‘”  > ‘”  ? ‘”  Ì@ ‘”  ÌA ‘”  ÌB ‘”  ÌC ‘”  ÌD ‘”  ÌE ‘”  ÌF ‘”  ÌG ‘”  ÌH ‘”  ÌI ‘”  ÌJ ‘”  ÌK ‘”  ÌL ‘”  ÌM ‘”  ÌN ‘”  ÌO ‘”  ÌP ‘”  ÌQ ‘”  ÌR ‘”  ÌS ‘”  ÌT ‘”  ÌU ‘”  ÌV ÔrG’§missing¦pluginÃ¦genAbcÂÔ  ÔrH”²dynamicImportCache¹exportAllDeclarationCache»exportNamedDeclarationCache«importCache•ÔrI–¤type¥start£end«declarationªspecifiers¦source¶ExportNamedDeclaration ÍUÔrJ™¤type¥start£end¢idªexpression©generator¥async¦params¤body³FunctionDeclarationÍUÔrK”¤type¥start£end¤nameªIdentifier%µemptyPcbAiRouteResultÂÂÂ“KªIdentifier&+¥stageKªIdentifier-3¦reasonKªIdentifier5<§usedLlmÔrL”¤type¥start£end¤body®BlockStatement>ÍU‘ÔrM”¤type¥start£end¨argument¯ReturnStatementÌEÍRÔrN”¤type¥start£endªproperties°ObjectExpressionÌLÍQšÔrO™¤type¥start£end¦method©shorthand¨computed£key¥value¤kind¨PropertyÌWÌeÂÂÂKªIdentifierÌWÌ^§successÔrP•¤type¥start£end¥value£raw§LiteralÌ`ÌeÂ¥false¤initÔrQ™¤type¥start£end¦method©shorthand¨computed£key¤kind¥value¨PropertyÌpÌwÂÃÂKªIdentifierÌpÌw§usedLlm¤initKªIdentifierÌpÌw§usedLlmO¨PropertyÌ‚Ì“ÂÂÂKªIdentifierÌ‚ÌŒªabortStageKªIdentifierÌÌ“¥stage¤initO¨PropertyÌÌ±ÂÂÂKªIdentifierÌÌ©«abortReasonKªIdentifierÌ«Ì±¦reason¤initO¨PropertyÌ¼ÌÉÂÂÂKªIdentifierÌ¼ÌÆªtrackCountP§LiteralÌÈÌÉ ¡0¤initO¨PropertyÌÔÌßÂÂÂKªIdentifierÌÔÌÜ¨viaCountP§LiteralÌŞÌß ¡0¤initO¨PropertyÌêÌõÂÂÂKªIdentifierÌêÌò¨netCountP§LiteralÌôÌõ ¡0¤initO¨PropertyÍ ÍÂÂÂKªIdentifierÍ Í«placedCountP§LiteralÍÍ ¡0¤initO¨PropertyÍÍ+ÂÂÂKªIdentifierÍÍ!¨messagesÔrR”¤type¥start£end¨elements¯ArrayExpressionÍ#Í+‘KªIdentifierÍ$Í*¦reason¤initO¨PropertyÍ6ÍJÂÂÂKªIdentifierÍ6ÍB¬residualKindP§LiteralÍDÍJ¤none¦'none'¤initÀI¶ExportNamedDeclarationÍWÍ¡J³FunctionDeclarationÍ^Í¡KªIdentifierÍgÍu®copperRoleKeysÂÂÂ‘KªIdentifierÍvÍ{¥rolesL®BlockStatementÍ}Í¡‘M¯ReturnStatementÍ„ÍÔrS–¤type¥start£end¦callee©arguments¨optional®CallExpressionÍ‹ÍÔrT—¤type¥start£end¦object¨property¨computed¨optional°MemberExpressionÍ‹Í–KªIdentifierÍ‹Í‘¦ObjectKªIdentifierÍ’Í–¤keysÂÂ‘KªIdentifierÍ—Íœ¥rolesÂÀI¶ExportNamedDeclarationÍÃÍéJ³FunctionDeclarationÍÊÍéKªIdentifierÍÓÍë¸policyCoversCopperLayersÂÂÂ’KªIdentifierÍìÍò¦policyKªIdentifierÍôÍ ¬copperLayersL®BlockStatementÍÍé“ÔrU•¤type¥start£end¬declarations¤kind³VariableDeclarationÍ	Í‘ÔrV•¤type¥start£end¢id¤init²VariableDeclaratorÍÍKªIdentifierÍÍ§missingR¯ArrayExpressionÍÍ¥constÔrW—¤type¥start£end¤init¤test¦update¤body¬ForStatementÍ"ÍÑU³VariableDeclarationÍ'Í0‘V²VariableDeclaratorÍ+Í0KªIdentifierÍ+Í,¡iP§LiteralÍ/Í0 ¡0£letÔrX–¤type¥start£end¤left¨operator¥right°BinaryExpressionÍ2ÍIKªIdentifierÍ2Í3¡i¡<T°MemberExpressionÍ6ÍIKªIdentifierÍ6ÍB¬copperLayersKªIdentifierÍCÍI¦lengthÂÂÔrY–¤type¥start£end¨operator¦prefix¨argument°UpdateExpressionÍKÍN¢++ÂKªIdentifierÍKÍL¡iL®BlockStatementÍPÍÑ’U³VariableDeclarationÍ[Íw‘V²VariableDeclaratorÍaÍvKªIdentifierÍaÍd£lidT°MemberExpressionÍgÍvKªIdentifierÍgÍs¬copperLayersKªIdentifierÍtÍu¡iÃÂ¥constÔrZ–¤type¥start£end¤testªconsequent©alternate«IfStatementÍÍÊY¯UnaryExpressionÍ…Íœ¡!ÃT°MemberExpressionÍ†ÍœT°MemberExpressionÍ†Í—KªIdentifierÍ†ÍŒ¦policyKªIdentifierÍÍ—ªlayerRolesÂÂKªIdentifierÍ˜Í›£lidÃÂL®BlockStatementÍÍÊ‘Ôr[”¤type¥start£endªexpression³ExpressionStatementÍ­Í¿S®CallExpressionÍ­Í¾T°MemberExpressionÍ­Í¹KªIdentifierÍ­Í´§missingKªIdentifierÍµÍ¹¤pushÂÂ‘KªIdentifierÍºÍ½£lidÂÀM¯ReturnStatementÍ×ÍæKªIdentifierÍŞÍå§missingÀI¶ExportNamedDeclarationÍ)Í
 J³FunctionDeclarationÍ0Í
 KªIdentifierÍ9ÍSºvalidateLayerRoleSemanticsÂÂÂ’KªIdentifierÍTÍZ¦policyKªIdentifierÍ\Íc§netPlanL®BlockStatementÍeÍ

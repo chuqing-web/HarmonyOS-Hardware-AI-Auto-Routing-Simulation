@@ -146,7 +146,8 @@ export struct PcbRightPanel {
             aiBusy: $aiBusy,
             aiProgress: $aiProgress,
             aiStage: $aiStage,
-            onRouteDone: () => { this.onAiRouteDone(); }
+            onRouteDone: () => { this.onAiRouteDone(); },
+            onSetCopperCount: (n: number) => { this.onSetCopperCount(n); }
           })
             .layoutWeight(1)
             .height('100%')

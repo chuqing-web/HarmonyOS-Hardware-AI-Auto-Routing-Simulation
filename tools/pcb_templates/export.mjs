@@ -146,7 +146,8 @@ const STM32F103C8_PIN_TO_PAD = new Map([
   ['PB6', '42'], ['PB7', '43'], ['PB8', '45'], ['PB9', '46'],
   ['USART1_TX', '30'], ['USART1_RX', '31'],
   ['PC0', '10'], ['PC1', '11'], ['PC2', '12'], ['PC3', '13'],
-  ['PC4', '18'], ['PC5', '19'], ['PC6', '20'], ['PC7', '39']
+  ['PC4', '18'], ['PC5', '19'], ['PC6', '20'], ['PC7', '39'],
+  ['BOOT0', '44']
 ]);
 
 /** LCD1602 单排 16 脚 */
@@ -197,6 +198,76 @@ const CD4017_PIN_TO_PAD = new Map([
   ['CLK', '13'], ['EN', '14'], ['RST', '15'], ['VDD', '16'], ['VCC', '16']
 ]);
 
+/** 74HC/LS 系列逻辑 IC：键 `${型号}:${脚名}` → 焊盘号（与 PcbPinBindUtil 同步） */
+const TTL74XX_PIN_TO_PAD = new Map([
+  ['00:1A', '1'], ['00:1B', '2'], ['00:1Y', '3'], ['00:2A', '4'], ['00:2B', '5'],
+  ['00:2Y', '6'], ['00:3Y', '8'], ['00:3A', '9'], ['00:3B', '10'],
+  ['00:4Y', '11'], ['00:4A', '12'], ['00:4B', '13'],
+  ['02:1Y', '1'], ['02:1A', '2'], ['02:1B', '3'], ['02:2Y', '4'], ['02:2A', '5'],
+  ['02:2B', '6'], ['02:3A', '8'], ['02:3B', '9'], ['02:3Y', '10'],
+  ['02:4A', '11'], ['02:4B', '12'], ['02:4Y', '13'],
+  ['04:1A', '1'], ['04:1Y', '2'], ['04:2A', '3'], ['04:2Y', '4'], ['04:3A', '5'],
+  ['04:3Y', '6'], ['04:4Y', '8'], ['04:4A', '9'], ['04:5Y', '10'], ['04:5A', '11'],
+  ['04:6Y', '12'], ['04:6A', '13'],
+  ['74:1CLR', '1'], ['74:1D', '2'], ['74:1CLK', '3'], ['74:1PR', '4'],
+  ['74:1Q', '5'], ['74:1Q#', '6'], ['74:1/Q', '6'], ['74:1QN', '6'],
+  ['74:2Q#', '8'], ['74:2/Q', '8'], ['74:2QN', '8'], ['74:2Q', '9'],
+  ['74:2PR', '10'], ['74:2CLK', '11'], ['74:2D', '12'], ['74:2CLR', '13'],
+  ['138:A0', '1'], ['138:A1', '2'], ['138:A2', '3'],
+  ['138:E1', '4'], ['138:E2', '5'], ['138:E3', '6'],
+  ['138:Y7', '7'], ['138:Q7', '7'], ['138:Y6', '9'], ['138:Q6', '9'],
+  ['138:Y5', '10'], ['138:Q5', '10'], ['138:Y4', '11'], ['138:Q4', '11'],
+  ['138:Y3', '12'], ['138:Q3', '12'], ['138:Y2', '13'], ['138:Q2', '13'],
+  ['138:Y1', '14'], ['138:Q1', '14'], ['138:Y0', '15'], ['138:Q0', '15'],
+  ['245:DIR', '1'], ['245:A0', '2'], ['245:A1', '3'], ['245:A2', '4'],
+  ['245:A3', '5'], ['245:A4', '6'], ['245:A5', '7'], ['245:A6', '8'], ['245:A7', '9'],
+  ['245:B0', '11'], ['245:B1', '12'], ['245:B2', '13'], ['245:B3', '14'],
+  ['245:B4', '15'], ['245:B5', '16'], ['245:B6', '17'], ['245:B7', '18'],
+  ['245:OE#', '19'], ['245:/OE', '19'], ['245:OEN', '19'],
+  ['595:QB', '1'], ['595:QC', '2'], ['595:QD', '3'], ['595:QE', '4'],
+  ['595:QF', '5'], ['595:QG', '6'], ['595:QH', '7'],
+  ['595:QH#', '9'], ['595:/QH', '9'], ['595:QHn', '9'],
+  ['595:SRCLR#', '10'], ['595:/SRCLR', '10'],
+  ['595:SRCLK', '11'], ['595:RCLK', '12'], ['595:LATCH', '12'],
+  ['595:OE#', '13'], ['595:/OE', '13'],
+  ['595:SER', '14'], ['595:QA', '15'],
+  ['00:GND', '7'], ['00:VCC', '14'], ['00:VDD', '14'],
+  ['02:GND', '7'], ['02:VCC', '14'], ['02:VDD', '14'],
+  ['04:GND', '7'], ['04:VCC', '14'], ['04:VDD', '14'],
+  ['08:GND', '7'], ['08:VCC', '14'], ['08:VDD', '14'],
+  ['14:GND', '7'], ['14:VCC', '14'], ['14:VDD', '14'],
+  ['32:GND', '7'], ['32:VCC', '14'], ['32:VDD', '14'],
+  ['86:GND', '7'], ['86:VCC', '14'], ['86:VDD', '14'],
+  ['74:GND', '7'], ['74:VCC', '14'], ['74:VDD', '14'],
+  ['138:GND', '8'], ['138:VCC', '16'], ['138:VDD', '16'],
+  ['245:GND', '10'], ['245:VCC', '20'], ['245:VDD', '20'],
+  ['595:GND', '8'], ['595:VCC', '16'], ['595:VDD', '16']
+]);
+
+function extract74Model(libDevId) {
+  const m = (libDevId || '').toLowerCase().match(/74(?:hc|hct|ls|als|ac|act|f|ahct)?(\d{2,3})/);
+  return m && m[1] ? m[1] : '';
+}
+
+function lookup74xxPad(libDevId, pinLabel) {
+  const model = extract74Model(libDevId);
+  if (!model || !pinLabel) return undefined;
+  return TTL74XX_PIN_TO_PAD.get(`${model}:${pinLabel.toUpperCase()}`);
+}
+
+function is74xxLib(libDevId) {
+  return extract74Model(libDevId).length > 0;
+}
+
+/** LM2596 SIP-5 教学脚 */
+const LM2596_PIN_TO_PAD = new Map([
+  ['VIN', '1'], ['IN', '1'],
+  ['OUT', '2'], ['VOUT', '2'],
+  ['GND', '3'], ['VSS', '3'],
+  ['FB', '4'], ['FEEDBACK', '4'],
+  ['ON', '5'], ['ON/OFF', '5'], ['EN', '5'], ['ENABLE', '5']
+]);
+
 /** 仪器仪表探针排针脚位（与 lab_instruments 手布一致） */
 const SIGNAL_GEN_PIN_TO_PAD = new Map([['OUT', '1'], ['GND', '2']]);
 const AMMETER_PIN_TO_PAD = new Map([['I+', '1'], ['I-', '2']]);
@@ -233,23 +304,46 @@ function instrumentPinMap(libDevId) {
   return null;
 }
 
-/** STM32F103RC 教学 LQFP-64（关键电源/晶振/PA0） */
+/** STM32F103RC LQFP-64 全脚位（VSS_1=24 / VDD_1=25，勿沿用 C8 的 23/24） */
 const STM32F103RC_PIN_TO_PAD = new Map([
-  ['OSC_IN', '5'], ['PD0', '5'],
-  ['OSC_OUT', '6'], ['PD1', '6'],
-  ['NRST', '7'], ['RESET', '7'],
-  ['VSSA', '12'], ['VDDA', '13'],
-  ['PA0', '14'], ['PA1', '15'], ['PA2', '16'], ['PA3', '17'],
-  ['VSS', '22'], ['VSS_1', '22'], ['VDD', '23'], ['VDD_1', '23']
+  ['PE2', '1'], ['PE3', '2'], ['PE4', '3'], ['PE5', '4'], ['PE6', '5'],
+  ['PD1', '6'], ['OSC_OUT', '6'],
+  ['PD0', '7'], ['OSC_IN', '7'],
+  ['NRST', '8'], ['RESET', '8'],
+  ['VSSA', '9'], ['VDDA', '10'],
+  ['PA0', '11'], ['PA1', '12'], ['PA2', '13'], ['PA3', '14'],
+  ['PA4', '15'], ['PA5', '16'], ['PA6', '17'], ['PA7', '18'],
+  ['PB0', '19'], ['PB1', '20'], ['PB2', '21'],
+  ['PB10', '22'], ['PB11', '23'],
+  ['VSS', '24'], ['VSS_1', '24'], ['VDD', '25'], ['VDD_1', '25'],
+  ['PB12', '26'], ['PB13', '27'], ['PB14', '28'], ['PB15', '29'],
+  ['PA8', '30'], ['PA9', '31'], ['PA10', '32'], ['PA11', '33'],
+  ['PA12', '34'], ['PA13', '35'],
+  ['VSS_2', '36'], ['VDD_2', '37'],
+  ['PA14', '38'], ['PA15', '39'],
+  ['PB3', '40'], ['PB4', '41'], ['PB5', '42'],
+  ['PB6', '43'], ['PB7', '44'], ['PB8', '45'], ['PB9', '46'],
+  ['PE0', '47'], ['PE1', '48'],
+  ['VSS_3', '49'], ['VDD_3', '50'],
+  ['PE7', '51'], ['PE8', '52'], ['PE9', '53'], ['PE10', '54'],
+  ['PE11', '55'], ['PE12', '56'], ['PE13', '57'], ['PE14', '58'],
+  ['PE15', '59'],
+  ['PC13', '62'], ['PC14', '63'], ['PC15', '64'],
+  ['USART1_TX', '31'], ['USART1_RX', '32']
 ]);
 
-/** STM32F407VG 教学 LQFP-100（关键电源/晶振/PA0） */
+/** STM32F407VG LQFP-100（确认脚位；全脚待补） */
 const STM32F407_PIN_TO_PAD = new Map([
+  ['VBAT', '6'],
+  ['PC13', '7'], ['PC14', '8'], ['PC15', '9'],
+  ['PF0', '10'], ['PF1', '11'],
   ['OSC_IN', '12'], ['PH0', '12'],
   ['OSC_OUT', '13'], ['PH1', '13'],
   ['NRST', '14'], ['RESET', '14'],
-  ['VSS', '18'], ['VSS_1', '18'], ['VDD', '19'], ['VDD_1', '19'],
-  ['PA0', '23'], ['PA1', '24'], ['PA2', '25']
+  ['PC0', '15'], ['PC1', '16'], ['PC2', '17'], ['PC3', '18'],
+  ['VSSA', '19'], ['VDDA', '22'],
+  ['PA0', '23'], ['PA1', '24'], ['PA2', '25'], ['PA3', '26'],
+  ['PA4', '27'], ['PA5', '28'], ['PA6', '29'], ['PA7', '30']
 ]);
 
 /** STM32F030F4 / L431CB 教学 TSSOP-20 */
@@ -721,9 +815,9 @@ function resolveFootprintId(footprintStr, libraryId) {
   const fp = (footprintStr || '').toLowerCase();
   const lib = (libraryId || '').toLowerCase();
   if (fp.includes('0402')) return 'FP_0805';
-  if (fp.includes('0603')) return 'FP_0603';
-  if (fp.includes('1206')) return 'FP_1206';
-  if (fp.includes('0805')) return 'FP_0805';
+  if (fp.includes('0603') || fp.includes('1608')) return 'FP_0603';
+  if (fp.includes('1206') || fp.includes('3216')) return 'FP_1206';
+  if (fp.includes('0805') || fp.includes('2012')) return 'FP_0805';
   if (fp.includes('to-220') || fp.includes('to220')) return 'FP_TO2203';
   if (fp.includes('sip') && fp.includes('5')) return 'FP_SIP5';
   if (fp.includes('soic')) return 'FP_SOIC8';
@@ -731,7 +825,7 @@ function resolveFootprintId(footprintStr, libraryId) {
   if (fp.includes('dip-16') || fp.includes('dip16') || fp.includes('pdip-16')) return 'FP_DIP16';
   if (fp.includes('dip-14') || fp.includes('dip14') || fp.includes('pdip-14')) return 'FP_DIP14';
   if (fp.includes('dip-40') || fp.includes('dip40') || fp.includes('pdip-40')) return 'FP_DIP40';
-  if (fp.includes('dip')) return 'FP_DIP8';
+  if (fp.includes('dip') || fp.includes('pdip')) return 'FP_DIP8';
   if (fp.includes('hc-49') || fp.includes('hc49') || fp.includes('crystal')) return 'FP_HC49';
   if (fp.includes('sot') && fp.includes('23')) return 'FP_SOT23';
   if (fp.includes('tssop') && (fp.includes('20') || fp.includes('-20'))) return 'FP_TSSOP20';
@@ -925,6 +1019,23 @@ function registerSchPin(map, compId, pinId, pinName, netId, netName, libDevId) {
   } else if ((libDevId || '').toLowerCase().includes('cd4017') || (libDevId || '').toLowerCase() === '4017') {
     for (const pin of [pinId, pinName]) {
       const pad = CD4017_PIN_TO_PAD.get((pin || '').toUpperCase());
+      if (pad) registerPadNetKey(map, compId, pad, netId, netName);
+    }
+  } else if ((libDevId || '').toLowerCase().includes('lm2596')) {
+    for (const pin of [pinId, pinName]) {
+      const pad = LM2596_PIN_TO_PAD.get((pin || '').toUpperCase());
+      if (pad) registerPadNetKey(map, compId, pad, netId, netName);
+    }
+  } else if (is74xxLib(libDevId)) {
+    // 74 系列逻辑 IC：命中型号表即绑；未收录脚名不回落 2 脚别名（避免误绑，与 ets 一致）
+    for (const pin of [pinId, pinName]) {
+      const pad = lookup74xxPad(libDevId, pin);
+      if (pad) registerPadNetKey(map, compId, pad, netId, netName);
+    }
+  } else if ((libDevId || '').toLowerCase().includes('stm32')) {
+    // 泛化 STM32 → F103C8 教学脚位（封装默认 QFP48）
+    for (const pin of [pinId, pinName]) {
+      const pad = STM32F103C8_PIN_TO_PAD.get((pin || '').toUpperCase());
       if (pad) registerPadNetKey(map, compId, pad, netId, netName);
     }
   } else if (instrumentPinMap(libDevId)) {

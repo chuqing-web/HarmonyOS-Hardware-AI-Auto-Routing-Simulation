@@ -437,7 +437,7 @@ export class AiEngineImpl implements IAiEngine {
         let routeResult = await this.constrainedWiring.routeUntilCleanAsync(topo, routeLlm, undefined, undefined, 3);
         return ResultHelper.ok(routeResult);
     }
-    async aiPcbAutoRoute(doc: PcbDocument, runDrc: (d: PcbDocument) => PcbDrcViolation[], onProgress?: ProgressCallback): Promise<ApiResult<PcbAiRouteResult>> {
+    async aiPcbAutoRoute(doc: PcbDocument, runDrc: (d: PcbDocument) => PcbDrcViolation[], onProgress?: ProgressCallback, enableReasoning: boolean = false): Promise<ApiResult<PcbAiRouteResult>> {
         this.cancelled = false;
         this.apiManager.clearChatCancel();
         if (!this.isEnabled(AiCapability.PCB_AUTO_ROUTE)) {
@@ -448,9 +448,9 @@ export class AiEngineImpl implements IAiEngine {
             return ResultHelper.fail(quota.errCode ?? ErrCode.ERR_QUOTA_EXCEEDED, quota.error ?? 'AI 配额不足');
         }
         onProgress?.(makeProgress(5, 'PCB AI 布线开始'));
-        Logger.info(INSTR_TRACE_TAG, '[AI_TASK] START TASK_PCB_AUTO_ROUTE');
+        Logger.info(INSTR_TRACE_TAG, `[AI_TASK] START TASK_PCB_AUTO_ROUTE reasoning=${enableReasoning}`);
         const coord = new PcbRouteCoordinator();
-        const result = await coord.run(doc, this.apiManager, runDrc, () => this.cancelled, onProgress);
+        const result = await coord.run(doc, this.apiManager, runDrc, () => this.cancelled, onProgress, enableReasoning);
         onProgress?.(makeProgress(100, result.success ? 'PCB AI 布线完成' : 'PCB AI 布线失败', true));
         if (!result.success) {
             return ResultHelper.fail(ErrCode.ERR_PARAM_INVALID, `${result.abortStage}: ${result.abortReason}`);

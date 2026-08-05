@@ -191,7 +191,8 @@ export {
   PcbPlacementItem, PcbPlacementGroup, PcbPlacementPlan,
   PcbNetPlanEntry, PcbNetPlanResult,
   PcbViaPreference, PcbRoutePolicy, PcbQaRepairPlan,
-  PcbGeometrySeg, PcbGeometryResult, PcbAiRouteResult, PcbPadEndpoint,
+  PcbGeometrySeg, PcbGeometryResult, PcbGeoFailDetail, PcbAiRouteResult, PcbPadEndpoint,
+  PcbLlmTrackPath, PcbLlmViaSpec, PcbLlmGeometryPlan,
   emptyPcbAiRouteResult, copperRoleKeys, policyCoversCopperLayers,
   validateLayerRoleSemantics, policyHasStub
 } from './src/main/ets/types/PcbAiRouteTypes';
@@ -390,16 +391,19 @@ export { ensureBoardAccessories, clearCopperForNets, BoardAccessoriesResult, Acc
 } from './src/main/ets/utils/PcbBoardAccessories';
 
 export { runPcbGeometryRoute } from './src/main/ets/utils/pcb_route/PcbGeometryRouter';
+export {
+  applyLlmPcbGeometry, expandOrthoPoints, netCopperConnectsPads
+} from './src/main/ets/utils/pcb_route/PcbLlmGeometryApply';
 export { routePowerBuses, PowerBusRouteOut } from './src/main/ets/utils/pcb_route/PowerBusRouter';
 export { createViaAt } from './src/main/ets/utils/pcb_route/PcbViaFactory';
 export { ensureAllCopperUsed, fillUnusedCopperLayers } from './src/main/ets/utils/pcb_route/ensureAllCopperUsed';
 export { applyPcbPlacementPlan, PlacementApplyResult } from './src/main/ets/utils/pcb_route/PcbPlacementExecutor';
 export {
-  pathClearOfTracks, clearanceForNet, trackWidthForNet
+  pathClearOfTracks, pathClearBlockReason, clearanceForNet, trackWidthForNet
 } from './src/main/ets/utils/pcb_route/PcbClearanceOracle';
 
 export {
-  registerSchPinToPadNet, lookupPadNet, registerPadNetKey
+  registerSchPinToPadNet, lookupPadNet, registerPadNetKey, resolveDevicePadNumber
 } from './src/main/ets/utils/PcbPinBindUtil';
 
 export {

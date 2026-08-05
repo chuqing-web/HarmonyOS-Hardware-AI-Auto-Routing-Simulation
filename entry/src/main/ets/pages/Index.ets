@@ -114,6 +114,9 @@ struct Index {
   @State appInitialized: boolean = false;
   @State unsavedChanges: boolean = false;
   @State showExitConfirmDialog: boolean = false;
+  @State showExportPcbSaveDialog: boolean = false;
+  /** 另存为对话框完成后继续导出 PCB */
+  private pendingExportPcbAfterSave: boolean = false;
   @State showSimFailDialog: boolean = false;
   @StorageLink(INSTR_WAVE_EXPAND_OPEN_KEY) showInstrWaveExpand: boolean = false;
   @StorageLink(INSTR_WAVE_EXPAND_TICK_KEY) instrWaveExpandTick: number = 0;
@@ -797,13 +800,19 @@ struct Index {
     }
   }
 
-  /** 导出当前原理图到 PCB：跳转 PCB 页并前向标注保存为 .pcbsim */
+  /** 导出当前原理图到 PCB：须先询问并保存原理图，成功后才跳转 */
   async exportSchematicToPcb(): Promise<void> {
     this.appService.syncProjectFromModules();
     if (this.appService.currentProject === null) {
       this.statusMessage = '请先新建或打开工程';
       return;
     }
+    this.showExportPcbSaveDialog = true;
+  }
+
+  /** 保存成功后跳转 PCB 页并前向标注 */
+  private async navigateExportSchematicToPcb(): Promise<void> {
+    this.appService.syncProjectFromModules();
     try {
       await this.getUIContext().getRouter().replaceUrl({
         url: 'pages/PcbPage',
@@ -812,6 +821,42 @@ struct Index {
     } catch (_e) {
       this.statusMessage = '无法导出到 PCB 编辑器';
     }
+  }
+
+  /** 对话框「保存并导出」：保存失败/取消则中止 */
+  private async saveThenExportSchematicToPcb(): Promise<void> {
+    this.showExportPcbSaveDialog = false;
+    this.appService.syncProjectFromModules();
+    const path = this.appService.currentProjectPath;
+    let saved = false;
+    if (path.length > 0) {
+      saved = await this.appService.saveProject(path, true);
+      if (saved) {
+        const autoPath = `${this.appService.getAutosaveDir()}/${this.projectName}.schsim`;
+        void this.appService.saveProject(autoPath, false);
+        await this.appService.saveSession(path, this.projectName, false);
+        this.unsavedChanges = false;
+        this.statusMessage = `已保存: ${path}`;
+      } else {
+        this.statusMessage = '保存失败，无法导出 PCB';
+      }
+    } else {
+      this.pendingExportPcbAfterSave = true;
+      await this.handleSaveAs();
+      if (this.showSaveAsDialog) {
+        // 回退路径对话框：等用户在 doSaveAsFromPath 中完成
+        return;
+      }
+      saved = !this.unsavedChanges && this.appService.currentProjectPath.length > 0;
+      this.pendingExportPcbAfterSave = false;
+      if (!saved) {
+        this.statusMessage = '请先保存原理图后再导出 PCB';
+      }
+    }
+    if (!saved) {
+      return;
+    }
+    await this.navigateExportSchematicToPcb();
   }
 
   /**
@@ -1023,6 +1068,14 @@ struct Index {
       void this.appService.saveProject(autoPath, false);
       await this.appService.saveSession(path, this.projectName, false);
       this.unsavedChanges = false;
+      if (this.pendingExportPcbAfterSave) {
+        this.pendingExportPcbAfterSave = false;
+        this.statusMessage = `已保存: ${path}`;
+        await this.navigateExportSchematicToPcb();
+        return;
+      }
+    } else if (this.pendingExportPcbAfterSave) {
+      this.pendingExportPcbAfterSave = false;
     }
     this.statusMessage = ok ? `已保存: ${path}` : '保存失败';
   }
@@ -1337,6 +1390,9 @@ struct Index {
       if (this.showExitConfirmDialog) {
         this.ExitConfirmDialog()
       }
+      if (this.showExportPcbSaveDialog) {
+        this.ExportPcbSaveDialog()
+      }
       if (this.showSimFailDialog) {
         this.SimFailDialog()
       }
@@ -1642,7 +1698,7 @@ struct Index {
           iconName: ProteusIconName.LAYER,
           label: $r('app.string.toolbar_export_pcb'),
           showLabel: true,
-          tooltip: '导出 PCB：将当前原理图同步为 PCB 文件并打开 PCB 编辑器',
+          tooltip: '导出 PCB：先保存原理图，再同步为 PCB 文件并打开编辑器',
           onAction: () => { void this.exportSchematicToPcb(); }
         })
       }
@@ -2809,7 +2865,13 @@ struct Index {
           ProteusClassicBtn({
             label: '取消',
             widthVal: '48%',
-            onAction: () => { this.showSaveAsDialog = false; }
+            onAction: () => {
+              this.showSaveAsDialog = false;
+              if (this.pendingExportPcbAfterSave) {
+                this.pendingExportPcbAfterSave = false;
+                this.statusMessage = '请先保存原理图后再导出 PCB';
+              }
+            }
           })
           ProteusClassicBtn({
             label: '保存',
@@ -3000,6 +3062,52 @@ struct Index {
         .margin({ top: 8 })
       }
       .width(380)
+      .padding(24)
+      .backgroundColor(ProteusColors.CANVAS_BG)
+      .border({ width: 1, color: ProteusColors.DIVIDER })
+      .borderRadius(8)
+      .shadow({ radius: 8, color: '#00000040' })
+    }
+    .width('100%')
+    .height('100%')
+    .justifyContent(FlexAlign.Center)
+    .alignItems(HorizontalAlign.Center)
+    .backgroundColor('#00000060')
+  }
+
+  /** 导出 PCB 前须保存原理图 */
+  @Builder
+  ExportPcbSaveDialog() {
+    Column() {
+      Column() {
+        Text('导出 PCB')
+          .fontSize(ProteusFonts.TITLE)
+          .fontColor(ProteusColors.TEXT_PRIMARY)
+          .fontWeight(FontWeight.Medium)
+          .margin({ bottom: 8 })
+        Text(this.unsavedChanges
+          ? '导出 PCB 前需要先保存当前原理图。是否保存并继续？'
+          : '导出 PCB 前将保存当前原理图，确认后继续。')
+          .fontSize(ProteusFonts.STATUS)
+          .fontColor(ProteusColors.TEXT_SECONDARY)
+          .margin({ bottom: 16 })
+        Row({ space: 8 }) {
+          ProteusClassicBtn({
+            label: '取消',
+            widthVal: '45%',
+            onAction: () => { this.showExportPcbSaveDialog = false; }
+          })
+          ProteusClassicBtn({
+            label: '保存并导出',
+            widthVal: '45%',
+            onAction: () => { void this.saveThenExportSchematicToPcb(); }
+          })
+        }
+        .width('100%')
+        .margin({ top: 8 })
+        .justifyContent(FlexAlign.End)
+      }
+      .width(400)
       .padding(24)
       .backgroundColor(ProteusColors.CANVAS_BG)
       .border({ width: 1, color: ProteusColors.DIVIDER })

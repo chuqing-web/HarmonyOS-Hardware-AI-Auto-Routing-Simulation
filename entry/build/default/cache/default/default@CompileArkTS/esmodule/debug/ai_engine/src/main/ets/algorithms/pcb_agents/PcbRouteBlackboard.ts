@@ -10,8 +10,10 @@ export class PcbRouteBlackboard {
     netPlan: PcbNetPlanResult | null = null;
     routePolicy: PcbRoutePolicy | null = null;
     geometry: PcbGeometryResult | null = null;
+    /** 与原理图 aiEnableReasoning 同步：开则允许 thinking */
+    enableReasoning: boolean = false;
     logs: string[] = [];
-    reset(runId: string, doc: PcbDocument): void {
+    reset(runId: string, doc: PcbDocument, enableReasoning: boolean = false): void {
         this.runId = runId;
         this.usedLlm = false;
         this.stageCompleted = '';
@@ -22,6 +24,7 @@ export class PcbRouteBlackboard {
         this.netPlan = null;
         this.routePolicy = null;
         this.geometry = null;
+        this.enableReasoning = enableReasoning;
         this.logs = [];
     }
     log(msg: string): void {

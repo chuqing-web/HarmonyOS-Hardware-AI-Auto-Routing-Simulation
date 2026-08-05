@@ -1,2310 +1,0 @@
-Ôr@Ÿªassertions¤code´customTransformCache¬dependencies¢id¤meta±moduleSideEffects¬originalCode±originalSourcemap«resolvedIds®sourcemapChainµsyntheticNamedExportsµtransformDependencies®transformFiles¨cacheAstÔrAÚY‡/** KiCad é£æ ¼å›¾å±‚ IDï¼ˆå«å†…å±‚é“œ / é’¢ç½‘ï¼‰ */
-export var PcbLayerId;
-(function (PcbLayerId) {
-    PcbLayerId["F_CU"] = "F.Cu";
-    PcbLayerId["IN1_CU"] = "In1.Cu";
-    PcbLayerId["IN2_CU"] = "In2.Cu";
-    PcbLayerId["IN3_CU"] = "In3.Cu";
-    PcbLayerId["IN4_CU"] = "In4.Cu";
-    PcbLayerId["IN5_CU"] = "In5.Cu";
-    PcbLayerId["IN6_CU"] = "In6.Cu";
-    PcbLayerId["B_CU"] = "B.Cu";
-    PcbLayerId["F_SILKS"] = "F.SilkS";
-    PcbLayerId["B_SILKS"] = "B.SilkS";
-    PcbLayerId["F_MASK"] = "F.Mask";
-    PcbLayerId["B_MASK"] = "B.Mask";
-    PcbLayerId["F_PASTE"] = "F.Paste";
-    PcbLayerId["B_PASTE"] = "B.Paste";
-    PcbLayerId["EDGE_CUTS"] = "Edge.Cuts";
-    PcbLayerId["F_FAB"] = "F.Fab";
-    PcbLayerId["B_FAB"] = "B.Fab";
-    PcbLayerId["COURTYARD"] = "F.CrtYd";
-})(PcbLayerId || (PcbLayerId = {}));
-export var PcbPadShape;
-(function (PcbPadShape) {
-    PcbPadShape["CIRCLE"] = "circle";
-    PcbPadShape["RECT"] = "rect";
-    PcbPadShape["OVAL"] = "oval";
-    PcbPadShape["ROUNDRECT"] = "roundrect";
-})(PcbPadShape || (PcbPadShape = {}));
-export var PcbPadType;
-(function (PcbPadType) {
-    PcbPadType["SMD"] = "smd";
-    PcbPadType["TH"] = "th";
-    PcbPadType["NPTH"] = "npth";
-})(PcbPadType || (PcbPadType = {}));
-export var PcbViaKind;
-(function (PcbViaKind) {
-    PcbViaKind["THROUGH"] = "through";
-    PcbViaKind["BLIND"] = "blind";
-    PcbViaKind["BURIED"] = "buried";
-})(PcbViaKind || (PcbViaKind = {}));
-/** 3D æ˜¾ç¤ºæ¨¡å¼ï¼ˆCanvas è¿‘ä¼¼ï¼šé€è§†åŠé€æ˜ / çˆ†ç‚¸ / å‰–åˆ‡ / é«˜åº¦è‰²é˜¶ï¼‰ */
-export var Pcb3dDisplayMode;
-(function (Pcb3dDisplayMode) {
-    Pcb3dDisplayMode["REALISTIC"] = "realistic";
-    Pcb3dDisplayMode["XRAY"] = "xray";
-    Pcb3dDisplayMode["EXPLODE"] = "explode";
-    Pcb3dDisplayMode["CUTAWAY"] = "cutaway";
-    Pcb3dDisplayMode["HEIGHTMAP"] = "heightmap";
-})(Pcb3dDisplayMode || (Pcb3dDisplayMode = {}));
-export var PcbAppearanceMode;
-(function (PcbAppearanceMode) {
-    PcbAppearanceMode["OVERLAY"] = "overlay";
-    PcbAppearanceMode["ACTIVE_ONLY"] = "active_only";
-    PcbAppearanceMode["DIM_INACTIVE"] = "dim_inactive";
-})(PcbAppearanceMode || (PcbAppearanceMode = {}));
-/** å¸ƒçº¿æ‹è§’æ¨¡å¼ */
-export var PcbRouteCornerMode;
-(function (PcbRouteCornerMode) {
-    PcbRouteCornerMode["ORTHO90"] = "ortho90";
-    PcbRouteCornerMode["ORTHO45"] = "ortho45";
-    PcbRouteCornerMode["ARC"] = "arc";
-})(PcbRouteCornerMode || (PcbRouteCornerMode = {}));
-export var PcbStackLayerType;
-(function (PcbStackLayerType) {
-    PcbStackLayerType["COPPER"] = "copper";
-    PcbStackLayerType["DIELECTRIC"] = "dielectric";
-    PcbStackLayerType["SOLDERMASK"] = "soldermask";
-})(PcbStackLayerType || (PcbStackLayerType = {}));
-export var PcbDrcSeverity;
-(function (PcbDrcSeverity) {
-    PcbDrcSeverity["ERROR"] = "error";
-    PcbDrcSeverity["WARNING"] = "warning";
-})(PcbDrcSeverity || (PcbDrcSeverity = {}));
-export var PcbDrcRuleType;
-(function (PcbDrcRuleType) {
-    PcbDrcRuleType["CLEARANCE"] = "clearance";
-    PcbDrcRuleType["UNROUTED_NET"] = "unrouted_net";
-    PcbDrcRuleType["OFF_BOARD"] = "off_board";
-    PcbDrcRuleType["SHORT"] = "short";
-    PcbDrcRuleType["MIN_WIDTH"] = "min_width";
-    PcbDrcRuleType["VIA_ANNULAR"] = "via_annular";
-    PcbDrcRuleType["PAD_CLEARANCE"] = "pad_clearance";
-    PcbDrcRuleType["DIFF_LENGTH"] = "diff_length";
-    PcbDrcRuleType["DIFF_GAP"] = "diff_gap";
-    PcbDrcRuleType["KEEPOUT"] = "keepout";
-    PcbDrcRuleType["SILK_PAD"] = "silk_pad";
-    PcbDrcRuleType["SILK_HEIGHT"] = "silk_height";
-    PcbDrcRuleType["EDGE_OPEN"] = "edge_open";
-})(PcbDrcRuleType || (PcbDrcRuleType = {}));
-export function defaultPcbDesignRules() {
-    return {
-        minTrackWidth: 6,
-        minClearance: 6,
-        minViaDrill: 12,
-        defaultTrackWidth: 10,
-        minAnnularRing: 4,
-        minHoleToHole: 10,
-        minSilkHeight: 31,
-        silkToPadClearance: 8
-    };
-}
-export function defaultPcbNetClasses() {
-    return [
-        {
-            id: 'nc_default', name: 'Default',
-            trackWidth: 10, clearance: 6, viaDiameter: 24, viaDrill: 12
-        },
-        {
-            id: 'nc_power', name: 'Power',
-            trackWidth: 20, clearance: 10, viaDiameter: 30, viaDrill: 16
-        },
-        {
-            id: 'nc_signal', name: 'Signal',
-            trackWidth: 8, clearance: 6, viaDiameter: 22, viaDrill: 12
-        }
-    ];
-}
-export function defaultPcbAppearance() {
-    return {
-        mode: PcbAppearanceMode.OVERLAY,
-        dimAlpha: 0.28,
-        highlightNetId: '',
-        hideZones: false,
-        showRatsnest: false,
-        showPadNumbers: true,
-        show3d: false,
-        view3dYawDeg: 38,
-        view3dPitchDeg: 52,
-        view3dOrtho: true,
-        view3dDisplayMode: Pcb3dDisplayMode.REALISTIC,
-        view3dCutFraction: 0.55,
-        view3dMeasure: false,
-        view3dShowInterference: false,
-        // é»˜è®¤ä¼ª 3Dï¼šå…¨é‡è½¯ä»¶ PBR æ˜“åœ¨æ¨¡æ‹Ÿå™¨ä¸»çº¿ç¨‹å¡æ­»ï¼ˆTHREAD_BLOCK_6Sï¼‰
-        view3dPbr: false,
-        view3dMsaa: 1
-    };
-}
-/** åˆå¹¶æ®‹ç¼º appearanceï¼Œé¿å…æ—§ä¼šè¯ç¼ºå­—æ®µå´©æºƒ */
-export function normalizePcbAppearance(ap) {
-    const d = defaultPcbAppearance();
-    if (ap === null || ap === undefined) {
-        return d;
-    }
-    return {
-        mode: ap.mode !== undefined ? ap.mode : d.mode,
-        dimAlpha: ap.dimAlpha !== undefined && ap.dimAlpha >= 0 ? ap.dimAlpha : d.dimAlpha,
-        highlightNetId: ap.highlightNetId !== undefined ? ap.highlightNetId : d.highlightNetId,
-        hideZones: ap.hideZones === true,
-        showRatsnest: ap.showRatsnest === true,
-        showPadNumbers: ap.showPadNumbers !== false,
-        show3d: ap.show3d === true,
-        view3dYawDeg: ap.view3dYawDeg !== undefined ? ap.view3dYawDeg : d.view3dYawDeg,
-        view3dPitchDeg: ap.view3dPitchDeg !== undefined ? ap.view3dPitchDeg : d.view3dPitchDeg,
-        view3dOrtho: ap.view3dOrtho !== false,
-        view3dDisplayMode: ap.view3dDisplayMode !== undefined ? ap.view3dDisplayMode : d.view3dDisplayMode,
-        view3dCutFraction: ap.view3dCutFraction !== undefined ? ap.view3dCutFraction : d.view3dCutFraction,
-        view3dMeasure: ap.view3dMeasure === true,
-        view3dShowInterference: ap.view3dShowInterference === true,
-        view3dPbr: ap.view3dPbr === true,
-        view3dMsaa: ap.view3dMsaa >= 4 ? 4 : 1
-    };
-}
-export function createDefaultLayerStack(copperCount = 2) {
-    const n = copperCount === 4 || copperCount === 6 || copperCount === 8 ? copperCount : 2;
-    const layers = [];
-    layers.push({
-        id: 'sm_top', type: PcbStackLayerType.SOLDERMASK, name: 'F.Mask', thicknessMm: 0.02
-    });
-    layers.push({
-        id: 'cu_f', type: PcbStackLayerType.COPPER, name: 'F.Cu',
-        copperLayerId: PcbLayerId.F_CU, thicknessMm: 0.035, copperOz: 1
-    });
-    if (n >= 4) {
-        layers.push({
-            id: 'diel_1', type: PcbStackLayerType.DIELECTRIC, name: 'Prepreg',
-            thicknessMm: 0.2, dielectricDk: 4.5
-        });
-        layers.push({
-            id: 'cu_in1', type: PcbStackLayerType.COPPER, name: 'In1.Cu',
-            copperLayerId: PcbLayerId.IN1_CU, thicknessMm: 0.035, copperOz: 1
-        });
-        layers.push({
-            id: 'diel_core', type: PcbStackLayerType.DIELECTRIC, name: 'Core',
-            thicknessMm: 0.8, dielectricDk: 4.3
-        });
-        layers.push({
-            id: 'cu_in2', type: PcbStackLayerType.COPPER, name: 'In2.Cu',
-            copperLayerId: PcbLayerId.IN2_CU, thicknessMm: 0.035, copperOz: 1
-        });
-        layers.push({
-            id: 'diel_2', type: PcbStackLayerType.DIELECTRIC, name: 'Prepreg',
-            thicknessMm: 0.2, dielectricDk: 4.5
-        });
-    }
-    else {
-        layers.push({
-            id: 'diel_core', type: PcbStackLayerType.DIELECTRIC, name: 'Core',
-            thicknessMm: 1.5, dielectricDk: 4.3
-        });
-    }
-    if (n >= 6) {
-        layers.push({
-            id: 'diel_3', type: PcbStackLayerType.DIELECTRIC, name: 'Prepreg2',
-            thicknessMm: 0.2, dielectricDk: 4.5
-        });
-        layers.push({
-            id: 'cu_in3', type: PcbStackLayerType.COPPER, name: 'In3.Cu',
-            copperLayerId: PcbLayerId.IN3_CU, thicknessMm: 0.035, copperOz: 1
-        });
-        layers.push({
-            id: 'diel_3b', type: PcbStackLayerType.DIELECTRIC, name: 'Prepreg2b',
-            thicknessMm: 0.2, dielectricDk: 4.5
-        });
-        layers.push({
-            id: 'cu_in4', type: PcbStackLayerType.COPPER, name: 'In4.Cu',
-            copperLayerId: PcbLayerId.IN4_CU, thicknessMm: 0.035, copperOz: 1
-        });
-    }
-    if (n >= 8) {
-        layers.push({
-            id: 'diel_4', type: PcbStackLayerType.DIELECTRIC, name: 'Prepreg3',
-            thicknessMm: 0.2, dielectricDk: 4.5
-        });
-        layers.push({
-            id: 'cu_in5', type: PcbStackLayerType.COPPER, name: 'In5.Cu',
-            copperLayerId: PcbLayerId.IN5_CU, thicknessMm: 0.035, copperOz: 1
-        });
-        layers.push({
-            id: 'diel_4b', type: PcbStackLayerType.DIELECTRIC, name: 'Prepreg3b',
-            thicknessMm: 0.2, dielectricDk: 4.5
-        });
-        layers.push({
-            id: 'cu_in6', type: PcbStackLayerType.COPPER, name: 'In6.Cu',
-            copperLayerId: PcbLayerId.IN6_CU, thicknessMm: 0.035, copperOz: 1
-        });
-    }
-    if (n >= 6) {
-        // ensure B.Cu after last inner for 6/8 â€” already handled below
-    }
-    layers.push({
-        id: 'cu_b', type: PcbStackLayerType.COPPER, name: 'B.Cu',
-        copperLayerId: PcbLayerId.B_CU, thicknessMm: 0.035, copperOz: 1
-    });
-    layers.push({
-        id: 'sm_bot', type: PcbStackLayerType.SOLDERMASK, name: 'B.Mask', thicknessMm: 0.02
-    });
-    return { copperCount: n, layers };
-}
-export function createDefaultPcbLayers(copperCount = 2) {
-    const layers = [
-        { id: PcbLayerId.F_CU, name: 'Front Copper', visible: true, color: '#FF1744', opacity: 0.95 }
-    ];
-    if (copperCount >= 4) {
-        layers.push({ id: PcbLayerId.IN1_CU, name: 'Inner1 Copper', visible: true, color: '#D500F9', opacity: 0.88 });
-        layers.push({ id: PcbLayerId.IN2_CU, name: 'Inner2 Copper', visible: true, color: '#FF9100', opacity: 0.88 });
-    }
-    if (copperCount >= 6) {
-        layers.push({ id: PcbLayerId.IN3_CU, name: 'Inner3 Copper', visible: true, color: '#651FFF', opacity: 0.85 });
-        layers.push({ id: PcbLayerId.IN4_CU, name: 'Inner4 Copper', visible: true, color: '#00E5FF', opacity: 0.85 });
-    }
-    if (copperCount >= 8) {
-        layers.push({ id: PcbLayerId.IN5_CU, name: 'Inner5 Copper', visible: true, color: '#FFD740', opacity: 0.85 });
-        layers.push({ id: PcbLayerId.IN6_CU, name: 'Inner6 Copper', visible: true, color: '#69F0AE', opacity: 0.85 });
-    }
-    layers.push({ id: PcbLayerId.B_CU, name: 'Back Copper', visible: true, color: '#00E676', opacity: 0.92 });
-    layers.push({ id: PcbLayerId.F_SILKS, name: 'Front Silk', visible: true, color: '#5CE1E6', opacity: 1 });
-    layers.push({ id: PcbLayerId.B_SILKS, name: 'Back Silk', visible: false, color: '#80A0B0', opacity: 1 });
-    layers.push({ id: PcbLayerId.F_MASK, name: 'Front Mask', visible: false, color: '#1B5E20', opacity: 0.35 });
-    layers.push({ id: PcbLayerId.B_MASK, name: 'Back Mask', visible: false, color: '#1B5E20', opacity: 0.35 });
-    layers.push({ id: PcbLayerId.F_PASTE, name: 'Front Paste', visible: false, color: '#C0C0C0', opacity: 0.5 });
-    layers.push({ id: PcbLayerId.B_PASTE, name: 'Back Paste', visible: false, color: '#A0A0A0', opacity: 0.5 });
-    layers.push({ id: PcbLayerId.EDGE_CUTS, name: 'Edge Cuts', visible: true, color: '#E8A020', opacity: 1 });
-    layers.push({ id: PcbLayerId.COURTYARD, name: 'Courtyard', visible: false, color: '#808080', opacity: 1 });
-    return layers;
-}
-export function createEmptyPcbDocument(name) {
-    const now = new Date().toISOString();
-    const w = 3000;
-    const h = 2000;
-    return {
-        id: `pcb_${Date.now()}`,
-        name,
-        version: '1.1',
-        boardOutline: {
-            points: [
-                { x: 0, y: 0 }, { x: w, y: 0 }, { x: w, y: h }, { x: 0, y: h }
-            ],
-            width: 5
-        },
-        footprints: [],
-        tracks: [],
-        vias: [],
-        zones: [],
-        layers: createDefaultPcbLayers(2),
-        nets: [],
-        netClasses: defaultPcbNetClasses(),
-        layerStack: createDefaultLayerStack(2),
-        diffPairs: [],
-        metadata: {
-            author: '',
-            createdAt: now,
-            modifiedAt: now,
-            description: '',
-            gridSize: 5,
-            units: 'mil',
-            designRules: defaultPcbDesignRules()
-        }
-    };
-}
-export function createDefaultPcbViewport() {
-    return {
-        zoom: 0.15,
-        panOffset: { x: 40, y: 40 },
-        gridVisible: true,
-        gridSize: 5,
-        snapToGrid: true
-    };
-}
-/** é“œå±‚åˆ¤å®šï¼ˆå«å†…å±‚ï¼‰ */
-export function isCopperLayer(layer) {
-    return layer === PcbLayerId.F_CU || layer === PcbLayerId.B_CU ||
-        layer === PcbLayerId.IN1_CU || layer === PcbLayerId.IN2_CU ||
-        layer === PcbLayerId.IN3_CU || layer === PcbLayerId.IN4_CU ||
-        layer === PcbLayerId.IN5_CU || layer === PcbLayerId.IN6_CU;
-}
-export function copperLayersFromStack(stack) {
-    const out = [];
-    for (const sl of stack.layers) {
-        if (sl.type === PcbStackLayerType.COPPER && sl.copperLayerId) {
-            out.push(sl.copperLayerId);
-        }
-    }
-    return out;
-}
-/** åŠ è½½æ—§å·¥ç¨‹æˆ–æ®‹ç¼º JSON æ—¶è¡¥é½ PCB å­—æ®µ */
-export function normalizePcbDocument(doc) {
-    if (!doc.footprints) {
-        doc.footprints = [];
-    }
-    if (!doc.tracks) {
-        doc.tracks = [];
-    }
-    if (!doc.vias) {
-        doc.vias = [];
-    }
-    if (!doc.zones) {
-        doc.zones = [];
-    }
-    if (!doc.nets) {
-        doc.nets = [];
-    }
-    if (!doc.netClasses || doc.netClasses.length === 0) {
-        doc.netClasses = defaultPcbNetClasses();
-    }
-    if (!doc.diffPairs) {
-        doc.diffPairs = [];
-    }
-    if (!doc.layerStack || !doc.layerStack.layers || doc.layerStack.layers.length === 0) {
-        doc.layerStack = createDefaultLayerStack(2);
-    }
-    for (const via of doc.vias) {
-        if (!via.kind) {
-            via.kind = PcbViaKind.THROUGH;
-        }
-        if (!via.layers || via.layers.length === 0) {
-            via.layers = [PcbLayerId.F_CU, PcbLayerId.B_CU];
-        }
-    }
-    for (const z of doc.zones) {
-        if (!z.cutouts)
-            z.cutouts = [];
-        if (!z.manualCutouts)
-            z.manualCutouts = [];
-        if (z.netName === undefined || z.netName === null) {
-            z.netName = '';
-        }
-        if (z.netId === undefined || z.netId === null) {
-            z.netId = '';
-        }
-        if (z.clearance === undefined || z.clearance <= 0) {
-            z.clearance = doc.metadata?.designRules?.minClearance ?? 6;
-        }
-        if (z.thermalRelief === undefined)
-            z.thermalRelief = true;
-        if (z.thermalGap === undefined || z.thermalGap <= 0)
-            z.thermalGap = 12;
-        if (z.thermalWidth === undefined || z.thermalWidth <= 0)
-            z.thermalWidth = 10;
-        if (z.priority === undefined)
-            z.priority = 0;
-    }
-    for (const fp of doc.footprints) {
-        if (!fp.pads)
-            fp.pads = [];
-        for (const pad of fp.pads) {
-            if (!pad.layers || pad.layers.length === 0) {
-                if (pad.type === PcbPadType.SMD) {
-                    pad.layers = [fp.layer === PcbLayerId.B_CU ? PcbLayerId.B_CU : PcbLayerId.F_CU];
-                }
-                else {
-                    pad.layers = [PcbLayerId.F_CU, PcbLayerId.B_CU];
-                }
-            }
-            if (pad.netName === undefined || pad.netName === null) {
-                pad.netName = '';
-            }
-            if (pad.netId === undefined || pad.netId === null) {
-                pad.netId = '';
-            }
-        }
-    }
-    for (const trk of doc.tracks) {
-        if (trk.netName === undefined || trk.netName === null)
-            trk.netName = '';
-        if (trk.netId === undefined || trk.netId === null)
-            trk.netId = '';
-    }
-    if (!doc.layers || doc.layers.length === 0) {
-        doc.layers = createDefaultPcbLayers(doc.layerStack.copperCount);
-    }
-    else {
-        ensureLayerPresent(doc, PcbLayerId.F_MASK, 'Front Mask', '#2E8B57', false);
-        ensureLayerPresent(doc, PcbLayerId.B_MASK, 'Back Mask', '#2E8B57', false);
-        ensureLayerPresent(doc, PcbLayerId.F_PASTE, 'Front Paste', '#C0C0C0', false);
-        ensureLayerPresent(doc, PcbLayerId.B_PASTE, 'Back Paste', '#A0A0A0', false);
-        if (doc.layerStack.copperCount >= 4) {
-            ensureLayerPresent(doc, PcbLayerId.IN1_CU, 'Inner1 Copper', '#D500F9', true);
-            ensureLayerPresent(doc, PcbLayerId.IN2_CU, 'Inner2 Copper', '#FF9100', true);
-        }
-        if (doc.layerStack.copperCount >= 6) {
-            ensureLayerPresent(doc, PcbLayerId.IN3_CU, 'Inner3 Copper', '#651FFF', true);
-            ensureLayerPresent(doc, PcbLayerId.IN4_CU, 'Inner4 Copper', '#00E5FF', true);
-        }
-        if (doc.layerStack.copperCount >= 8) {
-            ensureLayerPresent(doc, PcbLayerId.IN5_CU, 'Inner5 Copper', '#FFD740', true);
-            ensureLayerPresent(doc, PcbLayerId.IN6_CU, 'Inner6 Copper', '#69F0AE', true);
-        }
-        applyDistinctCopperColors(doc);
-    }
-    if (!doc.boardOutline || !doc.boardOutline.points || doc.boardOutline.points.length < 3) {
-        doc.boardOutline = {
-            points: [
-                { x: 0, y: 0 }, { x: 3000, y: 0 }, { x: 3000, y: 2000 }, { x: 0, y: 2000 }
-            ],
-            width: 5
-        };
-    }
-    if (!doc.metadata) {
-        const now = new Date().toISOString();
-        doc.metadata = {
-            author: '', createdAt: now, modifiedAt: now,
-            description: '', gridSize: 5, units: 'mil',
-            designRules: defaultPcbDesignRules()
-        };
-    }
-    else {
-        if (!doc.metadata.designRules) {
-            doc.metadata.designRules = defaultPcbDesignRules();
-        }
-        else {
-            const dr = doc.metadata.designRules;
-            if (dr.minAnnularRing === undefined || dr.minAnnularRing <= 0)
-                dr.minAnnularRing = 4;
-            if (dr.minHoleToHole === undefined || dr.minHoleToHole <= 0)
-                dr.minHoleToHole = 10;
-            if (dr.minSilkHeight === undefined || dr.minSilkHeight <= 0)
-                dr.minSilkHeight = 31;
-            if (dr.silkToPadClearance === undefined || dr.silkToPadClearance <= 0)
-                dr.silkToPadClearance = 8;
-        }
-        if (!doc.metadata.gridSize || doc.metadata.gridSize <= 0) {
-            doc.metadata.gridSize = 5;
-        }
-    }
-}
-function ensureLayerPresent(doc, id, name, color, visible) {
-    for (const l of doc.layers) {
-        if (l.id === id)
-            return;
-    }
-    doc.layers.push({ id, name, visible, color, opacity: 1 });
-}
-/** ç»Ÿä¸€é“œå±‚é«˜å¯¹æ¯”åˆ†è‰²ï¼Œä¿è¯å…¨å±‚å¯è§æ—¶ä¸€çœ¼å¯è¾¨ */
-function applyDistinctCopperColors(doc) {
-    for (let i = 0; i < doc.layers.length; i++) {
-        const l = doc.layers[i];
-        let c = '';
-        if (l.id === PcbLayerId.F_CU)
-            c = '#FF1744';
-        else if (l.id === PcbLayerId.B_CU)
-            c = '#00E676';
-        else if (l.id === PcbLayerId.IN1_CU)
-            c = '#D500F9';
-        else if (l.id === PcbLayerId.IN2_CU)
-            c = '#FF9100';
-        else if (l.id === PcbLayerId.IN3_CU)
-            c = '#651FFF';
-        else if (l.id === PcbLayerId.IN4_CU)
-            c = '#00E5FF';
-        else if (l.id === PcbLayerId.IN5_CU)
-            c = '#FFD740';
-        else if (l.id === PcbLayerId.IN6_CU)
-            c = '#69F0AE';
-        if (c.length > 0) {
-            l.color = c;
-            const op = l.opacity !== undefined ? l.opacity : 1;
-            if (op < 0.75) {
-                l.opacity = l.id === PcbLayerId.F_CU || l.id === PcbLayerId.B_CU ? 0.92 : 0.85;
-            }
-        }
-    }
-}
-/** å°†é“œå±‚æ•°åˆ‡æ¢ä¸º 2/4/6/8ï¼ŒåŒæ­¥ layers + layerStack */
-export function applyCopperLayerCount(doc, copperCount) {
-    const n = copperCount === 4 || copperCount === 6 || copperCount === 8 ? copperCount : 2;
-    doc.layerStack = createDefaultLayerStack(n);
-    const visibility = new Map();
-    for (const l of doc.layers) {
-        visibility.set(l.id, l.visible);
-    }
-    doc.layers = createDefaultPcbLayers(n);
-    for (const l of doc.layers) {
-        const prev = visibility.get(l.id);
-        if (prev !== undefined) {
-            l.visible = prev;
-        }
-    }
-    // é€šå­”é»˜è®¤è´¯ç©¿å…¨éƒ¨é“œå±‚ï¼ˆå«å†…ç”µå±‚ï¼‰
-    const copper = copperLayersFromStack(doc.layerStack);
-    for (let i = 0; i < doc.vias.length; i++) {
-        const via = doc.vias[i];
-        if (via.kind === undefined || via.kind === PcbViaKind.THROUGH) {
-            via.layers = copper.slice();
-        }
-    }
-}
-/** PCB ç¼–è¾‘å™¨é€‰æ‹©äº‹ä»¶è½½è· */
-export class PcbEditorSelectionData {
-    constructor() {
-        this.footprintIds = [];
-        this.trackIds = [];
-        this.viaIds = [];
-        this.zoneIds = [];
-    }
-}
-/** ç»Ÿä¸€é€‰æ‹©çŠ¶æ€ */
-export var PcbSelectionKind;
-(function (PcbSelectionKind) {
-    PcbSelectionKind["NONE"] = "none";
-    PcbSelectionKind["FOOTPRINT"] = "footprint";
-    PcbSelectionKind["TRACK"] = "track";
-    PcbSelectionKind["VIA"] = "via";
-    PcbSelectionKind["ZONE"] = "zone";
-    PcbSelectionKind["MULTI"] = "multi";
-})(PcbSelectionKind || (PcbSelectionKind = {}));
-export function pcbSelectionEmpty() {
-    return { kind: PcbSelectionKind.NONE, footprintIds: [], trackIds: [], viaIds: [], zoneIds: [] };
-}
-export function pcbSelectionFromData(d) {
-    let kind = PcbSelectionKind.NONE;
-    if (d.footprintIds.length > 0)
-        kind = PcbSelectionKind.FOOTPRINT;
-    else if (d.trackIds.length > 0)
-        kind = PcbSelectionKind.TRACK;
-    else if (d.viaIds.length > 0)
-        kind = PcbSelectionKind.VIA;
-    else if (d.zoneIds.length > 0)
-        kind = PcbSelectionKind.ZONE;
-    const total = d.footprintIds.length + d.trackIds.length + d.viaIds.length + d.zoneIds.length;
-    if (total > 1)
-        kind = PcbSelectionKind.MULTI;
-    return {
-        kind,
-        footprintIds: [...d.footprintIds],
-        trackIds: [...d.trackIds],
-        viaIds: [...d.viaIds],
-        zoneIds: [...d.zoneIds]
-    };
-}
-//# sourceMappingURL=PcbTypes.js.mapÂÙCC:\Projects\ElecDraw_Harmony\common\src\main\ets\types\PcbTypes.etsÔrB›ªmoduleName±isLocalDependency¯isNodeEntryFile§pkgPath±belongProjectPath§pkgNameªpkgVersion±dependencyPkgInfo°belongModulePath¬shouldEmitJs¯hostModulesInfo¦commonÃÂÙ#C:\Projects\ElecDraw_Harmony\common¼C:\Projects\ElecDraw_Harmony¦common¥1.0.0Ô  Ù#C:\Projects\ElecDraw_Harmony\commonÃ“ÔrC’²hostDependencyName®hostModuleName±../types/PcbTypes¦commonC´../../types/PcbTypes¦commonC½./src/main/ets/types/PcbTypes¦commonÃÚ`¶/**
- * PCB å¸ƒå±€æ•°æ®æ¨¡å‹ â€” å¯¹é½ KiCad åˆ†å±‚/å°è£…/èµ°çº¿è¯­ä¹‰
- */
-import { Point2D, Rotation, ViewportState } from './CommonTypes';
-
-/** KiCad é£æ ¼å›¾å±‚ IDï¼ˆå«å†…å±‚é“œ / é’¢ç½‘ï¼‰ */
-export enum PcbLayerId {
-  F_CU = 'F.Cu',
-  IN1_CU = 'In1.Cu',
-  IN2_CU = 'In2.Cu',
-  IN3_CU = 'In3.Cu',
-  IN4_CU = 'In4.Cu',
-  IN5_CU = 'In5.Cu',
-  IN6_CU = 'In6.Cu',
-  B_CU = 'B.Cu',
-  F_SILKS = 'F.SilkS',
-  B_SILKS = 'B.SilkS',
-  F_MASK = 'F.Mask',
-  B_MASK = 'B.Mask',
-  F_PASTE = 'F.Paste',
-  B_PASTE = 'B.Paste',
-  EDGE_CUTS = 'Edge.Cuts',
-  F_FAB = 'F.Fab',
-  B_FAB = 'B.Fab',
-  COURTYARD = 'F.CrtYd'
-}
-
-export enum PcbPadShape {
-  CIRCLE = 'circle',
-  RECT = 'rect',
-  OVAL = 'oval',
-  ROUNDRECT = 'roundrect'
-}
-
-export enum PcbPadType {
-  SMD = 'smd',
-  TH = 'th',
-  NPTH = 'npth'
-}
-
-export enum PcbViaKind {
-  THROUGH = 'through',
-  BLIND = 'blind',
-  BURIED = 'buried'
-}
-
-/** 3D æ˜¾ç¤ºæ¨¡å¼ï¼ˆCanvas è¿‘ä¼¼ï¼šé€è§†åŠé€æ˜ / çˆ†ç‚¸ / å‰–åˆ‡ / é«˜åº¦è‰²é˜¶ï¼‰ */
-export enum Pcb3dDisplayMode {
-  REALISTIC = 'realistic',
-  XRAY = 'xray',
-  EXPLODE = 'explode',
-  CUTAWAY = 'cutaway',
-  HEIGHTMAP = 'heightmap'
-}
-
-export enum PcbAppearanceMode {
-  OVERLAY = 'overlay',
-  ACTIVE_ONLY = 'active_only',
-  DIM_INACTIVE = 'dim_inactive'
-}
-
-/** å¸ƒçº¿æ‹è§’æ¨¡å¼ */
-export enum PcbRouteCornerMode {
-  ORTHO90 = 'ortho90',
-  ORTHO45 = 'ortho45',
-  ARC = 'arc'
-}
-
-export enum PcbStackLayerType {
-  COPPER = 'copper',
-  DIELECTRIC = 'dielectric',
-  SOLDERMASK = 'soldermask'
-}
-
-/** ç„Šç›˜ï¼ˆKiCad pad ç®€åŒ–ï¼‰ */
-export interface PcbPad {
-  id: string;
-  number: string;
-  type: PcbPadType;
-  shape: PcbPadShape;
-  /** ç›¸å¯¹å°è£…åŸç‚¹çš„å±€éƒ¨åæ ‡ (mil) */
-  pos: Point2D;
-  size: Point2D;
-  drill?: number;
-  layers: PcbLayerId[];
-  netId?: string;
-  netName?: string;
-}
-
-/** å°è£…å®šä¹‰ï¼ˆåº“å†…æ¨¡æ¿ï¼‰ */
-export interface PcbFootprintDef {
-  id: string;
-  name: string;
-  description: string;
-  pads: PcbPad[];
-  /** ä¸å°è½®å»“æŠ˜çº¿ (mil, å±€éƒ¨åæ ‡) */
-  silkLines: Point2D[][];
-  courtyard: Point2D[];
-  /** å¯é€‰ 3D é«˜åº¦ (mil)ï¼Œç¼ºçœæŒ‰å°è£…ç±»å‹ä¼°ç®— */
-  heightMil?: number;
-  /** ç»‘å®šçš„ STEP æ¨¡å‹ idï¼ˆå¯é€‰ï¼‰ */
-  model3dId?: string;
-}
-
-/** æ¿ä¸Šå°è£…å®ä¾‹ */
-export interface PcbFootprintInst {
-  id: string;
-  defId: string;
-  refDes: string;
-  value: string;
-  position: Point2D;
-  rotation: Rotation;
-  mirrored: boolean;
-  layer: PcbLayerId;
-  locked: boolean;
-  /** å®ä¾‹çº§ç„Šç›˜ï¼ˆå«ç½‘ç»œç»‘å®šï¼‰ */
-  pads: PcbPad[];
-  schematicCompId?: string;
-}
-
-/** èµ°çº¿æ®µ (KiCad segment) */
-export interface PcbTrack {
-  id: string;
-  layer: PcbLayerId;
-  start: Point2D;
-  end: Point2D;
-  width: number;
-  netId: string;
-  netName: string;
-}
-
-/** è¿‡å­” */
-export interface PcbVia {
-  id: string;
-  position: Point2D;
-  drill: number;
-  diameter: number;
-  netId: string;
-  netName: string;
-  layers: PcbLayerId[];
-  kind?: PcbViaKind;
-}
-
-/** è¦†é“œåŒºï¼ˆå¤šè¾¹å½¢ + æŒ–ç©º + çƒ­ç„Šç›˜ï¼‰ */
-export interface PcbZone {
-  id: string;
-  layer: PcbLayerId;
-  netId: string;
-  netName: string;
-  outline: Point2D[];
-  priority: number;
-  /** å¼‚ç½‘ç„Šç›˜é—´è· (mil) */
-  clearance: number;
-  /** è‡ªåŠ¨+æ‰‹åŠ¨æŒ–ç©ºå¤šè¾¹å½¢åˆ—è¡¨ */
-  cutouts: Point2D[][];
-  /** ç”¨æˆ·æ‰‹åŠ¨æŒ–ç©ºï¼ˆä¿ç•™ï¼‰ */
-  manualCutouts: Point2D[][];
-  /** åŒç½‘ç„Šç›˜çƒ­ç„Šç›˜ */
-  thermalRelief: boolean;
-  thermalGap: number;
-  thermalWidth: number;
-}
-
-/** æ¿æ¡† */
-export interface PcbBoardOutline {
-  points: Point2D[];
-  width: number;
-}
-
-export interface PcbLayerConfig {
-  id: PcbLayerId;
-  name: string;
-  visible: boolean;
-  color: string;
-  userName?: string;
-  opacity?: number;
-}
-
-export interface PcbNet {
-  id: string;
-  name: string;
-  classId?: string;
-}
-
-export interface PcbNetClass {
-  id: string;
-  name: string;
-  trackWidth: number;
-  clearance: number;
-  viaDiameter: number;
-  viaDrill: number;
-}
-
-/** å·®åˆ†å¯¹ï¼ˆé•¿åº¦/é—´è·çº¦æŸå ä½ï¼‰ */
-export interface PcbDiffPair {
-  id: string;
-  name: string;
-  netIdP: string;
-  netIdN: string;
-  gapMil: number;
-  lengthTolMil: number;
-}
-
-export interface PcbStackLayer {
-  id: string;
-  type: PcbStackLayerType;
-  name: string;
-  /** å…³è”é€»è¾‘é“œå±‚ï¼ˆä»… copperï¼‰ */
-  copperLayerId?: PcbLayerId;
-  thicknessMm: number;
-  dielectricDk?: number;
-  copperOz?: number;
-}
-
-export interface PcbLayerStack {
-  copperCount: number;
-  layers: PcbStackLayer[];
-}
-
-export interface PcbAppearance {
-  mode: PcbAppearanceMode;
-  dimAlpha: number;
-  highlightNetId: string;
-  hideZones: boolean;
-  showRatsnest: boolean;
-  showPadNumbers: boolean;
-  show3d: boolean;
-  /** 3D ç»•ç«–ç›´è½´åèˆªè§’ï¼ˆåº¦ï¼‰ï¼Œå·¦é”®æ‹–æ‹½æ—‹è½¬ */
-  view3dYawDeg: number;
-  /** 3D ä¿¯ä»°è§’ï¼ˆåº¦ï¼‰ï¼Œçº¦ 15â€“85ï¼Œé¿å…ç¿»è½¬ */
-  view3dPitchDeg: number;
-  /** 3D æ­£äº¤æŠ•å½±ï¼ˆå·¥ä¸šé»˜è®¤ï¼‰ï¼›false=é€è§† */
-  view3dOrtho: boolean;
-  /** 3D æ˜¾ç¤ºæ¨¡å¼ */
-  view3dDisplayMode: Pcb3dDisplayMode;
-  /** å‰–åˆ‡æ¯”ä¾‹ 0~1ï¼ˆæ²¿æ¿æ¡† X æ–¹å‘ï¼‰ */
-  view3dCutFraction: number;
-  /** 3D æµ‹é‡æ¨¡å¼ï¼šç‚¹å‡»ä¸¤ç‚¹æµ‹è· */
-  view3dMeasure: boolean;
-  /** æ˜¾ç¤ºå…ƒä»¶å¹²æ¶‰é¢„è­¦ */
-  view3dShowInterference: boolean;
-  /** çœŸ PBR+IBL+MSAAï¼ˆå†™å®æ¨¡å¼ï¼‰ */
-  view3dPbr: boolean;
-  /** MSAA æ ·æœ¬ï¼š1 æˆ– 4 */
-  view3dMsaa: number;
-}
-
-export interface PcbMetadata {
-  author: string;
-  createdAt: string;
-  modifiedAt: string;
-  description: string;
-  gridSize: number;
-  units: 'mil' | 'mm';
-  designRules: PcbDesignRules;
-}
-
-export interface PcbDesignRules {
-  minTrackWidth: number;
-  minClearance: number;
-  minViaDrill: number;
-  defaultTrackWidth: number;
-  minAnnularRing: number;
-  minHoleToHole: number;
-  /** ä¸å°æœ€å°å­—é«˜ (mil)ï¼Œçº¦ 0.8mm â‰ˆ 31mil */
-  minSilkHeight: number;
-  /** ä¸å°è·ç„Šç›˜æœ€å°é—´è· (mil)ï¼Œçº¦ 0.2mm â‰ˆ 8mil */
-  silkToPadClearance: number;
-}
-
-export interface PcbDocument {
-  id: string;
-  name: string;
-  version: string;
-  boardOutline: PcbBoardOutline;
-  footprints: PcbFootprintInst[];
-  tracks: PcbTrack[];
-  vias: PcbVia[];
-  zones: PcbZone[];
-  layers: PcbLayerConfig[];
-  nets: PcbNet[];
-  netClasses: PcbNetClass[];
-  layerStack: PcbLayerStack;
-  diffPairs: PcbDiffPair[];
-  metadata: PcbMetadata;
-}
-
-export enum PcbDrcSeverity {
-  ERROR = 'error',
-  WARNING = 'warning'
-}
-
-export enum PcbDrcRuleType {
-  CLEARANCE = 'clearance',
-  UNROUTED_NET = 'unrouted_net',
-  OFF_BOARD = 'off_board',
-  SHORT = 'short',
-  MIN_WIDTH = 'min_width',
-  VIA_ANNULAR = 'via_annular',
-  PAD_CLEARANCE = 'pad_clearance',
-  DIFF_LENGTH = 'diff_length',
-  DIFF_GAP = 'diff_gap',
-  KEEPOUT = 'keepout',
-  SILK_PAD = 'silk_pad',
-  SILK_HEIGHT = 'silk_height',
-  EDGE_OPEN = 'edge_open'
-}
-
-export interface PcbDrcViolation {
-  id: string;
-  severity: PcbDrcSeverity;
-  ruleType: PcbDrcRuleType;
-  message: string;
-  position?: Point2D;
-  netId?: string;
-  footprintId?: string;
-}
-
-/** é£çº¿ç«¯ç‚¹ */
-export interface PcbRatsnestEdge {
-  netId: string;
-  netName: string;
-  a: Point2D;
-  b: Point2D;
-}
-
-export function defaultPcbDesignRules(): PcbDesignRules {
-  return {
-    minTrackWidth: 6,
-    minClearance: 6,
-    minViaDrill: 12,
-    defaultTrackWidth: 10,
-    minAnnularRing: 4,
-    minHoleToHole: 10,
-    minSilkHeight: 31,
-    silkToPadClearance: 8
-  };
-}
-
-export function defaultPcbNetClasses(): PcbNetClass[] {
-  return [
-    {
-      id: 'nc_default', name: 'Default',
-      trackWidth: 10, clearance: 6, viaDiameter: 24, viaDrill: 12
-    },
-    {
-      id: 'nc_power', name: 'Power',
-      trackWidth: 20, clearance: 10, viaDiameter: 30, viaDrill: 16
-    },
-    {
-      id: 'nc_signal', name: 'Signal',
-      trackWidth: 8, clearance: 6, viaDiameter: 22, viaDrill: 12
-    }
-  ];
-}
-
-export function defaultPcbAppearance(): PcbAppearance {
-  return {
-    mode: PcbAppearanceMode.OVERLAY,
-    dimAlpha: 0.28,
-    highlightNetId: '',
-    hideZones: false,
-    showRatsnest: false,
-    showPadNumbers: true,
-    show3d: false,
-    view3dYawDeg: 38,
-    view3dPitchDeg: 52,
-    view3dOrtho: true,
-    view3dDisplayMode: Pcb3dDisplayMode.REALISTIC,
-    view3dCutFraction: 0.55,
-    view3dMeasure: false,
-    view3dShowInterference: false,
-    // é»˜è®¤ä¼ª 3Dï¼šå…¨é‡è½¯ä»¶ PBR æ˜“åœ¨æ¨¡æ‹Ÿå™¨ä¸»çº¿ç¨‹å¡æ­»ï¼ˆTHREAD_BLOCK_6Sï¼‰
-    view3dPbr: false,
-    view3dMsaa: 1
-  };
-}
-
-/** åˆå¹¶æ®‹ç¼º appearanceï¼Œé¿å…æ—§ä¼šè¯ç¼ºå­—æ®µå´©æºƒ */
-export function normalizePcbAppearance(ap: PcbAppearance | null | undefined): PcbAppearance {
-  const d = defaultPcbAppearance();
-  if (ap === null || ap === undefined) {
-    return d;
-  }
-  return {
-    mode: ap.mode !== undefined ? ap.mode : d.mode,
-    dimAlpha: ap.dimAlpha !== undefined && ap.dimAlpha >= 0 ? ap.dimAlpha : d.dimAlpha,
-    highlightNetId: ap.highlightNetId !== undefined ? ap.highlightNetId : d.highlightNetId,
-    hideZones: ap.hideZones === true,
-    showRatsnest: ap.showRatsnest === true,
-    showPadNumbers: ap.showPadNumbers !== false,
-    show3d: ap.show3d === true,
-    view3dYawDeg: ap.view3dYawDeg !== undefined ? ap.view3dYawDeg : d.view3dYawDeg,
-    view3dPitchDeg: ap.view3dPitchDeg !== undefined ? ap.view3dPitchDeg : d.view3dPitchDeg,
-    view3dOrtho: ap.view3dOrtho !== false,
-    view3dDisplayMode: ap.view3dDisplayMode !== undefined ? ap.view3dDisplayMode : d.view3dDisplayMode,
-    view3dCutFraction: ap.view3dCutFraction !== undefined ? ap.view3dCutFraction : d.view3dCutFraction,
-    view3dMeasure: ap.view3dMeasure === true,
-    view3dShowInterference: ap.view3dShowInterference === true,
-    view3dPbr: ap.view3dPbr === true,
-    view3dMsaa: ap.view3dMsaa >= 4 ? 4 : 1
-  };
-}
-
-export function createDefaultLayerStack(copperCount: number = 2): PcbLayerStack {
-  const n = copperCount === 4 || copperCount === 6 || copperCount === 8 ? copperCount : 2;
-  const layers: PcbStackLayer[] = [];
-  layers.push({
-    id: 'sm_top', type: PcbStackLayerType.SOLDERMASK, name: 'F.Mask', thicknessMm: 0.02
-  });
-  layers.push({
-    id: 'cu_f', type: PcbStackLayerType.COPPER, name: 'F.Cu',
-    copperLayerId: PcbLayerId.F_CU, thicknessMm: 0.035, copperOz: 1
-  });
-  if (n >= 4) {
-    layers.push({
-      id: 'diel_1', type: PcbStackLayerType.DIELECTRIC, name: 'Prepreg',
-      thicknessMm: 0.2, dielectricDk: 4.5
-    });
-    layers.push({
-      id: 'cu_in1', type: PcbStackLayerType.COPPER, name: 'In1.Cu',
-      copperLayerId: PcbLayerId.IN1_CU, thicknessMm: 0.035, copperOz: 1
-    });
-    layers.push({
-      id: 'diel_core', type: PcbStackLayerType.DIELECTRIC, name: 'Core',
-      thicknessMm: 0.8, dielectricDk: 4.3
-    });
-    layers.push({
-      id: 'cu_in2', type: PcbStackLayerType.COPPER, name: 'In2.Cu',
-      copperLayerId: PcbLayerId.IN2_CU, thicknessMm: 0.035, copperOz: 1
-    });
-    layers.push({
-      id: 'diel_2', type: PcbStackLayerType.DIELECTRIC, name: 'Prepreg',
-      thicknessMm: 0.2, dielectricDk: 4.5
-    });
-  } else {
-    layers.push({
-      id: 'diel_core', type: PcbStackLayerType.DIELECTRIC, name: 'Core',
-      thicknessMm: 1.5, dielectricDk: 4.3
-    });
-  }
-  if (n >= 6) {
-    layers.push({
-      id: 'diel_3', type: PcbStackLayerType.DIELECTRIC, name: 'Prepreg2',
-      thicknessMm: 0.2, dielectricDk: 4.5
-    });
-    layers.push({
-      id: 'cu_in3', type: PcbStackLayerType.COPPER, name: 'In3.Cu',
-      copperLayerId: PcbLayerId.IN3_CU, thicknessMm: 0.035, copperOz: 1
-    });
-    layers.push({
-      id: 'diel_3b', type: PcbStackLayerType.DIELECTRIC, name: 'Prepreg2b',
-      thicknessMm: 0.2, dielectricDk: 4.5
-    });
-    layers.push({
-      id: 'cu_in4', type: PcbStackLayerType.COPPER, name: 'In4.Cu',
-      copperLayerId: PcbLayerId.IN4_CU, thicknessMm: 0.035, copperOz: 1
-    });
-  }
-  if (n >= 8) {
-    layers.push({
-      id: 'diel_4', type: PcbStackLayerType.DIELECTRIC, name: 'Prepreg3',
-      thicknessMm: 0.2, dielectricDk: 4.5
-    });
-    layers.push({
-      id: 'cu_in5', type: PcbStackLayerType.COPPER, name: 'In5.Cu',
-      copperLayerId: PcbLayerId.IN5_CU, thicknessMm: 0.035, copperOz: 1
-    });
-    layers.push({
-      id: 'diel_4b', type: PcbStackLayerType.DIELECTRIC, name: 'Prepreg3b',
-      thicknessMm: 0.2, dielectricDk: 4.5
-    });
-    layers.push({
-      id: 'cu_in6', type: PcbStackLayerType.COPPER, name: 'In6.Cu',
-      copperLayerId: PcbLayerId.IN6_CU, thicknessMm: 0.035, copperOz: 1
-    });
-  }
-  if (n >= 6) {
-    // ensure B.Cu after last inner for 6/8 â€” already handled below
-  }
-  layers.push({
-    id: 'cu_b', type: PcbStackLayerType.COPPER, name: 'B.Cu',
-    copperLayerId: PcbLayerId.B_CU, thicknessMm: 0.035, copperOz: 1
-  });
-  layers.push({
-    id: 'sm_bot', type: PcbStackLayerType.SOLDERMASK, name: 'B.Mask', thicknessMm: 0.02
-  });
-  return { copperCount: n, layers };
-}
-
-export function createDefaultPcbLayers(copperCount: number = 2): PcbLayerConfig[] {
-  const layers: PcbLayerConfig[] = [
-    { id: PcbLayerId.F_CU, name: 'Front Copper', visible: true, color: '#FF1744', opacity: 0.95 }
-  ];
-  if (copperCount >= 4) {
-    layers.push({ id: PcbLayerId.IN1_CU, name: 'Inner1 Copper', visible: true, color: '#D500F9', opacity: 0.88 });
-    layers.push({ id: PcbLayerId.IN2_CU, name: 'Inner2 Copper', visible: true, color: '#FF9100', opacity: 0.88 });
-  }
-  if (copperCount >= 6) {
-    layers.push({ id: PcbLayerId.IN3_CU, name: 'Inner3 Copper', visible: true, color: '#651FFF', opacity: 0.85 });
-    layers.push({ id: PcbLayerId.IN4_CU, name: 'Inner4 Copper', visible: true, color: '#00E5FF', opacity: 0.85 });
-  }
-  if (copperCount >= 8) {
-    layers.push({ id: PcbLayerId.IN5_CU, name: 'Inner5 Copper', visible: true, color: '#FFD740', opacity: 0.85 });
-    layers.push({ id: PcbLayerId.IN6_CU, name: 'Inner6 Copper', visible: true, color: '#69F0AE', opacity: 0.85 });
-  }
-  layers.push({ id: PcbLayerId.B_CU, name: 'Back Copper', visible: true, color: '#00E676', opacity: 0.92 });
-  layers.push({ id: PcbLayerId.F_SILKS, name: 'Front Silk', visible: true, color: '#5CE1E6', opacity: 1 });
-  layers.push({ id: PcbLayerId.B_SILKS, name: 'Back Silk', visible: false, color: '#80A0B0', opacity: 1 });
-  layers.push({ id: PcbLayerId.F_MASK, name: 'Front Mask', visible: false, color: '#1B5E20', opacity: 0.35 });
-  layers.push({ id: PcbLayerId.B_MASK, name: 'Back Mask', visible: false, color: '#1B5E20', opacity: 0.35 });
-  layers.push({ id: PcbLayerId.F_PASTE, name: 'Front Paste', visible: false, color: '#C0C0C0', opacity: 0.5 });
-  layers.push({ id: PcbLayerId.B_PASTE, name: 'Back Paste', visible: false, color: '#A0A0A0', opacity: 0.5 });
-  layers.push({ id: PcbLayerId.EDGE_CUTS, name: 'Edge Cuts', visible: true, color: '#E8A020', opacity: 1 });
-  layers.push({ id: PcbLayerId.COURTYARD, name: 'Courtyard', visible: false, color: '#808080', opacity: 1 });
-  return layers;
-}
-
-export function createEmptyPcbDocument(name: string): PcbDocument {
-  const now = new Date().toISOString();
-  const w = 3000;
-  const h = 2000;
-  return {
-    id: `pcb_${Date.now()}`,
-    name,
-    version: '1.1',
-    boardOutline: {
-      points: [
-        { x: 0, y: 0 }, { x: w, y: 0 }, { x: w, y: h }, { x: 0, y: h }
-      ],
-      width: 5
-    },
-    footprints: [],
-    tracks: [],
-    vias: [],
-    zones: [],
-    layers: createDefaultPcbLayers(2),
-    nets: [],
-    netClasses: defaultPcbNetClasses(),
-    layerStack: createDefaultLayerStack(2),
-    diffPairs: [],
-    metadata: {
-      author: '',
-      createdAt: now,
-      modifiedAt: now,
-      description: '',
-      gridSize: 5,
-      units: 'mil',
-      designRules: defaultPcbDesignRules()
-    }
-  };
-}
-
-export function createDefaultPcbViewport(): ViewportState {
-  return {
-    zoom: 0.15,
-    panOffset: { x: 40, y: 40 },
-    gridVisible: true,
-    gridSize: 5,
-    snapToGrid: true
-  };
-}
-
-/** é“œå±‚åˆ¤å®šï¼ˆå«å†…å±‚ï¼‰ */
-export function isCopperLayer(layer: PcbLayerId): boolean {
-  return layer === PcbLayerId.F_CU || layer === PcbLayerId.B_CU ||
-    layer === PcbLayerId.IN1_CU || layer === PcbLayerId.IN2_CU ||
-    layer === PcbLayerId.IN3_CU || layer === PcbLayerId.IN4_CU ||
-    layer === PcbLayerId.IN5_CU || layer === PcbLayerId.IN6_CU;
-}
-
-export function copperLayersFromStack(stack: PcbLayerStack): PcbLayerId[] {
-  const out: PcbLayerId[] = [];
-  for (const sl of stack.layers) {
-    if (sl.type === PcbStackLayerType.COPPER && sl.copperLayerId) {
-      out.push(sl.copperLayerId);
-    }
-  }
-  return out;
-}
-
-/** åŠ è½½æ—§å·¥ç¨‹æˆ–æ®‹ç¼º JSON æ—¶è¡¥é½ PCB å­—æ®µ */
-export function normalizePcbDocument(doc: PcbDocument): void {
-  if (!doc.footprints) {
-    doc.footprints = [];
-  }
-  if (!doc.tracks) {
-    doc.tracks = [];
-  }
-  if (!doc.vias) {
-    doc.vias = [];
-  }
-  if (!doc.zones) {
-    doc.zones = [];
-  }
-  if (!doc.nets) {
-    doc.nets = [];
-  }
-  if (!doc.netClasses || doc.netClasses.length === 0) {
-    doc.netClasses = defaultPcbNetClasses();
-  }
-  if (!doc.diffPairs) {
-    doc.diffPairs = [];
-  }
-  if (!doc.layerStack || !doc.layerStack.layers || doc.layerStack.layers.length === 0) {
-    doc.layerStack = createDefaultLayerStack(2);
-  }
-  for (const via of doc.vias) {
-    if (!via.kind) {
-      via.kind = PcbViaKind.THROUGH;
-    }
-    if (!via.layers || via.layers.length === 0) {
-      via.layers = [PcbLayerId.F_CU, PcbLayerId.B_CU];
-    }
-  }
-  for (const z of doc.zones) {
-    if (!z.cutouts) z.cutouts = [];
-    if (!z.manualCutouts) z.manualCutouts = [];
-    if (z.netName === undefined || z.netName === null) {
-      z.netName = '';
-    }
-    if (z.netId === undefined || z.netId === null) {
-      z.netId = '';
-    }
-    if (z.clearance === undefined || z.clearance <= 0) {
-      z.clearance = doc.metadata?.designRules?.minClearance ?? 6;
-    }
-    if (z.thermalRelief === undefined) z.thermalRelief = true;
-    if (z.thermalGap === undefined || z.thermalGap <= 0) z.thermalGap = 12;
-    if (z.thermalWidth === undefined || z.thermalWidth <= 0) z.thermalWidth = 10;
-    if (z.priority === undefined) z.priority = 0;
-  }
-  for (const fp of doc.footprints) {
-    if (!fp.pads) fp.pads = [];
-    for (const pad of fp.pads) {
-      if (!pad.layers || pad.layers.length === 0) {
-        if (pad.type === PcbPadType.SMD) {
-          pad.layers = [fp.layer === PcbLayerId.B_CU ? PcbLayerId.B_CU : PcbLayerId.F_CU];
-        } else {
-          pad.layers = [PcbLayerId.F_CU, PcbLayerId.B_CU];
-        }
-      }
-      if (pad.netName === undefined || pad.netName === null) {
-        pad.netName = '';
-      }
-      if (pad.netId === undefined || pad.netId === null) {
-        pad.netId = '';
-      }
-    }
-  }
-  for (const trk of doc.tracks) {
-    if (trk.netName === undefined || trk.netName === null) trk.netName = '';
-    if (trk.netId === undefined || trk.netId === null) trk.netId = '';
-  }
-  if (!doc.layers || doc.layers.length === 0) {
-    doc.layers = createDefaultPcbLayers(doc.layerStack.copperCount);
-  } else {
-    ensureLayerPresent(doc, PcbLayerId.F_MASK, 'Front Mask', '#2E8B57', false);
-    ensureLayerPresent(doc, PcbLayerId.B_MASK, 'Back Mask', '#2E8B57', false);
-    ensureLayerPresent(doc, PcbLayerId.F_PASTE, 'Front Paste', '#C0C0C0', false);
-    ensureLayerPresent(doc, PcbLayerId.B_PASTE, 'Back Paste', '#A0A0A0', false);
-    if (doc.layerStack.copperCount >= 4) {
-      ensureLayerPresent(doc, PcbLayerId.IN1_CU, 'Inner1 Copper', '#D500F9', true);
-      ensureLayerPresent(doc, PcbLayerId.IN2_CU, 'Inner2 Copper', '#FF9100', true);
-    }
-    if (doc.layerStack.copperCount >= 6) {
-      ensureLayerPresent(doc, PcbLayerId.IN3_CU, 'Inner3 Copper', '#651FFF', true);
-      ensureLayerPresent(doc, PcbLayerId.IN4_CU, 'Inner4 Copper', '#00E5FF', true);
-    }
-    if (doc.layerStack.copperCount >= 8) {
-      ensureLayerPresent(doc, PcbLayerId.IN5_CU, 'Inner5 Copper', '#FFD740', true);
-      ensureLayerPresent(doc, PcbLayerId.IN6_CU, 'Inner6 Copper', '#69F0AE', true);
-    }
-    applyDistinctCopperColors(doc);
-  }
-  if (!doc.boardOutline || !doc.boardOutline.points || doc.boardOutline.points.length < 3) {
-    doc.boardOutline = {
-      points: [
-        { x: 0, y: 0 }, { x: 3000, y: 0 }, { x: 3000, y: 2000 }, { x: 0, y: 2000 }
-      ],
-      width: 5
-    };
-  }
-  if (!doc.metadata) {
-    const now = new Date().toISOString();
-    doc.metadata = {
-      author: '', createdAt: now, modifiedAt: now,
-      description: '', gridSize: 5, units: 'mil',
-      designRules: defaultPcbDesignRules()
-    };
-  } else {
-    if (!doc.metadata.designRules) {
-      doc.metadata.designRules = defaultPcbDesignRules();
-    } else {
-      const dr = doc.metadata.designRules;
-      if (dr.minAnnularRing === undefined || dr.minAnnularRing <= 0) dr.minAnnularRing = 4;
-      if (dr.minHoleToHole === undefined || dr.minHoleToHole <= 0) dr.minHoleToHole = 10;
-      if (dr.minSilkHeight === undefined || dr.minSilkHeight <= 0) dr.minSilkHeight = 31;
-      if (dr.silkToPadClearance === undefined || dr.silkToPadClearance <= 0) dr.silkToPadClearance = 8;
-    }
-    if (!doc.metadata.gridSize || doc.metadata.gridSize <= 0) {
-      doc.metadata.gridSize = 5;
-    }
-  }
-}
-
-function ensureLayerPresent(doc: PcbDocument, id: PcbLayerId, name: string,
-  color: string, visible: boolean): void {
-  for (const l of doc.layers) {
-    if (l.id === id) return;
-  }
-  doc.layers.push({ id, name, visible, color, opacity: 1 });
-}
-
-/** ç»Ÿä¸€é“œå±‚é«˜å¯¹æ¯”åˆ†è‰²ï¼Œä¿è¯å…¨å±‚å¯è§æ—¶ä¸€çœ¼å¯è¾¨ */
-function applyDistinctCopperColors(doc: PcbDocument): void {
-  for (let i = 0; i < doc.layers.length; i++) {
-    const l = doc.layers[i];
-    let c = '';
-    if (l.id === PcbLayerId.F_CU) c = '#FF1744';
-    else if (l.id === PcbLayerId.B_CU) c = '#00E676';
-    else if (l.id === PcbLayerId.IN1_CU) c = '#D500F9';
-    else if (l.id === PcbLayerId.IN2_CU) c = '#FF9100';
-    else if (l.id === PcbLayerId.IN3_CU) c = '#651FFF';
-    else if (l.id === PcbLayerId.IN4_CU) c = '#00E5FF';
-    else if (l.id === PcbLayerId.IN5_CU) c = '#FFD740';
-    else if (l.id === PcbLayerId.IN6_CU) c = '#69F0AE';
-    if (c.length > 0) {
-      l.color = c;
-      const op = l.opacity !== undefined ? l.opacity : 1;
-      if (op < 0.75) {
-        l.opacity = l.id === PcbLayerId.F_CU || l.id === PcbLayerId.B_CU ? 0.92 : 0.85;
-      }
-    }
-  }
-}
-
-/** å°†é“œå±‚æ•°åˆ‡æ¢ä¸º 2/4/6/8ï¼ŒåŒæ­¥ layers + layerStack */
-export function applyCopperLayerCount(doc: PcbDocument, copperCount: number): void {
-  const n = copperCount === 4 || copperCount === 6 || copperCount === 8 ? copperCount : 2;
-  doc.layerStack = createDefaultLayerStack(n);
-  const visibility: Map<string, boolean> = new Map();
-  for (const l of doc.layers) {
-    visibility.set(l.id, l.visible);
-  }
-  doc.layers = createDefaultPcbLayers(n);
-  for (const l of doc.layers) {
-    const prev = visibility.get(l.id);
-    if (prev !== undefined) {
-      l.visible = prev;
-    }
-  }
-  // é€šå­”é»˜è®¤è´¯ç©¿å…¨éƒ¨é“œå±‚ï¼ˆå«å†…ç”µå±‚ï¼‰
-  const copper = copperLayersFromStack(doc.layerStack);
-  for (let i = 0; i < doc.vias.length; i++) {
-    const via = doc.vias[i];
-    if (via.kind === undefined || via.kind === PcbViaKind.THROUGH) {
-      via.layers = copper.slice();
-    }
-  }
-}
-
-/** PCB ç½‘ç»œå¼•ç”¨ï¼ˆèµ°çº¿/ç„Šç›˜ç»‘å®šï¼‰ */
-export interface PcbNetRef {
-  netId: string;
-  netName: string;
-}
-
-/** ç„Šç›˜ç½‘ç»œä¿ç•™ï¼ˆå°è£…åˆ·æ–°æ—¶ï¼‰ */
-export interface PcbPadNetPreserved {
-  netId?: string;
-  netName?: string;
-}
-
-/** ç„Šç›˜å‘½ä¸­æµ‹è¯•ç»“æœ */
-export interface PcbPadHit {
-  pad: PcbPad;
-  wx: number;
-  wy: number;
-}
-
-/** PCB ç¼–è¾‘å™¨é€‰æ‹©äº‹ä»¶è½½è· */
-export class PcbEditorSelectionData {
-  footprintIds: string[] = [];
-  trackIds: string[] = [];
-  viaIds: string[] = [];
-  zoneIds: string[] = [];
-}
-
-/** ç»Ÿä¸€é€‰æ‹©çŠ¶æ€ */
-export enum PcbSelectionKind {
-  NONE = 'none',
-  FOOTPRINT = 'footprint',
-  TRACK = 'track',
-  VIA = 'via',
-  ZONE = 'zone',
-  MULTI = 'multi'
-}
-
-export interface PcbSelectionState {
-  kind: PcbSelectionKind;
-  footprintIds: string[];
-  trackIds: string[];
-  viaIds: string[];
-  zoneIds: string[];
-}
-
-export function pcbSelectionEmpty(): PcbSelectionState {
-  return { kind: PcbSelectionKind.NONE, footprintIds: [], trackIds: [], viaIds: [], zoneIds: [] };
-}
-
-export function pcbSelectionFromData(d: PcbEditorSelectionData): PcbSelectionState {
-  let kind = PcbSelectionKind.NONE;
-  if (d.footprintIds.length > 0) kind = PcbSelectionKind.FOOTPRINT;
-  else if (d.trackIds.length > 0) kind = PcbSelectionKind.TRACK;
-  else if (d.viaIds.length > 0) kind = PcbSelectionKind.VIA;
-  else if (d.zoneIds.length > 0) kind = PcbSelectionKind.ZONE;
-  const total = d.footprintIds.length + d.trackIds.length + d.viaIds.length + d.zoneIds.length;
-  if (total > 1) kind = PcbSelectionKind.MULTI;
-  return {
-    kind,
-    footprintIds: [...d.footprintIds],
-    trackIds: [...d.trackIds],
-    viaIds: [...d.viaIds],
-    zoneIds: [...d.zoneIds]
-  };
-}
-
-/** æ¡†é€‰çŸ©å½¢ï¼ˆä¸–ç•Œåæ ‡ï¼‰ */
-export interface PcbSelectionRect {
-  x1: number;
-  y1: number;
-  x2: number;
-  y2: number;
-}
-
-/** æ’¤é”€/é‡åšå†å²å¿«ç…§ */
-export interface PcbHistorySnapshot {
-  documentJson: string;
-  selection: PcbSelectionState;
-}
-ÔrD•§version¨mappings¥names§sources®sourcesContentÜF‘”   ‘”   ‘”   ‘”  ‘”  ‘”  	‘”  
-‘”  ‘”  ‘”  ‘”  ‘”  ‘”  ‘”  ‘”  ‘”  ‘”  ‘”  ‘”  ‘”  ‘”  ‘”   ‘”   ‘”   ‘”  ‘”  ‘”  ‘”  ‘”    ‘”  " ‘”  " ‘”  #‘”  $‘”  %‘”  & ‘”  ( ‘”  ( ‘”  )‘”  *‘”  +‘”  , ‘”  . ‘”  / ‘”  / ‘”  0‘”  1‘”  2‘”  3‘”  4‘”  5 ‘”  7 ‘”  7 ‘”  8‘”  9‘”  :‘”  ; ‘”  = ‘”  > ‘”  > ‘”  ?‘”  Ì@‘”  ÌA‘”  ÌB ‘”  ÌD ‘”  ÌD ‘”  ÌE‘”  ÌF‘”  ÌG‘”  ÌH ‘”  Í ‘”  Í ‘”  Í ‘”  Í!‘”  Í" ‘”  Í$ ‘”  Í$ ‘”  Í%‘”  Í&‘”  Í'‘”  Í(‘”  Í)‘”  Í*‘”  Í+‘”  Í,‘”  Í-‘”  Í.‘”  Í/‘”  Í0‘”  Í1‘”  Í2 ‘”  ÍF ‘”  ÍH‘”  ÍI‘”  ÍJ‘”  ÍK‘”  ÍL‘”  ÍM‘”  ÍN‘”  ÍO‘”  ÍQ ‘”  ÍS ‘”  ÍU‘”  ÍV‘”  ÍW‘”  ÍX‘”  ÍY‘”  ÍZ‘”  Í[‘”  Í\‘”  Í]‘”  Í^‘”  Í_‘”  Í`‘”  Íb ‘”  Íd ‘”  Íg‘”  Íh‘”  Íi‘”  Íj‘”  Ík‘”  Íl‘”  Ím‘”  Ín‘”  Ío‘”  Íq‘”  Ír‘”  Ís‘”  Íu‘”  Ív‘”  Íx ‘”  Íz ‘”  Í{ ‘”  Í|‘”  Í}‘”  Í~‘”  Í‘”  Í‘”  Íƒ‘”  Í„‘”  Í…‘”  Í†‘”  Í‡‘”  Íˆ‘”  Í‰‘”  ÍŠ‘”  Í‹‘”  ÍŒ‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í’ ‘”  Í” ‘”  Í˜‘”  Í™‘”  Í‘”  Í¡‘”  Í¢‘”  Í¦‘”  Í©‘”  Íª‘”  Í®‘”  Í±‘”  Í²‘”  Í³‘”  Í³	‘”  Í¶‘”  Í·‘”  Í¸‘”  Í¼‘”  Í½‘”  ÍÁ‘”  ÍÄ‘”  ÍÅ‘”  ÍÉ‘”  ÍÊ‘”  ÍÎ‘”  ÍÏ‘”  ÍÓ‘”  ÍÖ‘”  Í×‘”  ÍÛ‘”  ÍÜ‘”  Íß‘”  Íã‘”  Íå‘”  Íæ‘”  Íç‘”  Íè ‘”  Íê ‘”  Íë‘”  Íñ‘”  Íõ‘”  Íù‘”  Í‘”  Í ‘”  Í ‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í ‘”  Í!‘”  Í"‘”  Í#‘”  Í%‘”  Í' ‘”  Í) ‘”  Í+‘”  Í-‘”  Í.‘”  Í/‘”  Í1 ‘”  Í3 ‘”  Í4 ‘”  Í9 ‘”  Í; ‘”  Í=‘”  Í?‘”  Í@‘”  ÍA‘”  ÍB‘”  ÍC ‘”  ÍE ‘”  ÍF ‘”  ÍG‘”  ÍH‘”  ÍI‘”  ÍJ‘”  ÍK‘”  ÍL‘”  ÍM‘”  ÍN‘”  ÍO‘”  ÍP‘”  ÍQ‘”  ÍR‘”  ÍS‘”  ÍT‘”  ÍU‘”  ÍV‘”  ÍW‘”  ÍX‘”  ÍY‘”  ÍZ‘”  Í[‘”  Í]‘”  Í^‘”  Í_‘”  Í`‘”  Ía‘”  Íb‘”  Íc‘”  Íd‘”  Íe‘”  Íf‘”  Íg‘”  Íh‘”  Íi‘”  Ík‘”  Íl‘”  Ín‘”  Ío‘”  Íq‘”  Ír‘”  Ís‘”  Ís'‘”  Ít9‘”  Íu=‘”  Ív‘”  Ív"‘”  Íw‘”  Íx‘”  Íy‘”  Íz‘”  Í{‘”  Í|‘”  Í~	‘”  Í~‘”  Í
-‘”  Í€	‘”  Í‘”  Íƒ‘”  Í„‘”  Í†‘”  Í‡‘”  Íˆ‘”  Í‰‘”  ÍŠ‘”  Í‹;‘”  ÍŒ7‘”  Í‘”  Í‘”  Í‘”  Í	‘”  Í‘‘”  Í’‘”  Í“‘”  Í”‘”  Í•‘”  Í–‘”  Í—‘”  Í˜‘”  Í™‘”  Íš‘”  Í›‘”  Íœ‘”  Í‘”  Í‘”  ÍŸ‘”  Í ‘”  Í¢‘”  Í¥‘”  Í¦‘”  Í§‘”  Í¨‘”  Íª‘”  Í«‘”  Í²‘”  Í²	‘”  Í³‘”  Í´‘”  Íµ‘”  Íµ‘”  Í¶‘”  Í·ÌE‘”  Í¸ÌC‘”  Í¹ÌC‘”  ÍºÌM‘”  Í»‘”  Í¼‘”  Í½‘”  Í¾‘”  Í¿‘”  ÍÀ ‘”  ÍÂ ‘”  ÍÄ‘”  ÍÅ‘”  ÍÆ‘”  ÍÇ‘”  ÍÈ ‘”  ÍÊ ‘”  ÍË ‘”  ÍÌ‘”  ÍÏ‘”  ÍĞ	‘”  ÍÑ	‘”  ÍÒ	‘”  ÍÓ	‘”  ÍÔ	‘”  ÍÕ	‘”  ÍÖ	‘”  Í×‘”  ÍØ‘”  ÍÙ‘”  ÍÜ‘”  Íİ‘”  ÍŞ‘”  Íß ‘”  Íá ‘”  Íâ ‘”  Íä‘”  Íå‘”  Íæ‘”  Íè‘”  Íé‘”  Íê‘”  Íí‘”  Íî‘”  Íï‘”  Íò‘”  Íô‘”  Íõ‘”  Íö‘”  Í÷‘”  Íø ‘”  Í ‘”  Í ‘”  Í ‘”  Í‘”  Í ‘”  Í ‘”  Í ‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í ‘”  Í' ‘”  Í) ‘”  Í+ ‘”  Í,‘”  Í-‘”  Í-!‘”  Í.‘”  Í."‘”  Í/‘”  Í/ ‘”  Í0‘”  Í0!‘”  Í2‘”  Í5‘”  Í6‘”  Í7‘”  Í8‘”  Í: ‘ÙCC:\Projects\ElecDraw_Harmony\common\src\main\ets\types\PcbTypes.ets‘Ú`¶/**
- * PCB å¸ƒå±€æ•°æ®æ¨¡å‹ â€” å¯¹é½ KiCad åˆ†å±‚/å°è£…/èµ°çº¿è¯­ä¹‰
- */
-import { Point2D, Rotation, ViewportState } from './CommonTypes';
-
-/** KiCad é£æ ¼å›¾å±‚ IDï¼ˆå«å†…å±‚é“œ / é’¢ç½‘ï¼‰ */
-export enum PcbLayerId {
-  F_CU = 'F.Cu',
-  IN1_CU = 'In1.Cu',
-  IN2_CU = 'In2.Cu',
-  IN3_CU = 'In3.Cu',
-  IN4_CU = 'In4.Cu',
-  IN5_CU = 'In5.Cu',
-  IN6_CU = 'In6.Cu',
-  B_CU = 'B.Cu',
-  F_SILKS = 'F.SilkS',
-  B_SILKS = 'B.SilkS',
-  F_MASK = 'F.Mask',
-  B_MASK = 'B.Mask',
-  F_PASTE = 'F.Paste',
-  B_PASTE = 'B.Paste',
-  EDGE_CUTS = 'Edge.Cuts',
-  F_FAB = 'F.Fab',
-  B_FAB = 'B.Fab',
-  COURTYARD = 'F.CrtYd'
-}
-
-export enum PcbPadShape {
-  CIRCLE = 'circle',
-  RECT = 'rect',
-  OVAL = 'oval',
-  ROUNDRECT = 'roundrect'
-}
-
-export enum PcbPadType {
-  SMD = 'smd',
-  TH = 'th',
-  NPTH = 'npth'
-}
-
-export enum PcbViaKind {
-  THROUGH = 'through',
-  BLIND = 'blind',
-  BURIED = 'buried'
-}
-
-/** 3D æ˜¾ç¤ºæ¨¡å¼ï¼ˆCanvas è¿‘ä¼¼ï¼šé€è§†åŠé€æ˜ / çˆ†ç‚¸ / å‰–åˆ‡ / é«˜åº¦è‰²é˜¶ï¼‰ */
-export enum Pcb3dDisplayMode {
-  REALISTIC = 'realistic',
-  XRAY = 'xray',
-  EXPLODE = 'explode',
-  CUTAWAY = 'cutaway',
-  HEIGHTMAP = 'heightmap'
-}
-
-export enum PcbAppearanceMode {
-  OVERLAY = 'overlay',
-  ACTIVE_ONLY = 'active_only',
-  DIM_INACTIVE = 'dim_inactive'
-}
-
-/** å¸ƒçº¿æ‹è§’æ¨¡å¼ */
-export enum PcbRouteCornerMode {
-  ORTHO90 = 'ortho90',
-  ORTHO45 = 'ortho45',
-  ARC = 'arc'
-}
-
-export enum PcbStackLayerType {
-  COPPER = 'copper',
-  DIELECTRIC = 'dielectric',
-  SOLDERMASK = 'soldermask'
-}
-
-/** ç„Šç›˜ï¼ˆKiCad pad ç®€åŒ–ï¼‰ */
-export interface PcbPad {
-  id: string;
-  number: string;
-  type: PcbPadType;
-  shape: PcbPadShape;
-  /** ç›¸å¯¹å°è£…åŸç‚¹çš„å±€éƒ¨åæ ‡ (mil) */
-  pos: Point2D;
-  size: Point2D;
-  drill?: number;
-  layers: PcbLayerId[];
-  netId?: string;
-  netName?: string;
-}
-
-/** å°è£…å®šä¹‰ï¼ˆåº“å†…æ¨¡æ¿ï¼‰ */
-export interface PcbFootprintDef {
-  id: string;
-  name: string;
-  description: string;
-  pads: PcbPad[];
-  /** ä¸å°è½®å»“æŠ˜çº¿ (mil, å±€éƒ¨åæ ‡) */
-  silkLines: Point2D[][];
-  courtyard: Point2D[];
-  /** å¯é€‰ 3D é«˜åº¦ (mil)ï¼Œç¼ºçœæŒ‰å°è£…ç±»å‹ä¼°ç®— */
-  heightMil?: number;
-  /** ç»‘å®šçš„ STEP æ¨¡å‹ idï¼ˆå¯é€‰ï¼‰ */
-  model3dId?: string;
-}
-
-/** æ¿ä¸Šå°è£…å®ä¾‹ */
-export interface PcbFootprintInst {
-  id: string;
-  defId: string;
-  refDes: string;
-  value: string;
-  position: Point2D;
-  rotation: Rotation;
-  mirrored: boolean;
-  layer: PcbLayerId;
-  locked: boolean;
-  /** å®ä¾‹çº§ç„Šç›˜ï¼ˆå«ç½‘ç»œç»‘å®šï¼‰ */
-  pads: PcbPad[];
-  schematicCompId?: string;
-}
-
-/** èµ°çº¿æ®µ (KiCad segment) */
-export interface PcbTrack {
-  id: string;
-  layer: PcbLayerId;
-  start: Point2D;
-  end: Point2D;
-  width: number;
-  netId: string;
-  netName: string;
-}
-
-/** è¿‡å­” */
-export interface PcbVia {
-  id: string;
-  position: Point2D;
-  drill: number;
-  diameter: number;
-  netId: string;
-  netName: string;
-  layers: PcbLayerId[];
-  kind?: PcbViaKind;
-}
-
-/** è¦†é“œåŒºï¼ˆå¤šè¾¹å½¢ + æŒ–ç©º + çƒ­ç„Šç›˜ï¼‰ */
-export interface PcbZone {
-  id: string;
-  layer: PcbLayerId;
-  netId: string;
-  netName: string;
-  outline: Point2D[];
-  priority: number;
-  /** å¼‚ç½‘ç„Šç›˜é—´è· (mil) */
-  clearance: number;
-  /** è‡ªåŠ¨+æ‰‹åŠ¨æŒ–ç©ºå¤šè¾¹å½¢åˆ—è¡¨ */
-  cutouts: Point2D[][];
-  /** ç”¨æˆ·æ‰‹åŠ¨æŒ–ç©ºï¼ˆä¿ç•™ï¼‰ */
-  manualCutouts: Point2D[][];
-  /** åŒç½‘ç„Šç›˜çƒ­ç„Šç›˜ */
-  thermalRelief: boolean;
-  thermalGap: number;
-  thermalWidth: number;
-}
-
-/** æ¿æ¡† */
-export interface PcbBoardOutline {
-  points: Point2D[];
-  width: number;
-}
-
-export interface PcbLayerConfig {
-  id: PcbLayerId;
-  name: string;
-  visible: boolean;
-  color: string;
-  userName?: string;
-  opacity?: number;
-}
-
-export interface PcbNet {
-  id: string;
-  name: string;
-  classId?: string;
-}
-
-export interface PcbNetClass {
-  id: string;
-  name: string;
-  trackWidth: number;
-  clearance: number;
-  viaDiameter: number;
-  viaDrill: number;
-}
-
-/** å·®åˆ†å¯¹ï¼ˆé•¿åº¦/é—´è·çº¦æŸå ä½ï¼‰ */
-export interface PcbDiffPair {
-  id: string;
-  name: string;
-  netIdP: string;
-  netIdN: string;
-  gapMil: number;
-  lengthTolMil: number;
-}
-
-export interface PcbStackLayer {
-  id: string;
-  type: PcbStackLayerType;
-  name: string;
-  /** å…³è”é€»è¾‘é“œå±‚ï¼ˆä»… copperï¼‰ */
-  copperLayerId?: PcbLayerId;
-  thicknessMm: number;
-  dielectricDk?: number;
-  copperOz?: number;
-}
-
-export interface PcbLayerStack {
-  copperCount: number;
-  layers: PcbStackLayer[];
-}
-
-export interface PcbAppearance {
-  mode: PcbAppearanceMode;
-  dimAlpha: number;
-  highlightNetId: string;
-  hideZones: boolean;
-  showRatsnest: boolean;
-  showPadNumbers: boolean;
-  show3d: boolean;
-  /** 3D ç»•ç«–ç›´è½´åèˆªè§’ï¼ˆåº¦ï¼‰ï¼Œå·¦é”®æ‹–æ‹½æ—‹è½¬ */
-  view3dYawDeg: number;
-  /** 3D ä¿¯ä»°è§’ï¼ˆåº¦ï¼‰ï¼Œçº¦ 15â€“85ï¼Œé¿å…ç¿»è½¬ */
-  view3dPitchDeg: number;
-  /** 3D æ­£äº¤æŠ•å½±ï¼ˆå·¥ä¸šé»˜è®¤ï¼‰ï¼›false=é€è§† */
-  view3dOrtho: boolean;
-  /** 3D æ˜¾ç¤ºæ¨¡å¼ */
-  view3dDisplayMode: Pcb3dDisplayMode;
-  /** å‰–åˆ‡æ¯”ä¾‹ 0~1ï¼ˆæ²¿æ¿æ¡† X æ–¹å‘ï¼‰ */
-  view3dCutFraction: number;
-  /** 3D æµ‹é‡æ¨¡å¼ï¼šç‚¹å‡»ä¸¤ç‚¹æµ‹è· */
-  view3dMeasure: boolean;
-  /** æ˜¾ç¤ºå…ƒä»¶å¹²æ¶‰é¢„è­¦ */
-  view3dShowInterference: boolean;
-  /** çœŸ PBR+IBL+MSAAï¼ˆå†™å®æ¨¡å¼ï¼‰ */
-  view3dPbr: boolean;
-  /** MSAA æ ·æœ¬ï¼š1 æˆ– 4 */
-  view3dMsaa: number;
-}
-
-export interface PcbMetadata {
-  author: string;
-  createdAt: string;
-  modifiedAt: string;
-  description: string;
-  gridSize: number;
-  units: 'mil' | 'mm';
-  designRules: PcbDesignRules;
-}
-
-export interface PcbDesignRules {
-  minTrackWidth: number;
-  minClearance: number;
-  minViaDrill: number;
-  defaultTrackWidth: number;
-  minAnnularRing: number;
-  minHoleToHole: number;
-  /** ä¸å°æœ€å°å­—é«˜ (mil)ï¼Œçº¦ 0.8mm â‰ˆ 31mil */
-  minSilkHeight: number;
-  /** ä¸å°è·ç„Šç›˜æœ€å°é—´è· (mil)ï¼Œçº¦ 0.2mm â‰ˆ 8mil */
-  silkToPadClearance: number;
-}
-
-export interface PcbDocument {
-  id: string;
-  name: string;
-  version: string;
-  boardOutline: PcbBoardOutline;
-  footprints: PcbFootprintInst[];
-  tracks: PcbTrack[];
-  vias: PcbVia[];
-  zones: PcbZone[];
-  layers: PcbLayerConfig[];
-  nets: PcbNet[];
-  netClasses: PcbNetClass[];
-  layerStack: PcbLayerStack;
-  diffPairs: PcbDiffPair[];
-  metadata: PcbMetadata;
-}
-
-export enum PcbDrcSeverity {
-  ERROR = 'error',
-  WARNING = 'warning'
-}
-
-export enum PcbDrcRuleType {
-  CLEARANCE = 'clearance',
-  UNROUTED_NET = 'unrouted_net',
-  OFF_BOARD = 'off_board',
-  SHORT = 'short',
-  MIN_WIDTH = 'min_width',
-  VIA_ANNULAR = 'via_annular',
-  PAD_CLEARANCE = 'pad_clearance',
-  DIFF_LENGTH = 'diff_length',
-  DIFF_GAP = 'diff_gap',
-  KEEPOUT = 'keepout',
-  SILK_PAD = 'silk_pad',
-  SILK_HEIGHT = 'silk_height',
-  EDGE_OPEN = 'edge_open'
-}
-
-export interface PcbDrcViolation {
-  id: string;
-  severity: PcbDrcSeverity;
-  ruleType: PcbDrcRuleType;
-  message: string;
-  position?: Point2D;
-  netId?: string;
-  footprintId?: string;
-}
-
-/** é£çº¿ç«¯ç‚¹ */
-export interface PcbRatsnestEdge {
-  netId: string;
-  netName: string;
-  a: Point2D;
-  b: Point2D;
-}
-
-export function defaultPcbDesignRules(): PcbDesignRules {
-  return {
-    minTrackWidth: 6,
-    minClearance: 6,
-    minViaDrill: 12,
-    defaultTrackWidth: 10,
-    minAnnularRing: 4,
-    minHoleToHole: 10,
-    minSilkHeight: 31,
-    silkToPadClearance: 8
-  };
-}
-
-export function defaultPcbNetClasses(): PcbNetClass[] {
-  return [
-    {
-      id: 'nc_default', name: 'Default',
-      trackWidth: 10, clearance: 6, viaDiameter: 24, viaDrill: 12
-    },
-    {
-      id: 'nc_power', name: 'Power',
-      trackWidth: 20, clearance: 10, viaDiameter: 30, viaDrill: 16
-    },
-    {
-      id: 'nc_signal', name: 'Signal',
-      trackWidth: 8, clearance: 6, viaDiameter: 22, viaDrill: 12
-    }
-  ];
-}
-
-export function defaultPcbAppearance(): PcbAppearance {
-  return {
-    mode: PcbAppearanceMode.OVERLAY,
-    dimAlpha: 0.28,
-    highlightNetId: '',
-    hideZones: false,
-    showRatsnest: false,
-    showPadNumbers: true,
-    show3d: false,
-    view3dYawDeg: 38,
-    view3dPitchDeg: 52,
-    view3dOrtho: true,
-    view3dDisplayMode: Pcb3dDisplayMode.REALISTIC,
-    view3dCutFraction: 0.55,
-    view3dMeasure: false,
-    view3dShowInterference: false,
-    // é»˜è®¤ä¼ª 3Dï¼šå…¨é‡è½¯ä»¶ PBR æ˜“åœ¨æ¨¡æ‹Ÿå™¨ä¸»çº¿ç¨‹å¡æ­»ï¼ˆTHREAD_BLOCK_6Sï¼‰
-    view3dPbr: false,
-    view3dMsaa: 1
-  };
-}
-
-/** åˆå¹¶æ®‹ç¼º appearanceï¼Œé¿å…æ—§ä¼šè¯ç¼ºå­—æ®µå´©æºƒ */
-export function normalizePcbAppearance(ap: PcbAppearance | null | undefined): PcbAppearance {
-  const d = defaultPcbAppearance();
-  if (ap === null || ap === undefined) {
-    return d;
-  }
-  return {
-    mode: ap.mode !== undefined ? ap.mode : d.mode,
-    dimAlpha: ap.dimAlpha !== undefined && ap.dimAlpha >= 0 ? ap.dimAlpha : d.dimAlpha,
-    highlightNetId: ap.highlightNetId !== undefined ? ap.highlightNetId : d.highlightNetId,
-    hideZones: ap.hideZones === true,
-    showRatsnest: ap.showRatsnest === true,
-    showPadNumbers: ap.showPadNumbers !== false,
-    show3d: ap.show3d === true,
-    view3dYawDeg: ap.view3dYawDeg !== undefined ? ap.view3dYawDeg : d.view3dYawDeg,
-    view3dPitchDeg: ap.view3dPitchDeg !== undefined ? ap.view3dPitchDeg : d.view3dPitchDeg,
-    view3dOrtho: ap.view3dOrtho !== false,
-    view3dDisplayMode: ap.view3dDisplayMode !== undefined ? ap.view3dDisplayMode : d.view3dDisplayMode,
-    view3dCutFraction: ap.view3dCutFraction !== undefined ? ap.view3dCutFraction : d.view3dCutFraction,
-    view3dMeasure: ap.view3dMeasure === true,
-    view3dShowInterference: ap.view3dShowInterference === true,
-    view3dPbr: ap.view3dPbr === true,
-    view3dMsaa: ap.view3dMsaa >= 4 ? 4 : 1
-  };
-}
-
-export function createDefaultLayerStack(copperCount: number = 2): PcbLayerStack {
-  const n = copperCount === 4 || copperCount === 6 || copperCount === 8 ? copperCount : 2;
-  const layers: PcbStackLayer[] = [];
-  layers.push({
-    id: 'sm_top', type: PcbStackLayerType.SOLDERMASK, name: 'F.Mask', thicknessMm: 0.02
-  });
-  layers.push({
-    id: 'cu_f', type: PcbStackLayerType.COPPER, name: 'F.Cu',
-    copperLayerId: PcbLayerId.F_CU, thicknessMm: 0.035, copperOz: 1
-  });
-  if (n >= 4) {
-    layers.push({
-      id: 'diel_1', type: PcbStackLayerType.DIELECTRIC, name: 'Prepreg',
-      thicknessMm: 0.2, dielectricDk: 4.5
-    });
-    layers.push({
-      id: 'cu_in1', type: PcbStackLayerType.COPPER, name: 'In1.Cu',
-      copperLayerId: PcbLayerId.IN1_CU, thicknessMm: 0.035, copperOz: 1
-    });
-    layers.push({
-      id: 'diel_core', type: PcbStackLayerType.DIELECTRIC, name: 'Core',
-      thicknessMm: 0.8, dielectricDk: 4.3
-    });
-    layers.push({
-      id: 'cu_in2', type: PcbStackLayerType.COPPER, name: 'In2.Cu',
-      copperLayerId: PcbLayerId.IN2_CU, thicknessMm: 0.035, copperOz: 1
-    });
-    layers.push({
-      id: 'diel_2', type: PcbStackLayerType.DIELECTRIC, name: 'Prepreg',
-      thicknessMm: 0.2, dielectricDk: 4.5
-    });
-  } else {
-    layers.push({
-      id: 'diel_core', type: PcbStackLayerType.DIELECTRIC, name: 'Core',
-      thicknessMm: 1.5, dielectricDk: 4.3
-    });
-  }
-  if (n >= 6) {
-    layers.push({
-      id: 'diel_3', type: PcbStackLayerType.DIELECTRIC, name: 'Prepreg2',
-      thicknessMm: 0.2, dielectricDk: 4.5
-    });
-    layers.push({
-      id: 'cu_in3', type: PcbStackLayerType.COPPER, name: 'In3.Cu',
-      copperLayerId: PcbLayerId.IN3_CU, thicknessMm: 0.035, copperOz: 1
-    });
-    layers.push({
-      id: 'diel_3b', type: PcbStackLayerType.DIELECTRIC, name: 'Prepreg2b',
-      thicknessMm: 0.2, dielectricDk: 4.5
-    });
-    layers.push({
-      id: 'cu_in4', type: PcbStackLayerType.COPPER, name: 'In4.Cu',
-      copperLayerId: PcbLayerId.IN4_CU, thicknessMm: 0.035, copperOz: 1
-    });
-  }
-  if (n >= 8) {
-    layers.push({
-      id: 'diel_4', type: PcbStackLayerType.DIELECTRIC, name: 'Prepreg3',
-      thicknessMm: 0.2, dielectricDk: 4.5
-    });
-    layers.push({
-      id: 'cu_in5', type: PcbStackLayerType.COPPER, name: 'In5.Cu',
-      copperLayerId: PcbLayerId.IN5_CU, thicknessMm: 0.035, copperOz: 1
-    });
-    layers.push({
-      id: 'diel_4b', type: PcbStackLayerType.DIELECTRIC, name: 'Prepreg3b',
-      thicknessMm: 0.2, dielectricDk: 4.5
-    });
-    layers.push({
-      id: 'cu_in6', type: PcbStackLayerType.COPPER, name: 'In6.Cu',
-      copperLayerId: PcbLayerId.IN6_CU, thicknessMm: 0.035, copperOz: 1
-    });
-  }
-  if (n >= 6) {
-    // ensure B.Cu after last inner for 6/8 â€” already handled below
-  }
-  layers.push({
-    id: 'cu_b', type: PcbStackLayerType.COPPER, name: 'B.Cu',
-    copperLayerId: PcbLayerId.B_CU, thicknessMm: 0.035, copperOz: 1
-  });
-  layers.push({
-    id: 'sm_bot', type: PcbStackLayerType.SOLDERMASK, name: 'B.Mask', thicknessMm: 0.02
-  });
-  return { copperCount: n, layers };
-}
-
-export function createDefaultPcbLayers(copperCount: number = 2): PcbLayerConfig[] {
-  const layers: PcbLayerConfig[] = [
-    { id: PcbLayerId.F_CU, name: 'Front Copper', visible: true, color: '#FF1744', opacity: 0.95 }
-  ];
-  if (copperCount >= 4) {
-    layers.push({ id: PcbLayerId.IN1_CU, name: 'Inner1 Copper', visible: true, color: '#D500F9', opacity: 0.88 });
-    layers.push({ id: PcbLayerId.IN2_CU, name: 'Inner2 Copper', visible: true, color: '#FF9100', opacity: 0.88 });
-  }
-  if (copperCount >= 6) {
-    layers.push({ id: PcbLayerId.IN3_CU, name: 'Inner3 Copper', visible: true, color: '#651FFF', opacity: 0.85 });
-    layers.push({ id: PcbLayerId.IN4_CU, name: 'Inner4 Copper', visible: true, color: '#00E5FF', opacity: 0.85 });
-  }
-  if (copperCount >= 8) {
-    layers.push({ id: PcbLayerId.IN5_CU, name: 'Inner5 Copper', visible: true, color: '#FFD740', opacity: 0.85 });
-    layers.push({ id: PcbLayerId.IN6_CU, name: 'Inner6 Copper', visible: true, color: '#69F0AE', opacity: 0.85 });
-  }
-  layers.push({ id: PcbLayerId.B_CU, name: 'Back Copper', visible: true, color: '#00E676', opacity: 0.92 });
-  layers.push({ id: PcbLayerId.F_SILKS, name: 'Front Silk', visible: true, color: '#5CE1E6', opacity: 1 });
-  layers.push({ id: PcbLayerId.B_SILKS, name: 'Back Silk', visible: false, color: '#80A0B0', opacity: 1 });
-  layers.push({ id: PcbLayerId.F_MASK, name: 'Front Mask', visible: false, color: '#1B5E20', opacity: 0.35 });
-  layers.push({ id: PcbLayerId.B_MASK, name: 'Back Mask', visible: false, color: '#1B5E20', opacity: 0.35 });
-  layers.push({ id: PcbLayerId.F_PASTE, name: 'Front Paste', visible: false, color: '#C0C0C0', opacity: 0.5 });
-  layers.push({ id: PcbLayerId.B_PASTE, name: 'Back Paste', visible: false, color: '#A0A0A0', opacity: 0.5 });
-  layers.push({ id: PcbLayerId.EDGE_CUTS, name: 'Edge Cuts', visible: true, color: '#E8A020', opacity: 1 });
-  layers.push({ id: PcbLayerId.COURTYARD, name: 'Courtyard', visible: false, color: '#808080', opacity: 1 });
-  return layers;
-}
-
-export function createEmptyPcbDocument(name: string): PcbDocument {
-  const now = new Date().toISOString();
-  const w = 3000;
-  const h = 2000;
-  return {
-    id: `pcb_${Date.now()}`,
-    name,
-    version: '1.1',
-    boardOutline: {
-      points: [
-        { x: 0, y: 0 }, { x: w, y: 0 }, { x: w, y: h }, { x: 0, y: h }
-      ],
-      width: 5
-    },
-    footprints: [],
-    tracks: [],
-    vias: [],
-    zones: [],
-    layers: createDefaultPcbLayers(2),
-    nets: [],
-    netClasses: defaultPcbNetClasses(),
-    layerStack: createDefaultLayerStack(2),
-    diffPairs: [],
-    metadata: {
-      author: '',
-      createdAt: now,
-      modifiedAt: now,
-      description: '',
-      gridSize: 5,
-      units: 'mil',
-      designRules: defaultPcbDesignRules()
-    }
-  };
-}
-
-export function createDefaultPcbViewport(): ViewportState {
-  return {
-    zoom: 0.15,
-    panOffset: { x: 40, y: 40 },
-    gridVisible: true,
-    gridSize: 5,
-    snapToGrid: true
-  };
-}
-
-/** é“œå±‚åˆ¤å®šï¼ˆå«å†…å±‚ï¼‰ */
-export function isCopperLayer(layer: PcbLayerId): boolean {
-  return layer === PcbLayerId.F_CU || layer === PcbLayerId.B_CU ||
-    layer === PcbLayerId.IN1_CU || layer === PcbLayerId.IN2_CU ||
-    layer === PcbLayerId.IN3_CU || layer === PcbLayerId.IN4_CU ||
-    layer === PcbLayerId.IN5_CU || layer === PcbLayerId.IN6_CU;
-}
-
-export function copperLayersFromStack(stack: PcbLayerStack): PcbLayerId[] {
-  const out: PcbLayerId[] = [];
-  for (const sl of stack.layers) {
-    if (sl.type === PcbStackLayerType.COPPER && sl.copperLayerId) {
-      out.push(sl.copperLayerId);
-    }
-  }
-  return out;
-}
-
-/** åŠ è½½æ—§å·¥ç¨‹æˆ–æ®‹ç¼º JSON æ—¶è¡¥é½ PCB å­—æ®µ */
-export function normalizePcbDocument(doc: PcbDocument): void {
-  if (!doc.footprints) {
-    doc.footprints = [];
-  }
-  if (!doc.tracks) {
-    doc.tracks = [];
-  }
-  if (!doc.vias) {
-    doc.vias = [];
-  }
-  if (!doc.zones) {
-    doc.zones = [];
-  }
-  if (!doc.nets) {
-    doc.nets = [];
-  }
-  if (!doc.netClasses || doc.netClasses.length === 0) {
-    doc.netClasses = defaultPcbNetClasses();
-  }
-  if (!doc.diffPairs) {
-    doc.diffPairs = [];
-  }
-  if (!doc.layerStack || !doc.layerStack.layers || doc.layerStack.layers.length === 0) {
-    doc.layerStack = createDefaultLayerStack(2);
-  }
-  for (const via of doc.vias) {
-    if (!via.kind) {
-      via.kind = PcbViaKind.THROUGH;
-    }
-    if (!via.layers || via.layers.length === 0) {
-      via.layers = [PcbLayerId.F_CU, PcbLayerId.B_CU];
-    }
-  }
-  for (const z of doc.zones) {
-    if (!z.cutouts) z.cutouts = [];
-    if (!z.manualCutouts) z.manualCutouts = [];
-    if (z.netName === undefined || z.netName === null) {
-      z.netName = '';
-    }
-    if (z.netId === undefined || z.netId === null) {
-      z.netId = '';
-    }
-    if (z.clearance === undefined || z.clearance <= 0) {
-      z.clearance = doc.metadata?.designRules?.minClearance ?? 6;
-    }
-    if (z.thermalRelief === undefined) z.thermalRelief = true;
-    if (z.thermalGap === undefined || z.thermalGap <= 0) z.thermalGap = 12;
-    if (z.thermalWidth === undefined || z.thermalWidth <= 0) z.thermalWidth = 10;
-    if (z.priority === undefined) z.priority = 0;
-  }
-  for (const fp of doc.footprints) {
-    if (!fp.pads) fp.pads = [];
-    for (const pad of fp.pads) {
-      if (!pad.layers || pad.layers.length === 0) {
-        if (pad.type === PcbPadType.SMD) {
-          pad.layers = [fp.layer === PcbLayerId.B_CU ? PcbLayerId.B_CU : PcbLayerId.F_CU];
-        } else {
-          pad.layers = [PcbLayerId.F_CU, PcbLayerId.B_CU];
-        }
-      }
-      if (pad.netName === undefined || pad.netName === null) {
-        pad.netName = '';
-      }
-      if (pad.netId === undefined || pad.netId === null) {
-        pad.netId = '';
-      }
-    }
-  }
-  for (const trk of doc.tracks) {
-    if (trk.netName === undefined || trk.netName === null) trk.netName = '';
-    if (trk.netId === undefined || trk.netId === null) trk.netId = '';
-  }
-  if (!doc.layers || doc.layers.length === 0) {
-    doc.layers = createDefaultPcbLayers(doc.layerStack.copperCount);
-  } else {
-    ensureLayerPresent(doc, PcbLayerId.F_MASK, 'Front Mask', '#2E8B57', false);
-    ensureLayerPresent(doc, PcbLayerId.B_MASK, 'Back Mask', '#2E8B57', false);
-    ensureLayerPresent(doc, PcbLayerId.F_PASTE, 'Front Paste', '#C0C0C0', false);
-    ensureLayerPresent(doc, PcbLayerId.B_PASTE, 'Back Paste', '#A0A0A0', false);
-    if (doc.layerStack.copperCount >= 4) {
-      ensureLayerPresent(doc, PcbLayerId.IN1_CU, 'Inner1 Copper', '#D500F9', true);
-      ensureLayerPresent(doc, PcbLayerId.IN2_CU, 'Inner2 Copper', '#FF9100', true);
-    }
-    if (doc.layerStack.copperCount >= 6) {
-      ensureLayerPresent(doc, PcbLayerId.IN3_CU, 'Inner3 Copper', '#651FFF', true);
-      ensureLayerPresent(doc, PcbLayerId.IN4_CU, 'Inner4 Copper', '#00E5FF', true);
-    }
-    if (doc.layerStack.copperCount >= 8) {
-      ensureLayerPresent(doc, PcbLayerId.IN5_CU, 'Inner5 Copper', '#FFD740', true);
-      ensureLayerPresent(doc, PcbLayerId.IN6_CU, 'Inner6 Copper', '#69F0AE', true);
-    }
-    applyDistinctCopperColors(doc);
-  }
-  if (!doc.boardOutline || !doc.boardOutline.points || doc.boardOutline.points.length < 3) {
-    doc.boardOutline = {
-      points: [
-        { x: 0, y: 0 }, { x: 3000, y: 0 }, { x: 3000, y: 2000 }, { x: 0, y: 2000 }
-      ],
-      width: 5
-    };
-  }
-  if (!doc.metadata) {
-    const now = new Date().toISOString();
-    doc.metadata = {
-      author: '', createdAt: now, modifiedAt: now,
-      description: '', gridSize: 5, units: 'mil',
-      designRules: defaultPcbDesignRules()
-    };
-  } else {
-    if (!doc.metadata.designRules) {
-      doc.metadata.designRules = defaultPcbDesignRules();
-    } else {
-      const dr = doc.metadata.designRules;
-      if (dr.minAnnularRing === undefined || dr.minAnnularRing <= 0) dr.minAnnularRing = 4;
-      if (dr.minHoleToHole === undefined || dr.minHoleToHole <= 0) dr.minHoleToHole = 10;
-      if (dr.minSilkHeight === undefined || dr.minSilkHeight <= 0) dr.minSilkHeight = 31;
-      if (dr.silkToPadClearance === undefined || dr.silkToPadClearance <= 0) dr.silkToPadClearance = 8;
-    }
-    if (!doc.metadata.gridSize || doc.metadata.gridSize <= 0) {
-      doc.metadata.gridSize = 5;
-    }
-  }
-}
-
-function ensureLayerPresent(doc: PcbDocument, id: PcbLayerId, name: string,
-  color: string, visible: boolean): void {
-  for (const l of doc.layers) {
-    if (l.id === id) return;
-  }
-  doc.layers.push({ id, name, visible, color, opacity: 1 });
-}
-
-/** ç»Ÿä¸€é“œå±‚é«˜å¯¹æ¯”åˆ†è‰²ï¼Œä¿è¯å…¨å±‚å¯è§æ—¶ä¸€çœ¼å¯è¾¨ */
-function applyDistinctCopperColors(doc: PcbDocument): void {
-  for (let i = 0; i < doc.layers.length; i++) {
-    const l = doc.layers[i];
-    let c = '';
-    if (l.id === PcbLayerId.F_CU) c = '#FF1744';
-    else if (l.id === PcbLayerId.B_CU) c = '#00E676';
-    else if (l.id === PcbLayerId.IN1_CU) c = '#D500F9';
-    else if (l.id === PcbLayerId.IN2_CU) c = '#FF9100';
-    else if (l.id === PcbLayerId.IN3_CU) c = '#651FFF';
-    else if (l.id === PcbLayerId.IN4_CU) c = '#00E5FF';
-    else if (l.id === PcbLayerId.IN5_CU) c = '#FFD740';
-    else if (l.id === PcbLayerId.IN6_CU) c = '#69F0AE';
-    if (c.length > 0) {
-      l.color = c;
-      const op = l.opacity !== undefined ? l.opacity : 1;
-      if (op < 0.75) {
-        l.opacity = l.id === PcbLayerId.F_CU || l.id === PcbLayerId.B_CU ? 0.92 : 0.85;
-      }
-    }
-  }
-}
-
-/** å°†é“œå±‚æ•°åˆ‡æ¢ä¸º 2/4/6/8ï¼ŒåŒæ­¥ layers + layerStack */
-export function applyCopperLayerCount(doc: PcbDocument, copperCount: number): void {
-  const n = copperCount === 4 || copperCount === 6 || copperCount === 8 ? copperCount : 2;
-  doc.layerStack = createDefaultLayerStack(n);
-  const visibility: Map<string, boolean> = new Map();
-  for (const l of doc.layers) {
-    visibility.set(l.id, l.visible);
-  }
-  doc.layers = createDefaultPcbLayers(n);
-  for (const l of doc.layers) {
-    const prev = visibility.get(l.id);
-    if (prev !== undefined) {
-      l.visible = prev;
-    }
-  }
-  // é€šå­”é»˜è®¤è´¯ç©¿å…¨éƒ¨é“œå±‚ï¼ˆå«å†…ç”µå±‚ï¼‰
-  const copper = copperLayersFromStack(doc.layerStack);
-  for (let i = 0; i < doc.vias.length; i++) {
-    const via = doc.vias[i];
-    if (via.kind === undefined || via.kind === PcbViaKind.THROUGH) {
-      via.layers = copper.slice();
-    }
-  }
-}
-
-/** PCB ç½‘ç»œå¼•ç”¨ï¼ˆèµ°çº¿/ç„Šç›˜ç»‘å®šï¼‰ */
-export interface PcbNetRef {
-  netId: string;
-  netName: string;
-}
-
-/** ç„Šç›˜ç½‘ç»œä¿ç•™ï¼ˆå°è£…åˆ·æ–°æ—¶ï¼‰ */
-export interface PcbPadNetPreserved {
-  netId?: string;
-  netName?: string;
-}
-
-/** ç„Šç›˜å‘½ä¸­æµ‹è¯•ç»“æœ */
-export interface PcbPadHit {
-  pad: PcbPad;
-  wx: number;
-  wy: number;
-}
-
-/** PCB ç¼–è¾‘å™¨é€‰æ‹©äº‹ä»¶è½½è· */
-export class PcbEditorSelectionData {
-  footprintIds: string[] = [];
-  trackIds: string[] = [];
-  viaIds: string[] = [];
-  zoneIds: string[] = [];
-}
-
-/** ç»Ÿä¸€é€‰æ‹©çŠ¶æ€ */
-export enum PcbSelectionKind {
-  NONE = 'none',
-  FOOTPRINT = 'footprint',
-  TRACK = 'track',
-  VIA = 'via',
-  ZONE = 'zone',
-  MULTI = 'multi'
-}
-
-export interface PcbSelectionState {
-  kind: PcbSelectionKind;
-  footprintIds: string[];
-  trackIds: string[];
-  viaIds: string[];
-  zoneIds: string[];
-}
-
-export function pcbSelectionEmpty(): PcbSelectionState {
-  return { kind: PcbSelectionKind.NONE, footprintIds: [], trackIds: [], viaIds: [], zoneIds: [] };
-}
-
-export function pcbSelectionFromData(d: PcbEditorSelectionData): PcbSelectionState {
-  let kind = PcbSelectionKind.NONE;
-  if (d.footprintIds.length > 0) kind = PcbSelectionKind.FOOTPRINT;
-  else if (d.trackIds.length > 0) kind = PcbSelectionKind.TRACK;
-  else if (d.viaIds.length > 0) kind = PcbSelectionKind.VIA;
-  else if (d.zoneIds.length > 0) kind = PcbSelectionKind.ZONE;
-  const total = d.footprintIds.length + d.trackIds.length + d.viaIds.length + d.zoneIds.length;
-  if (total > 1) kind = PcbSelectionKind.MULTI;
-  return {
-    kind,
-    footprintIds: [...d.footprintIds],
-    trackIds: [...d.trackIds],
-    viaIds: [...d.viaIds],
-    zoneIds: [...d.zoneIds]
-  };
-}
-
-/** æ¡†é€‰çŸ©å½¢ï¼ˆä¸–ç•Œåæ ‡ï¼‰ */
-export interface PcbSelectionRect {
-  x1: number;
-  y1: number;
-  x2: number;
-  y2: number;
-}
-
-/** æ’¤é”€/é‡åšå†å²å¿«ç…§ */
-export interface PcbHistorySnapshot {
-  documentJson: string;
-  selection: PcbSelectionState;
-}
-A‘ÔrE’§missing¦pluginÃ¦genAbcÂÔ  ÔrF”²dynamicImportCache¹exportAllDeclarationCache»exportNamedDeclarationCache«importCacheÜ ÔrG–¤type¥start£end«declarationªspecifiers¦source¶ExportNamedDeclaration!7ÔrH•¤type¥start£end¬declarations¤kind³VariableDeclaration(7‘ÔrI•¤type¥start£end¢id¤init²VariableDeclarator,6ÔrJ”¤type¥start£end¤nameªIdentifier,6ªPcbLayerIdÀ£varÀG¶ExportNamedDeclarationÍ+ÍBH³VariableDeclarationÍ2ÍB‘I²VariableDeclaratorÍ6ÍAJªIdentifierÍ6ÍA«PcbPadShapeÀ£varÀG¶ExportNamedDeclarationÍ!Í7H³VariableDeclarationÍ(Í7‘I²VariableDeclaratorÍ,Í6JªIdentifierÍ,Í6ªPcbPadTypeÀ£varÀG¶ExportNamedDeclarationÍÙÍïH³VariableDeclarationÍàÍï‘I²VariableDeclaratorÍäÍîJªIdentifierÍäÍîªPcbViaKindÀ£varÀG¶ExportNamedDeclarationÍÕÍñH³VariableDeclarationÍÜÍñ‘I²VariableDeclaratorÍàÍğJªIdentifierÍàÍğ°Pcb3dDisplayModeÀ£varÀG¶ExportNamedDeclarationÍ-ÍJH³VariableDeclarationÍ4ÍJ‘I²VariableDeclaratorÍ8ÍIJªIdentifierÍ8ÍI±PcbAppearanceModeÀ£varÀG¶ExportNamedDeclarationÍOÍmH³VariableDeclarationÍVÍm‘I²VariableDeclaratorÍZÍlJªIdentifierÍZÍl²PcbRouteCornerModeÀ£varÀG¶ExportNamedDeclarationÍ	OÍ	lH³VariableDeclarationÍ	VÍ	l‘I²VariableDeclaratorÍ	ZÍ	kJªIdentifierÍ	ZÍ	k±PcbStackLayerTypeÀ£varÀG¶ExportNamedDeclarationÍ
-ZÍ
-tH³VariableDeclarationÍ
-aÍ
-t‘I²VariableDeclaratorÍ
-eÍ
-sJªIdentifierÍ
-eÍ
-s®PcbDrcSeverityÀ£varÀG¶ExportNamedDeclarationÍÍ0H³VariableDeclarationÍÍ0‘I²VariableDeclaratorÍ!Í/JªIdentifierÍ!Í/®PcbDrcRuleTypeÀ£varÀG¶ExportNamedDeclarationÍøÍÔrK™¤type¥start£end¢idªexpression©generator¥async¦params¤body³FunctionDeclarationÍÿÍJªIdentifierÍÍµdefaultPcbDesignRulesÂÂÂÔrL”¤type¥start£end¤body®BlockStatementÍ Í‘ÔrM”¤type¥start£end¨argument¯ReturnStatementÍ'ÍÔrN”¤type¥start£endªproperties°ObjectExpressionÍ.Í˜ÔrO™¤type¥start£end¦method©shorthand¨computed£key¥value¤kind¨PropertyÍ9ÍIÂÂÂJªIdentifierÍ9ÍF­minTrackWidthÔrP•¤type¥start£end¥value£raw§LiteralÍHÍI¡6¤initO¨PropertyÍTÍcÂÂÂJªIdentifierÍTÍ`¬minClearanceP§LiteralÍbÍc¡6¤initO¨PropertyÍnÍ}ÂÂÂJªIdentifierÍnÍy«minViaDrillP§LiteralÍ{Í}¢12¤initO¨PropertyÍˆÍÂÂÂJªIdentifierÍˆÍ™±defaultTrackWidthP§LiteralÍ›Í
-¢10¤initO¨PropertyÍ¨Í¹ÂÂÂJªIdentifierÍ¨Í¶®minAnnularRingP§LiteralÍ¸Í¹¡4¤initO¨PropertyÍÄÍÕÂÂÂJªIdentifierÍÄÍÑ­minHoleToHoleP§LiteralÍÓÍÕ
-¢10¤initO¨PropertyÍàÍñÂÂÂJªIdentifierÍàÍí­minSilkHeightP§LiteralÍïÍñ¢31¤initO¨PropertyÍüÍÂÂÂJªIdentifierÍüÍ²silkToPadClearanceP§LiteralÍÍ¡8¤initÀG¶ExportNamedDeclarationÍÍK³FunctionDeclarationÍ%ÍJªIdentifierÍ.ÍB´defaultPcbNetClassesÂÂÂL®BlockStatementÍEÍ‘M¯ReturnStatementÍLÍÔrQ”¤type¥start£end¨elements¯ArrayExpressionÍSÍ“N°ObjectExpressionÍ^Íã–O¨PropertyÍmÍ}ÂÂÂJªIdentifierÍmÍo¢idP§LiteralÍqÍ}ªnc_default¬'nc_default'¤initO¨PropertyÍÍÂÂÂJªIdentifierÍÍƒ¤nameP§LiteralÍ…Í§Default©'Default'¤initO¨PropertyÍÍ«ÂÂÂJªIdentifierÍÍ§ªtrackWidthP§LiteralÍ©Í«
-¢10¤initO¨PropertyÍ­Í¹ÂÂÂJªIdentifierÍ­Í¶©clearanceP§LiteralÍ¸Í¹¡6¤initO¨PropertyÍ»ÍÊÂÂÂJªIdentifierÍ»ÍÆ«viaDiameterP§LiteralÍÈÍÊ¢24¤initO¨PropertyÍÌÍØÂÂÂJªIdentifierÍÌÍÔ¨viaDrillP§LiteralÍÖÍØ¢12¤initN°ObjectExpressionÍîÍp–O¨PropertyÍıÍÂÂÂJªIdentifierÍıÍÿ¢idP§LiteralÍÍ¨nc_powerª'nc_power'¤initO¨PropertyÍÍÂÂÂJªIdentifierÍÍ¤nameP§LiteralÍÍ¥Power§'Power'¤initO¨PropertyÍ)Í7ÂÂÂJªIdentifierÍ)Í3ªtrackWidthP§LiteralÍ5Í7¢20¤initO¨PropertyÍ9ÍFÂÂÂJªIdentifierÍ9ÍB©clearanceP§LiteralÍDÍF
-¢10¤initO¨PropertyÍHÍWÂÂÂJªIdentifierÍHÍS«viaDiameterP§LiteralÍUÍW¢30¤initO¨PropertyÍYÍeÂÂÂJªIdentifierÍYÍa¨viaDrillP§LiteralÍcÍe¢16¤initN°ObjectExpressionÍ{Íı–O¨PropertyÍŠÍ™ÂÂÂJªIdentifierÍŠÍŒ¢idP§LiteralÍÍ™©nc_signal«'nc_signal'¤initO¨PropertyÍ›Í©ÂÂÂJªIdentifierÍ›ÍŸ¤nameP§LiteralÍ¡Í©¦Signal¨'Signal'¤initO¨PropertyÍ¸ÍÅÂÂÂJªIdentifierÍ¸ÍÂªtrackWidthP§LiteralÍÄÍÅ¡8¤initO¨PropertyÍÇÍÓÂÂÂJªIdentifierÍÇÍĞ©clearanceP§LiteralÍÒÍÓ¡6¤initO¨PropertyÍÕÍäÂÂÂJªIdentifierÍÕÍà«viaDiameterP§LiteralÍâÍä¢22¤initO¨PropertyÍæÍòÂÂÂJªIdentifierÍæÍî¨viaDrillP§LiteralÍğÍò¢12¤initÀG¶ExportNamedDeclarationÍ
-ÍzK³FunctionDeclarationÍÍzJªIdentifierÍÍ.´defaultPcbAppearanceÂÂÂL®BlockStatementÍ1Íz‘M¯ReturnStatementÍ8ÍwN°ObjectExpressionÍ?ÍvÜ O¨PropertyÍJÍiÂÂÂJªIdentifierÍJÍN¤modeÔrR—¤type¥start£end¦object¨property¨computed¨optional°MemberExpressionÍPÍiJªIdentifierÍPÍa±PcbAppearanceModeJªIdentifierÍbÍi§OVERLAYÂÂ¤initO¨PropertyÍtÍ‚ÂÂÂJªIdentifierÍtÍ|¨dimAlphaP§LiteralÍ~Í‚Ë?Ñë…¸Qì¤0.28¤initO¨PropertyÍÍŸÂÂÂJªIdentifierÍÍ›®highlightNetIdP§LiteralÍÍŸ ¢''¤initO¨PropertyÍªÍºÂÂÂJªIdentifierÍªÍ³©hideZonesP§LiteralÍµÍºÂ¥false¤initO¨PropertyÍÅÍØÂÂÂJªIdentifierÍÅÍÑ¬showRatsnestP§LiteralÍÓÍØÂ¥false¤initO¨PropertyÍãÍ÷ÂÂÂJªIdentifierÍãÍñ®showPadNumbersP§LiteralÍóÍ÷Ã¤true¤initO¨PropertyÍÍÂÂÂJªIdentifierÍÍ¦show3dP§LiteralÍ
-ÍÂ¥false¤initO¨PropertyÍÍ*ÂÂÂJªIdentifierÍÍ&¬view3dYawDegP§LiteralÍ(Í*&¢38¤initO¨PropertyÍ5ÍGÂÂÂJªIdentifierÍ5ÍC®view3dPitchDegP§LiteralÍEÍG4¢52¤initO¨PropertyÍRÍcÂÂÂJªIdentifierÍRÍ]«view3dOrthoP§LiteralÍ_ÍcÃ¤true¤initO¨PropertyÍnÍ›ÂÂÂJªIdentifierÍnÍ±view3dDisplayModeR°MemberExpressionÍÍ›JªIdentifierÍÍ‘°Pcb3dDisplayModeJªIdentifierÍ’Í›©REALISTICÂÂ¤initO¨PropertyÍ¦Í½ÂÂÂJªIdentifierÍ¦Í·±view3dCutFractionP§LiteralÍ¹Í½Ë?á™™™™™š¤0.55¤initO¨PropertyÍÈÍÜÂÂÂJªIdentifierÍÈÍÕ­view3dMeasureP§LiteralÍ×ÍÜÂ¥false¤initO¨PropertyÍçÍÂÂÂJªIdentifierÍçÍı¶view3dShowInterferenceP§LiteralÍÿÍÂ¥false¤initO¨PropertyÍGÍWÂÂÂJªIdentifierÍGÍP©view3dPbrP§LiteralÍRÍWÂ¥false¤initO¨PropertyÍbÍoÂÂÂJªIdentifierÍbÍlªview3dMsaaP§LiteralÍnÍo¡1¤initÀG¶ExportNamedDeclarationÍŸÍ–K³FunctionDeclarationÍ¦Í–JªIdentifierÍ¯ÍÅ¶normalizePcbAppearanceÂÂÂ‘JªIdentifierÍÆÍÈ¢apL®BlockStatementÍÊÍ–“H³VariableDeclarationÍÑÍò‘I²VariableDeclaratorÍ×ÍñJªIdentifierÍ×ÍØ¡dÔrS–¤type¥start£end¦callee©arguments¨optional®CallExpressionÍÛÍñJªIdentifierÍÛÍï´defaultPcbAppearanceÂ¥constÔrT–¤type¥start£end¤testªconsequent©alternate«IfStatementÍøÍ8ÔrU–¤type¥start£end¤left¨operator¥right±LogicalExpressionÍüÍU°BinaryExpressionÍüÍJªIdentifierÍüÍş¢ap£===P§LiteralÍÍÀ¤null¢||U°BinaryExpressionÍÍJªIdentifierÍÍ¢ap£===JªIdentifierÍÍ©undefinedL®BlockStatementÍÍ8‘M¯ReturnStatementÍ(Í1JªIdentifierÍ/Í0¡dÀM¯ReturnStatementÍ>Í“N°ObjectExpressionÍEÍ’Ü O¨PropertyÍPÍ~ÂÂÂJªIdentifierÍPÍT¤modeTµConditionalExpressionÍVÍ~U°BinaryExpressionÍVÍkR°MemberExpressionÍVÍ]JªIdentifierÍVÍX¢apJªIdentifierÍYÍ]¤modeÂÂ£!==JªIdentifierÍbÍk©undefinedR°MemberExpressionÍnÍuJªIdentifierÍnÍp¢apJªIdentifierÍqÍu¤modeÂÂR°MemberExpressionÍxÍ~JªIdentifierÍxÍy¡dJªIdentifierÍzÍ~¤modeÂÂ¤initO¨PropertyÍ‰ÍÛÂÂÂJªIdentifierÍ‰Í‘¨dimAlphaTµConditionalExpressionÍ“ÍÛU±LogicalExpressionÍ“ÍÀU°BinaryExpressionÍ“Í¬R°MemberExpressionÍ“ÍJªIdentifierÍ“Í•¢apJªIdentifierÍ–Í¨dimAlphaÂÂ£!==JªIdentifierÍ£Í¬©undefined¢&&U°BinaryExpressionÍ°ÍÀR°MemberExpressionÍ°Í»JªIdentifierÍ°Í²¢apJªIdentifierÍ³Í»¨dimAlphaÂÂ¢>=P§LiteralÍ¿ÍÀ ¡0R°MemberExpressionÍÃÍÎJªIdentifierÍÃÍÅ¢apJªIdentifierÍÆÍÎ¨dimAlphaÂÂR°MemberExpressionÍÑÍÛJªIdentifierÍÑÍÒ¡dJªIdentifierÍÓÍÛ¨dimAlphaÂÂ¤initO¨PropertyÍæÍ<ÂÂÂJªIdentifierÍæÍô®highlightNetIdTµConditionalExpressionÍöÍ<U°BinaryExpressionÍöÍR°MemberExpressionÍöÍJªIdentifierÍöÍø¢apJªIdentifierÍùÍ®highlightNetIdÂÂ£!==JªIdentifierÍÍ©undefinedR°MemberExpressionÍÍ)JªIdentifierÍÍ¢apJªIdentifierÍÍ)®highlightNetIdÂÂR°MemberExpressionÍ,Í<JªIdentifierÍ,Í-¡dJªIdentifierÍ.Í<®highlightNetIdÂÂ¤initO¨PropertyÍGÍgÂÂÂJªIdentifierÍGÍP©hideZonesU°BinaryExpressionÍRÍgR°MemberExpressionÍRÍ^JªIdentifierÍRÍT¢apJªIdentifierÍUÍ^©hideZonesÂÂ£===P§LiteralÍcÍgÃ¤true¤initO¨PropertyÍrÍ˜ÂÂÂJªIdentifierÍrÍ~¬showRatsnestU°BinaryExpressionÍ€Í˜R°MemberExpressionÍ€ÍJªIdentifierÍ€Í‚¢apJªIdentifierÍƒÍ¬showRatsnestÂÂ£===P§LiteralÍ”Í˜Ã¤true¤initO¨PropertyÍ£ÍÎÂÂÂJªIdentifierÍ£Í±®showPadNumbersU°BinaryExpressionÍ³ÍÎR°MemberExpressionÍ³ÍÄJªIdentifierÍ³Íµ¢apJªIdentifierÍ¶ÍÄ®showPadNumbersÂÂ£!==P§LiteralÍÉÍÎÂ¥false¤initO¨PropertyÍÙÍóÂÂÂJªIdentifierÍÙÍß¦show3dU°BinaryExpressionÍáÍóR°MemberExpressionÍáÍêJªIdentifierÍáÍã¢apJªIdentifierÍäÍê¦show3dÂÂ£===P§LiteralÍïÍóÃ¤true¤initO¨PropertyÍşÍLÂÂÂJªIdentifierÍşÍ
-¬view3dYawDegTµConditionalExpressionÍÍLU°BinaryExpressionÍÍ)R°MemberExpressionÍÍJªIdentifierÍÍ¢apJªIdentifierÍÍ¬view3dYawDegÂÂ£!==JªIdentifierÍ Í)©undefinedR°MemberExpressionÍ,Í;JªIdentifierÍ,Í.¢apJªIdentifierÍ/Í;¬view3dYawDegÂÂR°MemberExpressionÍ>ÍLJªIdentifierÍ>Í?¡dJªIdentifierÍ@ÍL¬view3dYawDegÂÂ¤initO¨PropertyÍWÍ­ÂÂÂJªIdentifierÍWÍe®view3dPitchDegTµConditionalExpressionÍgÍ­U°BinaryExpressionÍgÍ†R°MemberExpressionÍgÍxJªIdentifierÍgÍi¢apJªIdentifierÍjÍx®view3dPitchDegÂÂ£!==JªIdentifierÍ}Í†©undefinedR°MemberExpressionÍ‰ÍšJªIdentifierÍ‰Í‹¢apJªIdentifierÍŒÍš®view3dPitchDegÂÂR°MemberExpressionÍÍ­JªIdentifierÍÍ¡dJªIdentifierÍŸÍ­®view3dPitchDegÂÂ¤initO¨PropertyÍ¸ÍİÂÂÂJªIdentifierÍ¸ÍÃ«view3dOrthoU°BinaryExpressionÍÅÍİR°MemberExpressionÍÅÍÓJªIdentifierÍÅÍÇ¢apJªIdentifierÍÈÍÓ«view3dOrthoÂÂ£!==P§LiteralÍØÍİÂ¥false¤initO¨PropertyÍèÍJÂÂÂJªIdentifierÍèÍù±view3dDisplayModeTµConditionalExpressionÍûÍJU°BinaryExpressionÍûÍR°MemberExpressionÍûÍJªIdentifierÍûÍı¢apJªIdentifierÍşÍ±view3dDisplayModeÂÂ£!==JªIdentifierÍÍ©undefinedR°MemberExpressionÍ Í4JªIdentifierÍ Í"¢apJªIdentifierÍ#Í4±view3dDisplayModeÂÂR°MemberExpressionÍ7ÍJJªIdentifierÍ7Í8¡dJªIdentifierÍ9ÍJ±view3dDisplayModeÂÂ¤initO¨PropertyÍUÍ·ÂÂÂJªIdentifierÍUÍf±view3dCutFractionTµConditionalExpressionÍhÍ·U°BinaryExpressionÍhÍŠR°MemberExpressionÍhÍ|JªIdentifierÍhÍj¢apJªIdentifierÍkÍ|±view3dCutFractionÂÂ£!==JªIdentifierÍÍŠ©undefinedR°MemberExpressionÍÍ¡JªIdentifierÍÍ¢apJªIdentifierÍÍ¡±view3dCutFractionÂÂR°MemberExpressionÍ¤Í·JªIdentifierÍ¤Í¥¡dJªIdentifierÍ¦Í·±view3dCutFractionÂÂ¤initO¨PropertyÍÂÍêÂÂÂJªIdentifierÍÂÍÏ­view3dMeasureU°BinaryExpressionÍÑÍêR°MemberExpressionÍÑÍáJªIdentifierÍÑÍÓ¢apJªIdentifierÍÔÍá­view3dMeasureÂÂ£===P§LiteralÍæÍêÃ¤true¤initO¨PropertyÍõÍ/ÂÂÂJªIdentifierÍõÍ¶view3dShowInterferenceU°BinaryExpressionÍÍ/R°MemberExpressionÍÍ&JªIdentifierÍÍ¢apJªIdentifierÍÍ&¶view3dShowInterferenceÂÂ£===P§LiteralÍ+Í/Ã¤true¤initO¨PropertyÍ:ÍZÂÂÂJªIdentifierÍ:ÍC©view3dPbrU°BinaryExpressionÍEÍZR°MemberExpressionÍEÍQJªIdentifierÍEÍG¢apJªIdentifierÍHÍQ©view3dPbrÂÂ£===P§LiteralÍVÍZÃ¤true¤initO¨PropertyÍeÍ‹ÂÂÂJªIdentifierÍeÍoªview3dMsaaTµConditionalExpressionÍqÍ‹U°BinaryExpressionÍqÍƒR°MemberExpressionÍqÍ~JªIdentifierÍqÍs¢apJªIdentifierÍtÍ~ªview3dMsaaÂÂ¢>=P§LiteralÍ‚Íƒ¡4P§LiteralÍ†Í‡¡4P§LiteralÍŠÍ‹¡1¤initÀG¶ExportNamedDeclarationÍ˜Í&K³FunctionDeclarationÍŸÍ&JªIdentifierÍ¨Í¿·createDefaultLayerStackÂÂÂ‘ÔrV•¤type¥start£end¤left¥right±AssignmentPatternÍÀÍÏJªIdentifierÍÀÍË«copperCountP§LiteralÍÎÍÏ¡2L®BlockStatementÍÑÍ&›H³VariableDeclarationÍØÍ0‘I²VariableDeclaratorÍŞÍ/JªIdentifierÍŞÍß¡nTµConditionalExpressionÍâÍ/U±LogicalExpressionÍâÍU±LogicalExpressionÍâÍU°BinaryExpressionÍâÍóJªIdentifierÍâÍí«copperCount£===P§LiteralÍòÍó¡4¢||U°BinaryExpressionÍ÷ÍJªIdentifierÍ÷Í«copperCount£===P§LiteralÍÍ¡6¢||U°BinaryExpressionÍÍJªIdentifierÍÍ«copperCount£===P§LiteralÍÍ¡8JªIdentifierÍ Í+«copperCountP§LiteralÍ.Í/¡2¥constH³VariableDeclarationÍ6ÍH‘I²VariableDeclaratorÍ<ÍGJªIdentifierÍ<ÍB¦layersQ¯ArrayExpressionÍEÍG¥constÔrW”¤type¥start£endªexpression³ExpressionStatementÍNÍÁS®CallExpressionÍNÍÀR°MemberExpressionÍNÍYJªIdentifierÍNÍT¦layersJªIdentifierÍUÍY¤pushÂÂ‘N°ObjectExpressionÍZÍ¿”O¨PropertyÍeÍqÂÂÂJªIdentifierÍeÍg¢idP§LiteralÍiÍq¦sm_top¨'sm_top'¤initO¨PropertyÍsÍ•ÂÂÂJªIdentifierÍsÍw¤typeR°MemberExpressionÍyÍ•JªIdentifierÍyÍŠ±PcbStackLayerTypeJªIdentifierÍ‹Í•ªSOLDERMASKÂÂ¤initO¨PropertyÍ—Í¥ÂÂÂJªIdentifierÍ—Í›¤nameP§LiteralÍÍ¥¦F.Mask¨'F.Mask'¤initO¨PropertyÍ§Í¸ÂÂÂJªIdentifierÍ§Í²«thicknessMmP§LiteralÍ´Í¸Ë?”záG®{¤0.02¤initÂW³ExpressionStatementÍÇÍiS®CallExpressionÍÇÍhR°MemberExpressionÍÇÍÒJªIdentifierÍÇÍÍ¦layersJªIdentifierÍÎÍÒ¤pushÂÂ‘N°ObjectExpressionÍÓÍg–O¨PropertyÍŞÍèÂÂÂJªIdentifierÍŞÍà¢idP§LiteralÍâÍè¤cu_f¦'cu_f'¤initO¨PropertyÍêÍÂÂÂJªIdentifierÍêÍî¤typeR°MemberExpressionÍğÍJªIdentifierÍğÍ±PcbStackLayerTypeJªIdentifierÍÍ¦COPPERÂÂ¤initO¨PropertyÍ
-ÍÂÂÂJªIdentifierÍ
-Í¤nameP§LiteralÍÍ¤F.Cu¦'F.Cu'¤initO¨PropertyÍ!Í?ÂÂÂJªIdentifierÍ!Í.­copperLayerIdR°MemberExpressionÍ0Í?JªIdentifierÍ0Í:ªPcbLayerIdJªIdentifierÍ;Í?¤F_CUÂÂ¤initO¨PropertyÍAÍSÂÂÂJªIdentifierÍAÍL«thicknessMmP§LiteralÍNÍSË?¡ë…¸Qì¥0.035¤initO¨PropertyÍUÍ`ÂÂÂJªIdentifierÍUÍ]¨copperOzP§LiteralÍ_Í`¡1¤initÂT«IfStatementÍoÍ¦U°BinaryExpressionÍsÍyJªIdentifierÍsÍt¡n¢>=P§LiteralÍxÍy¡4L®BlockStatementÍ{Íî•W³ExpressionStatementÍ†Í!S®CallExpressionÍ†Í R°MemberExpressionÍ†Í‘JªIdentifierÍ†ÍŒ¦layersJªIdentifierÍÍ‘¤pushÂÂ‘N°ObjectExpressionÍ’Í•O¨PropertyÍ¡Í­ÂÂÂJªIdentifierÍ¡Í£¢idP§LiteralÍ¥Í­¦diel_1¨'diel_1'¤initO¨PropertyÍ¯ÍÑÂÂÂJªIdentifierÍ¯Í³¤typeR°MemberExpressionÍµÍÑJªIdentifierÍµÍÆ±PcbStackLayerTypeJªIdentifierÍÇÍÑªDIELECTRICÂÂ¤initO¨PropertyÍÓÍâÂÂÂJªIdentifierÍÓÍ×¤nameP§LiteralÍÙÍâ§Prepreg©'Prepreg'¤initO¨PropertyÍñÍÂÂÂJªIdentifierÍñÍü«thicknessMmP§LiteralÍşÍË?É™™™™™š£0.2¤initO¨PropertyÍÍÂÂÂJªIdentifierÍÍ¬dielectricDkP§LiteralÍÍË@      £4.5¤initÂW³ExpressionStatementÍ+ÍßS®CallExpressionÍ+ÍŞR°MemberExpressionÍ+Í6JªIdentifierÍ+Í1¦layersJªIdentifierÍ2Í6¤pushÂÂ‘N°ObjectExpressionÍ7Íİ–O¨PropertyÍFÍRÂÂÂJªIdentifierÍFÍH¢idP§LiteralÍJÍR¦cu_in1¨'cu_in1'¤initO¨PropertyÍTÍrÂÂÂJªIdentifierÍTÍX¤typeR°MemberExpressionÍZÍrJªIdentifierÍZÍk±PcbStackLayerTypeJªIdentifierÍlÍr¦COPPERÂÂ¤initO¨PropertyÍtÍ‚ÂÂÂJªIdentifierÍtÍx¤nameP§LiteralÍzÍ‚¦In1.Cu¨'In1.Cu'¤initO¨PropertyÍ‘Í±ÂÂÂJªIdentifierÍ‘Í­copperLayerIdR°MemberExpressionÍ Í±JªIdentifierÍ ÍªªPcbLayerIdJªIdentifierÍ«Í±¦IN1_CUÂÂ¤initO¨PropertyÍ³ÍÅÂÂÂJªIdentifierÍ³Í¾«thicknessMmP§LiteralÍÀÍÅË?¡ë…¸Qì¥0.035¤initO¨PropertyÍÇÍÒÂÂÂJªIdentifierÍÇÍÏ¨copperOzP§LiteralÍÑÍÒ¡1¤initÂW³ExpressionStatementÍéÍ„S®CallExpressionÍéÍƒR°MemberExpressionÍéÍôJªIdentifierÍéÍï¦layersJªIdentifierÍğÍô¤pushÂÂ‘N°ObjectExpressionÍõÍ‚•O¨PropertyÍÍÂÂÂJªIdentifierÍÍ¢idP§LiteralÍÍ©diel_core«'diel_core'¤initO¨PropertyÍÍ7ÂÂÂJªIdentifierÍÍ¤typeR°MemberExpressionÍÍ7JªIdentifierÍÍ,±PcbStackLayerTypeJªIdentifierÍ-Í7ªDIELECTRICÂÂ¤initO¨PropertyÍ9ÍEÂÂÂJªIdentifierÍ9Í=¤nameP§LiteralÍ?ÍE¤Core¦'Core'¤initO¨PropertyÍTÍdÂÂÂJªIdentifierÍTÍ_«thicknessMmP§LiteralÍaÍdË?é™™™™™š£0.8¤initO¨PropertyÍfÍwÂÂÂJªIdentifierÍfÍr¬dielectricDkP§LiteralÍtÍwË@333333£4.3¤initÂW³ExpressionStatementÍÍBS®CallExpressionÍÍAR°MemberExpressionÍÍ™JªIdentifierÍÍ”¦layersJªIdentifierÍ•Í™¤pushÂÂ‘N°ObjectExpressionÍšÍ@–O¨PropertyÍ©ÍµÂÂÂJªIdentifierÍ©Í«¢idP§LiteralÍ­Íµ¦cu_in2¨'cu_in2'¤initO¨PropertyÍ·ÍÕÂÂÂJªIdentifierÍ·Í»¤typeR°MemberExpressionÍ½ÍÕJªIdentifierÍ½ÍÎ±PcbStackLayerTypeJªIdentifierÍÏÍÕ¦COPPERÂÂ¤initO¨PropertyÍ×ÍåÂÂÂJªIdentifierÍ×ÍÛ¤nameP§LiteralÍİÍå¦In2.Cu¨'In2.Cu'¤initO¨PropertyÍôÍÂÂÂJªIdentifierÍôÍ­copperLayerIdR°MemberExpressionÍÍJªIdentifierÍÍªPcbLayerIdJªIdentifierÍÍ¦IN2_CUÂÂ¤initO¨PropertyÍÍ(ÂÂÂJªIdentifierÍÍ!«thicknessMmP§LiteralÍ#Í(Ë?¡ë…¸Qì¥0.035¤initO¨PropertyÍ*Í5ÂÂÂJªIdentifierÍ*Í2¨copperOzP§LiteralÍ4Í5¡1¤initÂW³ExpressionStatementÍLÍçS®CallExpressionÍLÍæR°MemberExpressionÍLÍWJªIdentifierÍLÍR¦layersJªIdentifierÍSÍW¤pushÂÂ‘N°ObjectExpressionÍXÍå•O¨PropertyÍgÍsÂÂÂJªIdentifierÍgÍi¢idP§LiteralÍkÍs¦diel_2¨'diel_2'¤initO¨PropertyÍuÍ—ÂÂÂJªIdentifierÍuÍy¤typeR°MemberExpressionÍ{Í—JªIdentifierÍ{ÍŒ±PcbStackLayerTypeJªIdentifierÍÍ—ªDIELECTRICÂÂ¤initO¨PropertyÍ™Í¨ÂÂÂJªIdentifierÍ™Í¤nameP§LiteralÍŸÍ¨§Prepreg©'Prepreg'¤initO¨PropertyÍ·ÍÇÂÂÂJªIdentifierÍ·ÍÂ«thicknessMmP§LiteralÍÄÍÇË?É™™™™™š£0.2¤initO¨PropertyÍÉÍÚÂÂÂJªIdentifierÍÉÍÕ¬dielectricDkP§LiteralÍ×ÍÚË@      £4.5¤initÂL®BlockStatementÍùÍ¦‘W³ExpressionStatementÍÍŸS®CallExpressionÍÍR°MemberExpressionÍÍJªIdentifierÍÍ
-¦layersJªIdentifierÍÍ¤pushÂÂ‘N°ObjectExpressionÍÍ•O¨PropertyÍÍ.ÂÂÂJªIdentifierÍÍ!¢idP§LiteralÍ#Í.©diel_core«'diel_core'¤initO¨PropertyÍ0ÍRÂÂÂJªIdentifierÍ0Í4¤typeR°MemberExpressionÍ6ÍRJªIdentifierÍ6ÍG±PcbStackLayerTypeJªIdentifierÍHÍRªDIELECTRICÂÂ¤initO¨PropertyÍTÍ`ÂÂÂJªIdentifierÍTÍX¤nameP§LiteralÍZÍ`¤Core¦'Core'¤initO¨PropertyÍoÍÂÂÂJªIdentifierÍoÍz«thicknessMmP§LiteralÍ|ÍË?ø      £1.5¤initO¨PropertyÍÍ’ÂÂÂJªIdentifierÍÍ¬dielectricDkP§LiteralÍÍ’Ë@333333£4.3¤initÂT«IfStatementÍ¬Í!ŠU°BinaryExpressionÍ°Í¶JªIdentifierÍ°Í±¡n¢>=P§LiteralÍµÍ¶¡6L®BlockStatementÍ¸Í!Š”W³ExpressionStatementÍÃÍ_S®CallExpressionÍÃÍ^R°MemberExpressionÍÃÍÎJªIdentifierÍÃÍÉ¦layersJªIdentifierÍÊÍÎ¤pushÂÂ‘N°ObjectExpressionÍÏÍ]•O¨PropertyÍŞÍêÂÂÂJªIdentifierÍŞÍà¢idP§LiteralÍâÍê¦diel_3¨'diel_3'¤initO¨PropertyÍìÍÂÂÂJªIdentifierÍìÍğ¤typeR°MemberExpressionÍòÍJªIdentifierÍòÍ±PcbStackLayerTypeJªIdentifierÍÍªDIELECTRICÂÂ¤initO¨PropertyÍÍ ÂÂÂJªIdentifierÍÍ¤nameP§LiteralÍÍ ¨Prepreg2ª'Prepreg2'¤initO¨PropertyÍ/Í?ÂÂÂJªIdentifierÍ/Í:«thicknessMmP§LiteralÍ<Í?Ë?É™™™™™š£0.2¤initO¨PropertyÍAÍRÂÂÂJªIdentifierÍAÍM¬dielectricDkP§LiteralÍOÍRË@      £4.5¤initÂW³ExpressionStatementÍiÍ S®CallExpressionÍiÍ R°MemberExpressionÍiÍtJªIdentifierÍiÍo¦layersJªIdentifierÍpÍt¤pushÂÂ‘N°ObjectExpressionÍuÍ –O¨PropertyÍ„ÍÂÂÂJªIdentifierÍ„Í†¢idP§LiteralÍˆÍ¦cu_in3¨'cu_in3'¤initO¨PropertyÍ’Í°ÂÂÂJªIdentifierÍ’Í–¤typeR°MemberExpressionÍ˜Í°JªIdentifierÍ˜Í©±PcbStackLayerTypeJªIdentifierÍªÍ°¦COPPERÂÂ¤initO¨PropertyÍ²ÍÀÂÂÂJªIdentifierÍ²Í¶¤nameP§LiteralÍ¸ÍÀ¦In3.Cu¨'In3.Cu'¤initO¨PropertyÍÏÍïÂÂÂJªIdentifierÍÏÍÜ­copperLayerIdR°MemberExpressionÍŞÍïJªIdentifierÍŞÍèªPcbLayerIdJªIdentifierÍéÍï¦IN3_CUÂÂ¤initO¨PropertyÍñÍ ÂÂÂJªIdentifierÍñÍü«thicknessMmP§LiteralÍşÍ Ë?¡ë…¸Qì¥0.035¤initO¨PropertyÍ Í ÂÂÂJªIdentifierÍ Í ¨copperOzP§LiteralÍ Í ¡1¤initÂW³ExpressionStatementÍ 'Í ÅS®CallExpressionÍ 'Í ÄR°MemberExpressionÍ 'Í 2JªIdentifierÍ 'Í -¦layersJªIdentifierÍ .Í 2¤pushÂÂ‘N°ObjectExpressionÍ 3Í Ã•O¨PropertyÍ BÍ OÂÂÂJªIdentifierÍ BÍ D¢idP§LiteralÍ FÍ O§diel_3b©'diel_3b'¤initO¨PropertyÍ QÍ sÂÂÂJªIdentifierÍ QÍ U¤typeR°MemberExpressionÍ WÍ sJªIdentifierÍ WÍ h±PcbStackLayerTypeJªIdentifierÍ iÍ sªDIELECTRICÂÂ¤initO¨PropertyÍ uÍ †ÂÂÂJªIdentifierÍ uÍ y¤nameP§LiteralÍ {Í †©Prepreg2b«'Prepreg2b'¤initO¨PropertyÍ •Í ¥ÂÂÂJªIdentifierÍ •Í  «thicknessMmP§LiteralÍ ¢Í ¥Ë?É™™™™™š£0.2¤initO¨PropertyÍ §Í ¸ÂÂÂJªIdentifierÍ §Í ³¬dielectricDkP§LiteralÍ µÍ ¸Ë@      £4.5¤initÂW³ExpressionStatementÍ ÏÍ!ƒS®CallExpressionÍ ÏÍ!‚R°MemberExpressionÍ ÏÍ ÚJªIdentifierÍ ÏÍ Õ¦layersJªIdentifierÍ ÖÍ Ú¤pushÂÂ‘N°ObjectExpressionÍ ÛÍ!–O¨PropertyÍ êÍ öÂÂÂJªIdentifierÍ êÍ ì¢idP§LiteralÍ îÍ ö¦cu_in4¨'cu_in4'¤initO¨PropertyÍ øÍ!ÂÂÂJªIdentifierÍ øÍ ü¤typeR°MemberExpressionÍ şÍ!JªIdentifierÍ şÍ!±PcbStackLayerTypeJªIdentifierÍ!Í!¦COPPERÂÂ¤initO¨PropertyÍ!Í!&ÂÂÂJªIdentifierÍ!Í!¤nameP§LiteralÍ!Í!&¦In4.Cu¨'In4.Cu'¤initO¨PropertyÍ!5Í!UÂÂÂJªIdentifierÍ!5Í!B­copperLayerIdR°MemberExpressionÍ!DÍ!UJªIdentifierÍ!DÍ!NªPcbLayerIdJªIdentifierÍ!OÍ!U¦IN4_CUÂÂ¤initO¨PropertyÍ!WÍ!iÂÂÂJªIdentifierÍ!WÍ!b«thicknessMmP§LiteralÍ!dÍ!iË?¡ë…¸Qì¥0.035¤initO¨PropertyÍ!kÍ!vÂÂÂJªIdentifierÍ!kÍ!s¨copperOzP§LiteralÍ!uÍ!v¡1¤initÂÀT«IfStatementÍ!Í$nU°BinaryExpressionÍ!”Í!šJªIdentifierÍ!”Í!•¡n¢>=P§LiteralÍ!™Í!š¡8L®BlockStatementÍ!œÍ$n”W³ExpressionStatementÍ!§Í"CS®CallExpressionÍ!§Í"BR°MemberExpressionÍ!§Í!²JªIdentifierÍ!§Í!­¦layersJªIdentifierÍ!®Í!²¤pushÂÂ‘N°ObjectExpressionÍ!³Í"A•O¨PropertyÍ!ÂÍ!ÎÂÂÂJªIdentifierÍ!ÂÍ!Ä¢idP§LiteralÍ!ÆÍ!Î¦diel_4¨'diel_4'¤initO¨PropertyÍ!ĞÍ!òÂÂÂJªIdentifierÍ!ĞÍ!Ô¤typeR°MemberExpressionÍ!ÖÍ!òJªIdentifierÍ!ÖÍ!ç±PcbStackLayerTypeJªIdentifierÍ!èÍ!òªDIELECTRICÂÂ¤initO¨PropertyÍ!ôÍ"ÂÂÂJªIdentifierÍ!ôÍ!ø¤nameP§LiteralÍ!úÍ"¨Prepreg3ª'Prepreg3'¤initO¨PropertyÍ"Í"#ÂÂÂJªIdentifierÍ"Í"«thicknessMmP§LiteralÍ" Í"#Ë?É™™™™™š£0.2¤initO¨PropertyÍ"%Í"6ÂÂÂJªIdentifierÍ"%Í"1¬dielectricDkP§LiteralÍ"3Í"6Ë@      £4.5¤initÂW³ExpressionStatementÍ"MÍ#S®CallExpressionÍ"MÍ# R°MemberExpressionÍ"MÍ"XJªIdentifierÍ"MÍ"S¦layersJªIdentifierÍ"TÍ"X¤pushÂÂ‘N°ObjectExpressionÍ"YÍ"ÿ–O¨PropertyÍ"hÍ"tÂÂÂJªIdentifierÍ"hÍ"j¢idP§LiteralÍ"lÍ"t¦cu_in5¨'cu_in5'¤initO¨PropertyÍ"vÍ"”ÂÂÂJªIdentifierÍ"vÍ"z¤typeR°MemberExpressionÍ"|Í"”JªIdentifierÍ"|Í"±PcbStackLayerTypeJªIdentifierÍ"Í"”¦COPPERÂÂ¤initO¨PropertyÍ"–Í"¤ÂÂÂJªIdentifierÍ"–Í"š¤nameP§LiteralÍ"œÍ"¤¦In5.Cu¨'In5.Cu'¤initO¨PropertyÍ"³Í"ÓÂÂÂJªIdentifierÍ"³Í"À­copperLayerIdR°MemberExpressionÍ"ÂÍ"ÓJªIdentifierÍ"ÂÍ"ÌªPcbLayerIdJªIdentifierÍ"ÍÍ"Ó¦IN5_CUÂÂ¤initO¨PropertyÍ"ÕÍ"çÂÂÂJªIdentifierÍ"ÕÍ"à«thicknessMmP§LiteralÍ"âÍ"çË?¡ë…¸Qì¥0.035¤initO¨PropertyÍ"éÍ"ôÂÂÂJªIdentifierÍ"éÍ"ñ¨copperOzP§LiteralÍ"óÍ"ô¡1¤initÂW³ExpressionStatementÍ#Í#©S®CallExpressionÍ#Í#¨R°MemberExpressionÍ#Í#JªIdentifierÍ#Í#¦layersJªIdentifierÍ#Í#¤pushÂÂ‘N°ObjectExpressionÍ#Í#§•O¨PropertyÍ#&Í#3ÂÂÂJªIdentifierÍ#&Í#(¢idP§LiteralÍ#*Í#3§diel_4b©'diel_4b'¤initO¨PropertyÍ#5Í#WÂÂÂJªIdentifierÍ#5Í#9¤typeR°MemberExpressionÍ#;Í#WJªIdentifierÍ#;Í#L±PcbStackLayerTypeJªIdentifierÍ#MÍ#WªDIELECTRICÂÂ¤initO¨PropertyÍ#YÍ#jÂÂÂJªIdentifierÍ#YÍ#]¤nameP§LiteralÍ#_Í#j©Prepreg3b«'Prepreg3b'¤initO¨PropertyÍ#yÍ#‰ÂÂÂJªIdentifierÍ#yÍ#„«thicknessMmP§LiteralÍ#†Í#‰Ë?É™™™™™š£0.2¤initO¨PropertyÍ#‹Í#œÂÂÂJªIdentifierÍ#‹Í#—¬dielectricDkP§LiteralÍ#™Í#œË@      £4.5¤initÂW³ExpressionStatementÍ#³Í$gS®CallExpressionÍ#³Í$fR°MemberExpressionÍ#³Í#¾JªIdentifierÍ#³Í#¹¦layersJªIdentifierÍ#ºÍ#¾¤pushÂÂ‘N°ObjectExpressionÍ#¿Í$e–O¨PropertyÍ#ÎÍ#ÚÂÂÂJªIdentifierÍ#ÎÍ#Ğ¢idP§LiteralÍ#ÒÍ#Ú¦cu_in6¨'cu_in6'¤initO¨PropertyÍ#ÜÍ#úÂÂÂJªIdentifierÍ#ÜÍ#à¤typeR°MemberExpressionÍ#âÍ#úJªIdentifierÍ#âÍ#ó±PcbStackLayerTypeJªIdentifierÍ#ôÍ#ú¦COPPERÂÂ¤initO¨PropertyÍ#üÍ$
-ÂÂÂJªIdentifierÍ#üÍ$ ¤nameP§LiteralÍ$Í$
-¦In6.Cu¨'In6.Cu'¤initO¨PropertyÍ$Í$9ÂÂÂJªIdentifierÍ$Í$&­copperLayerIdR°MemberExpressionÍ$(Í$9JªIdentifierÍ$(Í$2ªPcbLayerIdJªIdentifierÍ$3Í$9¦IN6_CUÂÂ¤initO¨PropertyÍ$;Í$MÂÂÂJªIdentifierÍ$;Í$F«thicknessMmP§LiteralÍ$HÍ$MË?¡ë…¸Qì¥0.035¤initO¨PropertyÍ$OÍ$ZÂÂÂJªIdentifierÍ$OÍ$W¨copperOzP§LiteralÍ$YÍ$Z¡1¤initÂÀT«IfStatementÍ$tÍ$ÑU°BinaryExpressionÍ$xÍ$~JªIdentifierÍ$xÍ$y¡n¢>=P§LiteralÍ$}Í$~¡6L®BlockStatementÍ$€Í$ÑÀW³ExpressionStatementÍ$×Í%yS®CallExpressionÍ$×Í%xR°MemberExpressionÍ$×Í$âJªIdentifierÍ$×Í$İ¦layersJªIdentifierÍ$ŞÍ$â¤pushÂÂ‘N°ObjectExpressionÍ$ãÍ%w–O¨PropertyÍ$îÍ$øÂÂÂJªIdentifierÍ$îÍ$ğ¢idP§LiteralÍ$òÍ$ø¤cu_b¦'cu_b'¤initO¨PropertyÍ$úÍ%ÂÂÂJªIdentifierÍ$úÍ$ş¤typeR°MemberExpressionÍ% Í%JªIdentifierÍ% Í%±PcbStackLayerTypeJªIdentifierÍ%Í%¦COPPERÂÂ¤initO¨PropertyÍ%Í%&ÂÂÂJªIdentifierÍ%Í%¤nameP§LiteralÍ% Í%&¤B.Cu¦'B.Cu'¤initO¨PropertyÍ%1Í%OÂÂÂJªIdentifierÍ%1Í%>­copperLayerIdR°MemberExpressionÍ%@Í%OJªIdentifierÍ%@Í%JªPcbLayerIdJªIdentifierÍ%KÍ%O¤B_CUÂÂ¤initO¨PropertyÍ%QÍ%cÂÂÂJªIdentifierÍ%QÍ%\«thicknessMmP§LiteralÍ%^Í%cË?¡ë…¸Qì¥0.035¤initO¨PropertyÍ%eÍ%pÂÂÂJªIdentifierÍ%eÍ%m¨copperOzP§LiteralÍ%oÍ%p¡1¤initÂW³ExpressionStatementÍ%Í%òS®CallExpressionÍ%Í%ñR°MemberExpressionÍ%Í%ŠJªIdentifierÍ%Í%…¦layersJªIdentifierÍ%†Í%Š¤pushÂÂ‘N°ObjectExpressionÍ%‹Í%ğ”O¨PropertyÍ%–Í%¢ÂÂÂJªIdentifierÍ%–Í%˜¢idP§LiteralÍ%šÍ%¢¦sm_bot¨'sm_bot'¤initO¨PropertyÍ%¤Í%ÆÂÂÂJªIdentifierÍ%¤Í%¨¤typeR°MemberExpressionÍ%ªÍ%ÆJªIdentifierÍ%ªÍ%»±PcbStackLayerTypeJªIdentifierÍ%¼Í%ÆªSOLDERMASKÂÂ¤initO¨PropertyÍ%ÈÍ%ÖÂÂÂJªIdentifierÍ%ÈÍ%Ì¤nameP§LiteralÍ%ÎÍ%Ö¦B.Mask¨'B.Mask'¤initO¨PropertyÍ%ØÍ%éÂÂÂJªIdentifierÍ%ØÍ%ã«thicknessMmP§LiteralÍ%åÍ%éË?”záG®{¤0.02¤initÂM¯ReturnStatementÍ%øÍ&N°ObjectExpressionÍ%ÿÍ&’O¨PropertyÍ&Í&ÂÂÂJªIdentifierÍ&Í&«copperCountJªIdentifierÍ&Í&¡n¤initÔrX™¤type¥start£end¦method©shorthand¨computed£key¤kind¥value¨PropertyÍ&Í&ÂÃÂJªIdentifierÍ&Í&¦layers¤initJªIdentifierÍ&Í&¦layersÀG¶ExportNamedDeclarationÍ&Í.'K³FunctionDeclarationÍ&&Í.'JªIdentifierÍ&/Í&E¶createDefaultPcbLayersÂÂÂ‘V±AssignmentPatternÍ&FÍ&UJªIdentifierÍ&FÍ&Q«copperCountP§LiteralÍ&TÍ&U¡2L®BlockStatementÍ&WÍ.'H³VariableDeclarationÍ&^Í&İ‘I²VariableDeclaratorÍ&dÍ&ÜJªIdentifierÍ&dÍ&j¦layersQ¯ArrayExpressionÍ&mÍ&Ü‘N°ObjectExpressionÍ&xÍ&Õ•O¨PropertyÍ&zÍ&ÂÂÂJªIdentifierÍ&zÍ&|¢idR°MemberExpressionÍ&~Í&JªIdentifierÍ&~Í&ˆªPcbLayerIdJªIdentifierÍ&‰Í&¤F_CUÂÂ¤initO¨PropertyÍ&Í&£ÂÂÂJªIdentifierÍ&Í&“¤nameP§LiteralÍ&•Í&£¬Front Copper®'Front Copper'¤initO¨PropertyÍ&¥Í&²ÂÂÂJªIdentifierÍ&¥Í&¬§visibleP§LiteralÍ&®Í&²Ã¤true¤initO¨PropertyÍ&´Í&ÄÂÂÂJªIdentifierÍ&´Í&¹¥colorP§LiteralÍ&»Í&Ä§#FF1744©'#FF1744'¤initO¨PropertyÍ&ÆÍ&ÓÂÂÂJªIdentifierÍ&ÆÍ&Í§opacityP§LiteralÍ&ÏÍ&ÓË?îffffff¤0.95¤init¥constT«IfStatementÍ&ãÍ'ñU°BinaryExpressionÍ&çÍ&÷JªIdentifierÍ&çÍ&ò«copperCount¢>=P§LiteralÍ&öÍ&÷¡4L®BlockStatementÍ&ùÍ'ñ’W³ExpressionStatementÍ'Í'rS®CallExpressionÍ'Í'qR°MemberExpressionÍ'Í'JªIdentifierÍ'Í'
-¦layersJªIdentifierÍ'Í'¤pushÂÂ‘N°ObjectExpressionÍ'Í'p•O¨PropertyÍ'Í''ÂÂÂJªIdentifierÍ'Í'¢idR°MemberExpressionÍ'Í''JªIdentifierÍ'Í' ªPcbLayerIdJªIdentifierÍ'!Í''¦IN1_CUÂÂ¤initO¨PropertyÍ')Í'>ÂÂÂJªIdentifierÍ')Í'-¤nameP§LiteralÍ'/Í'>­Inner1 Copper¯'Inner1 Copper'¤initO¨PropertyÍ'@Í'MÂÂÂJªIdentifierÍ'@Í'G§visibleP§LiteralÍ'IÍ'MÃ¤true¤initO¨PropertyÍ'OÍ'_ÂÂÂJªIdentifierÍ'OÍ'T¥colorP§LiteralÍ'VÍ'_§#D500F9©'#D500F9'¤initO¨PropertyÍ'aÍ'nÂÂÂJªIdentifierÍ'aÍ'h§opacityP§LiteralÍ'jÍ'nË?ì(õÂ\)¤0.88¤initÂW³ExpressionStatementÍ'|Í'êS®CallExpressionÍ'|Í'éR°MemberExpressionÍ'|Í'‡JªIdentifierÍ'|Í'‚¦layersJªIdentifierÍ'ƒÍ'‡¤pushÂÂ‘N°ObjectExpressionÍ'ˆÍ'è•O¨PropertyÍ'ŠÍ'ŸÂÂÂJªIdentifierÍ'ŠÍ'Œ¢idR°MemberExpressionÍ'Í'ŸJªIdentifierÍ'Í'˜ªPcbLayerIdJªIdentifierÍ'™Í'Ÿ¦IN2_CUÂÂ¤initO¨PropertyÍ'¡Í'¶ÂÂÂJªIdentifierÍ'¡Í'¥¤nameP§LiteralÍ'§Í'¶­Inner2 Copper¯'Inner2 Copper'¤initO¨PropertyÍ'¸Í'ÅÂÂÂJªIdentifierÍ'¸Í'¿§visibleP§LiteralÍ'ÁÍ'ÅÃ¤true¤initO¨PropertyÍ'ÇÍ'×ÂÂÂJªIdentifierÍ'ÇÍ'Ì¥colorP§LiteralÍ'ÎÍ'×§#FF9100©'#FF9100'¤initO¨PropertyÍ'ÙÍ'æÂÂÂJªIdentifierÍ'ÙÍ'à§opacityP§LiteralÍ'âÍ'æË?ì(õÂ\)¤0.88¤initÂÀT«IfStatementÍ'÷Í)U°BinaryExpressionÍ'ûÍ(JªIdentifierÍ'ûÍ(«copperCount¢>=P§LiteralÍ(
-Í(¡6L®BlockStatementÍ(Í)’W³ExpressionStatementÍ(Í(†S®CallExpressionÍ(Í(…R°MemberExpressionÍ(Í(#JªIdentifierÍ(Í(¦layersJªIdentifierÍ(Í(#¤pushÂÂ‘N°ObjectExpressionÍ($Í(„•O¨PropertyÍ(&Í(;ÂÂÂJªIdentifierÍ(&Í((¢idR°MemberExpressionÍ(*Í(;JªIdentifierÍ(*Í(4ªPcbLayerIdJªIdentifierÍ(5Í(;¦IN3_CUÂÂ¤initO¨PropertyÍ(=Í(RÂÂÂJªIdentifierÍ(=Í(A¤nameP§LiteralÍ(CÍ(R­Inner3 Copper¯'Inner3 Copper'¤initO¨PropertyÍ(TÍ(aÂÂÂJªIdentifierÍ(TÍ([§visibleP§LiteralÍ(]Í(aÃ¤true¤initO¨PropertyÍ(cÍ(sÂÂÂJªIdentifierÍ(cÍ(h¥colorP§LiteralÍ(jÍ(s§#651FFF©'#651FFF'¤initO¨PropertyÍ(uÍ(‚ÂÂÂJªIdentifierÍ(uÍ(|§opacityP§LiteralÍ(~Í(‚Ë?ë333333¤0.85¤initÂW³ExpressionStatementÍ(Í(şS®CallExpressionÍ(Í(ıR°MemberExpressionÍ(Í(›JªIdentifierÍ(Í(–¦layersJªIdentifierÍ(—Í(›¤pushÂÂ‘N°ObjectExpressionÍ(œÍ(ü•O¨PropertyÍ(Í(³ÂÂÂJªIdentifierÍ(Í( ¢idR°MemberExpressionÍ(¢Í(³JªIdentifierÍ(¢Í(¬ªPcbLayerIdJªIdentifierÍ(­Í(³¦IN4_CUÂÂ¤initO¨PropertyÍ(µÍ(ÊÂÂÂJªIdentifierÍ(µÍ(¹¤nameP§LiteralÍ(»Í(Ê­Inner4 Copper¯'Inner4 Copper'¤initO¨PropertyÍ(ÌÍ(ÙÂÂÂJªIdentifierÍ(ÌÍ(Ó§visibleP§LiteralÍ(ÕÍ(ÙÃ¤true¤initO¨PropertyÍ(ÛÍ(ëÂÂÂJªIdentifierÍ(ÛÍ(à¥colorP§LiteralÍ(âÍ(ë§#00E5FF©'#00E5FF'¤initO¨PropertyÍ(íÍ(úÂÂÂJªIdentifierÍ(íÍ(ô§opacityP§LiteralÍ(öÍ(úË?ë333333¤0.85¤initÂÀT«IfStatementÍ)Í*U°BinaryExpressionÍ)Í)JªIdentifierÍ)Í)«copperCount¢>=P§LiteralÍ)Í)¡8L®BlockStatementÍ)!Í*’W³ExpressionStatementÍ),Í)šS®CallExpressionÍ),Í)™R°MemberExpressionÍ),Í)7JªIdentifierÍ),Í)2¦layersJªIdentifierÍ)3Í)7¤pushÂÂ‘N°ObjectExpressionÍ)8Í)˜•O¨PropertyÍ):Í)OÂÂÂJªIdentifierÍ):Í)<¢idR°MemberExpressionÍ)>Í)OJªIdentifierÍ)>Í)HªPcbLayerIdJªIdentifierÍ)IÍ)O¦IN5_CUÂÂ¤initO¨PropertyÍ)QÍ)fÂÂÂJªIdentifierÍ)QÍ)U¤nameP§LiteralÍ)WÍ)f­Inner5 Copper¯'Inner5 Copper'¤initO¨PropertyÍ)hÍ)uÂÂÂJªIdentifierÍ)hÍ)o§visibleP§LiteralÍ)qÍ)uÃ¤true¤initO¨PropertyÍ)wÍ)‡ÂÂÂJªIdentifierÍ)wÍ)|¥colorP§LiteralÍ)~Í)‡§#FFD740©'#FFD740'¤initO¨PropertyÍ)‰Í)–ÂÂÂJªIdentifierÍ)‰Í)§opacityP§LiteralÍ)’Í)–Ë?ë333333¤0.85¤initÂW³ExpressionStatementÍ)¤Í*S®CallExpressionÍ)¤Í*R°MemberExpressionÍ)¤Í)¯JªIdentifierÍ)¤Í)ª¦layersJªIdentifierÍ)«Í)¯¤pushÂÂ‘N°ObjectExpressionÍ)°Í*•O¨PropertyÍ)²Í)ÇÂÂÂJªIdentifierÍ)²Í)´¢idR°MemberExpressionÍ)¶Í)ÇJªIdentifierÍ)¶Í)ÀªPcbLayerIdJªIdentifierÍ)ÁÍ)Ç¦IN6_CUÂÂ¤initO¨PropertyÍ)ÉÍ)ŞÂÂÂJªIdentifierÍ)ÉÍ)Í¤nameP§LiteralÍ)ÏÍ)Ş­Inner6 Copper¯'Inner6 Copper'¤initO¨PropertyÍ)àÍ)íÂÂÂJªIdentifierÍ)àÍ)ç§visibleP§LiteralÍ)éÍ)íÃ¤true¤initO¨PropertyÍ)ïÍ)ÿÂÂÂJªIdentifierÍ)ïÍ)ô¥colorP§LiteralÍ)öÍ)ÿ§#69F0AE©'#69F0AE'¤initO¨PropertyÍ*Í*ÂÂÂJªIdentifierÍ*Í*§opacityP§LiteralÍ*
-Í*Ë?ë333333¤0.85¤initÂÀW³ExpressionStatementÍ*Í*‰S®CallExpressionÍ*Í*ˆR°MemberExpressionÍ*Í**JªIdentifierÍ*Í*%¦layersJªIdentifierÍ*&Í**¤pushÂÂ‘N°ObjectExpressionÍ*+Í*‡•O¨PropertyÍ*-Í*@ÂÂÂJªIdentifierÍ*-Í*/¢idR°MemberExpressionÍ*1Í*@JªIdentifierÍ*1Í*;ªPcbLayerIdJªIdentifierÍ*<Í*@¤B_CUÂÂ¤initO¨PropertyÍ*BÍ*UÂÂÂJªIdentifierÍ*BÍ*F¤nameP§LiteralÍ*HÍ*U«Back Copper­'Back Copper'¤initO¨PropertyÍ*WÍ*dÂÂÂJªIdentifierÍ*WÍ*^§visibleP§LiteralÍ*`Í*dÃ¤true¤initO¨PropertyÍ*fÍ*vÂÂÂJªIdentifierÍ*fÍ*k¥colorP§LiteralÍ*mÍ*v§#00E676©'#00E676'¤initO¨PropertyÍ*xÍ*…ÂÂÂJªIdentifierÍ*xÍ*§opacityP§LiteralÍ*Í*…Ë?íp£×
-=q¤0.92¤initÂW³ExpressionStatementÍ*Í*øS®CallExpressionÍ*Í*÷R°MemberExpressionÍ*Í*šJªIdentifierÍ*Í*•¦layersJªIdentifierÍ*–Í*š¤pushÂÂ‘N°ObjectExpressionÍ*›Í*ö•O¨PropertyÍ*Í*³ÂÂÂJªIdentifierÍ*Í*Ÿ¢idR°MemberExpressionÍ*¡Í*³JªIdentifierÍ*¡Í*«ªPcbLayerIdJªIdentifierÍ*¬Í*³§F_SILKSÂÂ¤initO¨PropertyÍ*µÍ*ÇÂÂÂJªIdentifierÍ*µÍ*¹¤nameP§LiteralÍ*»Í*ÇªFront Silk¬'Front Silk'¤initO¨PropertyÍ*ÉÍ*ÖÂÂÂJªIdentifierÍ*ÉÍ*Ğ§visibleP§LiteralÍ*ÒÍ*ÖÃ¤true¤initO¨PropertyÍ*ØÍ*èÂÂÂJªIdentifierÍ*ØÍ*İ¥colorP§LiteralÍ*ßÍ*è§#5CE1E6©'#5CE1E6'¤initO¨PropertyÍ*êÍ*ôÂÂÂJªIdentifierÍ*êÍ*ñ§opacityP§LiteralÍ*óÍ*ô¡1¤initÂW³ExpressionStatementÍ*şÍ+gS®CallExpressionÍ*şÍ+fR°MemberExpressionÍ*şÍ+	JªIdentifierÍ*şÍ+¦layersJªIdentifierÍ+Í+	¤pushÂÂ‘N°ObjectExpressionÍ+
-Í+e•O¨PropertyÍ+Í+"ÂÂÂJªIdentifierÍ+Í+¢idR°MemberExpressionÍ+Í+"JªIdentifierÍ+Í+ªPcbLayerIdJªIdentifierÍ+Í+"§B_SILKSÂÂ¤initO¨PropertyÍ+$Í+5ÂÂÂJªIdentifierÍ+$Í+(¤nameP§LiteralÍ+*Í+5©Back Silk«'Back Silk'¤initO¨PropertyÍ+7Í+EÂÂÂJªIdentifierÍ+7Í+>§visibleP§LiteralÍ+@Í+EÂ¥false¤initO¨PropertyÍ+GÍ+WÂÂÂJªIdentifierÍ+GÍ+L¥colorP§LiteralÍ+NÍ+W§#80A0B0©'#80A0B0'¤initO¨PropertyÍ+YÍ+cÂÂÂJªIdentifierÍ+YÍ+`§opacityP§LiteralÍ+bÍ+c¡1¤initÂW³ExpressionStatementÍ+mÍ+ÙS®CallExpressionÍ+mÍ+ØR°MemberExpressionÍ+mÍ+xJªIdentifierÍ+mÍ+s¦layersJªIdentifierÍ+tÍ+x¤pushÂÂ‘N°ObjectExpressionÍ+yÍ+×•O¨PropertyÍ+{Í+ÂÂÂJªIdentifierÍ+{Í+}¢idR°MemberExpressionÍ+Í+JªIdentifierÍ+Í+‰ªPcbLayerIdJªIdentifierÍ+ŠÍ+¦F_MASKÂÂ¤initO¨PropertyÍ+’Í+¤ÂÂÂJªIdentifierÍ+’Í+–¤nameP§LiteralÍ+˜Í+¤ªFront Mask¬'Front Mask'¤initO¨PropertyÍ+¦Í+´ÂÂÂJªIdentifierÍ+¦Í+­§visibleP§LiteralÍ+¯Í+´Â¥false¤initO¨PropertyÍ+¶Í+ÆÂÂÂJªIdentifierÍ+¶Í+»¥colorP§LiteralÍ+½Í+Æ§#1B5E20©'#1B5E20'¤initO¨PropertyÍ+ÈÍ+ÕÂÂÂJªIdentifierÍ+ÈÍ+Ï§opacityP§LiteralÍ+ÑÍ+ÕË?Öffffff¤0.35¤initÂW³ExpressionStatementÍ+ßÍ,JS®CallExpressionÍ+ßÍ,IR°MemberExpressionÍ+ßÍ+êJªIdentifierÍ+ßÍ+å¦layersJªIdentifierÍ+æÍ+ê¤pushÂÂ‘N°ObjectExpressionÍ+ëÍ,H•O¨PropertyÍ+íÍ,ÂÂÂJªIdentifierÍ+íÍ+ï¢idR°MemberExpressionÍ+ñÍ,JªIdentifierÍ+ñÍ+ûªPcbLayerIdJªIdentifierÍ+üÍ,¦B_MASKÂÂ¤initO¨PropertyÍ,Í,ÂÂÂJªIdentifierÍ,Í,¤nameP§LiteralÍ,
-Í,©Back Mask«'Back Mask'¤initO¨PropertyÍ,Í,%ÂÂÂJªIdentifierÍ,Í,§visibleP§LiteralÍ, Í,%Â¥false¤initO¨PropertyÍ,'Í,7ÂÂÂJªIdentifierÍ,'Í,,¥colorP§LiteralÍ,.Í,7§#1B5E20©'#1B5E20'¤initO¨PropertyÍ,9Í,FÂÂÂJªIdentifierÍ,9Í,@§opacityP§LiteralÍ,BÍ,FË?Öffffff¤0.35¤initÂW³ExpressionStatementÍ,PÍ,½S®CallExpressionÍ,PÍ,¼R°MemberExpressionÍ,PÍ,[JªIdentifierÍ,PÍ,V¦layersJªIdentifierÍ,WÍ,[¤pushÂÂ‘N°ObjectExpressionÍ,\Í,»•O¨PropertyÍ,^Í,tÂÂÂJªIdentifierÍ,^Í,`¢idR°MemberExpressionÍ,bÍ,tJªIdentifierÍ,bÍ,lªPcbLayerIdJªIdentifierÍ,mÍ,t§F_PASTEÂÂ¤initO¨PropertyÍ,vÍ,‰ÂÂÂJªIdentifierÍ,vÍ,z¤nameP§LiteralÍ,|Í,‰«Front Paste­'Front Paste'¤initO¨PropertyÍ,‹Í,™ÂÂÂJªIdentifierÍ,‹Í,’§visibleP§LiteralÍ,”Í,™Â¥false¤initO¨PropertyÍ,›Í,«ÂÂÂJªIdentifierÍ,›Í, ¥colorP§LiteralÍ,¢Í,«§#C0C0C0©'#C0C0C0'¤initO¨PropertyÍ,­Í,¹ÂÂÂJªIdentifierÍ,­Í,´§opacityP§LiteralÍ,¶Í,¹Ë?à      £0.5¤initÂW³ExpressionStatementÍ,ÃÍ-/S®CallExpressionÍ,ÃÍ-.R°MemberExpressionÍ,ÃÍ,ÎJªIdentifierÍ,ÃÍ,É¦layersJªIdentifierÍ,ÊÍ,Î¤pushÂÂ‘N°ObjectExpressionÍ,ÏÍ--•O¨PropertyÍ,ÑÍ,çÂÂÂJªIdentifierÍ,ÑÍ,Ó¢idR°MemberExpressionÍ,ÕÍ,çJªIdentifierÍ,ÕÍ,ßªPcbLayerIdJªIdentifierÍ,àÍ,ç§B_PASTEÂÂ¤initO¨PropertyÍ,éÍ,ûÂÂÂJªIdentifierÍ,éÍ,í¤nameP§LiteralÍ,ïÍ,ûªBack Paste¬'Back Paste'¤initO¨PropertyÍ,ıÍ-ÂÂÂJªIdentifierÍ,ıÍ-§visibleP§LiteralÍ-Í-Â¥false¤initO¨PropertyÍ-Í-ÂÂÂJªIdentifierÍ-Í-¥colorP§LiteralÍ-Í-§#A0A0A0©'#A0A0A0'¤initO¨PropertyÍ-Í-+ÂÂÂJªIdentifierÍ-Í-&§opacityP§LiteralÍ-(Í-+Ë?à      £0.5¤initÂW³ExpressionStatementÍ-5Í-ŸS®CallExpressionÍ-5Í-R°MemberExpressionÍ-5Í-@JªIdentifierÍ-5Í-;¦layersJªIdentifierÍ-<Í-@¤pushÂÂ‘N°ObjectExpressionÍ-AÍ-•O¨PropertyÍ-CÍ-[ÂÂÂJªIdentifierÍ-CÍ-E¢idR°MemberExpressionÍ-GÍ-[JªIdentifierÍ-GÍ-QªPcbLayerIdJªIdentifierÍ-RÍ-[©EDGE_CUTSÂÂ¤initO¨PropertyÍ-]Í-nÂÂÂJªIdentifierÍ-]Í-a¤nameP§LiteralÍ-cÍ-n©Edge Cuts«'Edge Cuts'¤initO¨PropertyÍ-pÍ-}ÂÂÂJªIdentifierÍ-pÍ-w§visibleP§LiteralÍ-yÍ-}Ã¤true¤initO¨PropertyÍ-Í-ÂÂÂJªIdentifierÍ-Í-„¥colorP§LiteralÍ-†Í-§#E8A020©'#E8A020'¤initO¨PropertyÍ-‘Í-›ÂÂÂJªIdentifierÍ-‘Í-˜§opacityP§LiteralÍ-šÍ-›¡1¤initÂW³ExpressionStatementÍ-¥Í.S®CallExpressionÍ-¥Í.R°MemberExpressionÍ-¥Í-°JªIdentifierÍ-¥Í-«¦layersJªIdentifierÍ-¬Í-°¤pushÂÂ‘N°ObjectExpressionÍ-±Í.•O¨PropertyÍ-³Í-ËÂÂÂJªIdentifierÍ-³Í-µ¢idR°MemberExpressionÍ-·Í-ËJªIdentifierÍ-·Í-ÁªPcbLayerIdJªIdentifierÍ-ÂÍ-Ë©COURTYARDÂÂ¤initO¨PropertyÍ-ÍÍ-ŞÂÂÂJªIdentifierÍ-ÍÍ-Ñ¤nameP§LiteralÍ-ÓÍ-Ş©Courtyard«'Courtyard'¤initO¨PropertyÍ-àÍ-îÂÂÂJªIdentifierÍ-àÍ-ç§visibleP§LiteralÍ-éÍ-îÂ¥false¤initO¨PropertyÍ-ğÍ. ÂÂÂJªIdentifierÍ-ğÍ-õ¥colorP§LiteralÍ-÷Í. §#808080©'#808080'¤initO¨PropertyÍ.Í.ÂÂÂJªIdentifierÍ.Í.	§opacityP§LiteralÍ.Í.¡1¤initÂM¯ReturnStatementÍ.Í.$JªIdentifierÍ.Í.#¦layersÀG¶ExportNamedDeclarationÍ.)Í1ÄK³FunctionDeclarationÍ.0Í1ÄJªIdentifierÍ.9Í.O¶createEmptyPcbDocumentÂÂÂ‘JªIdentifierÍ.PÍ.T¤nameL®BlockStatementÍ.VÍ1Ä”H³VariableDeclarationÍ.]Í.‚‘I²VariableDeclaratorÍ.cÍ.JªIdentifierÍ.cÍ.f£nowS®CallExpressionÍ.iÍ.R°MemberExpressionÍ.iÍ.ÔrY•¤type¥start£end¦callee©arguments­NewExpressionÍ.iÍ.sJªIdentifierÍ.mÍ.q¤DateJªIdentifierÍ.tÍ.«toISOStringÂÂÂ¥constH³VariableDeclarationÍ.ˆÍ.—‘I²VariableDeclaratorÍ.Í.–JªIdentifierÍ.Í.¡wP§LiteralÍ.’Í.–Í¸¤3000¥constH³VariableDeclarationÍ.Í.¬‘I²VariableDeclaratorÍ.£Í.«JªIdentifierÍ.£Í.¤¡hP§LiteralÍ.§Í.«ÍĞ¤2000¥constM¯ReturnStatementÍ.²Í1ÁN°ObjectExpressionÍ.¹Í1ÀO¨PropertyÍ.ÄÍ.ÛÂÂÂJªIdentifierÍ.ÄÍ.Æ¢idÔrZ•¤type¥start£end«expressions¦quasis¯TemplateLiteralÍ.ÈÍ.Û‘S®CallExpressionÍ.ÏÍ.ÙR°MemberExpressionÍ.ÏÍ.×JªIdentifierÍ.ÏÍ.Ó¤DateJªIdentifierÍ.ÔÍ.×£nowÂÂÂ’Ôr[•¤type¥start£end¥value¤tail¯TemplateElementÍ.ÉÍ.ÍÔr\’£raw¦cooked¤pcb_¤pcb_Â[¯TemplateElementÍ.ÚÍ.Ú\  Ã¤initX¨PropertyÍ.æÍ.êÂÃÂJªIdentifierÍ.æÍ.ê¤name¤initJªIdentifierÍ.æÍ.ê¤nameO¨PropertyÍ.õÍ/ÂÂÂJªIdentifierÍ.õÍ.ü§versionP§LiteralÍ.şÍ/£1.1¥'1.1'¤initO¨PropertyÍ/Í/µÂÂÂJªIdentifierÍ/Í/¬boardOutlineN°ObjectExpressionÍ/Í/µ’O¨PropertyÍ/+Í/“ÂÂÂJªIdentifierÍ/+Í/1¦pointsQ¯ArrayExpressionÍ/3Í/“”N°ObjectExpressionÍ/FÍ/T’O¨PropertyÍ/HÍ/LÂÂÂJªIdentifierÍ/HÍ/I¡xP§LiteralÍ/KÍ/L ¡0¤initO¨PropertyÍ/NÍ/RÂÂÂJªIdentifierÍ/NÍ/O¡yP§LiteralÍ/QÍ/R ¡0¤initN°ObjectExpressionÍ/VÍ/d’O¨PropertyÍ/XÍ/\ÂÂÂJªIdentifierÍ/XÍ/Y¡xJªIdentifierÍ/[Í/\¡w¤initO¨PropertyÍ/^Í/bÂÂÂJªIdentifierÍ/^Í/_¡yP§LiteralÍ/aÍ/b ¡0¤initN°ObjectExpressionÍ/fÍ/t’O¨PropertyÍ/hÍ/lÂÂÂJªIdentifierÍ/hÍ/i¡xJªIdentifierÍ/kÍ/l¡w¤initO¨PropertyÍ/nÍ/rÂÂÂJªIdentifierÍ/nÍ/o¡yJªIdentifierÍ/qÍ/r¡h¤initN°ObjectExpressionÍ/vÍ/„’O¨PropertyÍ/xÍ/|ÂÂÂJªIdentifierÍ/xÍ/y¡xP§LiteralÍ/{Í/| ¡0¤initO¨PropertyÍ/~Í/‚ÂÂÂJªIdentifierÍ/~Í/¡yJªIdentifierÍ/Í/‚¡h¤init¤initO¨PropertyÍ/¢Í/ªÂÂÂJªIdentifierÍ/¢Í/§¥widthP§LiteralÍ/©Í/ª¡5¤init¤initO¨PropertyÍ/ÀÍ/ÎÂÂÂJªIdentifierÍ/ÀÍ/ÊªfootprintsQ¯ArrayExpressionÍ/ÌÍ/Î¤initO¨PropertyÍ/ÙÍ/ãÂÂÂJªIdentifierÍ/ÙÍ/ß¦tracksQ¯ArrayExpressionÍ/áÍ/ã¤initO¨PropertyÍ/îÍ/öÂÂÂJªIdentifierÍ/îÍ/ò¤viasQ¯ArrayExpressionÍ/ôÍ/ö¤initO¨PropertyÍ0Í0
-ÂÂÂJªIdentifierÍ0Í0¥zonesQ¯ArrayExpressionÍ0Í0
-¤initO¨PropertyÍ0Í06ÂÂÂJªIdentifierÍ0Í0¦layersS®CallExpressionÍ0Í06JªIdentifierÍ0Í03¶createDefaultPcbLayers‘P§LiteralÍ04Í05¡2Â¤initO¨PropertyÍ0AÍ0IÂÂÂJªIdentifierÍ0AÍ0E¤netsQ¯ArrayExpressionÍ0GÍ0I¤initO¨PropertyÍ0TÍ0vÂÂÂJªIdentifierÍ0TÍ0^ªnetClassesS®CallExpressionÍ0`Í0vJªIdentifierÍ0`Í0t´defaultPcbNetClassesÂ¤initO¨PropertyÍ0Í0§ÂÂÂJªIdentifierÍ0Í0‹ªlayerStackS®CallExpressionÍ0Í0§JªIdentifierÍ0Í0¤·createDefaultLayerStack‘P§LiteralÍ0¥Í0¦¡2Â¤initO¨PropertyÍ0²Í0¿ÂÂÂJªIdentifierÍ0²Í0»©diffPairsQ¯ArrayExpressionÍ0½Í0¿¤initO¨PropertyÍ0ÊÍ1¹ÂÂÂJªIdentifierÍ0ÊÍ0Ò¨metadataN°ObjectExpressionÍ0ÔÍ1¹—O¨PropertyÍ0ãÍ0íÂÂÂJªIdentifierÍ0ãÍ0é¦authorP§LiteralÍ0ëÍ0í ¢''¤initO¨PropertyÍ0üÍ1
-ÂÂÂJªIdentifierÍ0üÍ1©createdAtJªIdentifierÍ1Í1
-£now¤initO¨PropertyÍ1Í1(ÂÂÂJªIdentifierÍ1Í1#ªmodifiedAtJªIdentifierÍ1%Í1(£now¤initO¨PropertyÍ17Í1FÂÂÂJªIdentifierÍ17Í1B«descriptionP§LiteralÍ1DÍ1F ¢''¤initO¨PropertyÍ1UÍ1`ÂÂÂJªIdentifierÍ1UÍ1]¨gridSizeP§LiteralÍ1_Í1`¡5¤initO¨PropertyÍ1oÍ1{ÂÂÂJªIdentifierÍ1oÍ1t¥unitsP§LiteralÍ1vÍ1{£mil¥'mil'¤initO¨PropertyÍ1ŠÍ1®ÂÂÂJªIdentifierÍ1ŠÍ1•«designRulesS®CallExpressionÍ1—Í1®JªIdentifierÍ1—Í1¬µdefaultPcbDesignRulesÂ¤init¤initÀG¶ExportNamedDeclarationÍ1ÆÍ2’K³FunctionDeclarationÍ1ÍÍ2’JªIdentifierÍ1ÖÍ1î¸createDefaultPcbViewportÂÂÂL®BlockStatementÍ1ñÍ2’‘M¯ReturnStatementÍ1øÍ2N°ObjectExpressionÍ1ÿÍ2•O¨PropertyÍ2
-Í2ÂÂÂJªIdentifierÍ2
-Í2¤zoomP§LiteralÍ2Í2Ë?Ã333333¤0.15¤initO¨PropertyÍ2Í2:ÂÂÂJªIdentifierÍ2Í2(©panOffsetN°ObjectExpressionÍ2*Í2:’O¨PropertyÍ2,Í21ÂÂÂJªIdentifierÍ2,Í2-¡xP§LiteralÍ2/Í21(¢40¤initO¨PropertyÍ23Í28ÂÂÂJªIdentifierÍ23Í24¡yP§LiteralÍ26Í28(¢40¤init¤initO¨PropertyÍ2EÍ2VÂÂÂJªIdentifierÍ2EÍ2P«gridVisibleP§LiteralÍ2RÍ2VÃ¤true¤initO¨PropertyÍ2aÍ2lÂÂÂJªIdentifierÍ2aÍ2i¨gridSizeP§LiteralÍ2kÍ2l¡5¤initO¨PropertyÍ2wÍ2‡ÂÂÂJªIdentifierÍ2wÍ2ªsnapToGridP§LiteralÍ2ƒÍ2‡Ã¤true¤initÀG¶ExportNamedDeclarationÍ2¦Í3èK³FunctionDeclarationÍ2­Í3èJªIdentifierÍ2¶Í2Ã­isCopperLayerÂÂÂ‘JªIdentifierÍ2ÄÍ2É¥layerL®BlockStatementÍ2ËÍ3è‘M¯ReturnStatementÍ2ÒÍ3åU±LogicalExpressionÍ2ÙÍ3äU±LogicalExpressionÍ2ÙÍ3ÅU±LogicalExpressionÍ2ÙÍ3U±LogicalExpressionÍ2ÙÍ3~U±LogicalExpressionÍ2ÙÍ3VU±LogicalExpressionÍ2ÙÍ37U±LogicalExpressionÍ2ÙÍ3U°BinaryExpressionÍ2ÙÍ2òJªIdentifierÍ2ÙÍ2Ş¥layer£===R°MemberExpressionÍ2ãÍ2òJªIdentifierÍ2ãÍ2íªPcbLayerIdJªIdentifierÍ2îÍ2ò¤F_CUÂÂ¢||U°BinaryExpressionÍ2öÍ3JªIdentifierÍ2öÍ2û¥layer£===R°MemberExpressionÍ3 Í3JªIdentifierÍ3 Í3
-ªPcbLayerIdJªIdentifierÍ3Í3¤B_CUÂÂ¢||U°BinaryExpressionÍ3Í37JªIdentifierÍ3Í3!¥layer£===R°MemberExpressionÍ3&Í37JªIdentifierÍ3&Í30ªPcbLayerIdJªIdentifierÍ31Í37¦IN1_CUÂÂ¢||U°BinaryExpressionÍ3;Í3VJªIdentifierÍ3;Í3@¥layer£===R°MemberExpressionÍ3EÍ3VJªIdentifierÍ3EÍ3OªPcbLayerIdJªIdentifierÍ3PÍ3V¦IN2_CUÂÂ¢||U°BinaryExpressionÍ3cÍ3~JªIdentifierÍ3cÍ3h¥layer£===R°MemberExpressionÍ3mÍ3~JªIdentifierÍ3mÍ3wªPcbLayerIdJªIdentifierÍ3xÍ3~¦IN3_CUÂÂ¢||U°BinaryExpressionÍ3‚Í3JªIdentifierÍ3‚Í3‡¥layer£===R°MemberExpressionÍ3ŒÍ3JªIdentifierÍ3ŒÍ3–ªPcbLayerIdJªIdentifierÍ3—Í3¦IN4_CUÂÂ¢||U°BinaryExpressionÍ3ªÍ3ÅJªIdentifierÍ3ªÍ3¯¥layer£===R°MemberExpressionÍ3´Í3ÅJªIdentifierÍ3´Í3¾ªPcbLayerIdJªIdentifierÍ3¿Í3Å¦IN5_CUÂÂ¢||U°BinaryExpressionÍ3ÉÍ3äJªIdentifierÍ3ÉÍ3Î¥layer£===R°MemberExpressionÍ3ÓÍ3äJªIdentifierÍ3ÓÍ3İªPcbLayerIdJªIdentifierÍ3ŞÍ3ä¦IN6_CUÂÂÀG¶ExportNamedDeclarationÍ3êÍ4ëK³FunctionDeclarationÍ3ñÍ4ëJªIdentifierÍ3úÍ4µcopperLayersFromStackÂÂÂ‘JªIdentifierÍ4Í4¥stackL®BlockStatementÍ4Í4ë“H³VariableDeclarationÍ4Í4-‘I²VariableDeclaratorÍ4$Í4,JªIdentifierÍ4$Í4'£outQ¯ArrayExpressionÍ4*Í4,¥constÔr]—¤type¥start£end¥await¤left¥right¤body®ForOfStatementÍ43Í4×ÂH³VariableDeclarationÍ48Í4@‘I²VariableDeclaratorÍ4>Í4@JªIdentifierÍ4>Í4@¢slÀ¥constR°MemberExpressionÍ4DÍ4PJªIdentifierÍ4DÍ4I¥stackJªIdentifierÍ4JÍ4P¦layersÂÂL®BlockStatementÍ4RÍ4×‘T«IfStatementÍ4]Í4ĞU±LogicalExpressionÍ4aÍ4™U°BinaryExpressionÍ4aÍ4…R°MemberExpressionÍ4aÍ4hJªIdentifierÍ4aÍ4c¢slJªIdentifierÍ4dÍ4h¤typeÂÂ£===R°MemberExpressionÍ4mÍ4…JªIdentifierÍ4mÍ4~±PcbStackLayerTypeJªIdentifierÍ4Í4…¦COPPERÂÂ¢&&R°MemberExpressionÍ4‰Í4™JªIdentifierÍ4‰Í4‹¢slJªIdentifierÍ4ŒÍ4™­copperLayerIdÂÂL®BlockStatementÍ4›Í4Ğ‘W³ExpressionStatementÍ4ªÍ4ÅS®CallExpressionÍ4ªÍ4ÄR°MemberExpressionÍ4ªÍ4²JªIdentifierÍ4ªÍ4­£outJªIdentifierÍ4®Í4²¤pushÂÂ‘R°MemberExpressionÍ4³Í4ÃJªIdentifierÍ4³Í4µ¢slJªIdentifierÍ4¶Í4Ã­copperLayerIdÂÂÂÀM¯ReturnStatementÍ4İÍ4èJªIdentifierÍ4äÍ4ç£outÀG¶ExportNamedDeclarationÍ5ÍJ
-K³FunctionDeclarationÍ5ÍJ
-JªIdentifierÍ5Í52´normalizePcbDocumentÂÂÂ‘JªIdentifierÍ53Í56£docL®BlockStatementÍ58ÍJ
-ŸT«IfStatementÍ5?Í5zÔr^–¤type¥start£end¨operator¦prefix¨argument¯UnaryExpressionÍ5CÍ5R¡!ÃR°MemberExpressionÍ5DÍ5RJªIdentifierÍ5DÍ5G£docJªIdentifierÍ5HÍ5RªfootprintsÂÂL®BlockStatementÍ5TÍ5z‘W³ExpressionStatementÍ5_Í5sÔr_–¤type¥start£end¨operator¤left¥right´AssignmentExpressionÍ5_Í5r¡=R°MemberExpressionÍ5_Í5mJªIdentifierÍ5_Í5b£docJªIdentifierÍ5cÍ5mªfootprintsÂÂQ¯ArrayExpressionÍ5pÍ5rÀT«IfStatementÍ5€Í5³^¯UnaryExpressionÍ5„Í5¡!ÃR°MemberExpressionÍ5…Í5JªIdentifierÍ5…Í5ˆ£docJªIdentifierÍ5‰Í5¦tracksÂÂL®BlockStatementÍ5‘Í5³‘W³ExpressionStatementÍ5œÍ5¬_´AssignmentExpressionÍ5œÍ5«¡=R°MemberExpressionÍ5œÍ5¦JªIdentifierÍ5œÍ5Ÿ£docJªIdentifierÍ5 Í5¦¦tracksÂÂQ¯ArrayExpressionÍ5©Í5«ÀT«IfStatementÍ5¹Í5è^¯UnaryExpressionÍ5½Í5Æ¡!ÃR°MemberExpressionÍ5¾Í5ÆJªIdentifierÍ5¾Í5Á£docJªIdentifierÍ5ÂÍ5Æ¤viasÂÂL®BlockStatementÍ5ÈÍ5è‘W³ExpressionStatementÍ5ÓÍ5á_´AssignmentExpressionÍ5ÓÍ5à¡=R°MemberExpressionÍ5ÓÍ5ÛJªIdentifierÍ5ÓÍ5Ö£docJªIdentifierÍ5×Í5Û¤viasÂÂQ¯ArrayExpressionÍ5ŞÍ5àÀT«IfStatementÍ5îÍ6^¯UnaryExpressionÍ5òÍ5ü¡!ÃR°MemberExpressionÍ5óÍ5üJªIdentifierÍ5óÍ5ö£docJªIdentifierÍ5÷Í5ü¥zonesÂÂL®BlockStatementÍ5şÍ6‘W³ExpressionStatementÍ6	Í6_´AssignmentExpressionÍ6	Í6¡=R°MemberExpressionÍ6	Í6JªIdentifierÍ6	Í6£docJªIdentifierÍ6Í6¥zonesÂÂQ¯ArrayExpressionÍ6Í6ÀT«IfStatementÍ6%Í6T^¯UnaryExpressionÍ6)Í62¡!ÃR°MemberExpressionÍ6*Í62JªIdentifierÍ6*Í6-£docJªIdentifierÍ6.Í62¤netsÂÂL®BlockStatementÍ64Í6T‘W³ExpressionStatementÍ6?Í6M_´AssignmentExpressionÍ6?Í6L¡=R°MemberExpressionÍ6?Í6GJªIdentifierÍ6?Í6B£docJªIdentifierÍ6CÍ6G¤netsÂÂQ¯ArrayExpressionÍ6JÍ6LÀT«IfStatementÍ6ZÍ6ÈU±LogicalExpressionÍ6^Í6Œ^¯UnaryExpressionÍ6^Í6m¡!ÃR°MemberExpressionÍ6_Í6mJªIdentifierÍ6_Í6b£docJªIdentifierÍ6cÍ6mªnetClassesÂÂ¢||U°BinaryExpressionÍ6qÍ6ŒR°MemberExpressionÍ6qÍ6†R°MemberExpressionÍ6qÍ6JªIdentifierÍ6qÍ6t£docJªIdentifierÍ6uÍ6ªnetClassesÂÂJªIdentifierÍ6€Í6†¦lengthÂÂ£===P§LiteralÍ6‹Í6Œ ¡0L®BlockStatementÍ6Í6È‘W³ExpressionStatementÍ6™Í6Á_´AssignmentExpressionÍ6™Í6À¡=R°MemberExpressionÍ6™Í6§JªIdentifierÍ6™Í6œ£docJªIdentifierÍ6Í6§ªnetClassesÂÂS®CallExpressionÍ6ªÍ6ÀJªIdentifierÍ6ªÍ6¾´defaultPcbNetClassesÂÀT«IfStatementÍ6ÎÍ7^¯UnaryExpressionÍ6ÒÍ6à¡!ÃR°MemberExpressionÍ6ÓÍ6àJªIdentifierÍ6ÓÍ6Ö£docJªIdentifierÍ6×Í6à©diffPairsÂÂL®BlockStatementÍ6âÍ7‘W³ExpressionStatementÍ6íÍ7 _´AssignmentExpressionÍ6íÍ6ÿ¡=R°MemberExpressionÍ6íÍ6úJªIdentifierÍ6íÍ6ğ£docJªIdentifierÍ6ñÍ6ú©diffPairsÂÂQ¯ArrayExpressionÍ6ıÍ6ÿÀT«IfStatementÍ7Í7 U±LogicalExpressionÍ7Í7`U±LogicalExpressionÍ7Í7:^¯UnaryExpressionÍ7Í7 ¡!ÃR°MemberExpressionÍ7Í7 JªIdentifierÍ7Í7£docJªIdentifierÍ7Í7 ªlayerStackÂÂ¢||^¯UnaryExpressionÍ7$Í7:¡!ÃR°MemberExpressionÍ7%Í7:R°MemberExpressionÍ7%Í73JªIdentifierÍ7%Í7(£docJªIdentifierÍ7)Í73ªlayerStackÂÂJªIdentifierÍ74Í7:¦layersÂÂ¢||U°BinaryExpressionÍ7>Í7`R°MemberExpressionÍ7>Í7ZR°MemberExpressionÍ7>Í7SR°MemberExpressionÍ7>Í7LJªIdentifierÍ7>Í7A£docJªIdentifierÍ7BÍ7LªlayerStackÂÂJªIdentifierÍ7MÍ7S¦layersÂÂJªIdentifierÍ7TÍ7Z¦lengthÂÂ£===P§LiteralÍ7_Í7` ¡0L®BlockStatementÍ7bÍ7 ‘W³ExpressionStatementÍ7mÍ7™_´AssignmentExpressionÍ7mÍ7˜¡=R°MemberExpressionÍ7mÍ7{JªIdentifierÍ7mÍ7p£docJªIdentifierÍ7qÍ7{ªlayerStackÂÂS®CallExpressionÍ7~Í7˜JªIdentifierÍ7~Í7•·createDefaultLayerStack‘P§LiteralÍ7–Í7—¡2ÂÀ]®ForOfStatementÍ7¦Í8›ÂH³VariableDeclarationÍ7«Í7´‘I²VariableDeclaratorÍ7±Í7´JªIdentifierÍ7±Í7´£viaÀ¥constR°MemberExpressionÍ7¸Í7ÀJªIdentifierÍ7¸Í7»£docJªIdentifierÍ7¼Í7À¤viasÂÂL®BlockStatementÍ7ÂÍ8›’T«IfStatementÍ7ÍÍ8^¯UnaryExpressionÍ7ÑÍ7Ú¡!ÃR°MemberExpressionÍ7ÒÍ7ÚJªIdentifierÍ7ÒÍ7Õ£viaJªIdentifierÍ7ÖÍ7Ú¤kindÂÂL®BlockStatementÍ7ÜÍ8‘W³ExpressionStatementÍ7ëÍ8	_´AssignmentExpressionÍ7ëÍ8¡=R°MemberExpressionÍ7ëÍ7óJªIdentifierÍ7ëÍ7î£viaJªIdentifierÍ7ïÍ7ó¤kindÂÂR°MemberExpressionÍ7öÍ8JªIdentifierÍ7öÍ8 ªPcbViaKindJªIdentifierÍ8Í8§THROUGHÂÂÀT«IfStatementÍ8Í8”U±LogicalExpressionÍ8"Í8H^¯UnaryExpressionÍ8"Í8-¡!ÃR°MemberExpressionÍ8#Í8-JªIdentifierÍ8#Í8&£viaJªIdentifierÍ8'Í8-¦layersÂÂ¢||U°BinaryExpressionÍ81Í8HR°MemberExpressionÍ81Í8BR°MemberExpressionÍ81Í8;JªIdentifierÍ81Í84£viaJªIdentifierÍ85Í8;¦layersÂÂJªIdentifierÍ8<Í8B¦lengthÂÂ£===P§LiteralÍ8GÍ8H ¡0L®BlockStatementÍ8JÍ8”‘W³ExpressionStatementÍ8YÍ8‰_´AssignmentExpressionÍ8YÍ8ˆ¡=R°MemberExpressionÍ8YÍ8cJªIdentifierÍ8YÍ8\£viaJªIdentifierÍ8]Í8c¦layersÂÂQ¯ArrayExpressionÍ8fÍ8ˆ’R°MemberExpressionÍ8gÍ8vJªIdentifierÍ8gÍ8qªPcbLayerIdJªIdentifierÍ8rÍ8v¤F_CUÂÂR°MemberExpressionÍ8xÍ8‡JªIdentifierÍ8xÍ8‚ªPcbLayerIdJªIdentifierÍ8ƒÍ8‡¤B_CUÂÂÀ]®ForOfStatementÍ8¡Í;ëÂH³VariableDeclarationÍ8¦Í8­‘I²VariableDeclaratorÍ8¬Í8­JªIdentifierÍ8¬Í8­¡zÀ¥constR°MemberExpressionÍ8±Í8ºJªIdentifierÍ8±Í8´£docJªIdentifierÍ8µÍ8º¥zonesÂÂL®BlockStatementÍ8¼Í;ë™T«IfStatementÍ8ÇÍ8ó^¯UnaryExpressionÍ8ËÍ8Õ¡!ÃR°MemberExpressionÍ8ÌÍ8ÕJªIdentifierÍ8ÌÍ8Í¡zJªIdentifierÍ8ÎÍ8Õ§cutoutsÂÂW³ExpressionStatementÍ8äÍ8ó_´AssignmentExpressionÍ8äÍ8ò¡=R°MemberExpressionÍ8äÍ8íJªIdentifierÍ8äÍ8å¡zJªIdentifierÍ8æÍ8í§cutoutsÂÂQ¯ArrayExpressionÍ8ğÍ8òÀT«IfStatementÍ8ıÍ95^¯UnaryExpressionÍ9Í9¡!ÃR°MemberExpressionÍ9Í9JªIdentifierÍ9Í9¡zJªIdentifierÍ9Í9­manualCutoutsÂÂW³ExpressionStatementÍ9 Í95_´AssignmentExpressionÍ9 Í94¡=R°MemberExpressionÍ9 Í9/JªIdentifierÍ9 Í9!¡zJªIdentifierÍ9"Í9/­manualCutoutsÂÂQ¯ArrayExpressionÍ92Í94ÀT«IfStatementÍ9?Í9›U±LogicalExpressionÍ9CÍ9pU°BinaryExpressionÍ9CÍ9ZR°MemberExpressionÍ9CÍ9LJªIdentifierÍ9CÍ9D¡zJªIdentifierÍ9EÍ9L§netNameÂÂ£===JªIdentifierÍ9QÍ9Z©undefined¢||U°BinaryExpressionÍ9^Í9pR°MemberExpressionÍ9^Í9gJªIdentifierÍ9^Í9_¡zJªIdentifierÍ9`Í9g§netNameÂÂ£===P§LiteralÍ9lÍ9pÀ¤nullL®BlockStatementÍ9rÍ9›‘W³ExpressionStatementÍ9Í9_´AssignmentExpressionÍ9Í9¡=R°MemberExpressionÍ9Í9ŠJªIdentifierÍ9Í9‚¡zJªIdentifierÍ9ƒÍ9Š§netNameÂÂP§LiteralÍ9Í9 ¢''ÀT«IfStatementÍ9¥Í9ûU±LogicalExpressionÍ9©Í9ÒU°BinaryExpressionÍ9©Í9¾R°MemberExpressionÍ9©Í9°JªIdentifierÍ9©Í9ª¡zJªIdentifierÍ9«Í9°¥netIdÂÂ£===JªIdentifierÍ9µÍ9¾©undefined¢||U°BinaryExpressionÍ9ÂÍ9ÒR°MemberExpressionÍ9ÂÍ9ÉJªIdentifierÍ9ÂÍ9Ã¡zJªIdentifierÍ9ÄÍ9É¥netIdÂÂ£===P§LiteralÍ9ÎÍ9ÒÀ¤nullL®BlockStatementÍ9ÔÍ9û‘W³ExpressionStatementÍ9ãÍ9ğ_´AssignmentExpressionÍ9ãÍ9ï¡=R°MemberExpressionÍ9ãÍ9êJªIdentifierÍ9ãÍ9ä¡zJªIdentifierÍ9åÍ9ê¥netIdÂÂP§LiteralÍ9íÍ9ï ¢''ÀT«IfStatementÍ:Í:U±LogicalExpressionÍ:	Í:6U°BinaryExpressionÍ:	Í:"R°MemberExpressionÍ:	Í:JªIdentifierÍ:	Í:
-¡zJªIdentifierÍ:Í:©clearanceÂÂ£===JªIdentifierÍ:Í:"©undefined¢||U°BinaryExpressionÍ:&Í:6R°MemberExpressionÍ:&Í:1JªIdentifierÍ:&Í:'¡zJªIdentifierÍ:(Í:1©clearanceÂÂ¢<=P§LiteralÍ:5Í:6 ¡0L®BlockStatementÍ:8Í:‘W³ExpressionStatementÍ:GÍ:‚_´AssignmentExpressionÍ:GÍ:¡=R°MemberExpressionÍ:GÍ:RJªIdentifierÍ:GÍ:H¡zJªIdentifierÍ:IÍ:R©clearanceÂÂU±LogicalExpressionÍ:UÍ:W¯ChainExpressionÍ:UÍ:|R°MemberExpressionÍ:UÍ:|R°MemberExpressionÍ:UÍ:nR°MemberExpressionÍ:UÍ:aJªIdentifierÍ:UÍ:X£docJªIdentifierÍ:YÍ:a¨metadataÂÂJªIdentifierÍ:cÍ:n«designRulesÂÃJªIdentifierÍ:pÍ:|¬minClearanceÂÃ¢??P§LiteralÍ:€Í:¡6ÀT«IfStatementÍ:—Í:ŞU°BinaryExpressionÍ:›Í:¸R°MemberExpressionÍ:›Í:ªJªIdentifierÍ:›Í:œ¡zJªIdentifierÍ:Í:ª­thermalReliefÂÂ£===JªIdentifierÍ:¯Í:¸©undefinedW³ExpressionStatementÍ:ÇÍ:Ş_´AssignmentExpressionÍ:ÇÍ:İ¡=R°MemberExpressionÍ:ÇÍ:ÖJªIdentifierÍ:ÇÍ:È¡zJªIdentifierÍ:ÉÍ:Ö­thermalReliefÂÂP§LiteralÍ:ÙÍ:İÃ¤trueÀT«IfStatementÍ:èÍ;<U±LogicalExpressionÍ:ìÍ;U°BinaryExpressionÍ:ìÍ;R°MemberExpressionÍ:ìÍ:øJªIdentifierÍ:ìÍ:í¡zJªIdentifierÍ:îÍ:øªthermalGapÂÂ£===JªIdentifierÍ:ıÍ;©undefined¢||U°BinaryExpressionÍ;
-Í;R°MemberExpressionÍ;
-Í;JªIdentifierÍ;
-Í;¡zJªIdentifierÍ;Í;ªthermalGapÂÂ¢<=P§LiteralÍ;Í; ¡0W³ExpressionStatementÍ;*Í;<_´AssignmentExpressionÍ;*Í;;¡=R°MemberExpressionÍ;*Í;6JªIdentifierÍ;*Í;+¡zJªIdentifierÍ;,Í;6ªthermalGapÂÂP§LiteralÍ;9Í;;¢12ÀT«IfStatementÍ;FÍ; U±LogicalExpressionÍ;JÍ;}U°BinaryExpressionÍ;JÍ;fR°MemberExpressionÍ;JÍ;XJªIdentifierÍ;JÍ;K¡zJªIdentifierÍ;LÍ;X¬thermalWidthÂÂ£===JªIdentifierÍ;]Í;f©undefined¢||U°BinaryExpressionÍ;jÍ;}R°MemberExpressionÍ;jÍ;xJªIdentifierÍ;jÍ;k¡zJªIdentifierÍ;lÍ;x¬thermalWidthÂÂ¢<=P§LiteralÍ;|Í;} ¡0W³ExpressionStatementÍ;ŒÍ; _´AssignmentExpressionÍ;ŒÍ;Ÿ¡=R°MemberExpressionÍ;ŒÍ;šJªIdentifierÍ;ŒÍ;¡zJªIdentifierÍ;Í;š¬thermalWidthÂÂP§LiteralÍ;Í;Ÿ
-¢10ÀT«IfStatementÍ;ªÍ;äU°BinaryExpressionÍ;®Í;ÆR°MemberExpressionÍ;®Í;¸JªIdentifierÍ;®Í;¯¡zJªIdentifierÍ;°Í;¸¨priorityÂÂ£===JªIdentifierÍ;½Í;Æ©undefinedW³ExpressionStatementÍ;ÕÍ;ä_´AssignmentExpressionÍ;ÕÍ;ã¡=R°MemberExpressionÍ;ÕÍ;ßJªIdentifierÍ;ÕÍ;Ö¡zJªIdentifierÍ;×Í;ß¨priorityÂÂP§LiteralÍ;âÍ;ã ¡0À]®ForOfStatementÍ;ñÍ>ÏÂH³VariableDeclarationÍ;öÍ;ş‘I²VariableDeclaratorÍ;üÍ;şJªIdentifierÍ;üÍ;ş¢fpÀ¥constR°MemberExpressionÍ<Í<JªIdentifierÍ<Í<£docJªIdentifierÍ<Í<ªfootprintsÂÂL®BlockStatementÍ<Í>Ï’T«IfStatementÍ<Í<E^¯UnaryExpressionÍ<!Í<)¡!ÃR°MemberExpressionÍ<"Í<)JªIdentifierÍ<"Í<$¢fpJªIdentifierÍ<%Í<)¤padsÂÂW³ExpressionStatementÍ<8Í<E_´AssignmentExpressionÍ<8Í<D¡=R°MemberExpressionÍ<8Í<?JªIdentifierÍ<8Í<:¢fpJªIdentifierÍ<;Í<?¤padsÂÂQ¯ArrayExpressionÍ<BÍ<DÀ]®ForOfStatementÍ<OÍ>ÈÂH³VariableDeclarationÍ<TÍ<]‘I²VariableDeclaratorÍ<ZÍ<]JªIdentifierÍ<ZÍ<]£padÀ¥constR°MemberExpressionÍ<aÍ<hJªIdentifierÍ<aÍ<c¢fpJªIdentifierÍ<dÍ<h¤padsÂÂL®BlockStatementÍ<jÍ>È“T«IfStatementÍ<yÍ=ÓU±LogicalExpressionÍ<}Í<£^¯UnaryExpressionÍ<}Í<ˆ¡!ÃR°MemberExpressionÍ<~Í<ˆJªIdentifierÍ<~Í<£padJªIdentifierÍ<‚Í<ˆ¦layersÂÂ¢||U°BinaryExpressionÍ<ŒÍ<£R°MemberExpressionÍ<ŒÍ<R°MemberExpressionÍ<ŒÍ<–JªIdentifierÍ<ŒÍ<£padJªIdentifierÍ<Í<–¦layersÂÂJªIdentifierÍ<—Í<¦lengthÂÂ£===P§LiteralÍ<¢Í<£ ¡0L®BlockStatementÍ<¥Í=Ó‘T«IfStatementÍ<¸Í=ÄU°BinaryExpressionÍ<¼Í<×R°MemberExpressionÍ<¼Í<ÄJªIdentifierÍ<¼Í<¿£padJªIdentifierÍ<ÀÍ<Ä¤typeÂÂ£===R°MemberExpressionÍ<ÉÍ<×JªIdentifierÍ<ÉÍ<ÓªPcbPadTypeJªIdentifierÍ<ÔÍ<×£SMDÂÂL®BlockStatementÍ<ÙÍ=S‘W³ExpressionStatementÍ<ğÍ=@_´AssignmentExpressionÍ<ğÍ=?¡=R°MemberExpressionÍ<ğÍ<úJªIdentifierÍ<ğÍ<ó£padJªIdentifierÍ<ôÍ<ú¦layersÂÂQ¯ArrayExpressionÍ<ıÍ=?‘TµConditionalExpressionÍ<şÍ=>U°BinaryExpressionÍ<şÍ=R°MemberExpressionÍ<şÍ=JªIdentifierÍ<şÍ= ¢fpJªIdentifierÍ=Í=¥layerÂÂ£===R°MemberExpressionÍ=Í=JªIdentifierÍ=Í=ªPcbLayerIdJªIdentifierÍ=Í=¤B_CUÂÂR°MemberExpressionÍ=Í=,JªIdentifierÍ=Í='ªPcbLayerIdJªIdentifierÍ=(Í=,¤B_CUÂÂR°MemberExpressionÍ=/Í=>JªIdentifierÍ=/Í=9ªPcbLayerIdJªIdentifierÍ=:Í=>¤F_CUÂÂL®BlockStatementÍ=jÍ=Ä‘W³ExpressionStatementÍ=Í=±_´AssignmentExpressionÍ=Í=°¡=R°MemberExpressionÍ=Í=‹JªIdentifierÍ=Í=„£padJªIdentifierÍ=…Í=‹¦layersÂÂQ¯ArrayExpressionÍ=Í=°’R°MemberExpressionÍ=Í=JªIdentifierÍ=Í=™ªPcbLayerIdJªIdentifierÍ=šÍ=¤F_CUÂÂR°MemberExpressionÍ= Í=¯JªIdentifierÍ= Í=ªªPcbLayerIdJªIdentifierÍ=«Í=¯¤B_CUÂÂÀT«IfStatementÍ=áÍ>KU±LogicalExpressionÍ=åÍ>U°BinaryExpressionÍ=åÍ=şR°MemberExpressionÍ=åÍ=ğJªIdentifierÍ=åÍ=è£padJªIdentifierÍ=éÍ=ğ§netNameÂÂ£===JªIdentifierÍ=õÍ=ş©undefined¢||U°BinaryExpressionÍ>Í>R°MemberExpressionÍ>Í>JªIdentifierÍ>Í>£padJªIdentifierÍ>Í>§netNameÂÂ£===P§LiteralÍ>Í>À¤nullL®BlockStatementÍ>Í>K‘W³ExpressionStatementÍ>+Í><_´AssignmentExpressionÍ>+Í>;¡=R°MemberExpressionÍ>+Í>6JªIdentifierÍ>+Í>.£padJªIdentifierÍ>/Í>6§netNameÂÂP§LiteralÍ>9Í>; ¢''ÀT«IfStatementÍ>YÍ>½U±LogicalExpressionÍ>]Í>ŠU°BinaryExpressionÍ>]Í>tR°MemberExpressionÍ>]Í>fJªIdentifierÍ>]Í>`£padJªIdentifierÍ>aÍ>f¥netIdÂÂ£===JªIdentifierÍ>kÍ>t©undefined¢||U°BinaryExpressionÍ>xÍ>ŠR°MemberExpressionÍ>xÍ>JªIdentifierÍ>xÍ>{£padJªIdentifierÍ>|Í>¥netIdÂÂ£===P§LiteralÍ>†Í>ŠÀ¤nullL®BlockStatementÍ>ŒÍ>½‘W³ExpressionStatementÍ>ŸÍ>®_´AssignmentExpressionÍ>ŸÍ>­¡=R°MemberExpressionÍ>ŸÍ>¨JªIdentifierÍ>ŸÍ>¢£padJªIdentifierÍ>£Í>¨¥netIdÂÂP§LiteralÍ>«Í>­ ¢''À]®ForOfStatementÍ>ÕÍ?³ÂH³VariableDeclarationÍ>ÚÍ>ã‘I²VariableDeclaratorÍ>àÍ>ãJªIdentifierÍ>àÍ>ã£trkÀ¥constR°MemberExpressionÍ>çÍ>ñJªIdentifierÍ>çÍ>ê£docJªIdentifierÍ>ëÍ>ñ¦tracksÂÂL®BlockStatementÍ>óÍ?³’T«IfStatementÍ>şÍ?SU±LogicalExpressionÍ?Í?3U°BinaryExpressionÍ?Í?R°MemberExpressionÍ?Í?JªIdentifierÍ?Í?£trkJªIdentifierÍ?Í?§netNameÂÂ£===JªIdentifierÍ?Í?©undefined¢||U°BinaryExpressionÍ?Í?3R°MemberExpressionÍ?Í?*JªIdentifierÍ?Í?"£trkJªIdentifierÍ?#Í?*§netNameÂÂ£===P§LiteralÍ?/Í?3À¤nullW³ExpressionStatementÍ?BÍ?S_´AssignmentExpressionÍ?BÍ?R¡=R°MemberExpressionÍ?BÍ?MJªIdentifierÍ?BÍ?E£trkJªIdentifierÍ?FÍ?M§netNameÂÂP§LiteralÍ?PÍ?R ¢''ÀT«IfStatementÍ?]Í?¬U±LogicalExpressionÍ?aÍ?U°BinaryExpressionÍ?aÍ?xR°MemberExpressionÍ?aÍ?jJªIdentifierÍ?aÍ?d£trkJªIdentifierÍ?eÍ?j¥netIdÂÂ£===JªIdentifierÍ?oÍ?x©undefined¢||U°BinaryExpressionÍ?|Í?R°MemberExpressionÍ?|Í?…JªIdentifierÍ?|Í?£trkJªIdentifierÍ?€Í?…¥netIdÂÂ£===P§LiteralÍ?ŠÍ?À¤nullW³ExpressionStatementÍ?Í?¬_´AssignmentExpressionÍ?Í?«¡=R°MemberExpressionÍ?Í?¦JªIdentifierÍ?Í? £trkJªIdentifierÍ?¡Í?¦¥netIdÂÂP§LiteralÍ?©Í?« ¢''ÀT«IfStatementÍ?¹ÍDœU±LogicalExpressionÍ?½Í?ã^¯UnaryExpressionÍ?½Í?È¡!ÃR°MemberExpressionÍ?¾Í?ÈJªIdentifierÍ?¾Í?Á£docJªIdentifierÍ?ÂÍ?È¦layersÂÂ¢||U°BinaryExpressionÍ?ÌÍ?ãR°MemberExpressionÍ?ÌÍ?İR°MemberExpressionÍ?ÌÍ?ÖJªIdentifierÍ?ÌÍ?Ï£docJªIdentifierÍ?ĞÍ?Ö¦layersÂÂJªIdentifierÍ?×Í?İ¦lengthÂÂ£===P§LiteralÍ?âÍ?ã ¡0L®BlockStatementÍ?åÍ@7‘W³ExpressionStatementÍ?ğÍ@0_´AssignmentExpressionÍ?ğÍ@/¡=R°MemberExpressionÍ?ğÍ?úJªIdentifierÍ?ğÍ?ó£docJªIdentifierÍ?ôÍ?ú¦layersÂÂS®CallExpressionÍ?ıÍ@/JªIdentifierÍ?ıÍ@¶createDefaultPcbLayers‘R°MemberExpressionÍ@Í@.R°MemberExpressionÍ@Í@"JªIdentifierÍ@Í@£docJªIdentifierÍ@Í@"ªlayerStackÂÂJªIdentifierÍ@#Í@.«copperCountÂÂÂL®BlockStatementÍ@BÍDœ˜W³ExpressionStatementÍ@MÍ@˜S®CallExpressionÍ@MÍ@—JªIdentifierÍ@MÍ@_²ensureLayerPresent•JªIdentifierÍ@`Í@c£docR°MemberExpressionÍ@eÍ@vJªIdentifierÍ@eÍ@oªPcbLayerIdJªIdentifierÍ@pÍ@v¦F_MASKÂÂP§LiteralÍ@xÍ@„ªFront Mask¬'Front Mask'P§LiteralÍ@†Í@§#2E8B57©'#2E8B57'P§LiteralÍ@‘Í@–Â¥falseÂW³ExpressionStatementÍ@¢Í@ìS®CallExpressionÍ@¢Í@ëJªIdentifierÍ@¢Í@´²ensureLayerPresent•JªIdentifierÍ@µÍ@¸£docR°MemberExpressionÍ@ºÍ@ËJªIdentifierÍ@ºÍ@ÄªPcbLayerIdJªIdentifierÍ@ÅÍ@Ë¦B_MASKÂÂP§LiteralÍ@ÍÍ@Ø©Back Mask«'Back Mask'P§LiteralÍ@ÚÍ@ã§#2E8B57©'#2E8B57'P§LiteralÍ@åÍ@êÂ¥falseÂW³ExpressionStatementÍ@öÍACS®CallExpressionÍ@öÍABJªIdentifierÍ@öÍA²ensureLayerPresent•JªIdentifierÍA	ÍA£docR°MemberExpressionÍAÍA JªIdentifierÍAÍAªPcbLayerIdJªIdentifierÍAÍA §F_PASTEÂÂP§LiteralÍA"ÍA/«Front Paste­'Front Paste'P§LiteralÍA1ÍA:§#C0C0C0©'#C0C0C0'P§LiteralÍA<ÍAAÂ¥falseÂW³ExpressionStatementÍAMÍA™S®CallExpressionÍAMÍA˜JªIdentifierÍAMÍA_²ensureLayerPresent•JªIdentifierÍA`ÍAc£docR°MemberExpressionÍAeÍAwJªIdentifierÍAeÍAoªPcbLayerIdJªIdentifierÍApÍAw§B_PASTEÂÂP§LiteralÍAyÍA…ªBack Paste¬'Back Paste'P§LiteralÍA‡ÍA§#A0A0A0©'#A0A0A0'P§LiteralÍA’ÍA—Â¥falseÂT«IfStatementÍA£ÍBŠU°BinaryExpressionÍA§ÍAÆR°MemberExpressionÍA§ÍAÁR°MemberExpressionÍA§ÍAµJªIdentifierÍA§ÍAª£docJªIdentifierÍA«ÍAµªlayerStackÂÂJªIdentifierÍA¶ÍAÁ«copperCountÂÂ¢>=P§LiteralÍAÅÍAÆ¡4L®BlockStatementÍAÈÍBŠ’W³ExpressionStatementÍA×ÍB$S®CallExpressionÍA×ÍB#JªIdentifierÍA×ÍAé²ensureLayerPresent•JªIdentifierÍAêÍAí£docR°MemberExpressionÍAïÍB JªIdentifierÍAïÍAùªPcbLayerIdJªIdentifierÍAúÍB ¦IN1_CUÂÂP§LiteralÍBÍB­Inner1 Copper¯'Inner1 Copper'P§LiteralÍBÍB§#D500F9©'#D500F9'P§LiteralÍBÍB"Ã¤trueÂW³ExpressionStatementÍB2ÍBS®CallExpressionÍB2ÍB~JªIdentifierÍB2ÍBD²ensureLayerPresent•JªIdentifierÍBEÍBH£docR°MemberExpressionÍBJÍB[JªIdentifierÍBJÍBTªPcbLayerIdJªIdentifierÍBUÍB[¦IN2_CUÂÂP§LiteralÍB]ÍBl­Inner2 Copper¯'Inner2 Copper'P§LiteralÍBnÍBw§#FF9100©'#FF9100'P§LiteralÍByÍB}Ã¤trueÂÀT«IfStatementÍB”ÍC{U°BinaryExpressionÍB˜ÍB·R°MemberExpressionÍB˜ÍB²R°MemberExpressionÍB˜ÍB¦JªIdentifierÍB˜ÍB›£docJªIdentifierÍBœÍB¦ªlayerStackÂÂJªIdentifierÍB§ÍB²«copperCountÂÂ¢>=P§LiteralÍB¶ÍB·¡6L®BlockStatementÍB¹ÍC{’W³ExpressionStatementÍBÈÍCS®CallExpressionÍBÈÍCJªIdentifierÍBÈÍBÚ²ensureLayerPresent•JªIdentifierÍBÛÍBŞ£docR°MemberExpressionÍBàÍBñJªIdentifierÍBàÍBêªPcbLayerIdJªIdentifierÍBëÍBñ¦IN3_CUÂÂP§LiteralÍBóÍC­Inner3 Copper¯'Inner3 Copper'P§LiteralÍCÍC§#651FFF©'#651FFF'P§LiteralÍCÍCÃ¤trueÂW³ExpressionStatementÍC#ÍCpS®CallExpressionÍC#ÍCoJªIdentifierÍC#ÍC5²ensureLayerPresent•JªIdentifierÍC6ÍC9£docR°MemberExpressionÍC;ÍCLJªIdentifierÍC;ÍCEªPcbLayerIdJªIdentifierÍCFÍCL¦IN4_CUÂÂP§LiteralÍCNÍC]­Inner4 Copper¯'Inner4 Copper'P§LiteralÍC_ÍCh§#00E5FF©'#00E5FF'P§LiteralÍCjÍCnÃ¤trueÂÀT«IfStatementÍC…ÍDlU°BinaryExpressionÍC‰ÍC¨R°MemberExpressionÍC‰ÍC£R°MemberExpressionÍC‰ÍC—JªIdentifierÍC‰ÍCŒ£docJªIdentifierÍCÍC—ªlayerStackÂÂJªIdentifierÍC˜ÍC£«copperCountÂÂ¢>=P§LiteralÍC§ÍC¨¡8L®BlockStatementÍCªÍDl’W³ExpressionStatementÍC¹ÍDS®CallExpressionÍC¹ÍDJªIdentifierÍC¹ÍCË²ensureLayerPresent•JªIdentifierÍCÌÍCÏ£docR°MemberExpressionÍCÑÍCâJªIdentifierÍCÑÍCÛªPcbLayerIdJªIdentifierÍCÜÍCâ¦IN5_CUÂÂP§LiteralÍCäÍCó­Inner5 Copper¯'Inner5 Copper'P§LiteralÍCõÍCş§#FFD740©'#FFD740'P§LiteralÍD ÍDÃ¤trueÂW³ExpressionStatementÍDÍDaS®CallExpressionÍDÍD`JªIdentifierÍDÍD&²ensureLayerPresent•JªIdentifierÍD'ÍD*£docR°MemberExpressionÍD,ÍD=JªIdentifierÍD,ÍD6ªPcbLayerIdJªIdentifierÍD7ÍD=¦IN6_CUÂÂP§LiteralÍD?ÍDN­Inner6 Copper¯'Inner6 Copper'P§LiteralÍDPÍDY§#69F0AE©'#69F0AE'P§LiteralÍD[ÍD_Ã¤trueÂÀW³ExpressionStatementÍDvÍD•S®CallExpressionÍDvÍD”JªIdentifierÍDvÍD¹applyDistinctCopperColors‘JªIdentifierÍDÍD“£docÂT«IfStatementÍD¢ÍEÆU±LogicalExpressionÍD¦ÍDùU±LogicalExpressionÍD¦ÍDÓ^¯UnaryExpressionÍD¦ÍD·¡!ÃR°MemberExpressionÍD§ÍD·JªIdentifierÍD§ÍDª£docJªIdentifierÍD«ÍD·¬boardOutlineÂÂ¢||^¯UnaryExpressionÍD»ÍDÓ¡!ÃR°MemberExpressionÍD¼ÍDÓR°MemberExpressionÍD¼ÍDÌJªIdentifierÍD¼ÍD¿£docJªIdentifierÍDÀÍDÌ¬boardOutlineÂÂJªIdentifierÍDÍÍDÓ¦pointsÂÂ¢||U°BinaryExpressionÍD×ÍDùR°MemberExpressionÍD×ÍDõR°MemberExpressionÍD×ÍDîR°MemberExpressionÍD×ÍDçJªIdentifierÍD×ÍDÚ£docJªIdentifierÍDÛÍDç¬boardOutlineÂÂJªIdentifierÍDèÍDî¦pointsÂÂJªIdentifierÍDïÍDõ¦lengthÂÂ¡<P§LiteralÍDøÍDù¡3L®BlockStatementÍDûÍEÆ‘W³ExpressionStatementÍEÍE¿_´AssignmentExpressionÍEÍE¾¡=R°MemberExpressionÍEÍEJªIdentifierÍEÍE	£docJªIdentifierÍE
-ÍE¬boardOutlineÂÂN°ObjectExpressionÍEÍE¾’O¨PropertyÍE(ÍEœÂÂÂJªIdentifierÍE(ÍE.¦pointsQ¯ArrayExpressionÍE0ÍEœ”N°ObjectExpressionÍECÍEQ’O¨PropertyÍEEÍEIÂÂÂJªIdentifierÍEEÍEF¡xP§LiteralÍEHÍEI ¡0¤initO¨PropertyÍEKÍEOÂÂÂJªIdentifierÍEKÍEL¡yP§LiteralÍENÍEO ¡0¤initN°ObjectExpressionÍESÍEd’O¨PropertyÍEUÍE\ÂÂÂJªIdentifierÍEUÍEV¡xP§LiteralÍEXÍE\Í¸¤3000¤initO¨PropertyÍE^ÍEbÂÂÂJªIdentifierÍE^ÍE_¡yP§LiteralÍEaÍEb ¡0¤initN°ObjectExpressionÍEfÍEz’O¨PropertyÍEhÍEoÂÂÂJªIdentifierÍEhÍEi¡xP§LiteralÍEkÍEoÍ¸¤3000¤initO¨PropertyÍEqÍExÂÂÂJªIdentifierÍEqÍEr¡yP§LiteralÍEtÍExÍĞ¤2000¤initN°ObjectExpressionÍE|ÍE’O¨PropertyÍE~ÍE‚ÂÂÂJªIdentifierÍE~ÍE¡xP§LiteralÍEÍE‚ ¡0¤initO¨PropertyÍE„ÍE‹ÂÂÂJªIdentifierÍE„ÍE…¡yP§LiteralÍE‡ÍE‹ÍĞ¤2000¤init¤initO¨PropertyÍE«ÍE³ÂÂÂJªIdentifierÍE«ÍE°¥widthP§LiteralÍE²ÍE³¡5¤initÀT«IfStatementÍEÌÍJ^¯UnaryExpressionÍEĞÍEİ¡!ÃR°MemberExpressionÍEÑÍEİJªIdentifierÍEÑÍEÔ£docJªIdentifierÍEÕÍEİ¨metadataÂÂL®BlockStatementÍEßÍFá’H³VariableDeclarationÍEêÍF‘I²VariableDeclaratorÍEğÍFJªIdentifierÍEğÍEó£nowS®CallExpressionÍEöÍFR°MemberExpressionÍEöÍFY­NewExpressionÍEöÍF JªIdentifierÍEúÍEş¤DateJªIdentifierÍFÍF«toISOStringÂÂÂ¥constW³ExpressionStatementÍFÍFÚ_´AssignmentExpressionÍFÍFÙ¡=R°MemberExpressionÍFÍF%JªIdentifierÍFÍF£docJªIdentifierÍFÍF%¨metadataÂÂN°ObjectExpressionÍF(ÍFÙ—O¨PropertyÍF7ÍFAÂÂÂJªIdentifierÍF7ÍF=¦authorP§LiteralÍF?ÍFA ¢''¤initO¨PropertyÍFCÍFQÂÂÂJªIdentifierÍFCÍFL©createdAtJªIdentifierÍFNÍFQ£now¤initO¨PropertyÍFSÍFbÂÂÂJªIdentifierÍFSÍF]ªmodifiedAtJªIdentifierÍF_ÍFb£now¤initO¨PropertyÍFqÍF€ÂÂÂJªIdentifierÍFqÍF|«descriptionP§LiteralÍF~ÍF€ ¢''¤initO¨PropertyÍF‚ÍFÂÂÂJªIdentifierÍF‚ÍFŠ¨gridSizeP§LiteralÍFŒÍF¡5¤initO¨PropertyÍFÍF›ÂÂÂJªIdentifierÍFÍF”¥unitsP§LiteralÍF–ÍF›£mil¥'mil'¤initO¨PropertyÍFªÍFÎÂÂÂJªIdentifierÍFªÍFµ«designRulesS®CallExpressionÍF·ÍFÎJªIdentifierÍF·ÍFÌµdefaultPcbDesignRulesÂ¤initL®BlockStatementÍFìÍJ’T«IfStatementÍF÷ÍIˆ^¯UnaryExpressionÍFûÍG¡!ÃR°MemberExpressionÍFüÍGR°MemberExpressionÍFüÍGJªIdentifierÍFüÍFÿ£docJªIdentifierÍG ÍG¨metadataÂÂJªIdentifierÍG	ÍG«designRulesÂÂL®BlockStatementÍGÍGc‘W³ExpressionStatementÍG%ÍGX_´AssignmentExpressionÍG%ÍGW¡=R°MemberExpressionÍG%ÍG=R°MemberExpressionÍG%ÍG1JªIdentifierÍG%ÍG(£docJªIdentifierÍG)ÍG1¨metadataÂÂJªIdentifierÍG2ÍG=«designRulesÂÂS®CallExpressionÍG@ÍGWJªIdentifierÍG@ÍGUµdefaultPcbDesignRulesÂL®BlockStatementÍGrÍIˆ•H³VariableDeclarationÍGÍG¥‘I²VariableDeclaratorÍG‡ÍG¤JªIdentifierÍG‡ÍG‰¢drR°MemberExpressionÍGŒÍG¤R°MemberExpressionÍGŒÍG˜JªIdentifierÍGŒÍG£docJªIdentifierÍGÍG˜¨metadataÂÂJªIdentifierÍG™ÍG¤«designRulesÂÂ¥constT«IfStatementÍG³ÍHU±LogicalExpressionÍG·ÍGğU°BinaryExpressionÍG·ÍGÖR°MemberExpressionÍG·ÍGÈJªIdentifierÍG·ÍG¹¢drJªIdentifierÍGºÍGÈ®minAnnularRingÂÂ£===JªIdentifierÍGÍÍGÖ©undefined¢||U°BinaryExpressionÍGÚÍGğR°MemberExpressionÍGÚÍGëJªIdentifierÍGÚÍGÜ¢drJªIdentifierÍGİÍGë®minAnnularRingÂÂ¢<=P§LiteralÍGïÍGğ ¡0W³ExpressionStatementÍHÍH_´AssignmentExpressionÍHÍH¡=R°MemberExpressionÍHÍHJªIdentifierÍHÍH¢drJªIdentifierÍHÍH®minAnnularRingÂÂP§LiteralÍHÍH¡4ÀT«IfStatementÍH'ÍH‹U±LogicalExpressionÍH+ÍHbU°BinaryExpressionÍH+ÍHIR°MemberExpressionÍH+ÍH;JªIdentifierÍH+ÍH-¢drJªIdentifierÍH.ÍH;­minHoleToHoleÂÂ£===JªIdentifierÍH@ÍHI©undefined¢||U°BinaryExpressionÍHMÍHbR°MemberExpressionÍHMÍH]JªIdentifierÍHMÍHO¢drJªIdentifierÍHPÍH]­minHoleToHoleÂÂ¢<=P§LiteralÍHaÍHb ¡0W³ExpressionStatementÍHuÍH‹_´AssignmentExpressionÍHuÍHŠ¡=R°MemberExpressionÍHuÍH…JªIdentifierÍHuÍHw¢drJªIdentifierÍHxÍH…­minHoleToHoleÂÂP§LiteralÍHˆÍHŠ
-¢10ÀT«IfStatementÍH™ÍHıU±LogicalExpressionÍHÍHÔU°BinaryExpressionÍHÍH»R°MemberExpressionÍHÍH­JªIdentifierÍHÍHŸ¢drJªIdentifierÍH ÍH­­minSilkHeightÂÂ£===JªIdentifierÍH²ÍH»©undefined¢||U°BinaryExpressionÍH¿ÍHÔR°MemberExpressionÍH¿ÍHÏJªIdentifierÍH¿ÍHÁ¢drJªIdentifierÍHÂÍHÏ­minSilkHeightÂÂ¢<=P§LiteralÍHÓÍHÔ ¡0W³ExpressionStatementÍHçÍHı_´AssignmentExpressionÍHçÍHü¡=R°MemberExpressionÍHçÍH÷JªIdentifierÍHçÍHé¢drJªIdentifierÍHêÍH÷­minSilkHeightÂÂP§LiteralÍHúÍHü¢31ÀT«IfStatementÍIÍI}U±LogicalExpressionÍIÍIPU°BinaryExpressionÍIÍI2R°MemberExpressionÍIÍI$JªIdentifierÍIÍI¢drJªIdentifierÍIÍI$²silkToPadClearanceÂÂ£===JªIdentifierÍI)ÍI2©undefined¢||U°BinaryExpressionÍI6ÍIPR°MemberExpressionÍI6ÍIKJªIdentifierÍI6ÍI8¢drJªIdentifierÍI9ÍIK²silkToPadClearanceÂÂ¢<=P§LiteralÍIOÍIP ¡0W³ExpressionStatementÍIcÍI}_´AssignmentExpressionÍIcÍI|¡=R°MemberExpressionÍIcÍIxJªIdentifierÍIcÍIe¢drJªIdentifierÍIfÍIx²silkToPadClearanceÂÂP§LiteralÍI{ÍI|¡8ÀT«IfStatementÍI’ÍJ U±LogicalExpressionÍI–ÍIÊ^¯UnaryExpressionÍI–ÍI¬¡!ÃR°MemberExpressionÍI—ÍI¬R°MemberExpressionÍI—ÍI£JªIdentifierÍI—ÍIš£docJªIdentifierÍI›ÍI£¨metadataÂÂJªIdentifierÍI¤ÍI¬¨gridSizeÂÂ¢||U°BinaryExpressionÍI°ÍIÊR°MemberExpressionÍI°ÍIÅR°MemberExpressionÍI°ÍI¼JªIdentifierÍI°ÍI³£docJªIdentifierÍI´ÍI¼¨metadataÂÂJªIdentifierÍI½ÍIÅ¨gridSizeÂÂ¢<=P§LiteralÍIÉÍIÊ ¡0L®BlockStatementÍIÌÍJ ‘W³ExpressionStatementÍIÛÍIõ_´AssignmentExpressionÍIÛÍIô¡=R°MemberExpressionÍIÛÍIğR°MemberExpressionÍIÛÍIçJªIdentifierÍIÛÍIŞ£docJªIdentifierÍIßÍIç¨metadataÂÂJªIdentifierÍIèÍIğ¨gridSizeÂÂP§LiteralÍIóÍIô¡5ÀÀG¶ExportNamedDeclarationÍO*ÍRjK³FunctionDeclarationÍO1ÍRjJªIdentifierÍO:ÍOOµapplyCopperLayerCountÂÂÂ’JªIdentifierÍOPÍOS£docJªIdentifierÍOUÍO`«copperCountL®BlockStatementÍObÍRj˜H³VariableDeclarationÍOiÍOÁ‘I²VariableDeclaratorÍOoÍOÀJªIdentifierÍOoÍOp¡nTµConditionalExpressionÍOsÍOÀU±LogicalExpressionÍOsÍO®U±LogicalExpressionÍOsÍO™U°BinaryExpressionÍOsÍO„JªIdentifierÍOsÍO~«copperCount£===P§LiteralÍOƒÍO„¡4¢||U°BinaryExpressionÍOˆÍO™JªIdentifierÍOˆÍO“«copperCount£===P§LiteralÍO˜ÍO™¡6¢||U°BinaryExpressionÍOÍO®JªIdentifierÍOÍO¨«copperCount£===P§LiteralÍO­ÍO®¡8JªIdentifierÍO±ÍO¼«copperCountP§LiteralÍO¿ÍOÀ¡2¥constW³ExpressionStatementÍOÇÍOó_´AssignmentExpressionÍOÇÍOò¡=R°MemberExpressionÍOÇÍOÕJªIdentifierÍOÇÍOÊ£docJªIdentifierÍOËÍOÕªlayerStackÂÂS®CallExpressionÍOØÍOòJªIdentifierÍOØÍOï·createDefaultLayerStack‘JªIdentifierÍOğÍOñ¡nÂH³VariableDeclarationÍOùÍP‘I²VariableDeclaratorÍOÿÍPJªIdentifierÍOÿÍP	ªvisibilityY­NewExpressionÍPÍPJªIdentifierÍPÍP£Map¥const]®ForOfStatementÍPÍPjÂH³VariableDeclarationÍP!ÍP(‘I²VariableDeclaratorÍP'ÍP(JªIdentifierÍP'ÍP(¡lÀ¥constR°MemberExpressionÍP,ÍP6JªIdentifierÍP,ÍP/£docJªIdentifierÍP0ÍP6¦layersÂÂL®BlockStatementÍP8ÍPj‘W³ExpressionStatementÍPCÍPcS®CallExpressionÍPCÍPbR°MemberExpressionÍPCÍPQJªIdentifierÍPCÍPMªvisibilityJªIdentifierÍPNÍPQ£setÂÂ’R°MemberExpressionÍPRÍPVJªIdentifierÍPRÍPS¡lJªIdentifierÍPTÍPV¢idÂÂR°MemberExpressionÍPXÍPaJªIdentifierÍPXÍPY¡lJªIdentifierÍPZÍPa§visibleÂÂÂW³ExpressionStatementÍPpÍP—_´AssignmentExpressionÍPpÍP–¡=R°MemberExpressionÍPpÍPzJªIdentifierÍPpÍPs£docJªIdentifierÍPtÍPz¦layersÂÂS®CallExpressionÍP}ÍP–JªIdentifierÍP}ÍP“¶createDefaultPcbLayers‘JªIdentifierÍP”ÍP•¡nÂ]®ForOfStatementÍPÍQ:ÂH³VariableDeclarationÍP¢ÍP©‘I²VariableDeclaratorÍP¨ÍP©JªIdentifierÍP¨ÍP©¡lÀ¥constR°MemberExpressionÍP­ÍP·JªIdentifierÍP­ÍP°£docJªIdentifierÍP±ÍP·¦layersÂÂL®BlockStatementÍP¹ÍQ:’H³VariableDeclarationÍPÄÍPæ‘I²VariableDeclaratorÍPÊÍPåJªIdentifierÍPÊÍPÎ¤prevS®CallExpressionÍPÑÍPåR°MemberExpressionÍPÑÍPßJªIdentifierÍPÑÍPÛªvisibilityJªIdentifierÍPÜÍPß£getÂÂ‘R°MemberExpressionÍPàÍPäJªIdentifierÍPàÍPá¡lJªIdentifierÍPâÍPä¢idÂÂÂ¥constT«IfStatementÍPğÍQ3U°BinaryExpressionÍPôÍQJªIdentifierÍPôÍPø¤prev£!==JªIdentifierÍPıÍQ©undefinedL®BlockStatementÍQÍQ3‘W³ExpressionStatementÍQÍQ(_´AssignmentExpressionÍQÍQ'¡=R°MemberExpressionÍQÍQ JªIdentifierÍQÍQ¡lJªIdentifierÍQÍQ §visibleÂÂJªIdentifierÍQ#ÍQ'¤prevÀH³VariableDeclarationÍQYÍQ‘I²VariableDeclaratorÍQ_ÍQJªIdentifierÍQ_ÍQe¦copperS®CallExpressionÍQhÍQJªIdentifierÍQhÍQ}µcopperLayersFromStack‘R°MemberExpressionÍQ~ÍQŒJªIdentifierÍQ~ÍQ£docJªIdentifierÍQ‚ÍQŒªlayerStackÂÂÂ¥constÔr`—¤type¥start£end¤init¤test¦update¤body¬ForStatementÍQ”ÍRgH³VariableDeclarationÍQ™ÍQ¢‘I²VariableDeclaratorÍQÍQ¢JªIdentifierÍQÍQ¡iP§LiteralÍQ¡ÍQ¢ ¡0£letU°BinaryExpressionÍQ¤ÍQ·JªIdentifierÍQ¤ÍQ¥¡i¡<R°MemberExpressionÍQ¨ÍQ·R°MemberExpressionÍQ¨ÍQ°JªIdentifierÍQ¨ÍQ«£docJªIdentifierÍQ¬ÍQ°¤viasÂÂJªIdentifierÍQ±ÍQ·¦lengthÂÂ^°UpdateExpressionÍQ¹ÍQ¼¢++ÂJªIdentifierÍQ¹ÍQº¡iL®BlockStatementÍQ¾ÍRg’H³VariableDeclarationÍQÉÍQá‘I²VariableDeclaratorÍQÏÍQàJªIdentifierÍQÏÍQÒ£viaR°MemberExpressionÍQÕÍQàR°MemberExpressionÍQÕÍQİJªIdentifierÍQÕÍQØ£docJªIdentifierÍQÙÍQİ¤viasÂÂJªIdentifierÍQŞÍQß¡iÃÂ¥constT«IfStatementÍQëÍR`U±LogicalExpressionÍQïÍR(U°BinaryExpressionÍQïÍRR°MemberExpressionÍQïÍQ÷JªIdentifierÍQïÍQò£viaJªIdentifierÍQóÍQ÷¤kindÂÂ£===JªIdentifierÍQüÍR©undefined¢||U°BinaryExpressionÍR	ÍR(R°MemberExpressionÍR	ÍRJªIdentifierÍR	ÍR£viaJªIdentifierÍRÍR¤kindÂÂ£===R°MemberExpressionÍRÍR(JªIdentifierÍRÍR ªPcbViaKindJªIdentifierÍR!ÍR(§THROUGHÂÂL®BlockStatementÍR*ÍR`‘W³ExpressionStatementÍR9ÍRU_´AssignmentExpressionÍR9ÍRT¡=R°MemberExpressionÍR9ÍRCJªIdentifierÍR9ÍR<£viaJªIdentifierÍR=ÍRC¦layersÂÂS®CallExpressionÍRFÍRTR°MemberExpressionÍRFÍRRJªIdentifierÍRFÍRL¦copperJªIdentifierÍRMÍRR¥sliceÂÂÂÀÀG¶ExportNamedDeclarationÍR‚ÍS;Ôra–¤type¥start£end¢idªsuperClass¤body°ClassDeclarationÍR‰ÍS;JªIdentifierÍRÍR¥¶PcbEditorSelectionDataÀL©ClassBodyÍR¦ÍS;‘Ôrb˜¤type¥start£end¦static¨computed£key¤kind¥value°MethodDefinitionÍR­ÍS8ÂÂJªIdentifierÍR­ÍR¸«constructor«constructorK²FunctionExpressionÍR¸ÍS8ÀÂÂÂL®BlockStatementÍR»ÍS8”W³ExpressionStatementÍRÆÍRİ_´AssignmentExpressionÍRÆÍRÜ¡=R°MemberExpressionÍRÆÍR×Ôrc“¤type¥start£end®ThisExpressionÍRÆÍRÊJªIdentifierÍRËÍR×¬footprintIdsÂÂQ¯ArrayExpressionÍRÚÍRÜW³ExpressionStatementÍRçÍRú_´AssignmentExpressionÍRçÍRù¡=R°MemberExpressionÍRçÍRôc®ThisExpressionÍRçÍRëJªIdentifierÍRìÍRô¨trackIdsÂÂQ¯ArrayExpressionÍR÷ÍRùW³ExpressionStatementÍSÍS_´AssignmentExpressionÍSÍS¡=R°MemberExpressionÍSÍSc®ThisExpressionÍSÍSJªIdentifierÍS	ÍS¦viaIdsÂÂQ¯ArrayExpressionÍSÍSW³ExpressionStatementÍSÍS1_´AssignmentExpressionÍSÍS0¡=R°MemberExpressionÍSÍS+c®ThisExpressionÍSÍS#JªIdentifierÍS$ÍS+§zoneIdsÂÂQ¯ArrayExpressionÍS.ÍS0ÀG¶ExportNamedDeclarationÍSLÍShH³VariableDeclarationÍSSÍSh‘I²VariableDeclaratorÍSWÍSgJªIdentifierÍSWÍSg°PcbSelectionKindÀ£varÀG¶ExportNamedDeclarationÍT¸ÍUFK³FunctionDeclarationÍT¿ÍUFJªIdentifierÍTÈÍTÙ±pcbSelectionEmptyÂÂÂL®BlockStatementÍTÜÍUF‘M¯ReturnStatementÍTãÍUCN°ObjectExpressionÍTêÍUB•O¨PropertyÍTìÍUÂÂÂJªIdentifierÍTìÍTğ¤kindR°MemberExpressionÍTòÍUJªIdentifierÍTòÍU°PcbSelectionKindJªIdentifierÍUÍU¤NONEÂÂ¤initO¨PropertyÍU	ÍUÂÂÂJªIdentifierÍU	ÍU¬footprintIdsQ¯ArrayExpressionÍUÍU¤initO¨PropertyÍUÍU'ÂÂÂJªIdentifierÍUÍU#¨trackIdsQ¯ArrayExpressionÍU%ÍU'¤initO¨PropertyÍU)ÍU3ÂÂÂJªIdentifierÍU)ÍU/¦viaIdsQ¯ArrayExpressionÍU1ÍU3¤initO¨PropertyÍU5ÍU@ÂÂÂJªIdentifierÍU5ÍU<§zoneIdsQ¯ArrayExpressionÍU>ÍU@¤initÀG¶ExportNamedDeclarationÍUHÍX!K³FunctionDeclarationÍUOÍX!JªIdentifierÍUXÍUl´pcbSelectionFromDataÂÂÂ‘JªIdentifierÍUmÍUn¡dL®BlockStatementÍUpÍX!•H³VariableDeclarationÍUwÍU˜‘I²VariableDeclaratorÍU{ÍU—JªIdentifierÍU{ÍU¤kindR°MemberExpressionÍU‚ÍU—JªIdentifierÍU‚ÍU’°PcbSelectionKindJªIdentifierÍU“ÍU—¤NONEÂÂ£letT«IfStatementÍUÍVÉU°BinaryExpressionÍU¢ÍU»R°MemberExpressionÍU¢ÍU·R°MemberExpressionÍU¢ÍU°JªIdentifierÍU¢ÍU£¡dJªIdentifierÍU¤ÍU°¬footprintIdsÂÂJªIdentifierÍU±ÍU·¦lengthÂÂ¡>P§LiteralÍUºÍU» ¡0W³ExpressionStatementÍUÆÍUè_´AssignmentExpressionÍUÆÍUç¡=JªIdentifierÍUÆÍUÊ¤kindR°MemberExpressionÍUÍÍUçJªIdentifierÍUÍÍUİ°PcbSelectionKindJªIdentifierÍUŞÍUç©FOOTPRINTÂÂT«IfStatementÍUóÍVÉU°BinaryExpressionÍU÷ÍVR°MemberExpressionÍU÷ÍVR°MemberExpressionÍU÷ÍVJªIdentifierÍU÷ÍUø¡dJªIdentifierÍUùÍV¨trackIdsÂÂJªIdentifierÍVÍV¦lengthÂÂ¡>P§LiteralÍVÍV ¡0W³ExpressionStatementÍVÍV5_´AssignmentExpressionÍVÍV4¡=JªIdentifierÍVÍV¤kindR°MemberExpressionÍVÍV4JªIdentifierÍVÍV.°PcbSelectionKindJªIdentifierÍV/ÍV4¥TRACKÂÂT«IfStatementÍV@ÍVÉU°BinaryExpressionÍVDÍVWR°MemberExpressionÍVDÍVSR°MemberExpressionÍVDÍVLJªIdentifierÍVDÍVE¡dJªIdentifierÍVFÍVL¦viaIdsÂÂJªIdentifierÍVMÍVS¦lengthÂÂ¡>P§LiteralÍVVÍVW ¡0W³ExpressionStatementÍVbÍV~_´AssignmentExpressionÍVbÍV}¡=JªIdentifierÍVbÍVf¤kindR°MemberExpressionÍViÍV}JªIdentifierÍViÍVy°PcbSelectionKindJªIdentifierÍVzÍV}£VIAÂÂT«IfStatementÍV‰ÍVÉU°BinaryExpressionÍVÍV¡R°MemberExpressionÍVÍVR°MemberExpressionÍVÍV–JªIdentifierÍVÍV¡dJªIdentifierÍVÍV–§zoneIdsÂÂJªIdentifierÍV—ÍV¦lengthÂÂ¡>P§LiteralÍV ÍV¡ ¡0W³ExpressionStatementÍV¬ÍVÉ_´AssignmentExpressionÍV¬ÍVÈ¡=JªIdentifierÍV¬ÍV°¤kindR°MemberExpressionÍV³ÍVÈJªIdentifierÍV³ÍVÃ°PcbSelectionKindJªIdentifierÍVÄÍVÈ¤ZONEÂÂÀH³VariableDeclarationÍVÏÍW,‘I²VariableDeclaratorÍVÕÍW+JªIdentifierÍVÕÍVÚ¥totalU°BinaryExpressionÍVİÍW+U°BinaryExpressionÍVİÍWU°BinaryExpressionÍVİÍWR°MemberExpressionÍVİÍVòR°MemberExpressionÍVİÍVëJªIdentifierÍVİÍVŞ¡dJªIdentifierÍVßÍVë¬footprintIdsÂÂJªIdentifierÍVìÍVò¦lengthÂÂ¡+R°MemberExpressionÍVõÍWR°MemberExpressionÍVõÍVÿJªIdentifierÍVõÍVö¡dJªIdentifierÍV÷ÍVÿ¨trackIdsÂÂJªIdentifierÍW ÍW¦lengthÂÂ¡+R°MemberExpressionÍW	ÍWR°MemberExpressionÍW	ÍWJªIdentifierÍW	ÍW
-¡dJªIdentifierÍWÍW¦viaIdsÂÂJªIdentifierÍWÍW¦lengthÂÂ¡+R°MemberExpressionÍWÍW+R°MemberExpressionÍWÍW$JªIdentifierÍWÍW¡dJªIdentifierÍWÍW$§zoneIdsÂÂJªIdentifierÍW%ÍW+¦lengthÂÂ¥constT«IfStatementÍW2ÍWhU°BinaryExpressionÍW6ÍW?JªIdentifierÍW6ÍW;¥total¡>P§LiteralÍW>ÍW?¡1W³ExpressionStatementÍWJÍWh_´AssignmentExpressionÍWJÍWg¡=JªIdentifierÍWJÍWN¤kindR°MemberExpressionÍWQÍWgJªIdentifierÍWQÍWa°PcbSelectionKindJªIdentifierÍWbÍWg¥MULTIÂÂÀM¯ReturnStatementÍWnÍXN°ObjectExpressionÍWuÍX•X¨PropertyÍW€ÍW„ÂÃÂJªIdentifierÍW€ÍW„¤kind¤initJªIdentifierÍW€ÍW„¤kindO¨PropertyÍWÍW°ÂÂÂJªIdentifierÍWÍW›¬footprintIdsQ¯ArrayExpressionÍWÍW°‘M­SpreadElementÍWÍW¯R°MemberExpressionÍW¡ÍW¯JªIdentifierÍW¡ÍW¢¡dJªIdentifierÍW£ÍW¯¬footprintIdsÂÂ¤initO¨PropertyÍW»ÍWÔÂÂÂJªIdentifierÍW»ÍWÃ¨trackIdsQ¯ArrayExpressionÍWÅÍWÔ‘M­SpreadElementÍWÆÍWÓR°MemberExpressionÍWÉÍWÓJªIdentifierÍWÉÍWÊ¡dJªIdentifierÍWËÍWÓ¨trackIdsÂÂ¤initO¨PropertyÍWßÍWôÂÂÂJªIdentifierÍWßÍWå¦viaIdsQ¯ArrayExpressionÍWçÍWô‘M­SpreadElementÍWèÍWóR°MemberExpressionÍWëÍWóJªIdentifierÍWëÍWì¡dJªIdentifierÍWíÍWó¦viaIdsÂÂ¤initO¨PropertyÍWÿÍXÂÂÂJªIdentifierÍWÿÍX§zoneIdsQ¯ArrayExpressionÍXÍX‘M­SpreadElementÍX	ÍXR°MemberExpressionÍXÍXJªIdentifierÍXÍX¡dJªIdentifierÍXÍX§zoneIdsÂÂ¤initÀ

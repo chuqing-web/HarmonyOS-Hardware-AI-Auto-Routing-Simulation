@@ -98,6 +98,16 @@ function isMountHole(fp: PcbFootprintInst): boolean {
   return false;
 }
 
+/** 安装孔/角孔分组名：四角跨板，不做聚集校验 */
+function isMountOnlyGroupName(name: string): boolean {
+  const n = name.toLowerCase();
+  return n.indexOf('mount') >= 0
+    || n === 'holes'
+    || n === 'hole'
+    || n === 'mh'
+    || n.indexOf('corner') >= 0;
+}
+
 function validateGroups(
   plan: PcbPlacementPlan,
   byId: Map<string, PcbFootprintInst>,
@@ -110,10 +120,15 @@ function validateGroups(
   }
   const boardDiag = Math.sqrt(
     Math.pow(bounds.maxX - bounds.minX, 2) + Math.pow(bounds.maxY - bounds.minY, 2));
-  const maxSpan = Math.max(boardDiag * 0.55, 200);
+  // 0.55 过严：继电器排等合法功能组常差几 mil 被否（如 1414>1409）
+  const maxSpan = Math.max(boardDiag * 0.72, 400);
 
   for (let gi = 0; gi < groups.length; gi++) {
     const g: PcbPlacementGroup = groups[gi];
+    // 安装孔由系统钉四角，对角跨度≈板对角线，禁止按功能组聚集规则否决
+    if (isMountOnlyGroupName(g.name ?? '')) {
+      continue;
+    }
     const ids = g.footprintIds ?? [];
     if (ids.length < 2) {
       continue;
@@ -122,15 +137,24 @@ function validateGroups(
     for (let i = 0; i < ids.length; i++) {
       const id = ids[i];
       if (!byId.has(id)) {
-        return `group ${g.name} unknown footprintId ${id}`;
+        // 组内未知 id（LLM 编造）直接忽略，不否决整轮布局
+        continue;
+      }
+      const fp = byId.get(id);
+      // 安装孔不计入 span（即便混入 power 等功能组）
+      if (fp && isMountHole(fp)) {
+        continue;
       }
       const pend = pendingById.get(id);
-      const fp = byId.get(id);
       if (pend) {
         pts.push({ x: pend.x, y: pend.y });
       } else if (fp) {
         pts.push({ x: fp.position.x, y: fp.position.y });
       }
+    }
+    // 过滤安装孔后不足 2 点 → 无需聚集校验
+    if (pts.length < 2) {
+      continue;
     }
     let maxD = 0;
     for (let i = 0; i < pts.length; i++) {
@@ -150,12 +174,73 @@ function validateGroups(
   return '';
 }
 
+/** 将 LLM 板框落到矩形 outline，并重钉安装孔到四角 */
+function applyLlmBoardSize(doc: PcbDocument, widthMil: number, heightMil: number): string {
+  const w = Math.round(widthMil);
+  const h = Math.round(heightMil);
+  const MIN = 400;
+  const MAX = 8000;
+  if (w < MIN || h < MIN) {
+    return `board size too small ${w}x${h} (min ${MIN})`;
+  }
+  if (w > MAX || h > MAX) {
+    return `board size too large ${w}x${h} (max ${MAX})`;
+  }
+  const prev = boardBounds(doc);
+  doc.boardOutline = {
+    points: [
+      { x: 0, y: 0 },
+      { x: w, y: 0 },
+      { x: w, y: h },
+      { x: 0, y: h }
+    ],
+    width: doc.boardOutline?.width ?? 10
+  };
+  // 安装孔贴新板四角（inset 20mil）
+  const inset = 20;
+  const corners: Point2D[] = [
+    { x: inset, y: inset },
+    { x: w - inset, y: inset },
+    { x: inset, y: h - inset },
+    { x: w - inset, y: h - inset }
+  ];
+  const mounts: PcbFootprintInst[] = [];
+  for (const fp of doc.footprints) {
+    if (isMountHole(fp)) {
+      mounts.push(fp);
+    }
+  }
+  mounts.sort((a, b) => (a.refDes < b.refDes ? -1 : (a.refDes > b.refDes ? 1 : 0)));
+  for (let i = 0; i < mounts.length && i < corners.length; i++) {
+    mounts[i].position = { x: corners[i].x, y: corners[i].y };
+    mounts[i].rotation = 0;
+  }
+  tracePcb('AI_BOARD',
+    `size ${Math.round(prev.maxX - prev.minX)}x${Math.round(prev.maxY - prev.minY)}→${w}x${h}` +
+    ` mounts=${Math.min(mounts.length, corners.length)}`);
+  return '';
+}
+
 export function applyPcbPlacementPlan(doc: PcbDocument, plan: PcbPlacementPlan): PlacementApplyResult {
   if (!plan.fromLlm) {
     return { ok: false, placedCount: 0, reason: 'placement plan not from LLM' };
   }
   if (!plan.placements || plan.placements.length === 0) {
     return { ok: false, placedCount: 0, reason: 'empty placement plan from LLM' };
+  }
+
+  // 板框必须由 LLM 给出（允许略写容差：缺省则失败，逼模型定尺寸）
+  const bw = plan.boardWidthMil;
+  const bh = plan.boardHeightMil;
+  if (bw === undefined || bh === undefined || !(bw > 0) || !(bh > 0)) {
+    return {
+      ok: false, placedCount: 0,
+      reason: 'LLM placement missing boardWidthMil/boardHeightMil — board size must come from model'
+    };
+  }
+  const boardErr = applyLlmBoardSize(doc, bw, bh);
+  if (boardErr.length > 0) {
+    return { ok: false, placedCount: 0, reason: boardErr };
   }
 
   const locked: Set<string> = new Set(plan.lockedIds ?? []);
@@ -167,6 +252,26 @@ export function applyPcbPlacementPlan(doc: PcbDocument, plan: PcbPlacementPlan):
   }
 
   const bounds = boardBounds(doc);
+  const ejected: string[] = [];
+  for (const fp of doc.footprints) {
+    if (isMountHole(fp)) {
+      continue; // 已重钉四角
+    }
+    if (locked.has(fp.id) || fp.locked) {
+      if (fp.position.x < bounds.minX || fp.position.x > bounds.maxX ||
+        fp.position.y < bounds.minY || fp.position.y > bounds.maxY) {
+        ejected.push(fp.refDes || fp.id);
+      }
+    }
+  }
+  if (ejected.length > 0) {
+    return {
+      ok: false, placedCount: 0,
+      reason: `board shrink would eject locked footprints: ${ejected.slice(0, 6).join(',')}` +
+        `${ejected.length > 6 ? '…' : ''} — enlarge boardWidthMil/Height or rePlace them`
+    };
+  }
+
   const byId: Map<string, PcbFootprintInst> = new Map();
   for (const fp of doc.footprints) {
     byId.set(fp.id, fp);
@@ -174,6 +279,7 @@ export function applyPcbPlacementPlan(doc: PcbDocument, plan: PcbPlacementPlan):
 
   const pending: PendingPlacement[] = [];
   const pendingById: Map<string, PendingPlacement> = new Map();
+  const skippedUnknown: string[] = [];
   for (let i = 0; i < plan.placements.length; i++) {
     const item = plan.placements[i];
     if (locked.has(item.footprintId)) {
@@ -181,7 +287,9 @@ export function applyPcbPlacementPlan(doc: PcbDocument, plan: PcbPlacementPlan):
     }
     const fp = byId.get(item.footprintId);
     if (!fp) {
-      return { ok: false, placedCount: 0, reason: `unknown footprintId ${item.footprintId}` };
+      // LLM 常编造/改写 id 后缀；跳过未知项，用 coverage 门禁逼其补全真实 id
+      skippedUnknown.push(item.footprintId);
+      continue;
     }
     if (fp.locked) {
       continue;
@@ -202,6 +310,10 @@ export function applyPcbPlacementPlan(doc: PcbDocument, plan: PcbPlacementPlan):
     pending.push(pend);
     pendingById.set(fp.id, pend);
   }
+  if (skippedUnknown.length > 0) {
+    tracePcb('AI_PLACE_SKIP',
+      `unknownIds=${skippedUnknown.length} sample=${skippedUnknown.slice(0, 3).join(',')}`);
+  }
 
   let unlocked = 0;
   for (const fp of doc.footprints) {
@@ -210,9 +322,13 @@ export function applyPcbPlacementPlan(doc: PcbDocument, plan: PcbPlacementPlan):
     }
   }
   if (unlocked > 0 && pending.length < unlocked) {
+    const unkHint = skippedUnknown.length > 0
+      ? `; skippedUnknown=${skippedUnknown.slice(0, 5).join(',')}` +
+        `${skippedUnknown.length > 5 ? '…' : ''} — footprintId 必须逐字复制列表，禁止编造`
+      : '';
     return {
       ok: false, placedCount: pending.length,
-      reason: `placement coverage ${pending.length}/${unlocked} unlocked footprints`
+      reason: `placement coverage ${pending.length}/${unlocked} unlocked footprints${unkHint}`
     };
   }
 

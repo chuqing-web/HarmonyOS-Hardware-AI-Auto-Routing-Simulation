@@ -122,7 +122,7 @@ Reference: [https://bigmodel.cn/](https://bigmodel.cn/) layout rhythm (hero → 
 
 ## 7. Content sources
 
-Product facts and feature lists come from `README.zh-CN.md` / `README.md` (AI-SCH 1.1.0, HarmonyOS NEXT, AI prompt pipeline, simulation, instruments, labs). Initial announcement copy: welcome / release note style in both languages pointing at the site.
+Product facts and feature lists come from `README.zh-CN.md` / `README.md` (AI-SCH 1.1.1, HarmonyOS NEXT, AI prompt pipeline, simulation, instruments, labs). Initial announcement copy: welcome / release note style in both languages pointing at the site.
 
 Reuse existing marketing imagery from repo `picture/` (e.g. design poster) by copying optimized assets into `Announcement_Page/assets/images/` — do not hotlink private/local paths from the app bundle.
 

@@ -1,1712 +1,0 @@
-Ôr@Ÿªassertions¤code´customTransformCache¬dependencies¢id¤meta±moduleSideEffects¬originalCode±originalSourcemap«resolvedIds®sourcemapChainµsyntheticNamedExportsµtransformDependencies®transformFiles¨cacheAstÔrAÚ@X/**
-
- * å™¨ä»¶å‚æ•°å•ä½è§£æä¸å®¹é”™
-
- * æ”¯æŒ 10k / 10 K / 10KÎ© / 10000R / 1e-6 F ç­‰å†™æ³•
-
- */
-import { ErrCode } from '../types/ErrCode';
-export class UnitParser {
-    static parseResistance(input) {
-        const cleaned = UnitParser.sanitizeMalformedResistance(input);
-        const parsed = UnitParser.parseGeneric(cleaned, 'Î©', UnitParser.getResistanceMultipliers());
-        if (parsed.valid && parsed.numeric > 0) {
-            // å·¥ç¨‹è®°æ•°ï¼ˆ1kÎ©ï¼‰ï¼Œé¿å…å†™æˆ 1000Î© åå†è¢«æ‹¼ä¸Š lib çš„ K â†’ 1000Î©K â†’ 1M
-            parsed.normalized = UnitParser.formatResistanceEng(parsed.numeric);
-        }
-        return parsed;
-    }
-    /**
-     * ä¿®å¤ "1000Î©K" / "1000000Î©K"ï¼šç»å¯¹å€¼æ¬§å§†ååˆè¢«æ‹¼ä¸Š lib åç¼€ K/Mã€‚
-     * æ•°å­— â‰¥100 ä¸”å¸¦ Î©+K â†’ è§†ä¸ºå·²æ˜¯æ¬§å§†ï¼›è¾ƒå°æ•°å­—å¦‚ 4.7Î©K â†’ æŒ‰ 4.7kã€‚
-     */
-    static sanitizeMalformedResistance(input) {
-        let s = input.trim().replace(/\s+/g, '');
-        if (s.length === 0) {
-            return s;
-        }
-        // 1000Î©K / 47ohmK / 1000Ï‰K
-        const ohmThenEng = s.match(/^([\d.]+)(?:Î©|ohm|Ï‰|R)([kKmMgG])$/i);
-        if (ohmThenEng !== null) {
-            const n = parseFloat(ohmThenEng[1]);
-            const eng = ohmThenEng[2];
-            if (!isNaN(n) && n > 0) {
-                if (/^k$/i.test(eng)) {
-                    return n >= 100 ? `${n}Î©` : `${n}k`;
-                }
-                if (/^m$/i.test(eng)) {
-                    // ç”µé˜»è¯­å¢ƒï¼šÎ©M å‡ ä¹æ€»æ˜¯è¯¯æ‹¼ï¼ˆå·²æ˜¯æ¬§å§† + æ®‹ç•™ Mï¼‰
-                    return n >= 1 ? `${n}Î©` : s;
-                }
-                if (/^g$/i.test(eng)) {
-                    return n >= 1 ? `${n}Î©` : s;
-                }
-            }
-        }
-        // çº¯ "1000K"ï¼šè‹¥æ•°å­—å·²åƒæ¬§å§†ç»å¯¹å€¼ï¼ˆâ‰¥1000ï¼‰ï¼Œå»æ‰å¤šä½™ K
-        const bareNumK = s.match(/^([\d.]+)K$/i);
-        if (bareNumK !== null) {
-            const n = parseFloat(bareNumK[1]);
-            if (!isNaN(n) && n >= 1000) {
-                return `${n}Î©`;
-            }
-        }
-        return s;
-    }
-    /** 1000 â†’ 1kÎ©ï¼Œ4700 â†’ 4.7kÎ©ï¼Œ1e6 â†’ 1MÎ© */
-    static formatResistanceEng(ohms) {
-        if (!Number.isFinite(ohms) || ohms <= 0) {
-            return '1kÎ©';
-        }
-        const near = (a, b) => Math.abs(a - b) <= Math.max(1e-9, Math.abs(b) * 1e-9);
-        if (ohms >= 1e6) {
-            const meg = ohms / 1e6;
-            if (near(meg, Math.round(meg * 1000) / 1000)) {
-                return `${UnitParser.trimFloat(meg)}MÎ©`;
-            }
-        }
-        if (ohms >= 1000) {
-            const k = ohms / 1000;
-            if (near(k, Math.round(k * 1000) / 1000)) {
-                return `${UnitParser.trimFloat(k)}kÎ©`;
-            }
-        }
-        return `${UnitParser.trimFloat(ohms)}Î©`;
-    }
-    static trimFloat(n) {
-        const s = n.toFixed(6).replace(/\.?0+$/, '');
-        return s.length > 0 ? s : '0';
-    }
-    /**
-     * è£¸æ•°å­—è¡¥ lib åç¼€ï¼›å·²æœ‰å•ä½ï¼ˆå« Î©ï¼‰ä¸å†æ‹¼æ¥ã€‚
-     * "1000" + R_1k çš„ K â†’ è§†ä¸º 1000Î©ï¼Œç¦æ­¢å˜æˆ 1000K(=1M)ã€‚
-     */
-    static appendFallbackSuffix(value, fallback) {
-        const v = value.trim();
-        if (v.length === 0) {
-            return fallback;
-        }
-        // å­—æ¯ / Âµ / Î© / ohm / æœ«å°¾ R å‡è§†ä¸ºå·²æœ‰å•ä½
-        if (/[a-zÂµÎ©Ï‰]/i.test(v) || /ohm/i.test(v)) {
-            return v;
-        }
-        const m = fallback.match(/[a-zÂµ]+$/i);
-        if (m === null) {
-            return v;
-        }
-        const n = parseFloat(v);
-        const suf = m[0];
-        // è£¸æ•°å·²æ˜¯æ¬§å§†é‡çº§æ—¶ï¼Œå‹¿å†å  K/M
-        if (!isNaN(n) && n > 0 && /^k$/i.test(suf) && n >= 1000) {
-            return `${n}Î©`;
-        }
-        if (!isNaN(n) && n > 0 && /^m$/i.test(suf) && n >= 1e6) {
-            return `${n}Î©`;
-        }
-        return v + suf;
-    }
-    /**
-     * ç›¸å¯¹åº“æ ‡ç§°å¤šäº†ä¸€ä¸ª Ã—1000ï¼ˆå…¸å‹ Î©K / 1000K äºŒæ¬¡æ±¡æŸ“ï¼‰æ—¶ï¼Œæ¢å¤ä¸ºåº“æœŸæœ›é˜»å€¼ã€‚
-     * ä¾‹ï¼šR_1k + "1000000Î©K" â†’ "1kÎ©"
-     */
-    static healResistorAgainstLibrary(libraryId, value) {
-        const libId = libraryId.trim();
-        if (!/^R_/i.test(libId) && !/RESISTOR/i.test(libId)) {
-            return null;
-        }
-        const raw = value.trim().replace(/\s+/g, '');
-        if (raw.length === 0) {
-            return null;
-        }
-        // ä»…å¤„ç†æ±¡æŸ“ç­¾åï¼šâ€¦Î©K / ç»å¯¹å€¼+Kï¼ˆâ‰¥1000Kï¼‰ï¼Œå‹¿æŠŠæ­£å¸¸çš„ 1k/10k å½“æ±¡æŸ“
-        const ohmThenK = /(?:Î©|ohm|Ï‰|R)[kKmMgG]$/i.test(raw);
-        const absOhmsThenK = /^([\d.]+)K$/i.test(raw) && parseFloat(raw) >= 1000;
-        if (!ohmThenK && !absOhmsThenK) {
-            return null;
-        }
-        const libSuffix = libId.replace(/^(R_|RESISTOR_?)/i, '');
-        if (libSuffix.length === 0) {
-            return null;
-        }
-        const expected = UnitParser.parseResistance(libSuffix);
-        const got = UnitParser.parseResistance(UnitParser.sanitizeMalformedResistance(raw));
-        if (!expected.valid || !got.valid || expected.numeric <= 0 || got.numeric <= 0) {
-            return null;
-        }
-        const ratio = got.numeric / expected.numeric;
-        // å¤šä¹˜äº†ä¸€æ¬¡ 1000ï¼ˆKï¼‰
-        if (Math.abs(ratio - 1000) < 0.05) {
-            return UnitParser.formatResistanceEng(expected.numeric);
-        }
-        // å·²æ¶ˆæ­§ä¸ºæ­£ç¡®æ¬§å§†ï¼Œç»Ÿä¸€æˆå·¥ç¨‹è®°æ•°
-        if (Math.abs(ratio - 1) < 0.01) {
-            return UnitParser.formatResistanceEng(expected.numeric);
-        }
-        return null;
-    }
-    /** ç”µé˜» value ç»Ÿä¸€å…¥å£ï¼šæ¶ˆæ¯’ â†’ å¯¹åº“çº å â†’ è¡¥åç¼€ */
-    static coerceResistorParam(libraryId, value) {
-        const libSuffix = libraryId.replace(/^(R_|RESISTOR_?)/i, '');
-        const fallback = libSuffix.length > 0 ? libSuffix : '1k';
-        const raw = value.trim();
-        if (raw.length === 0) {
-            const fb = UnitParser.parseResistance(fallback);
-            return UnitParser.formatResistanceEng(fb.valid && fb.numeric > 0 ? fb.numeric : 1000);
-        }
-        const healed = UnitParser.healResistorAgainstLibrary(libraryId, raw);
-        if (healed !== null) {
-            return healed;
-        }
-        const sanitized = UnitParser.sanitizeMalformedResistance(raw);
-        return UnitParser.appendFallbackSuffix(sanitized, fallback);
-    }
-    static parseCapacitance(input) {
-        return UnitParser.parseGeneric(input, 'F', UnitParser.getCapMultipliers());
-    }
-    static parseInductance(input) {
-        return UnitParser.parseGeneric(input, 'H', UnitParser.getIndMultipliers());
-    }
-    static parseFrequency(input) {
-        // "1kHz" / "1KHz"ï¼šå…ˆå»æ‰ Hzï¼Œå†æŒ‰ k/M å€ç‡è§£æï¼ˆå¦åˆ™ suffix=kHz åŒ¹é…ä¸åˆ°ï¼‰
-        let s = input.trim().replace(/\s+/g, '');
-        if (s.length >= 2 && (s.endsWith('Hz') || s.endsWith('hz') || s.endsWith('HZ'))) {
-            s = s.substring(0, s.length - 2);
-        }
-        return UnitParser.parseGeneric(s, 'Hz', UnitParser.getFreqMultipliers());
-    }
-    /** Parse power rating: 0.25W / 250mW / 1W */
-    static parsePower(input) {
-        const v = input.trim().replace(/\s+/g, '');
-        if (v.length === 0) {
-            return { numeric: 0.25, unit: 'W', normalized: '0.25W', valid: true, errCode: ErrCode.OK };
-        }
-        const mwMatch = v.match(/^([\d.]+)\s*mw$/i);
-        if (mwMatch) {
-            const w = parseFloat(mwMatch[1]) / 1000;
-            if (!isNaN(w) && w > 0) {
-                return { numeric: w, unit: 'W', normalized: `${w}W`, valid: true, errCode: ErrCode.OK };
-            }
-        }
-        const kwMatch = v.match(/^([\d.]+)\s*kw$/i);
-        if (kwMatch) {
-            const w = parseFloat(kwMatch[1]) * 1000;
-            if (!isNaN(w) && w > 0) {
-                return { numeric: w, unit: 'W', normalized: `${w}W`, valid: true, errCode: ErrCode.OK };
-            }
-        }
-        const wMatch = v.match(/^([\d.]+)\s*W?$/i);
-        if (wMatch) {
-            const w = parseFloat(wMatch[1]);
-            if (!isNaN(w) && w > 0) {
-                return { numeric: w, unit: 'W', normalized: `${w}W`, valid: true, errCode: ErrCode.OK };
-            }
-        }
-        return { numeric: 0.25, unit: 'W', normalized: '0.25W', valid: false, errCode: ErrCode.ERR_PARAM_INVALID };
-    }
-    static normalizeParam(key, value) {
-        const v = value.trim().replace(/\s+/g, '');
-        const keyL = key.toLowerCase();
-        if (keyL === 'waveform' || keyL === 'wave') {
-            const wf = v.toLowerCase();
-            const ok = wf === 'sine' || wf === 'sin' || wf === 'square' || wf === 'sq' ||
-                wf === 'triangle' || wf === 'tri' || wf === 'saw' || wf === 'sawtooth' ||
-                wf === 'pulse' || wf === 'æ­£å¼¦' || wf === 'æ–¹æ³¢' || wf === 'ä¸‰è§’' || wf === 'é”¯é½¿' ||
-                wf === 'è„‰å†²';
-            let norm = wf;
-            if (wf === 'sin' || wf === 'æ­£å¼¦') {
-                norm = 'sine';
-            }
-            else if (wf === 'sq' || wf === 'æ–¹æ³¢') {
-                norm = 'square';
-            }
-            else if (wf === 'tri' || wf === 'ä¸‰è§’' || wf === 'ä¸‰è§’æ³¢') {
-                norm = 'triangle';
-            }
-            else if (wf === 'sawtooth' || wf === 'é”¯é½¿') {
-                norm = 'saw';
-            }
-            else if (wf === 'è„‰å†²') {
-                norm = 'pulse';
-            }
-            return {
-                numeric: 0, unit: '', normalized: norm, valid: ok,
-                errCode: ok ? ErrCode.OK : ErrCode.ERR_PARAM_INVALID
-            };
-        }
-        if (keyL === 'dutycycle' || keyL === 'duty' || keyL === 'duty_cycle') {
-            let s = v.replace(/%/g, '');
-            const n = parseFloat(s);
-            if (!Number.isFinite(n) || n < 0 || n > 100) {
-                return {
-                    numeric: 50, unit: '%', normalized: '50%', valid: false,
-                    errCode: ErrCode.ERR_PARAM_INVALID
-                };
-            }
-            // 0â€“1 å°æ•° â†’ ç™¾åˆ†æ¯”ï¼›>1 è§†ä¸ºå·²æ˜¯ç™¾åˆ†æ¯”
-            const pct = n > 0 && n <= 1 ? n * 100 : n;
-            return {
-                numeric: pct, unit: '%', normalized: `${pct}%`, valid: true, errCode: ErrCode.OK
-            };
-        }
-        if (key.includes('res') || key === 'value' && v.includes('k') || v.includes('R') || v.includes('Î©')) {
-            return UnitParser.parseResistance(v);
-        }
-        if (key.includes('cap') || v.includes('F') || v.includes('p') || v.includes('u') || v.includes('n')) {
-            return UnitParser.parseCapacitance(v);
-        }
-        if (key.includes('freq') || key.includes('clock') || v.includes('Hz') || v.includes('M')) {
-            return UnitParser.parseFrequency(v);
-        }
-        if (key.includes('power') || key.includes('watt') || v.toUpperCase().endsWith('W')) {
-            return UnitParser.parsePower(v);
-        }
-        return { numeric: parseFloat(v) || 0, unit: '', normalized: v, valid: !isNaN(parseFloat(v)), errCode: ErrCode.OK };
-    }
-    static validateParam(key, value, min, max) {
-        const parsed = UnitParser.normalizeParam(key, value);
-        if (!parsed.valid) {
-            parsed.errCode = ErrCode.ERR_PARAM_INVALID;
-            return parsed;
-        }
-        if (parsed.numeric < 0 && (key.includes('res') || key.includes('cap'))) {
-            parsed.valid = false;
-            parsed.errCode = ErrCode.ERR_PARAM_INVALID;
-        }
-        if (min !== undefined && parsed.numeric < min) {
-            parsed.errCode = ErrCode.ERR_PARAM_INVALID;
-        }
-        if (max !== undefined && parsed.numeric > max) {
-            parsed.errCode = ErrCode.ERR_PARAM_INVALID;
-        }
-        return parsed;
-    }
-    static convertLength(value, from, to) {
-        let mm = value;
-        if (from === 'mil') {
-            mm = value * 0.0254;
-        }
-        else if (from === 'inch') {
-            mm = value * 25.4;
-        }
-        if (to === 'mil') {
-            return mm / 0.0254;
-        }
-        if (to === 'inch') {
-            return mm / 25.4;
-        }
-        return mm;
-    }
-    static getResistanceMultipliers() {
-        const m = new Map();
-        m.set('R', 1);
-        m.set('Î©', 1);
-        m.set('K', 1e3);
-        m.set('k', 1e3);
-        m.set('M', 1e6);
-        m.set('m', 1e6);
-        return m;
-    }
-    static getCapMultipliers() {
-        const m = new Map();
-        m.set('F', 1);
-        m.set('p', 1e-12);
-        m.set('P', 1e-12);
-        m.set('n', 1e-9);
-        m.set('N', 1e-9);
-        m.set('u', 1e-6);
-        m.set('U', 1e-6);
-        m.set('Âµ', 1e-6);
-        m.set('m', 1e-3);
-        return m;
-    }
-    static getIndMultipliers() {
-        const m = new Map();
-        m.set('H', 1);
-        m.set('m', 1e-3);
-        m.set('u', 1e-6);
-        m.set('n', 1e-9);
-        return m;
-    }
-    static getFreqMultipliers() {
-        const m = new Map();
-        m.set('Hz', 1);
-        m.set('hz', 1);
-        m.set('K', 1e3);
-        m.set('k', 1e3);
-        m.set('M', 1e6);
-        m.set('m', 1e6);
-        m.set('G', 1e9);
-        return m;
-    }
-    static parseGeneric(input, baseUnit, multipliers) {
-        // 10kÎ© â†’ 10kï¼›10Î© â†’ 10Rï¼ˆä¾¿äºè¯†åˆ«æ¬§å§†ï¼‰ã€‚å‹¿æŠŠ 10kÎ© å˜æˆ 10kR å†æŒ‰æœ«å°¾ RÃ—1 è¯¯ç®—æˆ 10ã€‚
-        let s = input.trim().replace(/\s+/g, '');
-        if (s.indexOf('Î©') >= 0) {
-            s = s.replace(/Î©/g, '');
-            if (/^\d+\.?\d*$/.test(s)) {
-                s = `${s}R`;
-            }
-        }
-        if (s.length === 0) {
-            return { numeric: 0, unit: baseUnit, normalized: '', valid: false, errCode: ErrCode.ERR_PARAM_INVALID };
-        }
-        const sciMatch = s.match(/^([+-]?\d+\.?\d*(?:[eE][+-]?\d+)?)\s*([a-zA-ZÂµ]+)?$/);
-        if (sciMatch) {
-            const num = parseFloat(sciMatch[1]);
-            let suffix = sciMatch[2] ?? '';
-            // å…¼å®¹ 10kR / 10kOhmï¼šä¸¢æ‰å•ä½å°¾å·´ï¼Œä¿ç•™å€ç‡å‰ç¼€
-            if (suffix.length > 1 && (suffix.endsWith('R') || suffix.toUpperCase().endsWith('OHM'))) {
-                if (suffix.toUpperCase().endsWith('OHM')) {
-                    suffix = suffix.substring(0, suffix.length - 3);
-                }
-                else {
-                    suffix = suffix.substring(0, suffix.length - 1);
-                }
-            }
-            let mult = 1;
-            if (suffix.length > 0) {
-                const lastChar = suffix.charAt(suffix.length - 1);
-                const prefix = suffix.substring(0, suffix.length - 1);
-                if (multipliers.has(suffix)) {
-                    mult = multipliers.get(suffix);
-                }
-                else if (multipliers.has(lastChar)) {
-                    mult = multipliers.get(lastChar);
-                }
-                else if (prefix.length > 0 && multipliers.has(prefix + lastChar)) {
-                    mult = multipliers.get(prefix + lastChar);
-                }
-            }
-            const numeric = num * mult;
-            if (numeric < 0) {
-                return { numeric: numeric, unit: baseUnit, normalized: s, valid: false, errCode: ErrCode.ERR_PARAM_INVALID };
-            }
-            return { numeric: numeric, unit: baseUnit, normalized: `${numeric}${baseUnit}`, valid: true, errCode: ErrCode.OK };
-        }
-        const numMatch = s.match(/^([+-]?\d+\.?\d*)\s*([kKmMÂµuUnNpP]?)R?$/);
-        if (numMatch) {
-            const num = parseFloat(numMatch[1]);
-            const suffix = numMatch[2] || '';
-            let mult = 1;
-            if (suffix.length > 0 && multipliers.has(suffix)) {
-                mult = multipliers.get(suffix);
-            }
-            const numeric = num * mult;
-            return {
-                numeric: numeric, unit: baseUnit,
-                normalized: `${numeric}${baseUnit}`,
-                valid: numeric >= 0, errCode: numeric >= 0 ? ErrCode.OK : ErrCode.ERR_PARAM_INVALID
-            };
-        }
-        return { numeric: 0, unit: baseUnit, normalized: s, valid: false, errCode: ErrCode.ERR_PARAM_INVALID };
-    }
-}
-//# sourceMappingURL=UnitParser.js.mapÂ‘ÙBC:\Projects\ElecDraw_Harmony\common\src\main\ets\types\ErrCode.etsÙEC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\UnitParser.etsÔrB›ªmoduleName±isLocalDependency¯isNodeEntryFile§pkgPath±belongProjectPath§pkgNameªpkgVersion±dependencyPkgInfo¯hostModulesInfo°belongModulePath¬shouldEmitJs¦commonÃÂÙ#C:\Projects\ElecDraw_Harmony\common¼C:\Projects\ElecDraw_Harmony¦common¥1.0.0Ô  ’ÔrC’²hostDependencyName®hostModuleName¬./UnitParser¦commonC¿./src/main/ets/utils/UnitParser¦commonÙ#C:\Projects\ElecDraw_Harmony\commonÃÃÚ:ä/**
-
- * å™¨ä»¶å‚æ•°å•ä½è§£æä¸å®¹é”™
-
- * æ”¯æŒ 10k / 10 K / 10KÎ© / 10000R / 1e-6 F ç­‰å†™æ³•
-
- */
-
-import { ErrCode } from '../types/ErrCode';
-
-
-
-export interface ParsedValue {
-
-  numeric: number;
-
-  unit: string;
-
-  normalized: string;
-
-  valid: boolean;
-
-  errCode: ErrCode;
-
-}
-
-
-
-export class UnitParser {
-
-  static parseResistance(input: string): ParsedValue {
-    const cleaned = UnitParser.sanitizeMalformedResistance(input);
-    const parsed = UnitParser.parseGeneric(cleaned, 'Î©', UnitParser.getResistanceMultipliers());
-    if (parsed.valid && parsed.numeric > 0) {
-      // å·¥ç¨‹è®°æ•°ï¼ˆ1kÎ©ï¼‰ï¼Œé¿å…å†™æˆ 1000Î© åå†è¢«æ‹¼ä¸Š lib çš„ K â†’ 1000Î©K â†’ 1M
-      parsed.normalized = UnitParser.formatResistanceEng(parsed.numeric);
-    }
-    return parsed;
-  }
-
-  /**
-   * ä¿®å¤ "1000Î©K" / "1000000Î©K"ï¼šç»å¯¹å€¼æ¬§å§†ååˆè¢«æ‹¼ä¸Š lib åç¼€ K/Mã€‚
-   * æ•°å­— â‰¥100 ä¸”å¸¦ Î©+K â†’ è§†ä¸ºå·²æ˜¯æ¬§å§†ï¼›è¾ƒå°æ•°å­—å¦‚ 4.7Î©K â†’ æŒ‰ 4.7kã€‚
-   */
-  static sanitizeMalformedResistance(input: string): string {
-    let s = input.trim().replace(/\s+/g, '');
-    if (s.length === 0) {
-      return s;
-    }
-    // 1000Î©K / 47ohmK / 1000Ï‰K
-    const ohmThenEng = s.match(/^([\d.]+)(?:Î©|ohm|Ï‰|R)([kKmMgG])$/i);
-    if (ohmThenEng !== null) {
-      const n = parseFloat(ohmThenEng[1]);
-      const eng = ohmThenEng[2];
-      if (!isNaN(n) && n > 0) {
-        if (/^k$/i.test(eng)) {
-          return n >= 100 ? `${n}Î©` : `${n}k`;
-        }
-        if (/^m$/i.test(eng)) {
-          // ç”µé˜»è¯­å¢ƒï¼šÎ©M å‡ ä¹æ€»æ˜¯è¯¯æ‹¼ï¼ˆå·²æ˜¯æ¬§å§† + æ®‹ç•™ Mï¼‰
-          return n >= 1 ? `${n}Î©` : s;
-        }
-        if (/^g$/i.test(eng)) {
-          return n >= 1 ? `${n}Î©` : s;
-        }
-      }
-    }
-    // çº¯ "1000K"ï¼šè‹¥æ•°å­—å·²åƒæ¬§å§†ç»å¯¹å€¼ï¼ˆâ‰¥1000ï¼‰ï¼Œå»æ‰å¤šä½™ K
-    const bareNumK = s.match(/^([\d.]+)K$/i);
-    if (bareNumK !== null) {
-      const n = parseFloat(bareNumK[1]);
-      if (!isNaN(n) && n >= 1000) {
-        return `${n}Î©`;
-      }
-    }
-    return s;
-  }
-
-  /** 1000 â†’ 1kÎ©ï¼Œ4700 â†’ 4.7kÎ©ï¼Œ1e6 â†’ 1MÎ© */
-  static formatResistanceEng(ohms: number): string {
-    if (!Number.isFinite(ohms) || ohms <= 0) {
-      return '1kÎ©';
-    }
-    const near = (a: number, b: number): boolean => Math.abs(a - b) <= Math.max(1e-9, Math.abs(b) * 1e-9);
-
-    if (ohms >= 1e6) {
-      const meg = ohms / 1e6;
-      if (near(meg, Math.round(meg * 1000) / 1000)) {
-        return `${UnitParser.trimFloat(meg)}MÎ©`;
-      }
-    }
-    if (ohms >= 1000) {
-      const k = ohms / 1000;
-      if (near(k, Math.round(k * 1000) / 1000)) {
-        return `${UnitParser.trimFloat(k)}kÎ©`;
-      }
-    }
-    return `${UnitParser.trimFloat(ohms)}Î©`;
-  }
-
-  private static trimFloat(n: number): string {
-    const s = n.toFixed(6).replace(/\.?0+$/, '');
-    return s.length > 0 ? s : '0';
-  }
-
-  /**
-   * è£¸æ•°å­—è¡¥ lib åç¼€ï¼›å·²æœ‰å•ä½ï¼ˆå« Î©ï¼‰ä¸å†æ‹¼æ¥ã€‚
-   * "1000" + R_1k çš„ K â†’ è§†ä¸º 1000Î©ï¼Œç¦æ­¢å˜æˆ 1000K(=1M)ã€‚
-   */
-  static appendFallbackSuffix(value: string, fallback: string): string {
-    const v = value.trim();
-    if (v.length === 0) {
-      return fallback;
-    }
-    // å­—æ¯ / Âµ / Î© / ohm / æœ«å°¾ R å‡è§†ä¸ºå·²æœ‰å•ä½
-    if (/[a-zÂµÎ©Ï‰]/i.test(v) || /ohm/i.test(v)) {
-      return v;
-    }
-    const m = fallback.match(/[a-zÂµ]+$/i);
-    if (m === null) {
-      return v;
-    }
-    const n = parseFloat(v);
-    const suf = m[0];
-    // è£¸æ•°å·²æ˜¯æ¬§å§†é‡çº§æ—¶ï¼Œå‹¿å†å  K/M
-    if (!isNaN(n) && n > 0 && /^k$/i.test(suf) && n >= 1000) {
-      return `${n}Î©`;
-    }
-    if (!isNaN(n) && n > 0 && /^m$/i.test(suf) && n >= 1e6) {
-      return `${n}Î©`;
-    }
-    return v + suf;
-  }
-
-  /**
-   * ç›¸å¯¹åº“æ ‡ç§°å¤šäº†ä¸€ä¸ª Ã—1000ï¼ˆå…¸å‹ Î©K / 1000K äºŒæ¬¡æ±¡æŸ“ï¼‰æ—¶ï¼Œæ¢å¤ä¸ºåº“æœŸæœ›é˜»å€¼ã€‚
-   * ä¾‹ï¼šR_1k + "1000000Î©K" â†’ "1kÎ©"
-   */
-  static healResistorAgainstLibrary(libraryId: string, value: string): string | null {
-    const libId = libraryId.trim();
-    if (!/^R_/i.test(libId) && !/RESISTOR/i.test(libId)) {
-      return null;
-    }
-    const raw = value.trim().replace(/\s+/g, '');
-    if (raw.length === 0) {
-      return null;
-    }
-    // ä»…å¤„ç†æ±¡æŸ“ç­¾åï¼šâ€¦Î©K / ç»å¯¹å€¼+Kï¼ˆâ‰¥1000Kï¼‰ï¼Œå‹¿æŠŠæ­£å¸¸çš„ 1k/10k å½“æ±¡æŸ“
-    const ohmThenK = /(?:Î©|ohm|Ï‰|R)[kKmMgG]$/i.test(raw);
-    const absOhmsThenK = /^([\d.]+)K$/i.test(raw) && parseFloat(raw) >= 1000;
-    if (!ohmThenK && !absOhmsThenK) {
-      return null;
-    }
-    const libSuffix = libId.replace(/^(R_|RESISTOR_?)/i, '');
-    if (libSuffix.length === 0) {
-      return null;
-    }
-    const expected = UnitParser.parseResistance(libSuffix);
-    const got = UnitParser.parseResistance(UnitParser.sanitizeMalformedResistance(raw));
-    if (!expected.valid || !got.valid || expected.numeric <= 0 || got.numeric <= 0) {
-      return null;
-    }
-    const ratio = got.numeric / expected.numeric;
-    // å¤šä¹˜äº†ä¸€æ¬¡ 1000ï¼ˆKï¼‰
-    if (Math.abs(ratio - 1000) < 0.05) {
-      return UnitParser.formatResistanceEng(expected.numeric);
-    }
-    // å·²æ¶ˆæ­§ä¸ºæ­£ç¡®æ¬§å§†ï¼Œç»Ÿä¸€æˆå·¥ç¨‹è®°æ•°
-    if (Math.abs(ratio - 1) < 0.01) {
-      return UnitParser.formatResistanceEng(expected.numeric);
-    }
-    return null;
-  }
-
-  /** ç”µé˜» value ç»Ÿä¸€å…¥å£ï¼šæ¶ˆæ¯’ â†’ å¯¹åº“çº å â†’ è¡¥åç¼€ */
-  static coerceResistorParam(libraryId: string, value: string): string {
-    const libSuffix = libraryId.replace(/^(R_|RESISTOR_?)/i, '');
-    const fallback = libSuffix.length > 0 ? libSuffix : '1k';
-    const raw = value.trim();
-    if (raw.length === 0) {
-      const fb = UnitParser.parseResistance(fallback);
-      return UnitParser.formatResistanceEng(fb.valid && fb.numeric > 0 ? fb.numeric : 1000);
-    }
-    const healed = UnitParser.healResistorAgainstLibrary(libraryId, raw);
-    if (healed !== null) {
-      return healed;
-    }
-    const sanitized = UnitParser.sanitizeMalformedResistance(raw);
-    return UnitParser.appendFallbackSuffix(sanitized, fallback);
-  }
-
-
-
-  static parseCapacitance(input: string): ParsedValue {
-
-    return UnitParser.parseGeneric(input, 'F', UnitParser.getCapMultipliers());
-
-  }
-
-
-
-  static parseInductance(input: string): ParsedValue {
-
-    return UnitParser.parseGeneric(input, 'H', UnitParser.getIndMultipliers());
-
-  }
-
-
-
-  static parseFrequency(input: string): ParsedValue {
-    // "1kHz" / "1KHz"ï¼šå…ˆå»æ‰ Hzï¼Œå†æŒ‰ k/M å€ç‡è§£æï¼ˆå¦åˆ™ suffix=kHz åŒ¹é…ä¸åˆ°ï¼‰
-    let s = input.trim().replace(/\s+/g, '');
-    if (s.length >= 2 && (s.endsWith('Hz') || s.endsWith('hz') || s.endsWith('HZ'))) {
-      s = s.substring(0, s.length - 2);
-    }
-    return UnitParser.parseGeneric(s, 'Hz', UnitParser.getFreqMultipliers());
-  }
-
-  /** Parse power rating: 0.25W / 250mW / 1W */
-  static parsePower(input: string): ParsedValue {
-    const v = input.trim().replace(/\s+/g, '');
-    if (v.length === 0) {
-      return { numeric: 0.25, unit: 'W', normalized: '0.25W', valid: true, errCode: ErrCode.OK };
-    }
-    const mwMatch = v.match(/^([\d.]+)\s*mw$/i);
-    if (mwMatch) {
-      const w = parseFloat(mwMatch[1]) / 1000;
-      if (!isNaN(w) && w > 0) {
-        return { numeric: w, unit: 'W', normalized: `${w}W`, valid: true, errCode: ErrCode.OK };
-      }
-    }
-    const kwMatch = v.match(/^([\d.]+)\s*kw$/i);
-    if (kwMatch) {
-      const w = parseFloat(kwMatch[1]) * 1000;
-      if (!isNaN(w) && w > 0) {
-        return { numeric: w, unit: 'W', normalized: `${w}W`, valid: true, errCode: ErrCode.OK };
-      }
-    }
-    const wMatch = v.match(/^([\d.]+)\s*W?$/i);
-    if (wMatch) {
-      const w = parseFloat(wMatch[1]);
-      if (!isNaN(w) && w > 0) {
-        return { numeric: w, unit: 'W', normalized: `${w}W`, valid: true, errCode: ErrCode.OK };
-      }
-    }
-    return { numeric: 0.25, unit: 'W', normalized: '0.25W', valid: false, errCode: ErrCode.ERR_PARAM_INVALID };
-  }
-
-
-
-  static normalizeParam(key: string, value: string): ParsedValue {
-
-    const v = value.trim().replace(/\s+/g, '');
-    const keyL = key.toLowerCase();
-
-    if (keyL === 'waveform' || keyL === 'wave') {
-      const wf = v.toLowerCase();
-      const ok = wf === 'sine' || wf === 'sin' || wf === 'square' || wf === 'sq' ||
-        wf === 'triangle' || wf === 'tri' || wf === 'saw' || wf === 'sawtooth' ||
-        wf === 'pulse' || wf === 'æ­£å¼¦' || wf === 'æ–¹æ³¢' || wf === 'ä¸‰è§’' || wf === 'é”¯é½¿' ||
-        wf === 'è„‰å†²';
-      let norm = wf;
-      if (wf === 'sin' || wf === 'æ­£å¼¦') {
-        norm = 'sine';
-      } else if (wf === 'sq' || wf === 'æ–¹æ³¢') {
-        norm = 'square';
-      } else if (wf === 'tri' || wf === 'ä¸‰è§’' || wf === 'ä¸‰è§’æ³¢') {
-        norm = 'triangle';
-      } else if (wf === 'sawtooth' || wf === 'é”¯é½¿') {
-        norm = 'saw';
-      } else if (wf === 'è„‰å†²') {
-        norm = 'pulse';
-      }
-      return {
-        numeric: 0, unit: '', normalized: norm, valid: ok,
-        errCode: ok ? ErrCode.OK : ErrCode.ERR_PARAM_INVALID
-      };
-    }
-
-    if (keyL === 'dutycycle' || keyL === 'duty' || keyL === 'duty_cycle') {
-      let s = v.replace(/%/g, '');
-      const n = parseFloat(s);
-      if (!Number.isFinite(n) || n < 0 || n > 100) {
-        return {
-          numeric: 50, unit: '%', normalized: '50%', valid: false,
-          errCode: ErrCode.ERR_PARAM_INVALID
-        };
-      }
-      // 0â€“1 å°æ•° â†’ ç™¾åˆ†æ¯”ï¼›>1 è§†ä¸ºå·²æ˜¯ç™¾åˆ†æ¯”
-      const pct = n > 0 && n <= 1 ? n * 100 : n;
-      return {
-        numeric: pct, unit: '%', normalized: `${pct}%`, valid: true, errCode: ErrCode.OK
-      };
-    }
-
-    if (key.includes('res') || key === 'value' && v.includes('k') || v.includes('R') || v.includes('Î©')) {
-
-      return UnitParser.parseResistance(v);
-
-    }
-
-    if (key.includes('cap') || v.includes('F') || v.includes('p') || v.includes('u') || v.includes('n')) {
-
-      return UnitParser.parseCapacitance(v);
-
-    }
-
-    if (key.includes('freq') || key.includes('clock') || v.includes('Hz') || v.includes('M')) {
-
-      return UnitParser.parseFrequency(v);
-
-    }
-
-    if (key.includes('power') || key.includes('watt') || v.toUpperCase().endsWith('W')) {
-      return UnitParser.parsePower(v);
-    }
-
-    return { numeric: parseFloat(v) || 0, unit: '', normalized: v, valid: !isNaN(parseFloat(v)), errCode: ErrCode.OK };
-
-  }
-
-
-
-  static validateParam(key: string, value: string, min?: number, max?: number): ParsedValue {
-
-    const parsed = UnitParser.normalizeParam(key, value);
-
-    if (!parsed.valid) {
-
-      parsed.errCode = ErrCode.ERR_PARAM_INVALID;
-
-      return parsed;
-
-    }
-
-    if (parsed.numeric < 0 && (key.includes('res') || key.includes('cap'))) {
-
-      parsed.valid = false;
-
-      parsed.errCode = ErrCode.ERR_PARAM_INVALID;
-
-    }
-
-    if (min !== undefined && parsed.numeric < min) {
-
-      parsed.errCode = ErrCode.ERR_PARAM_INVALID;
-
-    }
-
-    if (max !== undefined && parsed.numeric > max) {
-
-      parsed.errCode = ErrCode.ERR_PARAM_INVALID;
-
-    }
-
-    return parsed;
-
-  }
-
-
-
-  static convertLength(value: number, from: 'mil' | 'mm' | 'inch', to: 'mil' | 'mm' | 'inch'): number {
-
-    let mm = value;
-
-    if (from === 'mil') {
-
-      mm = value * 0.0254;
-
-    } else if (from === 'inch') {
-
-      mm = value * 25.4;
-
-    }
-
-    if (to === 'mil') {
-
-      return mm / 0.0254;
-
-    }
-
-    if (to === 'inch') {
-
-      return mm / 25.4;
-
-    }
-
-    return mm;
-
-  }
-
-
-
-  private static getResistanceMultipliers(): Map<string, number> {
-
-    const m = new Map<string, number>();
-
-    m.set('R', 1);
-
-    m.set('Î©', 1);
-
-    m.set('K', 1e3);
-
-    m.set('k', 1e3);
-
-    m.set('M', 1e6);
-
-    m.set('m', 1e6);
-
-    return m;
-
-  }
-
-
-
-  private static getCapMultipliers(): Map<string, number> {
-
-    const m = new Map<string, number>();
-
-    m.set('F', 1);
-
-    m.set('p', 1e-12);
-
-    m.set('P', 1e-12);
-
-    m.set('n', 1e-9);
-
-    m.set('N', 1e-9);
-
-    m.set('u', 1e-6);
-
-    m.set('U', 1e-6);
-
-    m.set('Âµ', 1e-6);
-
-    m.set('m', 1e-3);
-
-    return m;
-
-  }
-
-
-
-  private static getIndMultipliers(): Map<string, number> {
-
-    const m = new Map<string, number>();
-
-    m.set('H', 1);
-
-    m.set('m', 1e-3);
-
-    m.set('u', 1e-6);
-
-    m.set('n', 1e-9);
-
-    return m;
-
-  }
-
-
-
-  private static getFreqMultipliers(): Map<string, number> {
-
-    const m = new Map<string, number>();
-
-    m.set('Hz', 1);
-
-    m.set('hz', 1);
-
-    m.set('K', 1e3);
-
-    m.set('k', 1e3);
-
-    m.set('M', 1e6);
-
-    m.set('m', 1e6);
-
-    m.set('G', 1e9);
-
-    return m;
-
-  }
-
-
-
-  private static parseGeneric(input: string, baseUnit: string,
-
-    multipliers: Map<string, number>): ParsedValue {
-
-    // 10kÎ© â†’ 10kï¼›10Î© â†’ 10Rï¼ˆä¾¿äºè¯†åˆ«æ¬§å§†ï¼‰ã€‚å‹¿æŠŠ 10kÎ© å˜æˆ 10kR å†æŒ‰æœ«å°¾ RÃ—1 è¯¯ç®—æˆ 10ã€‚
-    let s = input.trim().replace(/\s+/g, '');
-    if (s.indexOf('Î©') >= 0) {
-      s = s.replace(/Î©/g, '');
-      if (/^\d+\.?\d*$/.test(s)) {
-        s = `${s}R`;
-      }
-    }
-
-    if (s.length === 0) {
-
-      return { numeric: 0, unit: baseUnit, normalized: '', valid: false, errCode: ErrCode.ERR_PARAM_INVALID };
-
-    }
-
-
-
-    const sciMatch = s.match(/^([+-]?\d+\.?\d*(?:[eE][+-]?\d+)?)\s*([a-zA-ZÂµ]+)?$/);
-
-    if (sciMatch) {
-
-      const num = parseFloat(sciMatch[1]);
-
-      let suffix = sciMatch[2] ?? '';
-
-      // å…¼å®¹ 10kR / 10kOhmï¼šä¸¢æ‰å•ä½å°¾å·´ï¼Œä¿ç•™å€ç‡å‰ç¼€
-      if (suffix.length > 1 && (suffix.endsWith('R') || suffix.toUpperCase().endsWith('OHM'))) {
-        if (suffix.toUpperCase().endsWith('OHM')) {
-          suffix = suffix.substring(0, suffix.length - 3);
-        } else {
-          suffix = suffix.substring(0, suffix.length - 1);
-        }
-      }
-
-      let mult = 1;
-
-      if (suffix.length > 0) {
-
-        const lastChar = suffix.charAt(suffix.length - 1);
-
-        const prefix = suffix.substring(0, suffix.length - 1);
-
-        if (multipliers.has(suffix)) {
-
-          mult = multipliers.get(suffix) as number;
-
-        } else if (multipliers.has(lastChar)) {
-
-          mult = multipliers.get(lastChar) as number;
-
-        } else if (prefix.length > 0 && multipliers.has(prefix + lastChar)) {
-
-          mult = multipliers.get(prefix + lastChar) as number;
-
-        }
-
-      }
-
-      const numeric = num * mult;
-
-      if (numeric < 0) {
-
-        return { numeric: numeric, unit: baseUnit, normalized: s, valid: false, errCode: ErrCode.ERR_PARAM_INVALID };
-
-      }
-
-      return { numeric: numeric, unit: baseUnit, normalized: `${numeric}${baseUnit}`, valid: true, errCode: ErrCode.OK };
-
-    }
-
-
-
-    const numMatch = s.match(/^([+-]?\d+\.?\d*)\s*([kKmMÂµuUnNpP]?)R?$/);
-
-    if (numMatch) {
-
-      const num = parseFloat(numMatch[1]);
-
-      const suffix = numMatch[2] || '';
-
-      let mult = 1;
-
-      if (suffix.length > 0 && multipliers.has(suffix)) {
-
-        mult = multipliers.get(suffix) as number;
-
-      }
-
-      const numeric = num * mult;
-
-      return {
-
-        numeric: numeric, unit: baseUnit,
-
-        normalized: `${numeric}${baseUnit}`,
-
-        valid: numeric >= 0, errCode: numeric >= 0 ? ErrCode.OK : ErrCode.ERR_PARAM_INVALID
-
-      };
-
-    }
-
-
-
-    return { numeric: 0, unit: baseUnit, normalized: s, valid: false, errCode: ErrCode.ERR_PARAM_INVALID };
-
-  }
-
-}
-
-ÔrD•§version¨mappings¥names§sources®sourcesContentÜ”‘”    ‘”  ‘”   ‘”   ‘”   ‘”  $‘”  %‘”  (‘”  +‘”  -‘”  .‘”  /‘”  0‘”  5‘”  7‘”  8
-‘”  9	‘”  :‘”  <
-‘”  =	‘”  >‘”  ?
-‘”  Ì@	‘”  ÌA‘”  ÌB‘”  ÌI‘”  ÌJ‘”  ÌK‘”  ÌQ‘”  ÌR‘”  ÌS‘”  ÌV‘”  ÌW‘”  ÌY‘”  ÌZ‘”  Ì\‘”  Ì]‘”  Ì_‘”  Ì`‘”  Ìe‘”  Ìf‘”  Ìi‘”  Ìl‘”  Ìm‘”  Ìn‘”  Ìo‘”  Ìp‘”  Ìq‘”  Ìs‘”  Ìt‘”  Ìu‘”  Ìx‘”  Ìy‘”  Ìz‘”  Ì{‘”  Ì‘”  Ì‚‘”  Ì†‘”  Ì‰‘”  ÌŠ‘”  Ì‹‘”  ÌŒ‘”  Ì‘”  Ì‘”  Ì‘”  Ì‘”  Ì‘‘”  Ì’‘”  Ì•‘”  Ì–‘”  Ì—‘”  Ì˜‘”  Ìš‘”  Ì›‘”  Ìœ‘”  Ì‘”  Ì ‘”  Ì¡‘”  Ì¦‘”  Ìª‘”  Ì«‘”  Ì¯‘”  Ì±‘”  Ì²‘”  Ì³‘”  Ì¶‘”  Ì¹‘”  Ìº‘”  ÌÃ‘”  ÌË‘”  ÌÓ‘”  ÌÔ‘”  ÌÕ‘”  ÌÖ‘”  Ì×‘”  ÌÜ‘”  Ìİ‘”  Ìß‘”  Ìá‘”  Ìå‘”  Ìæ‘”  Ìè‘”  Ìì‘”  Ìí‘”  Ìï‘”  Ìó‘”  Ìô‘”  Ìú‘”  Ìü‘”  Ìı‘”  Ìÿ‘”  Í ‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í
-‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í
-‘”  Í‘”  Í!‘”  Í%‘”  Í'‘”  Í)‘”  Í+‘”  Í-‘”  Í/‘”  Í1‘”  Í5‘”  Í7‘”  Í:‘”  Í;‘”  Í=‘”  ÍG‘”  ÍI‘”  ÍK‘”  ÍM‘”  ÍQ‘”  ÍS‘”  ÍU‘”  ÍY‘”  Í[‘”  Í_‘”  Ía‘”  Íc‘”  Íi‘”  Ío‘”  Íq‘”  Ís‘”  Íu‘”  Í{‘”  Í‘”  Íƒ‘”  Í‰
-‘”  Í‹‘”  Í‘”  Í‘”  Í‘‘”  Í“‘”  Í•‘”  Í—‘”  Í™‘”  ÍŸ
-‘”  Í¡‘”  Í£‘”  Í¥‘”  Í§‘”  Í©‘”  Í«‘”  Í­‘”  Í¯‘”  Í±‘”  Í³‘”  Íµ‘”  Í»
-‘”  Í½‘”  Í¿‘”  ÍÁ‘”  ÍÃ‘”  ÍÅ‘”  ÍÇ‘”  ÍÍ
-‘”  ÍÏ‘”  ÍÑ‘”  ÍÓ‘”  ÍÕ‘”  Í×‘”  ÍÙ‘”  ÍÛ‘”  Íİ‘”  Íß‘”  Íå
-‘”  Íê‘”  Íí‘”  Íî‘”  Íï‘”  Íğ‘”  Íò‘”  Íö‘”  Íü‘”  Í
-‘”  Í	‘”  Í‘”  Í
-‘”  Í	‘”  Í	‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í
-‘”  Í	‘”  Í‘”  Í
-‘”  Í	‘”  Í‘”  Í	‘”  Í!‘”  Í#‘”  Í)‘”  Í-‘”  Í3‘”  Í;‘”  Í=‘”  Í?‘”  ÍA‘”  ÍE‘”  ÍG‘”  ÍM‘”  ÍU‘ÙEC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\UnitParser.ets‘Ú:ä/**
-
- * å™¨ä»¶å‚æ•°å•ä½è§£æä¸å®¹é”™
-
- * æ”¯æŒ 10k / 10 K / 10KÎ© / 10000R / 1e-6 F ç­‰å†™æ³•
-
- */
-
-import { ErrCode } from '../types/ErrCode';
-
-
-
-export interface ParsedValue {
-
-  numeric: number;
-
-  unit: string;
-
-  normalized: string;
-
-  valid: boolean;
-
-  errCode: ErrCode;
-
-}
-
-
-
-export class UnitParser {
-
-  static parseResistance(input: string): ParsedValue {
-    const cleaned = UnitParser.sanitizeMalformedResistance(input);
-    const parsed = UnitParser.parseGeneric(cleaned, 'Î©', UnitParser.getResistanceMultipliers());
-    if (parsed.valid && parsed.numeric > 0) {
-      // å·¥ç¨‹è®°æ•°ï¼ˆ1kÎ©ï¼‰ï¼Œé¿å…å†™æˆ 1000Î© åå†è¢«æ‹¼ä¸Š lib çš„ K â†’ 1000Î©K â†’ 1M
-      parsed.normalized = UnitParser.formatResistanceEng(parsed.numeric);
-    }
-    return parsed;
-  }
-
-  /**
-   * ä¿®å¤ "1000Î©K" / "1000000Î©K"ï¼šç»å¯¹å€¼æ¬§å§†ååˆè¢«æ‹¼ä¸Š lib åç¼€ K/Mã€‚
-   * æ•°å­— â‰¥100 ä¸”å¸¦ Î©+K â†’ è§†ä¸ºå·²æ˜¯æ¬§å§†ï¼›è¾ƒå°æ•°å­—å¦‚ 4.7Î©K â†’ æŒ‰ 4.7kã€‚
-   */
-  static sanitizeMalformedResistance(input: string): string {
-    let s = input.trim().replace(/\s+/g, '');
-    if (s.length === 0) {
-      return s;
-    }
-    // 1000Î©K / 47ohmK / 1000Ï‰K
-    const ohmThenEng = s.match(/^([\d.]+)(?:Î©|ohm|Ï‰|R)([kKmMgG])$/i);
-    if (ohmThenEng !== null) {
-      const n = parseFloat(ohmThenEng[1]);
-      const eng = ohmThenEng[2];
-      if (!isNaN(n) && n > 0) {
-        if (/^k$/i.test(eng)) {
-          return n >= 100 ? `${n}Î©` : `${n}k`;
-        }
-        if (/^m$/i.test(eng)) {
-          // ç”µé˜»è¯­å¢ƒï¼šÎ©M å‡ ä¹æ€»æ˜¯è¯¯æ‹¼ï¼ˆå·²æ˜¯æ¬§å§† + æ®‹ç•™ Mï¼‰
-          return n >= 1 ? `${n}Î©` : s;
-        }
-        if (/^g$/i.test(eng)) {
-          return n >= 1 ? `${n}Î©` : s;
-        }
-      }
-    }
-    // çº¯ "1000K"ï¼šè‹¥æ•°å­—å·²åƒæ¬§å§†ç»å¯¹å€¼ï¼ˆâ‰¥1000ï¼‰ï¼Œå»æ‰å¤šä½™ K
-    const bareNumK = s.match(/^([\d.]+)K$/i);
-    if (bareNumK !== null) {
-      const n = parseFloat(bareNumK[1]);
-      if (!isNaN(n) && n >= 1000) {
-        return `${n}Î©`;
-      }
-    }
-    return s;
-  }
-
-  /** 1000 â†’ 1kÎ©ï¼Œ4700 â†’ 4.7kÎ©ï¼Œ1e6 â†’ 1MÎ© */
-  static formatResistanceEng(ohms: number): string {
-    if (!Number.isFinite(ohms) || ohms <= 0) {
-      return '1kÎ©';
-    }
-    const near = (a: number, b: number): boolean => Math.abs(a - b) <= Math.max(1e-9, Math.abs(b) * 1e-9);
-
-    if (ohms >= 1e6) {
-      const meg = ohms / 1e6;
-      if (near(meg, Math.round(meg * 1000) / 1000)) {
-        return `${UnitParser.trimFloat(meg)}MÎ©`;
-      }
-    }
-    if (ohms >= 1000) {
-      const k = ohms / 1000;
-      if (near(k, Math.round(k * 1000) / 1000)) {
-        return `${UnitParser.trimFloat(k)}kÎ©`;
-      }
-    }
-    return `${UnitParser.trimFloat(ohms)}Î©`;
-  }
-
-  private static trimFloat(n: number): string {
-    const s = n.toFixed(6).replace(/\.?0+$/, '');
-    return s.length > 0 ? s : '0';
-  }
-
-  /**
-   * è£¸æ•°å­—è¡¥ lib åç¼€ï¼›å·²æœ‰å•ä½ï¼ˆå« Î©ï¼‰ä¸å†æ‹¼æ¥ã€‚
-   * "1000" + R_1k çš„ K â†’ è§†ä¸º 1000Î©ï¼Œç¦æ­¢å˜æˆ 1000K(=1M)ã€‚
-   */
-  static appendFallbackSuffix(value: string, fallback: string): string {
-    const v = value.trim();
-    if (v.length === 0) {
-      return fallback;
-    }
-    // å­—æ¯ / Âµ / Î© / ohm / æœ«å°¾ R å‡è§†ä¸ºå·²æœ‰å•ä½
-    if (/[a-zÂµÎ©Ï‰]/i.test(v) || /ohm/i.test(v)) {
-      return v;
-    }
-    const m = fallback.match(/[a-zÂµ]+$/i);
-    if (m === null) {
-      return v;
-    }
-    const n = parseFloat(v);
-    const suf = m[0];
-    // è£¸æ•°å·²æ˜¯æ¬§å§†é‡çº§æ—¶ï¼Œå‹¿å†å  K/M
-    if (!isNaN(n) && n > 0 && /^k$/i.test(suf) && n >= 1000) {
-      return `${n}Î©`;
-    }
-    if (!isNaN(n) && n > 0 && /^m$/i.test(suf) && n >= 1e6) {
-      return `${n}Î©`;
-    }
-    return v + suf;
-  }
-
-  /**
-   * ç›¸å¯¹åº“æ ‡ç§°å¤šäº†ä¸€ä¸ª Ã—1000ï¼ˆå…¸å‹ Î©K / 1000K äºŒæ¬¡æ±¡æŸ“ï¼‰æ—¶ï¼Œæ¢å¤ä¸ºåº“æœŸæœ›é˜»å€¼ã€‚
-   * ä¾‹ï¼šR_1k + "1000000Î©K" â†’ "1kÎ©"
-   */
-  static healResistorAgainstLibrary(libraryId: string, value: string): string | null {
-    const libId = libraryId.trim();
-    if (!/^R_/i.test(libId) && !/RESISTOR/i.test(libId)) {
-      return null;
-    }
-    const raw = value.trim().replace(/\s+/g, '');
-    if (raw.length === 0) {
-      return null;
-    }
-    // ä»…å¤„ç†æ±¡æŸ“ç­¾åï¼šâ€¦Î©K / ç»å¯¹å€¼+Kï¼ˆâ‰¥1000Kï¼‰ï¼Œå‹¿æŠŠæ­£å¸¸çš„ 1k/10k å½“æ±¡æŸ“
-    const ohmThenK = /(?:Î©|ohm|Ï‰|R)[kKmMgG]$/i.test(raw);
-    const absOhmsThenK = /^([\d.]+)K$/i.test(raw) && parseFloat(raw) >= 1000;
-    if (!ohmThenK && !absOhmsThenK) {
-      return null;
-    }
-    const libSuffix = libId.replace(/^(R_|RESISTOR_?)/i, '');
-    if (libSuffix.length === 0) {
-      return null;
-    }
-    const expected = UnitParser.parseResistance(libSuffix);
-    const got = UnitParser.parseResistance(UnitParser.sanitizeMalformedResistance(raw));
-    if (!expected.valid || !got.valid || expected.numeric <= 0 || got.numeric <= 0) {
-      return null;
-    }
-    const ratio = got.numeric / expected.numeric;
-    // å¤šä¹˜äº†ä¸€æ¬¡ 1000ï¼ˆKï¼‰
-    if (Math.abs(ratio - 1000) < 0.05) {
-      return UnitParser.formatResistanceEng(expected.numeric);
-    }
-    // å·²æ¶ˆæ­§ä¸ºæ­£ç¡®æ¬§å§†ï¼Œç»Ÿä¸€æˆå·¥ç¨‹è®°æ•°
-    if (Math.abs(ratio - 1) < 0.01) {
-      return UnitParser.formatResistanceEng(expected.numeric);
-    }
-    return null;
-  }
-
-  /** ç”µé˜» value ç»Ÿä¸€å…¥å£ï¼šæ¶ˆæ¯’ â†’ å¯¹åº“çº å â†’ è¡¥åç¼€ */
-  static coerceResistorParam(libraryId: string, value: string): string {
-    const libSuffix = libraryId.replace(/^(R_|RESISTOR_?)/i, '');
-    const fallback = libSuffix.length > 0 ? libSuffix : '1k';
-    const raw = value.trim();
-    if (raw.length === 0) {
-      const fb = UnitParser.parseResistance(fallback);
-      return UnitParser.formatResistanceEng(fb.valid && fb.numeric > 0 ? fb.numeric : 1000);
-    }
-    const healed = UnitParser.healResistorAgainstLibrary(libraryId, raw);
-    if (healed !== null) {
-      return healed;
-    }
-    const sanitized = UnitParser.sanitizeMalformedResistance(raw);
-    return UnitParser.appendFallbackSuffix(sanitized, fallback);
-  }
-
-
-
-  static parseCapacitance(input: string): ParsedValue {
-
-    return UnitParser.parseGeneric(input, 'F', UnitParser.getCapMultipliers());
-
-  }
-
-
-
-  static parseInductance(input: string): ParsedValue {
-
-    return UnitParser.parseGeneric(input, 'H', UnitParser.getIndMultipliers());
-
-  }
-
-
-
-  static parseFrequency(input: string): ParsedValue {
-    // "1kHz" / "1KHz"ï¼šå…ˆå»æ‰ Hzï¼Œå†æŒ‰ k/M å€ç‡è§£æï¼ˆå¦åˆ™ suffix=kHz åŒ¹é…ä¸åˆ°ï¼‰
-    let s = input.trim().replace(/\s+/g, '');
-    if (s.length >= 2 && (s.endsWith('Hz') || s.endsWith('hz') || s.endsWith('HZ'))) {
-      s = s.substring(0, s.length - 2);
-    }
-    return UnitParser.parseGeneric(s, 'Hz', UnitParser.getFreqMultipliers());
-  }
-
-  /** Parse power rating: 0.25W / 250mW / 1W */
-  static parsePower(input: string): ParsedValue {
-    const v = input.trim().replace(/\s+/g, '');
-    if (v.length === 0) {
-      return { numeric: 0.25, unit: 'W', normalized: '0.25W', valid: true, errCode: ErrCode.OK };
-    }
-    const mwMatch = v.match(/^([\d.]+)\s*mw$/i);
-    if (mwMatch) {
-      const w = parseFloat(mwMatch[1]) / 1000;
-      if (!isNaN(w) && w > 0) {
-        return { numeric: w, unit: 'W', normalized: `${w}W`, valid: true, errCode: ErrCode.OK };
-      }
-    }
-    const kwMatch = v.match(/^([\d.]+)\s*kw$/i);
-    if (kwMatch) {
-      const w = parseFloat(kwMatch[1]) * 1000;
-      if (!isNaN(w) && w > 0) {
-        return { numeric: w, unit: 'W', normalized: `${w}W`, valid: true, errCode: ErrCode.OK };
-      }
-    }
-    const wMatch = v.match(/^([\d.]+)\s*W?$/i);
-    if (wMatch) {
-      const w = parseFloat(wMatch[1]);
-      if (!isNaN(w) && w > 0) {
-        return { numeric: w, unit: 'W', normalized: `${w}W`, valid: true, errCode: ErrCode.OK };
-      }
-    }
-    return { numeric: 0.25, unit: 'W', normalized: '0.25W', valid: false, errCode: ErrCode.ERR_PARAM_INVALID };
-  }
-
-
-
-  static normalizeParam(key: string, value: string): ParsedValue {
-
-    const v = value.trim().replace(/\s+/g, '');
-    const keyL = key.toLowerCase();
-
-    if (keyL === 'waveform' || keyL === 'wave') {
-      const wf = v.toLowerCase();
-      const ok = wf === 'sine' || wf === 'sin' || wf === 'square' || wf === 'sq' ||
-        wf === 'triangle' || wf === 'tri' || wf === 'saw' || wf === 'sawtooth' ||
-        wf === 'pulse' || wf === 'æ­£å¼¦' || wf === 'æ–¹æ³¢' || wf === 'ä¸‰è§’' || wf === 'é”¯é½¿' ||
-        wf === 'è„‰å†²';
-      let norm = wf;
-      if (wf === 'sin' || wf === 'æ­£å¼¦') {
-        norm = 'sine';
-      } else if (wf === 'sq' || wf === 'æ–¹æ³¢') {
-        norm = 'square';
-      } else if (wf === 'tri' || wf === 'ä¸‰è§’' || wf === 'ä¸‰è§’æ³¢') {
-        norm = 'triangle';
-      } else if (wf === 'sawtooth' || wf === 'é”¯é½¿') {
-        norm = 'saw';
-      } else if (wf === 'è„‰å†²') {
-        norm = 'pulse';
-      }
-      return {
-        numeric: 0, unit: '', normalized: norm, valid: ok,
-        errCode: ok ? ErrCode.OK : ErrCode.ERR_PARAM_INVALID
-      };
-    }
-
-    if (keyL === 'dutycycle' || keyL === 'duty' || keyL === 'duty_cycle') {
-      let s = v.replace(/%/g, '');
-      const n = parseFloat(s);
-      if (!Number.isFinite(n) || n < 0 || n > 100) {
-        return {
-          numeric: 50, unit: '%', normalized: '50%', valid: false,
-          errCode: ErrCode.ERR_PARAM_INVALID
-        };
-      }
-      // 0â€“1 å°æ•° â†’ ç™¾åˆ†æ¯”ï¼›>1 è§†ä¸ºå·²æ˜¯ç™¾åˆ†æ¯”
-      const pct = n > 0 && n <= 1 ? n * 100 : n;
-      return {
-        numeric: pct, unit: '%', normalized: `${pct}%`, valid: true, errCode: ErrCode.OK
-      };
-    }
-
-    if (key.includes('res') || key === 'value' && v.includes('k') || v.includes('R') || v.includes('Î©')) {
-
-      return UnitParser.parseResistance(v);
-
-    }
-
-    if (key.includes('cap') || v.includes('F') || v.includes('p') || v.includes('u') || v.includes('n')) {
-
-      return UnitParser.parseCapacitance(v);
-
-    }
-
-    if (key.includes('freq') || key.includes('clock') || v.includes('Hz') || v.includes('M')) {
-
-      return UnitParser.parseFrequency(v);
-
-    }
-
-    if (key.includes('power') || key.includes('watt') || v.toUpperCase().endsWith('W')) {
-      return UnitParser.parsePower(v);
-    }
-
-    return { numeric: parseFloat(v) || 0, unit: '', normalized: v, valid: !isNaN(parseFloat(v)), errCode: ErrCode.OK };
-
-  }
-
-
-
-  static validateParam(key: string, value: string, min?: number, max?: number): ParsedValue {
-
-    const parsed = UnitParser.normalizeParam(key, value);
-
-    if (!parsed.valid) {
-
-      parsed.errCode = ErrCode.ERR_PARAM_INVALID;
-
-      return parsed;
-
-    }
-
-    if (parsed.numeric < 0 && (key.includes('res') || key.includes('cap'))) {
-
-      parsed.valid = false;
-
-      parsed.errCode = ErrCode.ERR_PARAM_INVALID;
-
-    }
-
-    if (min !== undefined && parsed.numeric < min) {
-
-      parsed.errCode = ErrCode.ERR_PARAM_INVALID;
-
-    }
-
-    if (max !== undefined && parsed.numeric > max) {
-
-      parsed.errCode = ErrCode.ERR_PARAM_INVALID;
-
-    }
-
-    return parsed;
-
-  }
-
-
-
-  static convertLength(value: number, from: 'mil' | 'mm' | 'inch', to: 'mil' | 'mm' | 'inch'): number {
-
-    let mm = value;
-
-    if (from === 'mil') {
-
-      mm = value * 0.0254;
-
-    } else if (from === 'inch') {
-
-      mm = value * 25.4;
-
-    }
-
-    if (to === 'mil') {
-
-      return mm / 0.0254;
-
-    }
-
-    if (to === 'inch') {
-
-      return mm / 25.4;
-
-    }
-
-    return mm;
-
-  }
-
-
-
-  private static getResistanceMultipliers(): Map<string, number> {
-
-    const m = new Map<string, number>();
-
-    m.set('R', 1);
-
-    m.set('Î©', 1);
-
-    m.set('K', 1e3);
-
-    m.set('k', 1e3);
-
-    m.set('M', 1e6);
-
-    m.set('m', 1e6);
-
-    return m;
-
-  }
-
-
-
-  private static getCapMultipliers(): Map<string, number> {
-
-    const m = new Map<string, number>();
-
-    m.set('F', 1);
-
-    m.set('p', 1e-12);
-
-    m.set('P', 1e-12);
-
-    m.set('n', 1e-9);
-
-    m.set('N', 1e-9);
-
-    m.set('u', 1e-6);
-
-    m.set('U', 1e-6);
-
-    m.set('Âµ', 1e-6);
-
-    m.set('m', 1e-3);
-
-    return m;
-
-  }
-
-
-
-  private static getIndMultipliers(): Map<string, number> {
-
-    const m = new Map<string, number>();
-
-    m.set('H', 1);
-
-    m.set('m', 1e-3);
-
-    m.set('u', 1e-6);
-
-    m.set('n', 1e-9);
-
-    return m;
-
-  }
-
-
-
-  private static getFreqMultipliers(): Map<string, number> {
-
-    const m = new Map<string, number>();
-
-    m.set('Hz', 1);
-
-    m.set('hz', 1);
-
-    m.set('K', 1e3);
-
-    m.set('k', 1e3);
-
-    m.set('M', 1e6);
-
-    m.set('m', 1e6);
-
-    m.set('G', 1e9);
-
-    return m;
-
-  }
-
-
-
-  private static parseGeneric(input: string, baseUnit: string,
-
-    multipliers: Map<string, number>): ParsedValue {
-
-    // 10kÎ© â†’ 10kï¼›10Î© â†’ 10Rï¼ˆä¾¿äºè¯†åˆ«æ¬§å§†ï¼‰ã€‚å‹¿æŠŠ 10kÎ© å˜æˆ 10kR å†æŒ‰æœ«å°¾ RÃ—1 è¯¯ç®—æˆ 10ã€‚
-    let s = input.trim().replace(/\s+/g, '');
-    if (s.indexOf('Î©') >= 0) {
-      s = s.replace(/Î©/g, '');
-      if (/^\d+\.?\d*$/.test(s)) {
-        s = `${s}R`;
-      }
-    }
-
-    if (s.length === 0) {
-
-      return { numeric: 0, unit: baseUnit, normalized: '', valid: false, errCode: ErrCode.ERR_PARAM_INVALID };
-
-    }
-
-
-
-    const sciMatch = s.match(/^([+-]?\d+\.?\d*(?:[eE][+-]?\d+)?)\s*([a-zA-ZÂµ]+)?$/);
-
-    if (sciMatch) {
-
-      const num = parseFloat(sciMatch[1]);
-
-      let suffix = sciMatch[2] ?? '';
-
-      // å…¼å®¹ 10kR / 10kOhmï¼šä¸¢æ‰å•ä½å°¾å·´ï¼Œä¿ç•™å€ç‡å‰ç¼€
-      if (suffix.length > 1 && (suffix.endsWith('R') || suffix.toUpperCase().endsWith('OHM'))) {
-        if (suffix.toUpperCase().endsWith('OHM')) {
-          suffix = suffix.substring(0, suffix.length - 3);
-        } else {
-          suffix = suffix.substring(0, suffix.length - 1);
-        }
-      }
-
-      let mult = 1;
-
-      if (suffix.length > 0) {
-
-        const lastChar = suffix.charAt(suffix.length - 1);
-
-        const prefix = suffix.substring(0, suffix.length - 1);
-
-        if (multipliers.has(suffix)) {
-
-          mult = multipliers.get(suffix) as number;
-
-        } else if (multipliers.has(lastChar)) {
-
-          mult = multipliers.get(lastChar) as number;
-
-        } else if (prefix.length > 0 && multipliers.has(prefix + lastChar)) {
-
-          mult = multipliers.get(prefix + lastChar) as number;
-
-        }
-
-      }
-
-      const numeric = num * mult;
-
-      if (numeric < 0) {
-
-        return { numeric: numeric, unit: baseUnit, normalized: s, valid: false, errCode: ErrCode.ERR_PARAM_INVALID };
-
-      }
-
-      return { numeric: numeric, unit: baseUnit, normalized: `${numeric}${baseUnit}`, valid: true, errCode: ErrCode.OK };
-
-    }
-
-
-
-    const numMatch = s.match(/^([+-]?\d+\.?\d*)\s*([kKmMÂµuUnNpP]?)R?$/);
-
-    if (numMatch) {
-
-      const num = parseFloat(numMatch[1]);
-
-      const suffix = numMatch[2] || '';
-
-      let mult = 1;
-
-      if (suffix.length > 0 && multipliers.has(suffix)) {
-
-        mult = multipliers.get(suffix) as number;
-
-      }
-
-      const numeric = num * mult;
-
-      return {
-
-        numeric: numeric, unit: baseUnit,
-
-        normalized: `${numeric}${baseUnit}`,
-
-        valid: numeric >= 0, errCode: numeric >= 0 ? ErrCode.OK : ErrCode.ERR_PARAM_INVALID
-
-      };
-
-    }
-
-
-
-    return { numeric: 0, unit: baseUnit, normalized: s, valid: false, errCode: ErrCode.ERR_PARAM_INVALID };
-
-  }
-
-}
-
-ÔrE‘°../types/ErrCodeÔrF—ªassertions¨external¢id¤meta±moduleSideEffectsªresolvedByµsyntheticNamedExportsAÂÙBC:\Projects\ElecDraw_Harmony\common\src\main\ets\types\ErrCode.etsAÃªoh-resolveÂ‘ÔrG’§missing¦pluginÃ¦genAbcÂÔ  ÔrH”²dynamicImportCache¹exportAllDeclarationCache»exportNamedDeclarationCache«importCache‘ÔrI–¤type¥start£end«declarationªspecifiers¦source¶ExportNamedDeclarationÌ|Í='ÔrJ–¤type¥start£end¢idªsuperClass¤body°ClassDeclarationÌƒÍ='ÔrK”¤type¥start£end¤nameªIdentifierÌ‰Ì“ªUnitParserÀÔrL”¤type¥start£end¤body©ClassBodyÌ”Í='Ü ÔrM˜¤type¥start£end¦static¨computed£key¤kind¥value°MethodDefinitionÌ›ÍWÃÂKªIdentifierÌ¢Ì±¯parseResistance¦methodÔrN™¤type¥start£end¢idªexpression©generator¥async¦params¤body²FunctionExpressionÌ±ÍWÀÂÂÂ‘KªIdentifierÌ²Ì·¥inputL®BlockStatementÌ¹ÍW”ÔrO•¤type¥start£end¬declarations¤kind³VariableDeclarationÌÄÍ‘ÔrP•¤type¥start£end¢id¤init²VariableDeclaratorÌÊÍKªIdentifierÌÊÌÑ§cleanedÔrQ–¤type¥start£end¦callee©arguments¨optional®CallExpressionÌÔÍÔrR—¤type¥start£end¦object¨property¨computed¨optional°MemberExpressionÌÔÌúKªIdentifierÌÔÌŞªUnitParserKªIdentifierÌßÌú»sanitizeMalformedResistanceÂÂ‘KªIdentifierÌûÍ ¥inputÂ¥constO³VariableDeclarationÍÍh‘P²VariableDeclaratorÍÍgKªIdentifierÍÍ¦parsedQ®CallExpressionÍÍgR°MemberExpressionÍÍ2KªIdentifierÍÍ%ªUnitParserKªIdentifierÍ&Í2¬parseGenericÂÂ“KªIdentifierÍ3Í:§cleanedÔrS•¤type¥start£end¥value£raw§LiteralÍ<Í?¢Î©¤'Î©'Q®CallExpressionÍAÍfR°MemberExpressionÍAÍdKªIdentifierÍAÍKªUnitParserKªIdentifierÍLÍd¸getResistanceMultipliersÂÂÂÂ¥constÔrT–¤type¥start£end¤testªconsequent©alternate«IfStatementÍrÍ8ÔrU–¤type¥start£end¤left¨operator¥right±LogicalExpressionÍvÍ˜R°MemberExpressionÍvÍ‚KªIdentifierÍvÍ|¦parsedKªIdentifierÍ}Í‚¥validÂÂ¢&&U°BinaryExpressionÍ†Í˜R°MemberExpressionÍ†Í”KªIdentifierÍ†ÍŒ¦parsedKªIdentifierÍÍ”§numericÂÂ¡>S§LiteralÍ—Í˜ ¡0L®BlockStatementÍšÍ8‘ÔrV”¤type¥start£endªexpression³ExpressionStatementÍêÍ-ÔrW–¤type¥start£end¨operator¤left¥right´AssignmentExpressionÍêÍ,¡=R°MemberExpressionÍêÍûKªIdentifierÍêÍğ¦parsedKªIdentifierÍñÍûªnormalizedÂÂQ®CallExpressionÍşÍ,R°MemberExpressionÍşÍKªIdentifierÍşÍªUnitParserKªIdentifierÍ	Í³formatResistanceEngÂÂ‘R°MemberExpressionÍÍ+KªIdentifierÍÍ#¦parsedKªIdentifierÍ$Í+§numericÂÂÂÀÔrX”¤type¥start£end¨argument¯ReturnStatementÍBÍPKªIdentifierÍIÍO¦parsedM°MethodDefinitionÍŞÍfÃÂKªIdentifierÍåÍ »sanitizeMalformedResistance¦methodN²FunctionExpressionÍ ÍfÀÂÂÂ‘KªIdentifierÍÍ¥inputL®BlockStatementÍÍf—O³VariableDeclarationÍÍ<‘P²VariableDeclaratorÍÍ;KªIdentifierÍÍ¡sQ®CallExpressionÍÍ;R°MemberExpressionÍÍ/Q®CallExpressionÍÍ'R°MemberExpressionÍÍ%KªIdentifierÍÍ ¥inputKªIdentifierÍ!Í%¤trimÂÂÂKªIdentifierÍ(Í/§replaceÂÂ’ÔrY–¤type¥start£end¥value£raw¥regex§LiteralÍ0Í6’£\s+¡g¦/\s+/gÔrZ’§pattern¥flags£\s+¡gS§LiteralÍ8Í: ¢''Â£letT«IfStatementÍFÍ}U°BinaryExpressionÍJÍXR°MemberExpressionÍJÍRKªIdentifierÍJÍK¡sKªIdentifierÍLÍR¦lengthÂÂ£===S§LiteralÍWÍX ¡0L®BlockStatementÍZÍ}‘X¯ReturnStatementÍiÍrKªIdentifierÍpÍq¡sÀO³VariableDeclarationÍ¬Íí‘P²VariableDeclaratorÍ²ÍìKªIdentifierÍ²Í¼ªohmThenEngQ®CallExpressionÍ¿ÍìR°MemberExpressionÍ¿ÍÆKªIdentifierÍ¿ÍÀ¡sKªIdentifierÍÁÍÆ¥matchÂÂ‘Y§LiteralÍÇÍë’Ù#^([\d.]+)(?:Î©|ohm|Ï‰|R)([kKmMgG])$¡iÙ&/^([\d.]+)(?:Î©|ohm|Ï‰|R)([kKmMgG])$/iZÙ#^([\d.]+)(?:Î©|ohm|Ï‰|R)([kKmMgG])$¡iÂ¥constT«IfStatementÍ÷Í2U°BinaryExpressionÍûÍKªIdentifierÍûÍªohmThenEng£!==S§LiteralÍ
-ÍÀ¤nullL®BlockStatementÍÍ2“O³VariableDeclarationÍÍC‘P²VariableDeclaratorÍ%ÍBKªIdentifierÍ%Í&¡nQ®CallExpressionÍ)ÍBKªIdentifierÍ)Í3ªparseFloat‘R°MemberExpressionÍ4ÍAKªIdentifierÍ4Í>ªohmThenEngS§LiteralÍ?Í@¡1ÃÂÂ¥constO³VariableDeclarationÍQÍk‘P²VariableDeclaratorÍWÍjKªIdentifierÍWÍZ£engR°MemberExpressionÍ]ÍjKªIdentifierÍ]ÍgªohmThenEngS§LiteralÍhÍi¡2ÃÂ¥constT«IfStatementÍyÍ'U±LogicalExpressionÍ}ÍÔr[–¤type¥start£end¨operator¦prefix¨argument¯UnaryExpressionÍ}Í†¡!ÃQ®CallExpressionÍ~Í†KªIdentifierÍ~Íƒ¥isNaN‘KªIdentifierÍ„Í…¡nÂ¢&&U°BinaryExpressionÍŠÍKªIdentifierÍŠÍ‹¡n¡>S§LiteralÍÍ ¡0L®BlockStatementÍ‘Í'“T«IfStatementÍ¤ÍQ®CallExpressionÍ¨Í¸R°MemberExpressionÍ¨Í³Y§LiteralÍ¨Í®’£^k$¡i¦/^k$/iZ£^k$¡iKªIdentifierÍ¯Í³¤testÂÂ‘KªIdentifierÍ´Í·£engÂL®BlockStatementÍºÍ‘X¯ReturnStatementÍÑÍõTµConditionalExpressionÍØÍôU°BinaryExpressionÍØÍàKªIdentifierÍØÍÙ¡n¢>=S§LiteralÍİÍàÌd£100Ôr\•¤type¥start£end«expressions¦quasis¯TemplateLiteralÍãÍê‘KªIdentifierÍæÍç¡n’Ôr]•¤type¥start£end¥value¤tail¯TemplateElementÍäÍäÔr^’£raw¦cooked  Â]¯TemplateElementÍèÍé^¢Î©¢Î©Ã\¯TemplateLiteralÍíÍô‘KªIdentifierÍğÍñ¡n’]¯TemplateElementÍîÍî^  Â]¯TemplateElementÍòÍó^¡k¡kÃÀT«IfStatementÍÍªQ®CallExpressionÍÍ.R°MemberExpressionÍÍ)Y§LiteralÍÍ$’£^m$¡i¦/^m$/iZ£^m$¡iKªIdentifierÍ%Í)¤testÂÂ‘KªIdentifierÍ*Í-£engÂL®BlockStatementÍ0Íª‘X¯ReturnStatementÍ{Í—TµConditionalExpressionÍ‚Í–U°BinaryExpressionÍ‚ÍˆKªIdentifierÍ‚Íƒ¡n¢>=S§LiteralÍ‡Íˆ¡1\¯TemplateLiteralÍ‹Í’‘KªIdentifierÍÍ¡n’]¯TemplateElementÍŒÍŒ^  Â]¯TemplateElementÍÍ‘^¢Î©¢Î©ÃKªIdentifierÍ•Í–¡sÀT«IfStatementÍ¼ÍQ®CallExpressionÍÀÍĞR°MemberExpressionÍÀÍËY§LiteralÍÀÍÆ’£^g$¡i¦/^g$/iZ£^g$¡iKªIdentifierÍÇÍË¤testÂÂ‘KªIdentifierÍÌÍÏ£engÂL®BlockStatementÍÒÍ‘X¯ReturnStatementÍéÍTµConditionalExpressionÍğÍU°BinaryExpressionÍğÍöKªIdentifierÍğÍñ¡n¢>=S§LiteralÍõÍö¡1\¯TemplateLiteralÍùÍ ‘KªIdentifierÍüÍı¡n’]¯TemplateElementÍúÍú^  Â]¯TemplateElementÍşÍÿ^¢Î©¢Î©ÃKªIdentifierÍÍ¡sÀÀÀO³VariableDeclarationÍkÍ”‘P²VariableDeclaratorÍqÍ“KªIdentifierÍqÍy¨bareNumKQ®CallExpressionÍ|Í“R°MemberExpressionÍ|ÍƒKªIdentifierÍ|Í}¡sKªIdentifierÍ~Íƒ¥matchÂÂ‘Y§LiteralÍ„Í’’«^([\d.]+)K$¡i®/^([\d.]+)K$/iZ«^([\d.]+)K$¡iÂ¥constT«IfStatementÍÍLU°BinaryExpressionÍ¢Í³KªIdentifierÍ¢Íª¨bareNumK£!==S§LiteralÍ¯Í³À¤nullL®BlockStatementÍµÍL’O³VariableDeclarationÍÄÍæ‘P²VariableDeclaratorÍÊÍåKªIdentifierÍÊÍË¡nQ®CallExpressionÍÎÍåKªIdentifierÍÎÍØªparseFloat‘R°MemberExpressionÍÙÍäKªIdentifierÍÙÍá¨bareNumKS§LiteralÍâÍã¡1ÃÂÂ¥constT«IfStatementÍôÍAU±LogicalExpressionÍøÍ[¯UnaryExpressionÍøÍ¡!ÃQ®CallExpressionÍùÍKªIdentifierÍùÍş¥isNaN‘KªIdentifierÍÿÍ ¡nÂ¢&&U°BinaryExpressionÍÍKªIdentifierÍÍ¡n¢>=S§LiteralÍ
-ÍÍè¤1000L®BlockStatementÍÍA‘X¯ReturnStatementÍ#Í2\¯TemplateLiteralÍ*Í1‘KªIdentifierÍ-Í.¡n’]¯TemplateElementÍ+Í+^  Â]¯TemplateElementÍ/Í0^¢Î©¢Î©ÃÀÀX¯ReturnStatementÍVÍ_KªIdentifierÍ]Í^¡sM°MethodDefinitionÍšÍ
-DÃÂKªIdentifierÍ¡Í´³formatResistanceEng¦methodN²FunctionExpressionÍ´Í
-DÀÂÂÂ‘KªIdentifierÍµÍ¹¤ohmsL®BlockStatementÍ»Í
-D•T«IfStatementÍÆÍU±LogicalExpressionÍÊÍí[¯UnaryExpressionÍÊÍà¡!ÃQ®CallExpressionÍËÍàR°MemberExpressionÍËÍÚKªIdentifierÍËÍÑ¦NumberKªIdentifierÍÒÍÚ¨isFiniteÂÂ‘KªIdentifierÍÛÍß¤ohmsÂ¢||U°BinaryExpressionÍäÍíKªIdentifierÍäÍè¤ohms¢<=S§LiteralÍìÍí ¡0L®BlockStatementÍïÍ‘X¯ReturnStatementÍşÍS§LiteralÍÍ
-¤1kÎ©¦'1kÎ©'ÀO³VariableDeclarationÍ Ím‘P²VariableDeclaratorÍ&ÍlKªIdentifierÍ&Í*¤nearN·ArrowFunctionExpressionÍ-ÍlÀÃÂÂ’KªIdentifierÍ.Í/¡aKªIdentifierÍ1Í2¡bU°BinaryExpressionÍ7ÍlQ®CallExpressionÍ7ÍFR°MemberExpressionÍ7Í?KªIdentifierÍ7Í;¤MathKªIdentifierÍ<Í?£absÂÂ‘U°BinaryExpressionÍ@ÍEKªIdentifierÍ@ÍA¡a¡-KªIdentifierÍDÍE¡bÂ¢<=Q®CallExpressionÍJÍlR°MemberExpressionÍJÍRKªIdentifierÍJÍN¤MathKªIdentifierÍOÍR£maxÂÂ’S§LiteralÍSÍWË>.è&Ö•¤1e-9U°BinaryExpressionÍYÍkQ®CallExpressionÍYÍdR°MemberExpressionÍYÍaKªIdentifierÍYÍ]¤MathKªIdentifierÍ^Ía£absÂÂ‘KªIdentifierÍbÍc¡bÂ¡*S§LiteralÍgÍkË>.è&Ö•¤1e-9Â¥constT«IfStatementÍwÍ	?U°BinaryExpressionÍ{Í†KªIdentifierÍ{Í¤ohms¢>=S§LiteralÍƒÍ†Î B@£1e6L®BlockStatementÍˆÍ	?’O³VariableDeclarationÍ—Í®‘P²VariableDeclaratorÍÍ­KªIdentifierÍÍ £megU°BinaryExpressionÍ£Í­KªIdentifierÍ£Í§¤ohms¡/S§LiteralÍªÍ­Î B@£1e6¥constT«IfStatementÍ¼Í	4Q®CallExpressionÍÀÍèKªIdentifierÍÀÍÄ¤near’KªIdentifierÍÅÍÈ£megU°BinaryExpressionÍÊÍçQ®CallExpressionÍÊÍàR°MemberExpressionÍÊÍÔKªIdentifierÍÊÍÎ¤MathKªIdentifierÍÏÍÔ¥roundÂÂ‘U°BinaryExpressionÍÕÍßKªIdentifierÍÕÍØ£meg¡*S§LiteralÍÛÍßÍè¤1000Â¡/S§LiteralÍãÍçÍè¤1000ÂL®BlockStatementÍêÍ	4‘X¯ReturnStatementÍıÍ	%\¯TemplateLiteralÍ	Í	$‘Q®CallExpressionÍ	Í	 R°MemberExpressionÍ	Í	KªIdentifierÍ	Í	ªUnitParserKªIdentifierÍ	Í	©trimFloatÂÂ‘KªIdentifierÍ	Í	£megÂ’]¯TemplateElementÍ	Í	^  Â]¯TemplateElementÍ	!Í	#^£MÎ©£MÎ©ÃÀÀT«IfStatementÍ	IÍ
-U°BinaryExpressionÍ	MÍ	YKªIdentifierÍ	MÍ	Q¤ohms¢>=S§LiteralÍ	UÍ	YÍè¤1000L®BlockStatementÍ	[Í
-’O³VariableDeclarationÍ	jÍ	€‘P²VariableDeclaratorÍ	pÍ	KªIdentifierÍ	pÍ	q¡kU°BinaryExpressionÍ	tÍ	KªIdentifierÍ	tÍ	x¤ohms¡/S§LiteralÍ	{Í	Íè¤1000¥constT«IfStatementÍ	Í
- Q®CallExpressionÍ	’Í	¶KªIdentifierÍ	’Í	–¤near’KªIdentifierÍ	—Í	˜¡kU°BinaryExpressionÍ	šÍ	µQ®CallExpressionÍ	šÍ	®R°MemberExpressionÍ	šÍ	¤KªIdentifierÍ	šÍ	¤MathKªIdentifierÍ	ŸÍ	¤¥roundÂÂ‘U°BinaryExpressionÍ	¥Í	­KªIdentifierÍ	¥Í	¦¡k¡*S§LiteralÍ	©Í	­Íè¤1000Â¡/S§LiteralÍ	±Í	µÍè¤1000ÂL®BlockStatementÍ	¸Í
- ‘X¯ReturnStatementÍ	ËÍ	ñ\¯TemplateLiteralÍ	ÒÍ	ğ‘Q®CallExpressionÍ	ÕÍ	ìR°MemberExpressionÍ	ÕÍ	éKªIdentifierÍ	ÕÍ	ßªUnitParserKªIdentifierÍ	àÍ	é©trimFloatÂÂ‘KªIdentifierÍ	êÍ	ë¡kÂ’]¯TemplateElementÍ	ÓÍ	Ó^  Â]¯TemplateElementÍ	íÍ	ï^£kÎ©£kÎ©ÃÀÀX¯ReturnStatementÍ
-Í
-=\¯TemplateLiteralÍ
-Í
-<‘Q®CallExpressionÍ
-Í
-9R°MemberExpressionÍ
-Í
-3KªIdentifierÍ
-Í
-)ªUnitParserKªIdentifierÍ
-*Í
-3©trimFloatÂÂ‘KªIdentifierÍ
-4Í
-8¤ohmsÂ’]¯TemplateElementÍ
-Í
-^  Â]¯TemplateElementÍ
-:Í
-;^¢Î©¢Î©ÃM°MethodDefinitionÍ
-JÍ
-ÅÃÂKªIdentifierÍ
-QÍ
-Z©trimFloat¦methodN²FunctionExpressionÍ
-ZÍ
-ÅÀÂÂÂ‘KªIdentifierÍ
-[Í
-\¡nL®BlockStatementÍ
-^Í
-Å’O³VariableDeclarationÍ
-iÍ
-–‘P²VariableDeclaratorÍ
-oÍ
-•KªIdentifierÍ
-oÍ
-p¡sQ®CallExpressionÍ
-sÍ
-•R°MemberExpressionÍ
-sÍ
-‡Q®CallExpressionÍ
-sÍ
-R°MemberExpressionÍ
-sÍ
-|KªIdentifierÍ
-sÍ
-t¡nKªIdentifierÍ
-uÍ
-|§toFixedÂÂ‘S§LiteralÍ
-}Í
-~¡6ÂKªIdentifierÍ
-€Í
-‡§replaceÂÂ’Y§LiteralÍ
-ˆÍ
-’¦\.?0+$ ¨/\.?0+$/Z¦\.?0+$ S§LiteralÍ
-’Í
-” ¢''Â¥constX¯ReturnStatementÍ
- Í
-¾TµConditionalExpressionÍ
-§Í
-½U°BinaryExpressionÍ
-§Í
-³R°MemberExpressionÍ
-§Í
-¯KªIdentifierÍ
-§Í
-¨¡sKªIdentifierÍ
-©Í
-¯¦lengthÂÂ¡>S§LiteralÍ
-²Í
-³ ¡0KªIdentifierÍ
-¶Í
-·¡sS§LiteralÍ
-ºÍ
-½¡0£'0'M°MethodDefinitionÍ6ÍÃÂKªIdentifierÍ=ÍQ´appendFallbackSuffix¦methodN²FunctionExpressionÍQÍÀÂÂÂ’KªIdentifierÍRÍW¥valueKªIdentifierÍYÍa¨fallbackL®BlockStatementÍcÍšO³VariableDeclarationÍnÍ…‘P²VariableDeclaratorÍtÍ„KªIdentifierÍtÍu¡vQ®CallExpressionÍxÍ„R°MemberExpressionÍxÍ‚KªIdentifierÍxÍ}¥valueKªIdentifierÍ~Í‚¤trimÂÂÂ¥constT«IfStatementÍÍÍU°BinaryExpressionÍ“Í¡R°MemberExpressionÍ“Í›KªIdentifierÍ“Í”¡vKªIdentifierÍ•Í›¦lengthÂÂ£===S§LiteralÍ Í¡ ¡0L®BlockStatementÍ£ÍÍ‘X¯ReturnStatementÍ²ÍÂKªIdentifierÍ¹ÍÁ¨fallbackÀT«IfStatementÍÍQU±LogicalExpressionÍÍ,Q®CallExpressionÍÍR°MemberExpressionÍÍY§LiteralÍÍ’«[a-zÂµÎ©Ï‰]¡i®/[a-zÂµÎ©Ï‰]/iZ«[a-zÂµÎ©Ï‰]¡iKªIdentifierÍÍ¤testÂÂ‘KªIdentifierÍÍ¡vÂ¢||Q®CallExpressionÍÍ,R°MemberExpressionÍÍ)Y§LiteralÍÍ$’£ohm¡i¦/ohm/iZ£ohm¡iKªIdentifierÍ%Í)¤testÂÂ‘KªIdentifierÍ*Í+¡vÂL®BlockStatementÍ.ÍQ‘X¯ReturnStatementÍ=ÍFKªIdentifierÍDÍE¡vÀO³VariableDeclarationÍ[Í‘P²VariableDeclaratorÍaÍ€KªIdentifierÍaÍb¡mQ®CallExpressionÍeÍ€R°MemberExpressionÍeÍsKªIdentifierÍeÍm¨fallbackKªIdentifierÍnÍs¥matchÂÂ‘Y§LiteralÍtÍ’©[a-zÂµ]+$¡i¬/[a-zÂµ]+$/iZ©[a-zÂµ]+$¡iÂ¥constT«IfStatementÍ‹Í¾U°BinaryExpressionÍÍ™KªIdentifierÍÍ¡m£===S§LiteralÍ•Í™À¤nullL®BlockStatementÍ›Í¾‘X¯ReturnStatementÍªÍ³KªIdentifierÍ±Í²¡vÀO³VariableDeclarationÍÈÍà‘P²VariableDeclaratorÍÎÍßKªIdentifierÍÎÍÏ¡nQ®CallExpressionÍÒÍßKªIdentifierÍÒÍÜªparseFloat‘KªIdentifierÍİÍŞ¡vÂ¥constO³VariableDeclarationÍêÍû‘P²VariableDeclaratorÍğÍúKªIdentifierÍğÍó£sufR°MemberExpressionÍöÍúKªIdentifierÍöÍ÷¡mS§LiteralÍøÍù ¡0ÃÂ¥constT«IfStatementÍ#Í…U±LogicalExpressionÍ'ÍZU±LogicalExpressionÍ'ÍMU±LogicalExpressionÍ'Í9[¯UnaryExpressionÍ'Í0¡!ÃQ®CallExpressionÍ(Í0KªIdentifierÍ(Í-¥isNaN‘KªIdentifierÍ.Í/¡nÂ¢&&U°BinaryExpressionÍ4Í9KªIdentifierÍ4Í5¡n¡>S§LiteralÍ8Í9 ¡0¢&&Q®CallExpressionÍ=ÍMR°MemberExpressionÍ=ÍHY§LiteralÍ=ÍC’£^k$¡i¦/^k$/iZ£^k$¡iKªIdentifierÍDÍH¤testÂÂ‘KªIdentifierÍIÍL£sufÂ¢&&U°BinaryExpressionÍQÍZKªIdentifierÍQÍR¡n¢>=S§LiteralÍVÍZÍè¤1000L®BlockStatementÍ\Í…‘X¯ReturnStatementÍkÍz\¯TemplateLiteralÍrÍy‘KªIdentifierÍuÍv¡n’]¯TemplateElementÍsÍs^  Â]¯TemplateElementÍwÍx^¢Î©¢Î©ÃÀT«IfStatementÍÍğU±LogicalExpressionÍ“ÍÅU±LogicalExpressionÍ“Í¹U±LogicalExpressionÍ“Í¥[¯UnaryExpressionÍ“Íœ¡!ÃQ®CallExpressionÍ”ÍœKªIdentifierÍ”Í™¥isNaN‘KªIdentifierÍšÍ›¡nÂ¢&&U°BinaryExpressionÍ Í¥KªIdentifierÍ Í¡¡n¡>S§LiteralÍ¤Í¥ ¡0¢&&Q®CallExpressionÍ©Í¹R°MemberExpressionÍ©Í´Y§LiteralÍ©Í¯’£^m$¡i¦/^m$/iZ£^m$¡iKªIdentifierÍ°Í´¤testÂÂ‘KªIdentifierÍµÍ¸£sufÂ¢&&U°BinaryExpressionÍ½ÍÅKªIdentifierÍ½Í¾¡n¢>=S§LiteralÍÂÍÅÎ B@£1e6L®BlockStatementÍÇÍğ‘X¯ReturnStatementÍÖÍå\¯TemplateLiteralÍİÍä‘KªIdentifierÍàÍá¡n’]¯TemplateElementÍŞÍŞ^  Â]¯TemplateElementÍâÍã^¢Î©¢Î©ÃÀX¯ReturnStatementÍúÍ	U°BinaryExpressionÍÍKªIdentifierÍÍ¡v¡+KªIdentifierÍÍ£sufM°MethodDefinitionÍ„ÍÃÂKªIdentifierÍ‹Í¥ºhealResistorAgainstLibrary¦methodN²FunctionExpressionÍ¥ÍÀÂÂÂ’KªIdentifierÍ¦Í¯©libraryIdKªIdentifierÍ±Í¶¥valueL®BlockStatementÍ¸ÍÜ O³VariableDeclarationÍÃÍâ‘P²VariableDeclaratorÍÉÍáKªIdentifierÍÉÍÎ¥libIdQ®CallExpressionÍÑÍáR°MemberExpressionÍÑÍßKªIdentifierÍÑÍÚ©libraryIdKªIdentifierÍÛÍß¤trimÂÂÂ¥constT«IfStatementÍìÍGU±LogicalExpressionÍğÍ[¯UnaryExpressionÍğÍ¡!ÃQ®CallExpressionÍñÍR°MemberExpressionÍñÍüY§LiteralÍñÍ÷’£^R_¡i¦/^R_/iZ£^R_¡iKªIdentifierÍøÍü¤testÂÂ‘KªIdentifierÍıÍ¥libIdÂ¢&&[¯UnaryExpressionÍÍ¡!ÃQ®CallExpressionÍÍR°MemberExpressionÍÍY§LiteralÍÍ’¨RESISTOR¡i«/RESISTOR/iZ¨RESISTOR¡iKªIdentifierÍÍ¤testÂÂ‘KªIdentifierÍÍ¥libIdÂL®BlockStatementÍ!ÍG‘X¯ReturnStatementÍ0Í<S§LiteralÍ7Í;À¤nullÀO³VariableDeclarationÍQÍ~‘P²VariableDeclaratorÍWÍ}KªIdentifierÍWÍZ£rawQ®CallExpressionÍ]Í}R°MemberExpressionÍ]ÍqQ®CallExpressionÍ]ÍiR°MemberExpressionÍ]ÍgKªIdentifierÍ]Íb¥valueKªIdentifierÍcÍg¤trimÂÂÂKªIdentifierÍjÍq§replaceÂÂ’Y§LiteralÍrÍx’£\s+¡g¦/\s+/gZ£\s+¡gS§LiteralÍzÍ| ¢''Â¥constT«IfStatementÍˆÍÄU°BinaryExpressionÍŒÍœR°MemberExpressionÍŒÍ–KªIdentifierÍŒÍ£rawKªIdentifierÍÍ–¦lengthÂÂ£===S§LiteralÍ›Íœ ¡0L®BlockStatementÍÍÄ‘X¯ReturnStatementÍ­Í¹S§LiteralÍ´Í¸À¤nullÀO³VariableDeclarationÍÍ<‘P²VariableDeclaratorÍÍ;KªIdentifierÍÍ¨ohmThenKQ®CallExpressionÍÍ;R°MemberExpressionÍÍ6Y§LiteralÍÍ1’¸(?:Î©|ohm|Ï‰|R)[kKmMgG]$¡i»/(?:Î©|ohm|Ï‰|R)[kKmMgG]$/iZ¸(?:Î©|ohm|Ï‰|R)[kKmMgG]$¡iKªIdentifierÍ2Í6¤testÂÂ‘KªIdentifierÍ7Í:£rawÂ¥constO³VariableDeclarationÍFÍ‘P²VariableDeclaratorÍLÍKªIdentifierÍLÍX¬absOhmsThenKU±LogicalExpressionÍ[ÍQ®CallExpressionÍ[ÍsR°MemberExpressionÍ[ÍnY§LiteralÍ[Íi’«^([\d.]+)K$¡i®/^([\d.]+)K$/iZ«^([\d.]+)K$¡iKªIdentifierÍjÍn¤testÂÂ‘KªIdentifierÍoÍr£rawÂ¢&&U°BinaryExpressionÍwÍQ®CallExpressionÍwÍ†KªIdentifierÍwÍªparseFloat‘KªIdentifierÍ‚Í…£rawÂ¢>=S§LiteralÍŠÍÍè¤1000¥constT«IfStatementÍ™ÍßU±LogicalExpressionÍÍ·[¯UnaryExpressionÍÍ¦¡!ÃKªIdentifierÍÍ¦¨ohmThenK¢&&[¯UnaryExpressionÍªÍ·¡!ÃKªIdentifierÍ«Í·¬absOhmsThenKL®BlockStatementÍ¹Íß‘X¯ReturnStatementÍÈÍÔS§LiteralÍÏÍÓÀ¤nullÀO³VariableDeclarationÍéÍ"‘P²VariableDeclaratorÍïÍ!KªIdentifierÍïÍø©libSuffixQ®CallExpressionÍûÍ!R°MemberExpressionÍûÍKªIdentifierÍûÍ ¥libIdKªIdentifierÍÍ§replaceÂÂ’Y§LiteralÍ	Í’°^(R_|RESISTOR_?)¡i³/^(R_|RESISTOR_?)/iZ°^(R_|RESISTOR_?)¡iS§LiteralÍÍ  ¢''Â¥constT«IfStatementÍ,ÍnU°BinaryExpressionÍ0ÍFR°MemberExpressionÍ0Í@KªIdentifierÍ0Í9©libSuffixKªIdentifierÍ:Í@¦lengthÂÂ£===S§LiteralÍEÍF ¡0L®BlockStatementÍHÍn‘X¯ReturnStatementÍWÍcS§LiteralÍ^ÍbÀ¤nullÀO³VariableDeclarationÍxÍ¯‘P²VariableDeclaratorÍ~Í®KªIdentifierÍ~Í†¨expectedQ®CallExpressionÍ‰Í®R°MemberExpressionÍ‰Í£KªIdentifierÍ‰Í“ªUnitParserKªIdentifierÍ”Í£¯parseResistanceÂÂ‘KªIdentifierÍ¤Í­©libSuffixÂ¥constO³VariableDeclarationÍ¹Í‘P²VariableDeclaratorÍ¿ÍKªIdentifierÍ¿ÍÂ£gotQ®CallExpressionÍÅÍR°MemberExpressionÍÅÍßKªIdentifierÍÅÍÏªUnitParserKªIdentifierÍĞÍß¯parseResistanceÂÂ‘Q®CallExpressionÍàÍR°MemberExpressionÍàÍKªIdentifierÍàÍêªUnitParserKªIdentifierÍëÍ»sanitizeMalformedResistanceÂÂ‘KªIdentifierÍÍ
-£rawÂÂ¥constT«IfStatementÍÍU±LogicalExpressionÍÍeU±LogicalExpressionÍÍQU±LogicalExpressionÍÍ8[¯UnaryExpressionÍÍ*¡!ÃR°MemberExpressionÍÍ*KªIdentifierÍÍ$¨expectedKªIdentifierÍ%Í*¥validÂÂ¢||[¯UnaryExpressionÍ.Í8¡!ÃR°MemberExpressionÍ/Í8KªIdentifierÍ/Í2£gotKªIdentifierÍ3Í8¥validÂÂ¢||U°BinaryExpressionÍ<ÍQR°MemberExpressionÍ<ÍLKªIdentifierÍ<ÍD¨expectedKªIdentifierÍEÍL§numericÂÂ¢<=S§LiteralÍPÍQ ¡0¢||U°BinaryExpressionÍUÍeR°MemberExpressionÍUÍ`KªIdentifierÍUÍX£gotKªIdentifierÍYÍ`§numericÂÂ¢<=S§LiteralÍdÍe ¡0L®BlockStatementÍgÍ‘X¯ReturnStatementÍvÍ‚S§LiteralÍ}ÍÀ¤nullÀO³VariableDeclarationÍ—ÍÄ‘P²VariableDeclaratorÍÍÃKªIdentifierÍÍ¢¥ratioU°BinaryExpressionÍ¥ÍÃR°MemberExpressionÍ¥Í°KªIdentifierÍ¥Í¨£gotKªIdentifierÍ©Í°§numericÂÂ¡/R°MemberExpressionÍ³ÍÃKªIdentifierÍ³Í»¨expectedKªIdentifierÍ¼ÍÃ§numericÂÂ¥constT«IfStatementÍèÍ]U°BinaryExpressionÍìÍ	Q®CallExpressionÍìÍR°MemberExpressionÍìÍôKªIdentifierÍìÍğ¤MathKªIdentifierÍñÍô£absÂÂ‘U°BinaryExpressionÍõÍKªIdentifierÍõÍú¥ratio¡-S§LiteralÍıÍÍè¤1000Â¡<S§LiteralÍÍ	Ë?©™™™™™š¤0.05L®BlockStatementÍÍ]‘X¯ReturnStatementÍÍRQ®CallExpressionÍ!ÍQR°MemberExpressionÍ!Í?KªIdentifierÍ!Í+ªUnitParserKªIdentifierÍ,Í?³formatResistanceEngÂÂ‘R°MemberExpressionÍ@ÍPKªIdentifierÍ@ÍH¨expectedKªIdentifierÍIÍP§numericÂÂÂÀT«IfStatementÍ„ÍöU°BinaryExpressionÍˆÍ¢Q®CallExpressionÍˆÍ›R°MemberExpressionÍˆÍKªIdentifierÍˆÍŒ¤MathKªIdentifierÍÍ£absÂÂ‘U°BinaryExpressionÍ‘ÍšKªIdentifierÍ‘Í–¥ratio¡-S§LiteralÍ™Íš¡1Â¡<S§LiteralÍÍ¢Ë?„záG®{¤0.01L®BlockStatementÍ¤Íö‘X¯ReturnStatementÍ³ÍëQ®CallExpressionÍºÍêR°MemberExpressionÍºÍØKªIdentifierÍºÍÄªUnitParserKªIdentifierÍÅÍØ³formatResistanceEngÂÂ‘R°MemberExpressionÍÙÍéKªIdentifierÍÙÍá¨expectedKªIdentifierÍâÍé§numericÂÂÂÀX¯ReturnStatementÍ ÍS§LiteralÍÍÀ¤nullM°MethodDefinitionÍCÍÃÂKªIdentifierÍJÍ]³coerceResistorParam¦methodN²FunctionExpressionÍ]ÍÀÂÂÂ’KªIdentifierÍ^Íg©libraryIdKªIdentifierÍiÍn¥valueL®BlockStatementÍpÍ˜O³VariableDeclarationÍ{Í¸‘P²VariableDeclaratorÍÍ·KªIdentifierÍÍŠ©libSuffixQ®CallExpressionÍÍ·R°MemberExpressionÍÍKªIdentifierÍÍ–©libraryIdKªIdentifierÍ—Í§replaceÂÂ’Y§LiteralÍŸÍ²’°^(R_|RESISTOR_?)¡i³/^(R_|RESISTOR_?)/iZ°^(R_|RESISTOR_?)¡iS§LiteralÍ´Í¶ ¢''Â¥constO³VariableDeclarationÍÂÍû‘P²VariableDeclaratorÍÈÍúKªIdentifierÍÈÍĞ¨fallbackTµConditionalExpressionÍÓÍúU°BinaryExpressionÍÓÍçR°MemberExpressionÍÓÍãKªIdentifierÍÓÍÜ©libSuffixKªIdentifierÍİÍã¦lengthÂÂ¡>S§LiteralÍæÍç ¡0KªIdentifierÍêÍó©libSuffixS§LiteralÍöÍú¢1k¤'1k'¥constO³VariableDeclarationÍÍ‘P²VariableDeclaratorÍÍKªIdentifierÍÍ£rawQ®CallExpressionÍÍR°MemberExpressionÍÍKªIdentifierÍÍ¥valueKªIdentifierÍÍ¤trimÂÂÂ¥constT«IfStatementÍ(ÍìU°BinaryExpressionÍ,Í<R°MemberExpressionÍ,Í6KªIdentifierÍ,Í/£rawKªIdentifierÍ0Í6¦lengthÂÂ£===S§LiteralÍ;Í< ¡0L®BlockStatementÍ>Íì’O³VariableDeclarationÍMÍ}‘P²VariableDeclaratorÍSÍ|KªIdentifierÍSÍU¢fbQ®CallExpressionÍXÍ|R°MemberExpressionÍXÍrKªIdentifierÍXÍbªUnitParserKªIdentifierÍcÍr¯parseResistanceÂÂ‘KªIdentifierÍsÍ{¨fallbackÂ¥constX¯ReturnStatementÍ‹ÍáQ®CallExpressionÍ’ÍàR°MemberExpressionÍ’Í°KªIdentifierÍ’ÍœªUnitParserKªIdentifierÍÍ°³formatResistanceEngÂÂ‘TµConditionalExpressionÍ±ÍßU±LogicalExpressionÍ±ÍËR°MemberExpressionÍ±Í¹KªIdentifierÍ±Í³¢fbKªIdentifierÍ´Í¹¥validÂÂ¢&&U°BinaryExpressionÍ½ÍËR°MemberExpressionÍ½ÍÇKªIdentifierÍ½Í¿¢fbKªIdentifierÍÀÍÇ§numericÂÂ¡>S§LiteralÍÊÍË ¡0R°MemberExpressionÍÎÍØKªIdentifierÍÎÍĞ¢fbKªIdentifierÍÑÍØ§numericÂÂS§LiteralÍÛÍßÍè¤1000ÂÀO³VariableDeclarationÍöÍ;‘P²VariableDeclaratorÍüÍ:KªIdentifierÍüÍ¦healedQ®CallExpressionÍÍ:R°MemberExpressionÍÍ*KªIdentifierÍÍªUnitParserKªIdentifierÍÍ*ºhealResistorAgainstLibraryÂÂ’KªIdentifierÍ+Í4©libraryIdKªIdentifierÍ6Í9£rawÂ¥constT«IfStatementÍEÍ‚U°BinaryExpressionÍIÍXKªIdentifierÍIÍO¦healed£!==S§LiteralÍTÍXÀ¤nullL®BlockStatementÍZÍ‚‘X¯ReturnStatementÍiÍwKªIdentifierÍpÍv¦healedÀO³VariableDeclarationÍŒÍÊ‘P²VariableDeclaratorÍ’ÍÉKªIdentifierÍ’Í›©sanitizedQ®CallExpressionÍÍÉR°MemberExpressionÍÍÄKªIdentifierÍÍ¨ªUnitParserKªIdentifierÍ©ÍÄ»sanitizeMalformedResistanceÂÂ‘KªIdentifierÍÅÍÈ£rawÂ¥constX¯ReturnStatementÍÔÍQ®CallExpressionÍÛÍR°MemberExpressionÍÛÍúKªIdentifierÍÛÍåªUnitParserKªIdentifierÍæÍú´appendFallbackSuffixÂÂ’KªIdentifierÍûÍ©sanitizedKªIdentifierÍÍ¨fallbackÂM°MethodDefinitionÍÍ™ÃÂKªIdentifierÍ$Í4°parseCapacitance¦methodN²FunctionExpressionÍ4Í™ÀÂÂÂ‘KªIdentifierÍ5Í:¥inputL®BlockStatementÍ<Í™‘X¯ReturnStatementÍGÍ’Q®CallExpressionÍNÍ‘R°MemberExpressionÍNÍeKªIdentifierÍNÍXªUnitParserKªIdentifierÍYÍe¬parseGenericÂÂ“KªIdentifierÍfÍk¥inputS§LiteralÍmÍp¡F£'F'Q®CallExpressionÍrÍR°MemberExpressionÍrÍKªIdentifierÍrÍ|ªUnitParserKªIdentifierÍ}Í±getCapMultipliersÂÂÂÂM°MethodDefinitionÍŸÍÃÂKªIdentifierÍ¦Íµ¯parseInductance¦methodN²FunctionExpressionÍµÍÀÂÂÂ‘KªIdentifierÍ¶Í»¥inputL®BlockStatementÍ½Í‘X¯ReturnStatementÍÈÍQ®CallExpressionÍÏÍR°MemberExpressionÍÏÍæKªIdentifierÍÏÍÙªUnitParserKªIdentifierÍÚÍæ¬parseGenericÂÂ“KªIdentifierÍçÍì¥inputS§LiteralÍîÍñ¡H£'H'Q®CallExpressionÍóÍR°MemberExpressionÍóÍKªIdentifierÍóÍıªUnitParserKªIdentifierÍşÍ±getIndMultipliersÂÂÂÂM°MethodDefinitionÍ Í¤ÃÂKªIdentifierÍ'Í5®parseFrequency¦methodN²FunctionExpressionÍ5Í¤ÀÂÂÂ‘KªIdentifierÍ6Í;¥inputL®BlockStatementÍ=Í¤“O³VariableDeclarationÍ‹Í´‘P²VariableDeclaratorÍÍ³KªIdentifierÍÍ¡sQ®CallExpressionÍ“Í³R°MemberExpressionÍ“Í§Q®CallExpressionÍ“ÍŸR°MemberExpressionÍ“ÍKªIdentifierÍ“Í˜¥inputKªIdentifierÍ™Í¤trimÂÂÂKªIdentifierÍ Í§§replaceÂÂ’Y§LiteralÍ¨Í®’£\s+¡g¦/\s+/gZ£\s+¡gS§LiteralÍ°Í² ¢''Â£letT«IfStatementÍ¾ÍJU±LogicalExpressionÍÂÍU°BinaryExpressionÍÂÍÏR°MemberExpressionÍÂÍÊKªIdentifierÍÂÍÃ¡sKªIdentifierÍÄÍÊ¦lengthÂÂ¢>=S§LiteralÍÎÍÏ¡2¢&&U±LogicalExpressionÍÔÍU±LogicalExpressionÍÔÍøQ®CallExpressionÍÔÍäR°MemberExpressionÍÔÍŞKªIdentifierÍÔÍÕ¡sKªIdentifierÍÖÍŞ¨endsWithÂÂ‘S§LiteralÍßÍã¢Hz¤'Hz'Â¢||Q®CallExpressionÍèÍøR°MemberExpressionÍèÍòKªIdentifierÍèÍé¡sKªIdentifierÍêÍò¨endsWithÂÂ‘S§LiteralÍóÍ÷¢hz¤'hz'Â¢||Q®CallExpressionÍüÍR°MemberExpressionÍüÍKªIdentifierÍüÍı¡sKªIdentifierÍşÍ¨endsWithÂÂ‘S§LiteralÍÍ¢HZ¤'HZ'ÂL®BlockStatementÍÍJ‘V³ExpressionStatementÍÍ?W´AssignmentExpressionÍÍ>¡=KªIdentifierÍÍ¡sQ®CallExpressionÍ"Í>R°MemberExpressionÍ"Í-KªIdentifierÍ"Í#¡sKªIdentifierÍ$Í-©substringÂÂ’S§LiteralÍ.Í/ ¡0U°BinaryExpressionÍ1Í=R°MemberExpressionÍ1Í9KªIdentifierÍ1Í2¡sKªIdentifierÍ3Í9¦lengthÂÂ¡-S§LiteralÍ<Í=¡2ÂÀX¯ReturnStatementÍTÍQ®CallExpressionÍ[ÍœR°MemberExpressionÍ[ÍrKªIdentifierÍ[ÍeªUnitParserKªIdentifierÍfÍr¬parseGenericÂÂ“KªIdentifierÍsÍt¡sS§LiteralÍvÍz¢Hz¤'Hz'Q®CallExpressionÍ|Í›R°MemberExpressionÍ|Í™KªIdentifierÍ|Í†ªUnitParserKªIdentifierÍ‡Í™²getFreqMultipliersÂÂÂÂM°MethodDefinitionÍİÍ¾ÃÂKªIdentifierÍäÍîªparsePower¦methodN²FunctionExpressionÍîÍ¾ÀÂÂÂ‘KªIdentifierÍïÍô¥inputL®BlockStatementÍöÍ¾™O³VariableDeclarationÍÍ,‘P²VariableDeclaratorÍÍ+KªIdentifierÍÍ¡vQ®CallExpressionÍÍ+R°MemberExpressionÍÍQ®CallExpressionÍÍR°MemberExpressionÍÍKªIdentifierÍÍ¥inputKªIdentifierÍÍ¤trimÂÂÂKªIdentifierÍÍ§replaceÂÂ’Y§LiteralÍ Í&’£\s+¡g¦/\s+/gZ£\s+¡gS§LiteralÍ(Í* ¢''Â¥constT«IfStatementÍ6Í¿U°BinaryExpressionÍ:ÍHR°MemberExpressionÍ:ÍBKªIdentifierÍ:Í;¡vKªIdentifierÍ<ÍB¦lengthÂÂ£===S§LiteralÍGÍH ¡0L®BlockStatementÍJÍ¿‘X¯ReturnStatementÍYÍ´Ôr_”¤type¥start£endªproperties°ObjectExpressionÍ`Í³•Ôr`™¤type¥start£end¦method©shorthand¨computed£key¥value¤kind¨PropertyÍbÍoÂÂÂKªIdentifierÍbÍi§numericS§LiteralÍkÍoË?Ğ      ¤0.25¤init`¨PropertyÍqÍzÂÂÂKªIdentifierÍqÍu¤unitS§LiteralÍwÍz¡W£'W'¤init`¨PropertyÍ|ÍÂÂÂKªIdentifierÍ|Í†ªnormalizedS§LiteralÍˆÍ¥0.25W§'0.25W'¤init`¨PropertyÍ‘ÍœÂÂÂKªIdentifierÍ‘Í–¥validS§LiteralÍ˜ÍœÃ¤true¤init`¨PropertyÍÍ±ÂÂÂKªIdentifierÍÍ¥§errCodeR°MemberExpressionÍ§Í±KªIdentifierÍ§Í®§ErrCodeKªIdentifierÍ¯Í±¢OKÂÂ¤initÀO³VariableDeclarationÍÉÍõ‘P²VariableDeclaratorÍÏÍôKªIdentifierÍÏÍÖ§mwMatchQ®CallExpressionÍÙÍôR°MemberExpressionÍÙÍàKªIdentifierÍÙÍÚ¡vKªIdentifierÍÛÍà¥matchÂÂ‘Y§LiteralÍáÍó’¯^([\d.]+)\s*mw$¡i²/^([\d.]+)\s*mw$/iZ¯^([\d.]+)\s*mw$¡iÂ¥constT«IfStatementÍÿÍîKªIdentifierÍÍ
-§mwMatchL®BlockStatementÍÍî’O³VariableDeclarationÍÍC‘P²VariableDeclaratorÍ!ÍBKªIdentifierÍ!Í"¡wU°BinaryExpressionÍ%ÍBQ®CallExpressionÍ%Í;KªIdentifierÍ%Í/ªparseFloat‘R°MemberExpressionÍ0Í:KªIdentifierÍ0Í7§mwMatchS§LiteralÍ8Í9¡1ÃÂÂ¡/S§LiteralÍ>ÍBÍè¤1000¥constT«IfStatementÍQÍãU±LogicalExpressionÍUÍg[¯UnaryExpressionÍUÍ^¡!ÃQ®CallExpressionÍVÍ^KªIdentifierÍVÍ[¥isNaN‘KªIdentifierÍ\Í]¡wÂ¢&&U°BinaryExpressionÍbÍgKªIdentifierÍbÍc¡w¡>S§LiteralÍfÍg ¡0L®BlockStatementÍiÍã‘X¯ReturnStatementÍ|ÍÔ_°ObjectExpressionÍƒÍÓ•`¨PropertyÍ…ÍÂÂÂKªIdentifierÍ…ÍŒ§numericKªIdentifierÍÍ¡w¤init`¨PropertyÍ‘ÍšÂÂÂKªIdentifierÍ‘Í•¤unitS§LiteralÍ—Íš¡W£'W'¤init`¨PropertyÍœÍ¯ÂÂÂKªIdentifierÍœÍ¦ªnormalized\¯TemplateLiteralÍ¨Í¯‘KªIdentifierÍ«Í¬¡w’]¯TemplateElementÍ©Í©^  Â]¯TemplateElementÍ­Í®^¡W¡WÃ¤init`¨PropertyÍ±Í¼ÂÂÂKªIdentifierÍ±Í¶¥validS§LiteralÍ¸Í¼Ã¤true¤init`¨PropertyÍ¾ÍÑÂÂÂKªIdentifierÍ¾ÍÅ§errCodeR°MemberExpressionÍÇÍÑKªIdentifierÍÇÍÎ§ErrCodeKªIdentifierÍÏÍÑ¢OKÂÂ¤initÀÀO³VariableDeclarationÍøÍ$‘P²VariableDeclaratorÍşÍ#KªIdentifierÍşÍ§kwMatchQ®CallExpressionÍÍ#R°MemberExpressionÍÍKªIdentifierÍÍ	¡vKªIdentifierÍ
-Í¥matchÂÂ‘Y§LiteralÍÍ"’¯^([\d.]+)\s*kw$¡i²/^([\d.]+)\s*kw$/iZ¯^([\d.]+)\s*kw$¡iÂ¥constT«IfStatementÍ.ÍKªIdentifierÍ2Í9§kwMatchL®BlockStatementÍ;Í’O³VariableDeclarationÍJÍr‘P²VariableDeclaratorÍPÍqKªIdentifierÍPÍQ¡wU°BinaryExpressionÍTÍqQ®CallExpressionÍTÍjKªIdentifierÍTÍ^ªparseFloat‘R°MemberExpressionÍ_ÍiKªIdentifierÍ_Íf§kwMatchS§LiteralÍgÍh¡1ÃÂÂ¡*S§LiteralÍmÍqÍè¤1000¥constT«IfStatementÍ€ÍU±LogicalExpressionÍ„Í–[¯UnaryExpressionÍ„Í¡!ÃQ®CallExpressionÍ…ÍKªIdentifierÍ…ÍŠ¥isNaN‘KªIdentifierÍ‹ÍŒ¡wÂ¢&&U°BinaryExpressionÍ‘Í–KªIdentifierÍ‘Í’¡w¡>S§LiteralÍ•Í– ¡0L®BlockStatementÍ˜Í‘X¯ReturnStatementÍ«Í_°ObjectExpressionÍ²Í•`¨PropertyÍ´Í¾ÂÂÂKªIdentifierÍ´Í»§numericKªIdentifierÍ½Í¾¡w¤init`¨PropertyÍÀÍÉÂÂÂKªIdentifierÍÀÍÄ¤unitS§LiteralÍÆÍÉ¡W£'W'¤init`¨PropertyÍËÍŞÂÂÂKªIdentifierÍËÍÕªnormalized\¯TemplateLiteralÍ×ÍŞ‘KªIdentifierÍÚÍÛ¡w’]¯TemplateElementÍØÍØ^  Â]¯TemplateElementÍÜÍİ^¡W¡WÃ¤init`¨PropertyÍàÍëÂÂÂKªIdentifierÍàÍå¥validS§LiteralÍçÍëÃ¤true¤init`¨PropertyÍíÍ ÂÂÂKªIdentifierÍíÍô§errCodeR°MemberExpressionÍöÍ KªIdentifierÍöÍı§ErrCodeKªIdentifierÍşÍ ¢OKÂÂ¤initÀÀO³VariableDeclarationÍ'ÍR‘P²VariableDeclaratorÍ-ÍQKªIdentifierÍ-Í3¦wMatchQ®CallExpressionÍ6ÍQR°MemberExpressionÍ6Í=KªIdentifierÍ6Í7¡vKªIdentifierÍ8Í=¥matchÂÂ‘Y§LiteralÍ>ÍP’¯^([\d.]+)\s*W?$¡i²/^([\d.]+)\s*W?$/iZ¯^([\d.]+)\s*W?$¡iÂ¥constT«IfStatementÍ\ÍBKªIdentifierÍ`Íf¦wMatchL®BlockStatementÍhÍB’O³VariableDeclarationÍwÍ—‘P²VariableDeclaratorÍ}Í–KªIdentifierÍ}Í~¡wQ®CallExpressionÍÍ–KªIdentifierÍÍ‹ªparseFloat‘R°MemberExpressionÍŒÍ•KªIdentifierÍŒÍ’¦wMatchS§LiteralÍ“Í”¡1ÃÂÂ¥constT«IfStatementÍ¥Í7U±LogicalExpressionÍ©Í»[¯UnaryExpressionÍ©Í²¡!ÃQ®CallExpressionÍªÍ²KªIdentifierÍªÍ¯¥isNaN‘KªIdentifierÍ°Í±¡wÂ¢&&U°BinaryExpressionÍ¶Í»KªIdentifierÍ¶Í·¡w¡>S§LiteralÍºÍ» ¡0L®BlockStatementÍ½Í7‘X¯ReturnStatementÍĞÍ(_°ObjectExpressionÍ×Í'•`¨PropertyÍÙÍãÂÂÂKªIdentifierÍÙÍà§numericKªIdentifierÍâÍã¡w¤init`¨PropertyÍåÍîÂÂÂKªIdentifierÍåÍé¤unitS§LiteralÍëÍî¡W£'W'¤init`¨PropertyÍğÍÂÂÂKªIdentifierÍğÍúªnormalized\¯TemplateLiteralÍüÍ‘KªIdentifierÍÿÍ ¡w’]¯TemplateElementÍıÍı^  Â]¯TemplateElementÍÍ^¡W¡WÃ¤init`¨PropertyÍÍÂÂÂKªIdentifierÍÍ
-¥validS§LiteralÍÍÃ¤true¤init`¨PropertyÍÍ%ÂÂÂKªIdentifierÍÍ§errCodeR°MemberExpressionÍÍ%KªIdentifierÍÍ"§ErrCodeKªIdentifierÍ#Í%¢OKÂÂ¤initÀÀX¯ReturnStatementÍLÍ·_°ObjectExpressionÍSÍ¶•`¨PropertyÍUÍbÂÂÂKªIdentifierÍUÍ\§numericS§LiteralÍ^ÍbË?Ğ      ¤0.25¤init`¨PropertyÍdÍmÂÂÂKªIdentifierÍdÍh¤unitS§LiteralÍjÍm¡W£'W'¤init`¨PropertyÍoÍ‚ÂÂÂKªIdentifierÍoÍyªnormalizedS§LiteralÍ{Í‚¥0.25W§'0.25W'¤init`¨PropertyÍ„ÍÂÂÂKªIdentifierÍ„Í‰¥validS§LiteralÍ‹ÍÂ¥false¤init`¨PropertyÍ’Í´ÂÂÂKªIdentifierÍ’Í™§errCodeR°MemberExpressionÍ›Í´KªIdentifierÍ›Í¢§ErrCodeKªIdentifierÍ£Í´±ERR_PARAM_INVALIDÂÂ¤initM°MethodDefinitionÍÄÍ)VÃÂKªIdentifierÍËÍÙ®normalizeParam¦methodN²FunctionExpressionÍÙÍ)VÀÂÂÂ’KªIdentifierÍÚÍİ£keyKªIdentifierÍßÍä¥valueL®BlockStatementÍæÍ)V™O³VariableDeclarationÍñÍ‘P²VariableDeclaratorÍ÷ÍKªIdentifierÍ÷Íø¡vQ®CallExpressionÍûÍR°MemberExpressionÍûÍQ®CallExpressionÍûÍR°MemberExpressionÍûÍKªIdentifierÍûÍ ¥valueKªIdentifierÍÍ¤trimÂÂÂKªIdentifierÍÍ§replaceÂÂ’Y§LiteralÍÍ’£\s+¡g¦/\s+/gZ£\s+¡gS§LiteralÍÍ ¢''Â¥constO³VariableDeclarationÍ&ÍE‘P²VariableDeclaratorÍ,ÍDKªIdentifierÍ,Í0¤keyLQ®CallExpressionÍ3ÍDR°MemberExpressionÍ3ÍBKªIdentifierÍ3Í6£keyKªIdentifierÍ7ÍB«toLowerCaseÂÂÂ¥constT«IfStatementÍOÍ#¨U±LogicalExpressionÍSÍyU°BinaryExpressionÍSÍfKªIdentifierÍSÍW¤keyL£===S§LiteralÍ\Íf¨waveformª'waveform'¢||U°BinaryExpressionÍjÍyKªIdentifierÍjÍn¤keyL£===S§LiteralÍsÍy¤wave¦'wave'L®BlockStatementÍ{Í#¨•O³VariableDeclarationÍŠÍ¥‘P²VariableDeclaratorÍÍ¤KªIdentifierÍÍ’¢wfQ®CallExpressionÍ•Í¤R°MemberExpressionÍ•Í¢KªIdentifierÍ•Í–¡vKªIdentifierÍ—Í¢«toLowerCaseÂÂÂ¥constO³VariableDeclarationÍ³Í Ø‘P²VariableDeclaratorÍ¹Í ×KªIdentifierÍ¹Í»¢okU±LogicalExpressionÍ¾Í ×U±LogicalExpressionÍ¾Í ·U±LogicalExpressionÍ¾Í ¨U±LogicalExpressionÍ¾Í ™U±LogicalExpressionÍ¾Í ŠU±LogicalExpressionÍ¾Í {U±LogicalExpressionÍ¾Í XU±LogicalExpressionÍ¾Í CU±LogicalExpressionÍ¾Í 3U±LogicalExpressionÍ¾Í #U±LogicalExpressionÍ¾ÍıU±LogicalExpressionÍ¾ÍîU±LogicalExpressionÍ¾ÍÛU°BinaryExpressionÍ¾ÍËKªIdentifierÍ¾ÍÀ¢wf£===S§LiteralÍÅÍË¤sine¦'sine'¢||U°BinaryExpressionÍÏÍÛKªIdentifierÍÏÍÑ¢wf£===S§LiteralÍÖÍÛ£sin¥'sin'¢||U°BinaryExpressionÍßÍîKªIdentifierÍßÍá¢wf£===S§LiteralÍæÍî¦square¨'square'¢||U°BinaryExpressionÍòÍıKªIdentifierÍòÍô¢wf£===S§LiteralÍùÍı¢sq¤'sq'¢||U°BinaryExpressionÍ Í #KªIdentifierÍ Í ¢wf£===S§LiteralÍ Í #¨triangleª'triangle'¢||U°BinaryExpressionÍ 'Í 3KªIdentifierÍ 'Í )¢wf£===S§LiteralÍ .Í 3£tri¥'tri'¢||U°BinaryExpressionÍ 7Í CKªIdentifierÍ 7Í 9¢wf£===S§LiteralÍ >Í C£saw¥'saw'¢||U°BinaryExpressionÍ GÍ XKªIdentifierÍ GÍ I¢wf£===S§LiteralÍ NÍ X¨sawtoothª'sawtooth'¢||U°BinaryExpressionÍ mÍ {KªIdentifierÍ mÍ o¢wf£===S§LiteralÍ tÍ {¥pulse§'pulse'¢||U°BinaryExpressionÍ Í ŠKªIdentifierÍ Í ¢wf£===S§LiteralÍ †Í Š¦æ­£å¼¦¨'æ­£å¼¦'¢||U°BinaryExpressionÍ Í ™KªIdentifierÍ Í ¢wf£===S§LiteralÍ •Í ™¦æ–¹æ³¢¨'æ–¹æ³¢'¢||U°BinaryExpressionÍ Í ¨KªIdentifierÍ Í Ÿ¢wf£===S§LiteralÍ ¤Í ¨¦ä¸‰è§’¨'ä¸‰è§’'¢||U°BinaryExpressionÍ ¬Í ·KªIdentifierÍ ¬Í ®¢wf£===S§LiteralÍ ³Í ·¦é”¯é½¿¨'é”¯é½¿'¢||U°BinaryExpressionÍ ÌÍ ×KªIdentifierÍ ÌÍ Î¢wf£===S§LiteralÍ ÓÍ ×¦è„‰å†²¨'è„‰å†²'¥constO³VariableDeclarationÍ æÍ ô‘P²VariableDeclaratorÍ êÍ óKªIdentifierÍ êÍ î¤normKªIdentifierÍ ñÍ ó¢wf£letT«IfStatementÍ!Í"íU±LogicalExpressionÍ!Í!!U°BinaryExpressionÍ!Í!KªIdentifierÍ!Í!¢wf£===S§LiteralÍ!Í!£sin¥'sin'¢||U°BinaryExpressionÍ!Í!!KªIdentifierÍ!Í!¢wf£===S§LiteralÍ!Í!!¦æ­£å¼¦¨'æ­£å¼¦'L®BlockStatementÍ!#Í!S‘V³ExpressionStatementÍ!6Í!DW´AssignmentExpressionÍ!6Í!C¡=KªIdentifierÍ!6Í!:¤normS§LiteralÍ!=Í!C¤sine¦'sine'T«IfStatementÍ!fÍ"íU±LogicalExpressionÍ!jÍ!„U°BinaryExpressionÍ!jÍ!uKªIdentifierÍ!jÍ!l¢wf£===S§LiteralÍ!qÍ!u¢sq¤'sq'¢||U°BinaryExpressionÍ!yÍ!„KªIdentifierÍ!yÍ!{¢wf£===S§LiteralÍ!€Í!„¦æ–¹æ³¢¨'æ–¹æ³¢'L®BlockStatementÍ!†Í!¸‘V³ExpressionStatementÍ!™Í!©W´AssignmentExpressionÍ!™Í!¨¡=KªIdentifierÍ!™Í!¤normS§LiteralÍ! Í!¨¦square¨'square'T«IfStatementÍ!ËÍ"íU±LogicalExpressionÍ!ÏÍ!úU±LogicalExpressionÍ!ÏÍ!êU°BinaryExpressionÍ!ÏÍ!ÛKªIdentifierÍ!ÏÍ!Ñ¢wf£===S§LiteralÍ!ÖÍ!Û£tri¥'tri'¢||U°BinaryExpressionÍ!ßÍ!êKªIdentifierÍ!ßÍ!á¢wf£===S§LiteralÍ!æÍ!ê¦ä¸‰è§’¨'ä¸‰è§’'¢||U°BinaryExpressionÍ!îÍ!úKªIdentifierÍ!îÍ!ğ¢wf£===S§LiteralÍ!õÍ!ú©ä¸‰è§’æ³¢«'ä¸‰è§’æ³¢'L®BlockStatementÍ!üÍ"0‘V³ExpressionStatementÍ"Í"!W´AssignmentExpressionÍ"Í" ¡=KªIdentifierÍ"Í"¤normS§LiteralÍ"Í" ¨triangleª'triangle'T«IfStatementÍ"CÍ"íU±LogicalExpressionÍ"GÍ"gU°BinaryExpressionÍ"GÍ"XKªIdentifierÍ"GÍ"I¢wf£===S§LiteralÍ"NÍ"X¨sawtoothª'sawtooth'¢||U°BinaryExpressionÍ"\Í"gKªIdentifierÍ"\Í"^¢wf£===S§LiteralÍ"cÍ"g¦é”¯é½¿¨'é”¯é½¿'L®BlockStatementÍ"iÍ"˜‘V³ExpressionStatementÍ"|Í"‰W´AssignmentExpressionÍ"|Í"ˆ¡=KªIdentifierÍ"|Í"€¤normS§LiteralÍ"ƒÍ"ˆ£saw¥'saw'T«IfStatementÍ"«Í"íU°BinaryExpressionÍ"¯Í"ºKªIdentifierÍ"¯Í"±¢wf£===S§LiteralÍ"¶Í"º¦è„‰å†²¨'è„‰å†²'L®BlockStatementÍ"¼Í"í‘V³ExpressionStatementÍ"ÏÍ"ŞW´AssignmentExpressionÍ"ÏÍ"İ¡=KªIdentifierÍ"ÏÍ"Ó¤normS§LiteralÍ"ÖÍ"İ¥pulse§'pulse'ÀX¯ReturnStatementÍ"ûÍ#_°ObjectExpressionÍ#Í#œ•`¨PropertyÍ#Í#ÂÂÂKªIdentifierÍ#Í#§numericS§LiteralÍ#Í# ¡0¤init`¨PropertyÍ#!Í#)ÂÂÂKªIdentifierÍ#!Í#%¤unitS§LiteralÍ#'Í#) ¢''¤init`¨PropertyÍ#+Í#;ÂÂÂKªIdentifierÍ#+Í#5ªnormalizedKªIdentifierÍ#7Í#;¤norm¤init`¨PropertyÍ#=Í#FÂÂÂKªIdentifierÍ#=Í#B¥validKªIdentifierÍ#DÍ#F¢ok¤init`¨PropertyÍ#YÍ#ÂÂÂKªIdentifierÍ#YÍ#`§errCodeTµConditionalExpressionÍ#bÍ#KªIdentifierÍ#bÍ#d¢okR°MemberExpressionÍ#gÍ#qKªIdentifierÍ#gÍ#n§ErrCodeKªIdentifierÍ#oÍ#q¢OKÂÂR°MemberExpressionÍ#tÍ#KªIdentifierÍ#tÍ#{§ErrCodeKªIdentifierÍ#|Í#±ERR_PARAM_INVALIDÂÂ¤initÀT«IfStatementÍ#²Í&;U±LogicalExpressionÍ#¶Í#öU±LogicalExpressionÍ#¶Í#İU°BinaryExpressionÍ#¶Í#ÊKªIdentifierÍ#¶Í#º¤keyL£===S§LiteralÍ#¿Í#Ê©dutycycle«'dutycycle'¢||U°BinaryExpressionÍ#ÎÍ#İKªIdentifierÍ#ÎÍ#Ò¤keyL£===S§LiteralÍ#×Í#İ¤duty¦'duty'¢||U°BinaryExpressionÍ#áÍ#öKªIdentifierÍ#áÍ#å¤keyL£===S§LiteralÍ#êÍ#öªduty_cycle¬'duty_cycle'L®BlockStatementÍ#øÍ&;•O³VariableDeclarationÍ$Í$#‘P²VariableDeclaratorÍ$Í$"KªIdentifierÍ$Í$¡sQ®CallExpressionÍ$Í$"R°MemberExpressionÍ$Í$KªIdentifierÍ$Í$¡vKªIdentifierÍ$Í$§replaceÂÂ’Y§LiteralÍ$Í$’¡%¡g¤/%/gZ¡%¡gS§LiteralÍ$Í$! ¢''Â£letO³VariableDeclarationÍ$1Í$I‘P²VariableDeclaratorÍ$7Í$HKªIdentifierÍ$7Í$8¡nQ®CallExpressionÍ$;Í$HKªIdentifierÍ$;Í$EªparseFloat‘KªIdentifierÍ$FÍ$G¡sÂ¥constT«IfStatementÍ$WÍ%HU±LogicalExpressionÍ$[Í$‚U±LogicalExpressionÍ$[Í$w[¯UnaryExpressionÍ$[Í$n¡!ÃQ®CallExpressionÍ$\Í$nR°MemberExpressionÍ$\Í$kKªIdentifierÍ$\Í$b¦NumberKªIdentifierÍ$cÍ$k¨isFiniteÂÂ‘KªIdentifierÍ$lÍ$m¡nÂ¢||U°BinaryExpressionÍ$rÍ$wKªIdentifierÍ$rÍ$s¡n¡<S§LiteralÍ$vÍ$w ¡0¢||U°BinaryExpressionÍ${Í$‚KªIdentifierÍ${Í$|¡n¡>S§LiteralÍ$Í$‚Ìd£100L®BlockStatementÍ$„Í%H‘X¯ReturnStatementÍ$—Í%9_°ObjectExpressionÍ$Í%8•`¨PropertyÍ$µÍ$ÀÂÂÂKªIdentifierÍ$µÍ$¼§numericS§LiteralÍ$¾Í$À2¢50¤init`¨PropertyÍ$ÂÍ$ËÂÂÂKªIdentifierÍ$ÂÍ$Æ¤unitS§LiteralÍ$ÈÍ$Ë¡%£'%'¤init`¨PropertyÍ$ÍÍ$ŞÂÂÂKªIdentifierÍ$ÍÍ$×ªnormalizedS§LiteralÍ$ÙÍ$Ş£50%¥'50%'¤init`¨PropertyÍ$àÍ$ìÂÂÂKªIdentifierÍ$àÍ$å¥validS§LiteralÍ$çÍ$ìÂ¥false¤init`¨PropertyÍ%Í%%ÂÂÂKªIdentifierÍ%Í%
-§errCodeR°MemberExpressionÍ%Í%%KªIdentifierÍ%Í%§ErrCodeKªIdentifierÍ%Í%%±ERR_PARAM_INVALIDÂÂ¤initÀO³VariableDeclarationÍ%~Í%¨‘P²VariableDeclaratorÍ%„Í%§KªIdentifierÍ%„Í%‡£pctTµConditionalExpressionÍ%ŠÍ%§U±LogicalExpressionÍ%ŠÍ%™U°BinaryExpressionÍ%ŠÍ%KªIdentifierÍ%ŠÍ%‹¡n¡>S§LiteralÍ%Í% ¡0¢&&U°BinaryExpressionÍ%“Í%™KªIdentifierÍ%“Í%”¡n¢<=S§LiteralÍ%˜Í%™¡1U°BinaryExpressionÍ%œÍ%£KªIdentifierÍ%œÍ%¡n¡*S§LiteralÍ% Í%£Ìd£100KªIdentifierÍ%¦Í%§¡n¥constX¯ReturnStatementÍ%¶Í&0_°ObjectExpressionÍ%½Í&/•`¨PropertyÍ%ĞÍ%ÜÂÂÂKªIdentifierÍ%ĞÍ%×§numericKªIdentifierÍ%ÙÍ%Ü£pct¤init`¨PropertyÍ%ŞÍ%çÂÂÂKªIdentifierÍ%ŞÍ%â¤unitS§LiteralÍ%äÍ%ç¡%£'%'¤init`¨PropertyÍ%éÍ%şÂÂÂKªIdentifierÍ%éÍ%óªnormalized\¯TemplateLiteralÍ%õÍ%ş‘KªIdentifierÍ%øÍ%û£pct’]¯TemplateElementÍ%öÍ%ö^  Â]¯TemplateElementÍ%üÍ%ı^¡%¡%Ã¤init`¨PropertyÍ& Í&ÂÂÂKªIdentifierÍ& Í&¥validS§LiteralÍ&Í&Ã¤true¤init`¨PropertyÍ&Í& ÂÂÂKªIdentifierÍ&Í&§errCodeR°MemberExpressionÍ&Í& KªIdentifierÍ&Í&§ErrCodeKªIdentifierÍ&Í& ¢OKÂÂ¤initÀT«IfStatementÍ&EÍ&éU±LogicalExpressionÍ&IÍ&¨U±LogicalExpressionÍ&IÍ&•U±LogicalExpressionÍ&IÍ&‚Q®CallExpressionÍ&IÍ&\R°MemberExpressionÍ&IÍ&UKªIdentifierÍ&IÍ&L£keyKªIdentifierÍ&MÍ&U¨includesÂÂ‘S§LiteralÍ&VÍ&[£res¥'res'Â¢||U±LogicalExpressionÍ&`Í&‚U°BinaryExpressionÍ&`Í&oKªIdentifierÍ&`Í&c£key£===S§LiteralÍ&hÍ&o¥value§'value'¢&&Q®CallExpressionÍ&sÍ&‚R°MemberExpressionÍ&sÍ&}KªIdentifierÍ&sÍ&t¡vKªIdentifierÍ&uÍ&}¨includesÂÂ‘S§LiteralÍ&~Í&¡k£'k'Â¢||Q®CallExpressionÍ&†Í&•R°MemberExpressionÍ&†Í&KªIdentifierÍ&†Í&‡¡vKªIdentifierÍ&ˆÍ&¨includesÂÂ‘S§LiteralÍ&‘Í&”¡R£'R'Â¢||Q®CallExpressionÍ&™Í&¨R°MemberExpressionÍ&™Í&£KªIdentifierÍ&™Í&š¡vKªIdentifierÍ&›Í&£¨includesÂÂ‘S§LiteralÍ&¤Í&§¢Î©¤'Î©'ÂL®BlockStatementÍ&ªÍ&é‘X¯ReturnStatementÍ&¹Í&ŞQ®CallExpressionÍ&ÀÍ&İR°MemberExpressionÍ&ÀÍ&ÚKªIdentifierÍ&ÀÍ&ÊªUnitParserKªIdentifierÍ&ËÍ&Ú¯parseResistanceÂÂ‘KªIdentifierÍ&ÛÍ&Ü¡vÂÀT«IfStatementÍ&óÍ'˜U±LogicalExpressionÍ&÷Í'VU±LogicalExpressionÍ&÷Í'CU±LogicalExpressionÍ&÷Í'0U±LogicalExpressionÍ&÷Í'Q®CallExpressionÍ&÷Í'
-R°MemberExpressionÍ&÷Í'KªIdentifierÍ&÷Í&ú£keyKªIdentifierÍ&ûÍ'¨includesÂÂ‘S§LiteralÍ'Í'	£cap¥'cap'Â¢||Q®CallExpressionÍ'Í'R°MemberExpressionÍ'Í'KªIdentifierÍ'Í'¡vKªIdentifierÍ'Í'¨includesÂÂ‘S§LiteralÍ'Í'¡F£'F'Â¢||Q®CallExpressionÍ'!Í'0R°MemberExpressionÍ'!Í'+KªIdentifierÍ'!Í'"¡vKªIdentifierÍ'#Í'+¨includesÂÂ‘S§LiteralÍ',Í'/¡p£'p'Â¢||Q®CallExpressionÍ'4Í'CR°MemberExpressionÍ'4Í'>KªIdentifierÍ'4Í'5¡vKªIdentifierÍ'6Í'>¨includesÂÂ‘S§LiteralÍ'?Í'B¡u£'u'Â¢||Q®CallExpressionÍ'GÍ'VR°MemberExpressionÍ'GÍ'QKªIdentifierÍ'GÍ'H¡vKªIdentifierÍ'IÍ'Q¨includesÂÂ‘S§LiteralÍ'RÍ'U¡n£'n'ÂL®BlockStatementÍ'XÍ'˜‘X¯ReturnStatementÍ'gÍ'Q®CallExpressionÍ'nÍ'ŒR°MemberExpressionÍ'nÍ'‰KªIdentifierÍ'nÍ'xªUnitParserKªIdentifierÍ'yÍ'‰°parseCapacitanceÂÂ‘KªIdentifierÍ'ŠÍ'‹¡vÂÀT«IfStatementÍ'¢Í(:U±LogicalExpressionÍ'¦Í'úU±LogicalExpressionÍ'¦Í'çU±LogicalExpressionÍ'¦Í'ÓQ®CallExpressionÍ'¦Í'ºR°MemberExpressionÍ'¦Í'²KªIdentifierÍ'¦Í'©£keyKªIdentifierÍ'ªÍ'²¨includesÂÂ‘S§LiteralÍ'³Í'¹¤freq¦'freq'Â¢||Q®CallExpressionÍ'¾Í'ÓR°MemberExpressionÍ'¾Í'ÊKªIdentifierÍ'¾Í'Á£keyKªIdentifierÍ'ÂÍ'Ê¨includesÂÂ‘S§LiteralÍ'ËÍ'Ò¥clock§'clock'Â¢||Q®CallExpressionÍ'×Í'çR°MemberExpressionÍ'×Í'áKªIdentifierÍ'×Í'Ø¡vKªIdentifierÍ'ÙÍ'á¨includesÂÂ‘S§LiteralÍ'âÍ'æ¢Hz¤'Hz'Â¢||Q®CallExpressionÍ'ëÍ'úR°MemberExpressionÍ'ëÍ'õKªIdentifierÍ'ëÍ'ì¡vKªIdentifierÍ'íÍ'õ¨includesÂÂ‘S§LiteralÍ'öÍ'ù¡M£'M'ÂL®BlockStatementÍ'üÍ(:‘X¯ReturnStatementÍ(Í(/Q®CallExpressionÍ(Í(.R°MemberExpressionÍ(Í(+KªIdentifierÍ(Í(ªUnitParserKªIdentifierÍ(Í(+®parseFrequencyÂÂ‘KªIdentifierÍ(,Í(-¡vÂÀT«IfStatementÍ(DÍ(ÒU±LogicalExpressionÍ(HÍ(–U±LogicalExpressionÍ(HÍ(uQ®CallExpressionÍ(HÍ(]R°MemberExpressionÍ(HÍ(TKªIdentifierÍ(HÍ(K£keyKªIdentifierÍ(LÍ(T¨includesÂÂ‘S§LiteralÍ(UÍ(\¥power§'power'Â¢||Q®CallExpressionÍ(aÍ(uR°MemberExpressionÍ(aÍ(mKªIdentifierÍ(aÍ(d£keyKªIdentifierÍ(eÍ(m¨includesÂÂ‘S§LiteralÍ(nÍ(t¤watt¦'watt'Â¢||Q®CallExpressionÍ(yÍ(–R°MemberExpressionÍ(yÍ(‘Q®CallExpressionÍ(yÍ(ˆR°MemberExpressionÍ(yÍ(†KªIdentifierÍ(yÍ(z¡vKªIdentifierÍ({Í(†«toUpperCaseÂÂÂKªIdentifierÍ(‰Í(‘¨endsWithÂÂ‘S§LiteralÍ(’Í(•¡W£'W'ÂL®BlockStatementÍ(˜Í(Ò‘X¯ReturnStatementÍ(§Í(ÇQ®CallExpressionÍ(®Í(ÆR°MemberExpressionÍ(®Í(ÃKªIdentifierÍ(®Í(¸ªUnitParserKªIdentifierÍ(¹Í(ÃªparsePowerÂÂ‘KªIdentifierÍ(ÄÍ(Å¡vÂÀX¯ReturnStatementÍ(ÜÍ)O_°ObjectExpressionÍ(ãÍ)N•`¨PropertyÍ(åÍ) ÂÂÂKªIdentifierÍ(åÍ(ì§numericU±LogicalExpressionÍ(îÍ) Q®CallExpressionÍ(îÍ(ûKªIdentifierÍ(îÍ(øªparseFloat‘KªIdentifierÍ(ùÍ(ú¡vÂ¢||S§LiteralÍ(ÿÍ)  ¡0¤init`¨PropertyÍ)Í)
-ÂÂÂKªIdentifierÍ)Í)¤unitS§LiteralÍ)Í)
- ¢''¤init`¨PropertyÍ)Í)ÂÂÂKªIdentifierÍ)Í)ªnormalizedKªIdentifierÍ)Í)¡v¤init`¨PropertyÍ)Í)7ÂÂÂKªIdentifierÍ)Í) ¥valid[¯UnaryExpressionÍ)"Í)7¡!ÃQ®CallExpressionÍ)#Í)7KªIdentifierÍ)#Í)(¥isNaN‘Q®CallExpressionÍ))Í)6KªIdentifierÍ))Í)3ªparseFloat‘KªIdentifierÍ)4Í)5¡vÂÂ¤init`¨PropertyÍ)9Í)LÂÂÂKªIdentifierÍ)9Í)@§errCodeR°MemberExpressionÍ)BÍ)LKªIdentifierÍ)BÍ)I§ErrCodeKªIdentifierÍ)JÍ)L¢OKÂÂ¤initM°MethodDefinitionÍ)\Í,ÃÂKªIdentifierÍ)cÍ)p­validateParam¦methodN²FunctionExpressionÍ)pÍ,ÀÂÂÂ”KªIdentifierÍ)qÍ)t£keyKªIdentifierÍ)vÍ){¥valueKªIdentifierÍ)}Í)€£minKªIdentifierÍ)‚Í)…£maxL®BlockStatementÍ)‡Í,–O³VariableDeclarationÍ)’Í)Ç‘P²VariableDeclaratorÍ)˜Í)ÆKªIdentifierÍ)˜Í)¦parsedQ®CallExpressionÍ)¡Í)ÆR°MemberExpressionÍ)¡Í)ºKªIdentifierÍ)¡Í)«ªUnitParserKªIdentifierÍ)¬Í)º®normalizeParamÂÂ’KªIdentifierÍ)»Í)¾£keyKªIdentifierÍ)ÀÍ)Å¥valueÂ¥constT«IfStatementÍ)ÑÍ*E[¯UnaryExpressionÍ)ÕÍ)â¡!ÃR°MemberExpressionÍ)ÖÍ)âKªIdentifierÍ)ÖÍ)Ü¦parsedKªIdentifierÍ)İÍ)â¥validÂÂL®BlockStatementÍ)äÍ*E’V³ExpressionStatementÍ)óÍ*W´AssignmentExpressionÍ)óÍ*¡=R°MemberExpressionÍ)óÍ*KªIdentifierÍ)óÍ)ù¦parsedKªIdentifierÍ)úÍ*§errCodeÂÂR°MemberExpressionÍ*Í*KªIdentifierÍ*Í*§ErrCodeKªIdentifierÍ*Í*±ERR_PARAM_INVALIDÂÂX¯ReturnStatementÍ*,Í*:KªIdentifierÍ*3Í*9¦parsedÀT«IfStatementÍ*OÍ*ÿU±LogicalExpressionÍ*SÍ*•U°BinaryExpressionÍ*SÍ*eR°MemberExpressionÍ*SÍ*aKªIdentifierÍ*SÍ*Y¦parsedKªIdentifierÍ*ZÍ*a§numericÂÂ¡<S§LiteralÍ*dÍ*e ¡0¢&&U±LogicalExpressionÍ*jÍ*”Q®CallExpressionÍ*jÍ*}R°MemberExpressionÍ*jÍ*vKªIdentifierÍ*jÍ*m£keyKªIdentifierÍ*nÍ*v¨includesÂÂ‘S§LiteralÍ*wÍ*|£res¥'res'Â¢||Q®CallExpressionÍ*Í*”R°MemberExpressionÍ*Í*KªIdentifierÍ*Í*„£keyKªIdentifierÍ*…Í*¨includesÂÂ‘S§LiteralÍ*Í*“£cap¥'cap'ÂL®BlockStatementÍ*—Í*ÿ’V³ExpressionStatementÍ*¦Í*»W´AssignmentExpressionÍ*¦Í*º¡=R°MemberExpressionÍ*¦Í*²KªIdentifierÍ*¦Í*¬¦parsedKªIdentifierÍ*­Í*²¥validÂÂS§LiteralÍ*µÍ*ºÂ¥falseV³ExpressionStatementÍ*ÉÍ*ôW´AssignmentExpressionÍ*ÉÍ*ó¡=R°MemberExpressionÍ*ÉÍ*×KªIdentifierÍ*ÉÍ*Ï¦parsedKªIdentifierÍ*ĞÍ*×§errCodeÂÂR°MemberExpressionÍ*ÚÍ*óKªIdentifierÍ*ÚÍ*á§ErrCodeKªIdentifierÍ*âÍ*ó±ERR_PARAM_INVALIDÂÂÀT«IfStatementÍ+	Í+}U±LogicalExpressionÍ+Í+6U°BinaryExpressionÍ+Í+KªIdentifierÍ+Í+£min£!==KªIdentifierÍ+Í+©undefined¢&&U°BinaryExpressionÍ+"Í+6R°MemberExpressionÍ+"Í+0KªIdentifierÍ+"Í+(¦parsedKªIdentifierÍ+)Í+0§numericÂÂ¡<KªIdentifierÍ+3Í+6£minL®BlockStatementÍ+8Í+}‘V³ExpressionStatementÍ+GÍ+rW´AssignmentExpressionÍ+GÍ+q¡=R°MemberExpressionÍ+GÍ+UKªIdentifierÍ+GÍ+M¦parsedKªIdentifierÍ+NÍ+U§errCodeÂÂR°MemberExpressionÍ+XÍ+qKªIdentifierÍ+XÍ+_§ErrCodeKªIdentifierÍ+`Í+q±ERR_PARAM_INVALIDÂÂÀT«IfStatementÍ+‡Í+ûU±LogicalExpressionÍ+‹Í+´U°BinaryExpressionÍ+‹Í+œKªIdentifierÍ+‹Í+£max£!==KªIdentifierÍ+“Í+œ©undefined¢&&U°BinaryExpressionÍ+ Í+´R°MemberExpressionÍ+ Í+®KªIdentifierÍ+ Í+¦¦parsedKªIdentifierÍ+§Í+®§numericÂÂ¡>KªIdentifierÍ+±Í+´£maxL®BlockStatementÍ+¶Í+û‘V³ExpressionStatementÍ+ÅÍ+ğW´AssignmentExpressionÍ+ÅÍ+ï¡=R°MemberExpressionÍ+ÅÍ+ÓKªIdentifierÍ+ÅÍ+Ë¦parsedKªIdentifierÍ+ÌÍ+Ó§errCodeÂÂR°MemberExpressionÍ+ÖÍ+ïKªIdentifierÍ+ÖÍ+İ§ErrCodeKªIdentifierÍ+ŞÍ+ï±ERR_PARAM_INVALIDÂÂÀX¯ReturnStatementÍ,Í,KªIdentifierÍ,Í,¦parsedM°MethodDefinitionÍ, Í-¨ÃÂKªIdentifierÍ,'Í,4­convertLength¦methodN²FunctionExpressionÍ,4Í-¨ÀÂÂÂ“KªIdentifierÍ,5Í,:¥valueKªIdentifierÍ,<Í,@¤fromKªIdentifierÍ,BÍ,D¢toL®BlockStatementÍ,FÍ-¨•O³VariableDeclarationÍ,QÍ,`‘P²VariableDeclaratorÍ,UÍ,_KªIdentifierÍ,UÍ,W¢mmKªIdentifierÍ,ZÍ,_¥value£letT«IfStatementÍ,jÍ,üU°BinaryExpressionÍ,nÍ,|KªIdentifierÍ,nÍ,r¤from£===S§LiteralÍ,wÍ,|£mil¥'mil'L®BlockStatementÍ,~Í,¬‘V³ExpressionStatementÍ,Í,¡W´AssignmentExpressionÍ,Í, ¡=KªIdentifierÍ,Í,¢mmU°BinaryExpressionÍ,’Í, KªIdentifierÍ,’Í,—¥value¡*S§LiteralÍ,šÍ, Ë?šu%F
-¦¦0.0254T«IfStatementÍ,»Í,üU°BinaryExpressionÍ,¿Í,ÎKªIdentifierÍ,¿Í,Ã¤from£===S§LiteralÍ,ÈÍ,Î¤inch¦'inch'L®BlockStatementÍ,ĞÍ,ü‘V³ExpressionStatementÍ,ßÍ,ñW´AssignmentExpressionÍ,ßÍ,ğ¡=KªIdentifierÍ,ßÍ,á¢mmU°BinaryExpressionÍ,äÍ,ğKªIdentifierÍ,äÍ,é¥value¡*S§LiteralÍ,ìÍ,ğË@9ffffff¤25.4ÀT«IfStatementÍ-Í-EU°BinaryExpressionÍ-
-Í-KªIdentifierÍ-
-Í-¢to£===S§LiteralÍ-Í-£mil¥'mil'L®BlockStatementÍ-Í-E‘X¯ReturnStatementÍ-'Í-:U°BinaryExpressionÍ-.Í-9KªIdentifierÍ-.Í-0¢mm¡/S§LiteralÍ-3Í-9Ë?šu%F
-¦¦0.0254ÀT«IfStatementÍ-OÍ-U°BinaryExpressionÍ-SÍ-`KªIdentifierÍ-SÍ-U¢to£===S§LiteralÍ-ZÍ-`¤inch¦'inch'L®BlockStatementÍ-bÍ-‘X¯ReturnStatementÍ-qÍ-‚U°BinaryExpressionÍ-xÍ-KªIdentifierÍ-xÍ-z¢mm¡/S§LiteralÍ-}Í-Ë@9ffffff¤25.4ÀX¯ReturnStatementÍ-—Í-¡KªIdentifierÍ-Í- ¢mmM°MethodDefinitionÍ-®Í.¡ÃÂKªIdentifierÍ-µÍ-Í¸getResistanceMultipliers¦methodN²FunctionExpressionÍ-ÍÍ.¡ÀÂÂÂL®BlockStatementÍ-ĞÍ.¡˜O³VariableDeclarationÍ-ÛÍ-ï‘P²VariableDeclaratorÍ-áÍ-îKªIdentifierÍ-áÍ-â¡mÔra•¤type¥start£end¦callee©arguments­NewExpressionÍ-åÍ-îKªIdentifierÍ-éÍ-ì£Map¥constV³ExpressionStatementÍ-ùÍ.Q®CallExpressionÍ-ùÍ.R°MemberExpressionÍ-ùÍ-şKªIdentifierÍ-ùÍ-ú¡mKªIdentifierÍ-ûÍ-ş£setÂÂ’S§LiteralÍ-ÿÍ.¡R£'R'S§LiteralÍ.Í.¡1ÂV³ExpressionStatementÍ.Í.Q®CallExpressionÍ.Í.R°MemberExpressionÍ.Í.KªIdentifierÍ.Í.¡mKªIdentifierÍ.Í.£setÂÂ’S§LiteralÍ.Í.¢Î©¤'Î©'S§LiteralÍ.Í.¡1ÂV³ExpressionStatementÍ.)Í.9Q®CallExpressionÍ.)Í.8R°MemberExpressionÍ.)Í..KªIdentifierÍ.)Í.*¡mKªIdentifierÍ.+Í..£setÂÂ’S§LiteralÍ./Í.2¡K£'K'S§LiteralÍ.4Í.7Íè£1e3ÂV³ExpressionStatementÍ.CÍ.SQ®CallExpressionÍ.CÍ.RR°MemberExpressionÍ.CÍ.HKªIdentifierÍ.CÍ.D¡mKªIdentifierÍ.EÍ.H£setÂÂ’S§LiteralÍ.IÍ.L¡k£'k'S§LiteralÍ.NÍ.QÍè£1e3ÂV³ExpressionStatementÍ.]Í.mQ®CallExpressionÍ.]Í.lR°MemberExpressionÍ.]Í.bKªIdentifierÍ.]Í.^¡mKªIdentifierÍ._Í.b£setÂÂ’S§LiteralÍ.cÍ.f¡M£'M'S§LiteralÍ.hÍ.kÎ B@£1e6ÂV³ExpressionStatementÍ.wÍ.‡Q®CallExpressionÍ.wÍ.†R°MemberExpressionÍ.wÍ.|KªIdentifierÍ.wÍ.x¡mKªIdentifierÍ.yÍ.|£setÂÂ’S§LiteralÍ.}Í.€¡m£'m'S§LiteralÍ.‚Í.…Î B@£1e6ÂX¯ReturnStatementÍ.‘Í.šKªIdentifierÍ.˜Í.™¡mM°MethodDefinitionÍ.§Í/íÃÂKªIdentifierÍ.®Í.¿±getCapMultipliers¦methodN²FunctionExpressionÍ.¿Í/íÀÂÂÂL®BlockStatementÍ.ÂÍ/í›O³VariableDeclarationÍ.ÍÍ.á‘P²VariableDeclaratorÍ.ÓÍ.àKªIdentifierÍ.ÓÍ.Ô¡ma­NewExpressionÍ.×Í.àKªIdentifierÍ.ÛÍ.Ş£Map¥constV³ExpressionStatementÍ.ëÍ.ùQ®CallExpressionÍ.ëÍ.øR°MemberExpressionÍ.ëÍ.ğKªIdentifierÍ.ëÍ.ì¡mKªIdentifierÍ.íÍ.ğ£setÂÂ’S§LiteralÍ.ñÍ.ô¡F£'F'S§LiteralÍ.öÍ.÷¡1ÂV³ExpressionStatementÍ/Í/Q®CallExpressionÍ/Í/R°MemberExpressionÍ/Í/KªIdentifierÍ/Í/¡mKªIdentifierÍ/Í/£setÂÂ’S§LiteralÍ/	Í/¡p£'p'S§LiteralÍ/Í/Ë=q—™-ê¥1e-12ÂV³ExpressionStatementÍ/Í/1Q®CallExpressionÍ/Í/0R°MemberExpressionÍ/Í/$KªIdentifierÍ/Í/ ¡mKªIdentifierÍ/!Í/$£setÂÂ’S§LiteralÍ/%Í/(¡P£'P'S§LiteralÍ/*Í//Ë=q—™-ê¥1e-12ÂV³ExpressionStatementÍ/;Í/LQ®CallExpressionÍ/;Í/KR°MemberExpressionÍ/;Í/@KªIdentifierÍ/;Í/<¡mKªIdentifierÍ/=Í/@£setÂÂ’S§LiteralÍ/AÍ/D¡n£'n'S§LiteralÍ/FÍ/JË>.è&Ö•¤1e-9ÂV³ExpressionStatementÍ/VÍ/gQ®CallExpressionÍ/VÍ/fR°MemberExpressionÍ/VÍ/[KªIdentifierÍ/VÍ/W¡mKªIdentifierÍ/XÍ/[£setÂÂ’S§LiteralÍ/\Í/_¡N£'N'S§LiteralÍ/aÍ/eË>.è&Ö•¤1e-9ÂV³ExpressionStatementÍ/qÍ/‚Q®CallExpressionÍ/qÍ/R°MemberExpressionÍ/qÍ/vKªIdentifierÍ/qÍ/r¡mKªIdentifierÍ/sÍ/v£setÂÂ’S§LiteralÍ/wÍ/z¡u£'u'S§LiteralÍ/|Í/€Ë>°Æ÷ µí¤1e-6ÂV³ExpressionStatementÍ/ŒÍ/Q®CallExpressionÍ/ŒÍ/œR°MemberExpressionÍ/ŒÍ/‘KªIdentifierÍ/ŒÍ/¡mKªIdentifierÍ/Í/‘£setÂÂ’S§LiteralÍ/’Í/•¡U£'U'S§LiteralÍ/—Í/›Ë>°Æ÷ µí¤1e-6ÂV³ExpressionStatementÍ/§Í/¸Q®CallExpressionÍ/§Í/·R°MemberExpressionÍ/§Í/¬KªIdentifierÍ/§Í/¨¡mKªIdentifierÍ/©Í/¬£setÂÂ’S§LiteralÍ/­Í/°¢Âµ¤'Âµ'S§LiteralÍ/²Í/¶Ë>°Æ÷ µí¤1e-6ÂV³ExpressionStatementÍ/ÂÍ/ÓQ®CallExpressionÍ/ÂÍ/ÒR°MemberExpressionÍ/ÂÍ/ÇKªIdentifierÍ/ÂÍ/Ã¡mKªIdentifierÍ/ÄÍ/Ç£setÂÂ’S§LiteralÍ/ÈÍ/Ë¡m£'m'S§LiteralÍ/ÍÍ/ÑË?PbMÒñ©ü¤1e-3ÂX¯ReturnStatementÍ/İÍ/æKªIdentifierÍ/äÍ/å¡mM°MethodDefinitionÍ/óÍ0°ÃÂKªIdentifierÍ/úÍ0±getIndMultipliers¦methodN²FunctionExpressionÍ0Í0°ÀÂÂÂL®BlockStatementÍ0Í0°–O³VariableDeclarationÍ0Í0-‘P²VariableDeclaratorÍ0Í0,KªIdentifierÍ0Í0 ¡ma­NewExpressionÍ0#Í0,KªIdentifierÍ0'Í0*£Map¥constV³ExpressionStatementÍ07Í0EQ®CallExpressionÍ07Í0DR°MemberExpressionÍ07Í0<KªIdentifierÍ07Í08¡mKªIdentifierÍ09Í0<£setÂÂ’S§LiteralÍ0=Í0@¡H£'H'S§LiteralÍ0BÍ0C¡1ÂV³ExpressionStatementÍ0OÍ0`Q®CallExpressionÍ0OÍ0_R°MemberExpressionÍ0OÍ0TKªIdentifierÍ0OÍ0P¡mKªIdentifierÍ0QÍ0T£setÂÂ’S§LiteralÍ0UÍ0X¡m£'m'S§LiteralÍ0ZÍ0^Ë?PbMÒñ©ü¤1e-3ÂV³ExpressionStatementÍ0jÍ0{Q®CallExpressionÍ0jÍ0zR°MemberExpressionÍ0jÍ0oKªIdentifierÍ0jÍ0k¡mKªIdentifierÍ0lÍ0o£setÂÂ’S§LiteralÍ0pÍ0s¡u£'u'S§LiteralÍ0uÍ0yË>°Æ÷ µí¤1e-6ÂV³ExpressionStatementÍ0…Í0–Q®CallExpressionÍ0…Í0•R°MemberExpressionÍ0…Í0ŠKªIdentifierÍ0…Í0†¡mKªIdentifierÍ0‡Í0Š£setÂÂ’S§LiteralÍ0‹Í0¡n£'n'S§LiteralÍ0Í0”Ë>.è&Ö•¤1e-9ÂX¯ReturnStatementÍ0 Í0©KªIdentifierÍ0§Í0¨¡mM°MethodDefinitionÍ0¶Í1¿ÃÂKªIdentifierÍ0½Í0Ï²getFreqMultipliers¦methodN²FunctionExpressionÍ0ÏÍ1¿ÀÂÂÂL®BlockStatementÍ0ÒÍ1¿™O³VariableDeclarationÍ0İÍ0ñ‘P²VariableDeclaratorÍ0ãÍ0ğKªIdentifierÍ0ãÍ0ä¡ma­NewExpressionÍ0çÍ0ğKªIdentifierÍ0ëÍ0î£Map¥constV³ExpressionStatementÍ0ûÍ1
-Q®CallExpressionÍ0ûÍ1	R°MemberExpressionÍ0ûÍ1 KªIdentifierÍ0ûÍ0ü¡mKªIdentifierÍ0ıÍ1 £setÂÂ’S§LiteralÍ1Í1¢Hz¤'Hz'S§LiteralÍ1Í1¡1ÂV³ExpressionStatementÍ1Í1#Q®CallExpressionÍ1Í1"R°MemberExpressionÍ1Í1KªIdentifierÍ1Í1¡mKªIdentifierÍ1Í1£setÂÂ’S§LiteralÍ1Í1¢hz¤'hz'S§LiteralÍ1 Í1!¡1ÂV³ExpressionStatementÍ1-Í1=Q®CallExpressionÍ1-Í1<R°MemberExpressionÍ1-Í12KªIdentifierÍ1-Í1.¡mKªIdentifierÍ1/Í12£setÂÂ’S§LiteralÍ13Í16¡K£'K'S§LiteralÍ18Í1;Íè£1e3ÂV³ExpressionStatementÍ1GÍ1WQ®CallExpressionÍ1GÍ1VR°MemberExpressionÍ1GÍ1LKªIdentifierÍ1GÍ1H¡mKªIdentifierÍ1IÍ1L£setÂÂ’S§LiteralÍ1MÍ1P¡k£'k'S§LiteralÍ1RÍ1UÍè£1e3ÂV³ExpressionStatementÍ1aÍ1qQ®CallExpressionÍ1aÍ1pR°MemberExpressionÍ1aÍ1fKªIdentifierÍ1aÍ1b¡mKªIdentifierÍ1cÍ1f£setÂÂ’S§LiteralÍ1gÍ1j¡M£'M'S§LiteralÍ1lÍ1oÎ B@£1e6ÂV³ExpressionStatementÍ1{Í1‹Q®CallExpressionÍ1{Í1ŠR°MemberExpressionÍ1{Í1€KªIdentifierÍ1{Í1|¡mKªIdentifierÍ1}Í1€£setÂÂ’S§LiteralÍ1Í1„¡m£'m'S§LiteralÍ1†Í1‰Î B@£1e6ÂV³ExpressionStatementÍ1•Í1¥Q®CallExpressionÍ1•Í1¤R°MemberExpressionÍ1•Í1šKªIdentifierÍ1•Í1–¡mKªIdentifierÍ1—Í1š£setÂÂ’S§LiteralÍ1›Í1¡G£'G'S§LiteralÍ1 Í1£Î;šÊ £1e9ÂX¯ReturnStatementÍ1¯Í1¸KªIdentifierÍ1¶Í1·¡mM°MethodDefinitionÍ1ÅÍ=$ÃÂKªIdentifierÍ1ÌÍ1Ø¬parseGeneric¦methodN²FunctionExpressionÍ1ØÍ=$ÀÂÂÂ“KªIdentifierÍ1ÙÍ1Ş¥inputKªIdentifierÍ1àÍ1è¨baseUnitKªIdentifierÍ1êÍ1õ«multipliersL®BlockStatementÍ1÷Í=$˜O³VariableDeclarationÍ2LÍ2u‘P²VariableDeclaratorÍ2PÍ2tKªIdentifierÍ2PÍ2Q¡sQ®CallExpressionÍ2TÍ2tR°MemberExpressionÍ2TÍ2hQ®CallExpressionÍ2TÍ2`R°MemberExpressionÍ2TÍ2^KªIdentifierÍ2TÍ2Y¥inputKªIdentifierÍ2ZÍ2^¤trimÂÂÂKªIdentifierÍ2aÍ2h§replaceÂÂ’Y§LiteralÍ2iÍ2o’£\s+¡g¦/\s+/gZ£\s+¡gS§LiteralÍ2qÍ2s ¢''Â£letT«IfStatementÍ2Í3!U°BinaryExpressionÍ2ƒÍ2–Q®CallExpressionÍ2ƒÍ2‘R°MemberExpressionÍ2ƒÍ2ŒKªIdentifierÍ2ƒÍ2„¡sKªIdentifierÍ2…Í2Œ§indexOfÂÂ‘S§LiteralÍ2Í2¢Î©¤'Î©'Â¢>=S§LiteralÍ2•Í2– ¡0L®BlockStatementÍ2˜Í3!’V³ExpressionStatementÍ2§Í2¿W´AssignmentExpressionÍ2§Í2¾¡=KªIdentifierÍ2§Í2¨¡sQ®CallExpressionÍ2«Í2¾R°MemberExpressionÍ2«Í2´KªIdentifierÍ2«Í2¬¡sKªIdentifierÍ2­Í2´§replaceÂÂ’Y§LiteralÍ2µÍ2¹’¢Î©¡g¥/Î©/gZ¢Î©¡gS§LiteralÍ2»Í2½ ¢''ÂT«IfStatementÍ2ÍÍ3Q®CallExpressionÍ2ÑÍ2æR°MemberExpressionÍ2ÑÍ2ãY§LiteralÍ2ÑÍ2Ş’«^\d+\.?\d*$ ­/^\d+\.?\d*$/Z«^\d+\.?\d*$ KªIdentifierÍ2ßÍ2ã¤testÂÂ‘KªIdentifierÍ2äÍ2å¡sÂL®BlockStatementÍ2èÍ3‘V³ExpressionStatementÍ2ûÍ3W´AssignmentExpressionÍ2ûÍ3¡=KªIdentifierÍ2ûÍ2ü¡s\¯TemplateLiteralÍ2ÿÍ3‘KªIdentifierÍ3Í3¡s’]¯TemplateElementÍ3 Í3 ^  Â]¯TemplateElementÍ3Í3^¡R¡RÃÀÀT«IfStatementÍ3+Í3ÁU°BinaryExpressionÍ3/Í3=R°MemberExpressionÍ3/Í37KªIdentifierÍ3/Í30¡sKªIdentifierÍ31Í37¦lengthÂÂ£===S§LiteralÍ3<Í3= ¡0L®BlockStatementÍ3?Í3Á‘X¯ReturnStatementÍ3NÍ3¶_°ObjectExpressionÍ3UÍ3µ•`¨PropertyÍ3WÍ3aÂÂÂKªIdentifierÍ3WÍ3^§numericS§LiteralÍ3`Í3a ¡0¤init`¨PropertyÍ3cÍ3qÂÂÂKªIdentifierÍ3cÍ3g¤unitKªIdentifierÍ3iÍ3q¨baseUnit¤init`¨PropertyÍ3sÍ3ÂÂÂKªIdentifierÍ3sÍ3}ªnormalizedS§LiteralÍ3Í3 ¢''¤init`¨PropertyÍ3ƒÍ3ÂÂÂKªIdentifierÍ3ƒÍ3ˆ¥validS§LiteralÍ3ŠÍ3Â¥false¤init`¨PropertyÍ3‘Í3³ÂÂÂKªIdentifierÍ3‘Í3˜§errCodeR°MemberExpressionÍ3šÍ3³KªIdentifierÍ3šÍ3¡§ErrCodeKªIdentifierÍ3¢Í3³±ERR_PARAM_INVALIDÂÂ¤initÀO³VariableDeclarationÍ3ËÍ4‘P²VariableDeclaratorÍ3ÑÍ4KªIdentifierÍ3ÑÍ3Ù¨sciMatchQ®CallExpressionÍ3ÜÍ4R°MemberExpressionÍ3ÜÍ3ãKªIdentifierÍ3ÜÍ3İ¡sKªIdentifierÍ3ŞÍ3ã¥matchÂÂ‘Y§LiteralÍ3äÍ4’Ù4^([+-]?\d+\.?\d*(?:[eE][+-]?\d+)?)\s*([a-zA-ZÂµ]+)?$ Ù6/^([+-]?\d+\.?\d*(?:[eE][+-]?\d+)?)\s*([a-zA-ZÂµ]+)?$/ZÙ4^([+-]?\d+\.?\d*(?:[eE][+-]?\d+)?)\s*([a-zA-ZÂµ]+)?$ Â¥constT«IfStatementÍ4%Í: KªIdentifierÍ4)Í41¨sciMatchL®BlockStatementÍ43Í: ˜O³VariableDeclarationÍ4BÍ4f‘P²VariableDeclaratorÍ4HÍ4eKªIdentifierÍ4HÍ4K£numQ®CallExpressionÍ4NÍ4eKªIdentifierÍ4NÍ4XªparseFloat‘R°MemberExpressionÍ4YÍ4dKªIdentifierÍ4YÍ4a¨sciMatchS§LiteralÍ4bÍ4c¡1ÃÂÂ¥constO³VariableDeclarationÍ4tÍ4“‘P²VariableDeclaratorÍ4xÍ4’KªIdentifierÍ4xÍ4~¦suffixU±LogicalExpressionÍ4Í4’R°MemberExpressionÍ4Í4ŒKªIdentifierÍ4Í4‰¨sciMatchS§LiteralÍ4ŠÍ4‹¡2ÃÂ¢??S§LiteralÍ4Í4’ ¢''£letT«IfStatementÍ4ĞÍ6@U±LogicalExpressionÍ4ÔÍ5'U°BinaryExpressionÍ4ÔÍ4åR°MemberExpressionÍ4ÔÍ4áKªIdentifierÍ4ÔÍ4Ú¦suffixKªIdentifierÍ4ÛÍ4á¦lengthÂÂ¡>S§LiteralÍ4äÍ4å¡1¢&&U±LogicalExpressionÍ4êÍ5&Q®CallExpressionÍ4êÍ4şR°MemberExpressionÍ4êÍ4ùKªIdentifierÍ4êÍ4ğ¦suffixKªIdentifierÍ4ñÍ4ù¨endsWithÂÂ‘S§LiteralÍ4úÍ4ı¡R£'R'Â¢||Q®CallExpressionÍ5Í5&R°MemberExpressionÍ5Í5Q®CallExpressionÍ5Í5R°MemberExpressionÍ5Í5KªIdentifierÍ5Í5¦suffixKªIdentifierÍ5	Í5«toUpperCaseÂÂÂKªIdentifierÍ5Í5¨endsWithÂÂ‘S§LiteralÍ5 Í5%£OHM¥'OHM'ÂL®BlockStatementÍ5)Í6@‘T«IfStatementÍ5<Í61Q®CallExpressionÍ5@Í5dR°MemberExpressionÍ5@Í5]Q®CallExpressionÍ5@Í5TR°MemberExpressionÍ5@Í5RKªIdentifierÍ5@Í5F¦suffixKªIdentifierÍ5GÍ5R«toUpperCaseÂÂÂKªIdentifierÍ5UÍ5]¨endsWithÂÂ‘S§LiteralÍ5^Í5c£OHM¥'OHM'ÂL®BlockStatementÍ5fÍ5À‘V³ExpressionStatementÍ5}Í5­W´AssignmentExpressionÍ5}Í5¬¡=KªIdentifierÍ5}Í5ƒ¦suffixQ®CallExpressionÍ5†Í5¬R°MemberExpressionÍ5†Í5–KªIdentifierÍ5†Í5Œ¦suffixKªIdentifierÍ5Í5–©substringÂÂ’S§LiteralÍ5—Í5˜ ¡0U°BinaryExpressionÍ5šÍ5«R°MemberExpressionÍ5šÍ5§KªIdentifierÍ5šÍ5 ¦suffixKªIdentifierÍ5¡Í5§¦lengthÂÂ¡-S§LiteralÍ5ªÍ5«¡3ÂL®BlockStatementÍ5×Í61‘V³ExpressionStatementÍ5îÍ6W´AssignmentExpressionÍ5îÍ6¡=KªIdentifierÍ5îÍ5ô¦suffixQ®CallExpressionÍ5÷Í6R°MemberExpressionÍ5÷Í6KªIdentifierÍ5÷Í5ı¦suffixKªIdentifierÍ5şÍ6©substringÂÂ’S§LiteralÍ6Í6	 ¡0U°BinaryExpressionÍ6Í6R°MemberExpressionÍ6Í6KªIdentifierÍ6Í6¦suffixKªIdentifierÍ6Í6¦lengthÂÂ¡-S§LiteralÍ6Í6¡1ÂÀO³VariableDeclarationÍ6NÍ6[‘P²VariableDeclaratorÍ6RÍ6ZKªIdentifierÍ6RÍ6V¤multS§LiteralÍ6YÍ6Z¡1£letT«IfStatementÍ6iÍ8½U°BinaryExpressionÍ6mÍ6~R°MemberExpressionÍ6mÍ6zKªIdentifierÍ6mÍ6s¦suffixKªIdentifierÍ6tÍ6z¦lengthÂÂ¡>S§LiteralÍ6}Í6~ ¡0L®BlockStatementÍ6€Í8½“O³VariableDeclarationÍ6“Í6Å‘P²VariableDeclaratorÍ6™Í6ÄKªIdentifierÍ6™Í6¡¨lastCharQ®CallExpressionÍ6¤Í6ÄR°MemberExpressionÍ6¤Í6±KªIdentifierÍ6¤Í6ª¦suffixKªIdentifierÍ6«Í6±¦charAtÂÂ‘U°BinaryExpressionÍ6²Í6ÃR°MemberExpressionÍ6²Í6¿KªIdentifierÍ6²Í6¸¦suffixKªIdentifierÍ6¹Í6¿¦lengthÂÂ¡-S§LiteralÍ6ÂÍ6Ã¡1Â¥constO³VariableDeclarationÍ6×Í7‘P²VariableDeclaratorÍ6İÍ7KªIdentifierÍ6İÍ6ã¦prefixQ®CallExpressionÍ6æÍ7R°MemberExpressionÍ6æÍ6öKªIdentifierÍ6æÍ6ì¦suffixKªIdentifierÍ6íÍ6ö©substringÂÂ’S§LiteralÍ6÷Í6ø ¡0U°BinaryExpressionÍ6úÍ7R°MemberExpressionÍ6úÍ7KªIdentifierÍ6úÍ7 ¦suffixKªIdentifierÍ7Í7¦lengthÂÂ¡-S§LiteralÍ7
-Í7¡1Â¥constT«IfStatementÍ7Í8®Q®CallExpressionÍ7#Í7:R°MemberExpressionÍ7#Í72KªIdentifierÍ7#Í7.«multipliersKªIdentifierÍ7/Í72£hasÂÂ‘KªIdentifierÍ73Í79¦suffixÂL®BlockStatementÍ7<Í7…‘V³ExpressionStatementÍ7SÍ7rW´AssignmentExpressionÍ7SÍ7q¡=KªIdentifierÍ7SÍ7W¤multQ®CallExpressionÍ7ZÍ7qR°MemberExpressionÍ7ZÍ7iKªIdentifierÍ7ZÍ7e«multipliersKªIdentifierÍ7fÍ7i£getÂÂ‘KªIdentifierÍ7jÍ7p¦suffixÂT«IfStatementÍ7œÍ8®Q®CallExpressionÍ7 Í7¹R°MemberExpressionÍ7 Í7¯KªIdentifierÍ7 Í7««multipliersKªIdentifierÍ7¬Í7¯£hasÂÂ‘KªIdentifierÍ7°Í7¸¨lastCharÂL®BlockStatementÍ7»Í8‘V³ExpressionStatementÍ7ÒÍ7óW´AssignmentExpressionÍ7ÒÍ7ò¡=KªIdentifierÍ7ÒÍ7Ö¤multQ®CallExpressionÍ7ÙÍ7òR°MemberExpressionÍ7ÙÍ7èKªIdentifierÍ7ÙÍ7ä«multipliersKªIdentifierÍ7åÍ7è£getÂÂ‘KªIdentifierÍ7éÍ7ñ¨lastCharÂT«IfStatementÍ8Í8®U±LogicalExpressionÍ8!Í8XU°BinaryExpressionÍ8!Í82R°MemberExpressionÍ8!Í8.KªIdentifierÍ8!Í8'¦prefixKªIdentifierÍ8(Í8.¦lengthÂÂ¡>S§LiteralÍ81Í82 ¡0¢&&Q®CallExpressionÍ86Í8XR°MemberExpressionÍ86Í8EKªIdentifierÍ86Í8A«multipliersKªIdentifierÍ8BÍ8E£hasÂÂ‘U°BinaryExpressionÍ8FÍ8WKªIdentifierÍ8FÍ8L¦prefix¡+KªIdentifierÍ8OÍ8W¨lastCharÂL®BlockStatementÍ8ZÍ8®‘V³ExpressionStatementÍ8qÍ8›W´AssignmentExpressionÍ8qÍ8š¡=KªIdentifierÍ8qÍ8u¤multQ®CallExpressionÍ8xÍ8šR°MemberExpressionÍ8xÍ8‡KªIdentifierÍ8xÍ8ƒ«multipliersKªIdentifierÍ8„Í8‡£getÂÂ‘U°BinaryExpressionÍ8ˆÍ8™KªIdentifierÍ8ˆÍ8¦prefix¡+KªIdentifierÍ8‘Í8™¨lastCharÂÀÀO³VariableDeclarationÍ8ËÍ8æ‘P²VariableDeclaratorÍ8ÑÍ8åKªIdentifierÍ8ÑÍ8Ø§numericU°BinaryExpressionÍ8ÛÍ8åKªIdentifierÍ8ÛÍ8Ş£num¡*KªIdentifierÍ8áÍ8å¤mult¥constT«IfStatementÍ8ôÍ9”U°BinaryExpressionÍ8øÍ9KªIdentifierÍ8øÍ8ÿ§numeric¡<S§LiteralÍ9Í9 ¡0L®BlockStatementÍ9Í9”‘X¯ReturnStatementÍ9Í9…_°ObjectExpressionÍ9Í9„•`¨PropertyÍ9!Í91ÂÂÂKªIdentifierÍ9!Í9(§numericKªIdentifierÍ9*Í91§numeric¤init`¨PropertyÍ93Í9AÂÂÂKªIdentifierÍ93Í97¤unitKªIdentifierÍ99Í9A¨baseUnit¤init`¨PropertyÍ9CÍ9PÂÂÂKªIdentifierÍ9CÍ9MªnormalizedKªIdentifierÍ9OÍ9P¡s¤init`¨PropertyÍ9RÍ9^ÂÂÂKªIdentifierÍ9RÍ9W¥validS§LiteralÍ9YÍ9^Â¥false¤init`¨PropertyÍ9`Í9‚ÂÂÂKªIdentifierÍ9`Í9g§errCodeR°MemberExpressionÍ9iÍ9‚KªIdentifierÍ9iÍ9p§ErrCodeKªIdentifierÍ9qÍ9‚±ERR_PARAM_INVALIDÂÂ¤initÀX¯ReturnStatementÍ9¢Í:_°ObjectExpressionÍ9©Í:•`¨PropertyÍ9«Í9»ÂÂÂKªIdentifierÍ9«Í9²§numericKªIdentifierÍ9´Í9»§numeric¤init`¨PropertyÍ9½Í9ËÂÂÂKªIdentifierÍ9½Í9Á¤unitKªIdentifierÍ9ÃÍ9Ë¨baseUnit¤init`¨PropertyÍ9ÍÍ9ğÂÂÂKªIdentifierÍ9ÍÍ9×ªnormalized\¯TemplateLiteralÍ9ÙÍ9ğ’KªIdentifierÍ9ÜÍ9ã§numericKªIdentifierÍ9æÍ9î¨baseUnit“]¯TemplateElementÍ9ÚÍ9Ú^  Â]¯TemplateElementÍ9äÍ9ä^  Â]¯TemplateElementÍ9ïÍ9ï^  Ã¤init`¨PropertyÍ9òÍ9ıÂÂÂKªIdentifierÍ9òÍ9÷¥validS§LiteralÍ9ùÍ9ıÃ¤true¤init`¨PropertyÍ9ÿÍ:ÂÂÂKªIdentifierÍ9ÿÍ:§errCodeR°MemberExpressionÍ:Í:KªIdentifierÍ:Í:§ErrCodeKªIdentifierÍ:Í:¢OKÂÂ¤initÀO³VariableDeclarationÍ:*Í:n‘P²VariableDeclaratorÍ:0Í:mKªIdentifierÍ:0Í:8¨numMatchQ®CallExpressionÍ:;Í:mR°MemberExpressionÍ:;Í:BKªIdentifierÍ:;Í:<¡sKªIdentifierÍ:=Í:B¥matchÂÂ‘Y§LiteralÍ:CÍ:l’Ù(^([+-]?\d+\.?\d*)\s*([kKmMÂµuUnNpP]?)R?$ Ù*/^([+-]?\d+\.?\d*)\s*([kKmMÂµuUnNpP]?)R?$/ZÙ(^([+-]?\d+\.?\d*)\s*([kKmMÂµuUnNpP]?)R?$ Â¥constT«IfStatementÍ:xÍ<¬KªIdentifierÍ:|Í:„¨numMatchL®BlockStatementÍ:†Í<¬–O³VariableDeclarationÍ:•Í:¹‘P²VariableDeclaratorÍ:›Í:¸KªIdentifierÍ:›Í:£numQ®CallExpressionÍ:¡Í:¸KªIdentifierÍ:¡Í:«ªparseFloat‘R°MemberExpressionÍ:¬Í:·KªIdentifierÍ:¬Í:´¨numMatchS§LiteralÍ:µÍ:¶¡1ÃÂÂ¥constO³VariableDeclarationÍ:ÇÍ:è‘P²VariableDeclaratorÍ:ÍÍ:çKªIdentifierÍ:ÍÍ:Ó¦suffixU±LogicalExpressionÍ:ÖÍ:çR°MemberExpressionÍ:ÖÍ:áKªIdentifierÍ:ÖÍ:Ş¨numMatchS§LiteralÍ:ßÍ:à¡2ÃÂ¢||S§LiteralÍ:åÍ:ç ¢''¥constO³VariableDeclarationÍ:öÍ;‘P²VariableDeclaratorÍ:úÍ;KªIdentifierÍ:úÍ:ş¤multS§LiteralÍ;Í;¡1£letT«IfStatementÍ;Í;„U±LogicalExpressionÍ;Í;AU°BinaryExpressionÍ;Í;&R°MemberExpressionÍ;Í;"KªIdentifierÍ;Í;¦suffixKªIdentifierÍ;Í;"¦lengthÂÂ¡>S§LiteralÍ;%Í;& ¡0¢&&Q®CallExpressionÍ;*Í;AR°MemberExpressionÍ;*Í;9KªIdentifierÍ;*Í;5«multipliersKªIdentifierÍ;6Í;9£hasÂÂ‘KªIdentifierÍ;:Í;@¦suffixÂL®BlockStatementÍ;CÍ;„‘V³ExpressionStatementÍ;VÍ;uW´AssignmentExpressionÍ;VÍ;t¡=KªIdentifierÍ;VÍ;Z¤multQ®CallExpressionÍ;]Í;tR°MemberExpressionÍ;]Í;lKªIdentifierÍ;]Í;h«multipliersKªIdentifierÍ;iÍ;l£getÂÂ‘KªIdentifierÍ;mÍ;s¦suffixÂÀO³VariableDeclarationÍ;’Í;­‘P²VariableDeclaratorÍ;˜Í;¬KªIdentifierÍ;˜Í;Ÿ§numericU°BinaryExpressionÍ;¢Í;¬KªIdentifierÍ;¢Í;¥£num¡*KªIdentifierÍ;¨Í;¬¤mult¥constX¯ReturnStatementÍ;»Í<¡_°ObjectExpressionÍ;ÂÍ< •`¨PropertyÍ;ÕÍ;åÂÂÂKªIdentifierÍ;ÕÍ;Ü§numericKªIdentifierÍ;ŞÍ;å§numeric¤init`¨PropertyÍ;çÍ;õÂÂÂKªIdentifierÍ;çÍ;ë¤unitKªIdentifierÍ;íÍ;õ¨baseUnit¤init`¨PropertyÍ<Í<+ÂÂÂKªIdentifierÍ<Í<ªnormalized\¯TemplateLiteralÍ<Í<+’KªIdentifierÍ<Í<§numericKªIdentifierÍ<!Í<)¨baseUnit“]¯TemplateElementÍ<Í<^  Â]¯TemplateElementÍ<Í<^  Â]¯TemplateElementÍ<*Í<*^  Ã¤init`¨PropertyÍ<>Í<QÂÂÂKªIdentifierÍ<>Í<C¥validU°BinaryExpressionÍ<EÍ<QKªIdentifierÍ<EÍ<L§numeric¢>=S§LiteralÍ<PÍ<Q ¡0¤init`¨PropertyÍ<SÍ<‘ÂÂÂKªIdentifierÍ<SÍ<Z§errCodeTµConditionalExpressionÍ<\Í<‘U°BinaryExpressionÍ<\Í<hKªIdentifierÍ<\Í<c§numeric¢>=S§LiteralÍ<gÍ<h ¡0R°MemberExpressionÍ<kÍ<uKªIdentifierÍ<kÍ<r§ErrCodeKªIdentifierÍ<sÍ<u¢OKÂÂR°MemberExpressionÍ<xÍ<‘KªIdentifierÍ<xÍ<§ErrCodeKªIdentifierÍ<€Í<‘±ERR_PARAM_INVALIDÂÂ¤initÀX¯ReturnStatementÍ<¶Í=_°ObjectExpressionÍ<½Í=•`¨PropertyÍ<¿Í<ÉÂÂÂKªIdentifierÍ<¿Í<Æ§numericS§LiteralÍ<ÈÍ<É ¡0¤init`¨PropertyÍ<ËÍ<ÙÂÂÂKªIdentifierÍ<ËÍ<Ï¤unitKªIdentifierÍ<ÑÍ<Ù¨baseUnit¤init`¨PropertyÍ<ÛÍ<èÂÂÂKªIdentifierÍ<ÛÍ<åªnormalizedKªIdentifierÍ<çÍ<è¡s¤init`¨PropertyÍ<êÍ<öÂÂÂKªIdentifierÍ<êÍ<ï¥validS§LiteralÍ<ñÍ<öÂ¥false¤init`¨PropertyÍ<øÍ=ÂÂÂKªIdentifierÍ<øÍ<ÿ§errCodeR°MemberExpressionÍ=Í=KªIdentifierÍ=Í=§ErrCodeKªIdentifierÍ=	Í=±ERR_PARAM_INVALIDÂÂ¤initÀ‘Ôrb•¤type¥start£endªspecifiers¦source±ImportDeclarationÌOÌz‘Ôrc•¤type¥start£end¨imported¥local¯ImportSpecifierÌXÌ_KªIdentifierÌXÌ_§ErrCodeKªIdentifierÌXÌ_§ErrCodeS§LiteralÌgÌy°../types/ErrCode²'../types/ErrCode'

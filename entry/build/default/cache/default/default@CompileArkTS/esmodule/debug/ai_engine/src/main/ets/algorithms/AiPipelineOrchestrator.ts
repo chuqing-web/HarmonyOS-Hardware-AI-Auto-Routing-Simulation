@@ -210,6 +210,7 @@ const ERC_CLEAR_MAX_ROUNDS = 8;
 /** 门禁前强力收尾：多策略轮换直至 ERC+几何清零 */
 const FORCE_COMPLETE_MAX_ASSAULTS = 6;
 const LLM_BASE_BACKOFF_MS = 1000;
+// 64K：多数网关（含 agnes）max_tokens 硬上限即 65536，超限 500
 const LLM_MAX_OUTPUT_TOKENS = 65536;
 /** layout/route/self_review 输出上限（提速） */
 const LLM_SOFT_OUTPUT_TOKENS = 12288;
@@ -6382,9 +6383,8 @@ export class AiPipelineOrchestrator {
         };
         if (this.enableReasoningFlag) {
             opts.disableThinking = false;
-            const floor = 32768;
-            const cur = opts.maxTokens ?? LLM_SOFT_OUTPUT_TOKENS;
-            opts.maxTokens = Math.min(LLM_MAX_OUTPUT_TOKENS, Math.max(cur, floor));
+            // thinking 与 content 共享 max_tokens；满额降低 finish_reason=length 空正文
+            opts.maxTokens = LLM_MAX_OUTPUT_TOKENS;
         }
         else {
             opts.disableThinking = true;
@@ -6433,8 +6433,8 @@ export class AiPipelineOrchestrator {
             Logger.info(INSTR_TRACE_TAG, `[AI_PIPE] ${tag}chat attempt=${attempt + 1}/${LLM_MAX_RETRIES + 1} cap=${capability}`);
             const useThinking = this.needsThinking(capability);
             let maxTok = extraOpts?.maxTokens ?? LLM_MAX_OUTPUT_TOKENS;
-            if (useThinking && maxTok < 32768) {
-                maxTok = Math.min(LLM_MAX_OUTPUT_TOKENS, 32768);
+            if (useThinking) {
+                maxTok = LLM_MAX_OUTPUT_TOKENS;
             }
             const chatOpts: ChatOptions = {
                 capability: capability as AiCapability,

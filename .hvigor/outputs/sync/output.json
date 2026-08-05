@@ -555,8 +555,8 @@
     "SELECT_PRODUCT_NAME": "default",
     "MODULE_BUILD_DIR": "C:\\Projects\\ElecDraw_Harmony\\build",
     "BUNDLE_NAME": "com.elecdraw.aischsim",
-    "VERSION_CODE": 1001000,
-    "VERSION_NAME": "1.1.0",
+    "VERSION_CODE": 1001001,
+    "VERSION_NAME": "1.1.1",
     "BUILD_PATH": {
       "OUTPUT_PATH": "C:\\Projects\\ElecDraw_Harmony\\build\\outputs\\default"
     },
@@ -720,13 +720,41 @@
     ],
     "PROFILE_OPT": {
       "app": {
-        "signingConfigs": [],
+        "signingConfigs": [
+          {
+            "name": "default",
+            "type": "HarmonyOS",
+            "material": {
+              "certpath": "C:\\Users\\AHS\\.ohos\\config\\default_ElecDraw_Harmony_ytJKn8Vpx3qi_tpSVXtEq5iJLiFrNXXhW2xLQUMSwJE=.cer",
+              "keyAlias": "debugKey",
+              "keyPassword": "0000001A2D4824D709DC1F7F706193D7BAEA7437E8E3EC53983FBC5FE613E0B3B2FA964F521CCAD09F50",
+              "profile": "C:\\Users\\AHS\\.ohos\\config\\default_ElecDraw_Harmony_ytJKn8Vpx3qi_tpSVXtEq5iJLiFrNXXhW2xLQUMSwJE=.p7b",
+              "signAlg": "SHA256withECDSA",
+              "storeFile": "C:\\Users\\AHS\\.ohos\\config\\default_ElecDraw_Harmony_ytJKn8Vpx3qi_tpSVXtEq5iJLiFrNXXhW2xLQUMSwJE=.p12",
+              "storePassword": "0000001A52540B7640A4BE183E5049B1B76032B8334B2618D71525086764B58283C4295436C8A55BAE12"
+            }
+          },
+          {
+            "name": "release",
+            "type": "HarmonyOS",
+            "material": {
+              "certpath": "C:\\Users\\AHS\\.ohos\\config\\release_ElecDraw_Harmony_ytJKn8Vpx3qi_tpSVXtEq5iJLiFrNXXhW2xLQUMSwJE=.cer",
+              "keyAlias": "debugKey",
+              "keyPassword": "0000001A250716323B5B178595FA397356A46F04CF0229D649800E7EA722644CF1E643528F115DC2F6FF",
+              "profile": "C:\\Users\\AHS\\.ohos\\config\\release_ElecDraw_Harmony_ytJKn8Vpx3qi_tpSVXtEq5iJLiFrNXXhW2xLQUMSwJE=.p7b",
+              "signAlg": "SHA256withECDSA",
+              "storeFile": "C:\\Users\\AHS\\.ohos\\config\\release_ElecDraw_Harmony_ytJKn8Vpx3qi_tpSVXtEq5iJLiFrNXXhW2xLQUMSwJE=.p12",
+              "storePassword": "0000001AFAF38231CA4C130B86E888F9D3EA72CCADFE66256C286DA070FAE9D03FA46314D552C32C90AD"
+            }
+          }
+        ],
         "products": [
           {
             "name": "default",
-            "compatibleSdkVersion": "5.0.0(12)",
+            "signingConfig": "release",
+            "compatibleSdkVersion": "6.1.1(24)",
             "runtimeOS": "HarmonyOS",
-            "targetSdkVersion": "5.0.0(12)"
+            "targetSdkVersion": "6.1.1(24)"
           }
         ],
         "buildModeSet": [

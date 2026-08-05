@@ -1,2055 +1,0 @@
-Ôr@Ÿªassertions¤code´customTransformCache¬dependencies¢id¤meta±moduleSideEffects¬originalCode±originalSourcemap«resolvedIds®sourcemapChainµsyntheticNamedExportsµtransformDependencies®transformFiles¨cacheAstÔrAÚgŸ/**
- * AI è‡ªåŠ¨å¸ƒçº¿å¼•æ“ v3.0 â€” å…¨ç”µè·¯ç±»å‹æ”¯æŒ + ä»ªå™¨æ„ŸçŸ¥ + è¿æ¥æ¨¡å¼é€‰æ‹©
- * v3.0: éMCUç”µè·¯å¸ƒçº¿ã€ç”µæµè¡¨ä¸²è”ã€ç”µå‹è¡¨å¹¶è”ã€æ ‡å·vså¯¼çº¿æ™ºèƒ½é€‰æ‹©
- */
-import { WireStyle, NetType, IdUtil } from 'common';
-import { PinWorldResolver } from './PinWorldResolver';
-export class AutoWiringEngine {
-    constructor() {
-        this.gridSize = 10;
-    }
-    /** v3.0: æ”¯æŒæ‰€æœ‰ç”µè·¯ç±»å‹ï¼Œä¸å†è¦æ±‚MCU */
-    autoWire(doc) {
-        const result = JSON.parse(JSON.stringify(doc));
-        this.ensurePowerNets(result);
-        const instruments = this.detectInstruments(result);
-        const mcu = result.components.find(c => c.libraryId.includes('STM32') || c.libraryId.includes('AT89') || c.libraryId.includes('STC'));
-        if (mcu) {
-            this.wireMcuMinimumSystem(result, mcu);
-        }
-        if (instruments.length > 0) {
-            this.wireInstruments(result, instruments);
-        }
-        this.wireRemainingConnections(result);
-        this.optimizeWirePaths(result);
-        return result;
-    }
-    /** v3.0: æ£€æµ‹æ‰€æœ‰ä»ªå™¨å™¨ä»¶ */
-    detectInstruments(doc) {
-        const result = [];
-        for (let i = 0; i < doc.components.length; i++) {
-            const c = doc.components[i];
-            const id = (c.libraryId ?? '').toUpperCase();
-            let type = 'other';
-            if (id.includes('AMMETER')) {
-                type = 'ammeter';
-            }
-            else if (id.includes('VOLTMETER') || id.includes('VIRTUAL_METER')) {
-                type = 'voltmeter';
-            }
-            else if (id.includes('MULTIMETER')) {
-                type = 'multimeter';
-            }
-            else if (id.includes('OSCILLOSCOPE')) {
-                type = 'scope';
-            }
-            else if (id.includes('LOGIC_ANALYZER')) {
-                type = 'logic_analyzer';
-            }
-            else if (id.includes('UART_TERMINAL')) {
-                type = 'uart_terminal';
-            }
-            else if (id.includes('FREQ_COUNTER') || id.includes('POWER_METER')) {
-                type = 'freq_counter';
-            }
-            else {
-                continue;
-            }
-            result.push({ comp: c, type });
-        }
-        return result;
-    }
-    /** v3.0: ä»ªå™¨å¸ƒçº¿ â€” ç”µæµè¡¨ä¸²è”å…¥ç”µæºå›è·¯ã€ç”µå‹è¡¨å¹¶è”åˆ°è¢«æµ‹èŠ‚ç‚¹ã€ç¤ºæ³¢å™¨æ¢é’ˆè¿æ¥åˆ°ä¿¡å·ç‚¹ */
-    wireInstruments(doc, instruments) {
-        const vccNet = doc.nets.find(n => n.name === 'VCC');
-        const gndNet = doc.nets.find(n => n.name === 'GND');
-        for (let i = 0; i < instruments.length; i++) {
-            const instr = instruments[i];
-            switch (instr.type) {
-                case 'ammeter':
-                    this.wireAmmeterInSeries(doc, instr.comp, vccNet);
-                    break;
-                case 'voltmeter':
-                case 'multimeter':
-                    this.wireVoltmeterInParallel(doc, instr.comp, gndNet);
-                    break;
-                case 'scope':
-                    this.wireScopeProbes(doc, instr.comp, gndNet);
-                    break;
-                case 'logic_analyzer':
-                case 'uart_terminal':
-                case 'freq_counter':
-                    this.wireInstrumentByLabel(doc, instr.comp);
-                    break;
-            }
-        }
-    }
-    /** v3.0: ç”µæµè¡¨ä¸²è”åœ¨ VCC ä¸è´Ÿè½½ä¹‹é—´ â€” VCCâ†’I+â†’I-â†’è´Ÿè½½ç”µé˜» */
-    wireAmmeterInSeries(doc, ammeter, vccNet) {
-        if (!vccNet)
-            return;
-        // æŸ¥æ‰¾ VCC ç¬¦å·å’Œç¬¬ä¸€è´Ÿè½½ç”µé˜»
-        const vccComp = doc.components.find(c => c.libraryId === 'VCC');
-        const firstResistor = doc.components.find(c => c.libraryId.startsWith('R_') && c.libraryId !== 'R_10k' &&
-            c.libraryId !== 'R_4.7k');
-        if (!vccComp || !firstResistor)
-            return;
-        // åˆ›å»ºä¸­é—´ç½‘ç»œ: VCC_AM (VCCç»è¿‡ç”µæµè¡¨åçš„ç½‘ç»œ)
-        const amNetId = IdUtil.generate('net');
-        const amNet = {
-            id: amNetId, name: 'VCC_AM', type: NetType.SIGNAL, pinIds: []
-        };
-        doc.nets.push(amNet);
-        // VCC â†’ I+ (çŸ­å¯¼çº¿)
-        const vccPin = this.estimatePinPos(vccComp, 'top', 0);
-        const amIPlus = this.estimatePinPos(ammeter, 'left', 0);
-        doc.wires.push({
-            id: IdUtil.generate('wire'), netId: vccNet.id,
-            points: this.orthogonalRoute(vccPin, amIPlus, doc.components),
-            style: WireStyle.ORTHOGONAL
-        });
-        // I- â†’ ç¬¬ä¸€ç”µé˜» (ç”µæµè¡¨è¾“å‡ºåˆ°è´Ÿè½½ï¼Œå±äº VCC_AM ç½‘ç»œ)
-        const amIMinus = this.estimatePinPos(ammeter, 'right', 0);
-        const resTop = this.estimatePinPos(firstResistor, 'top', 0);
-        doc.wires.push({
-            id: IdUtil.generate('wire'), netId: amNetId,
-            points: this.orthogonalRoute(amIMinus, resTop, doc.components),
-            style: WireStyle.ORTHOGONAL
-        });
-        // ç”¨ç½‘ç»œæ ‡å·æ ‡è®° VCC_AMï¼Œç¡®ä¿å…¶ä»–éœ€è¦VCCçš„å™¨ä»¶èƒ½è¯†åˆ«
-        const labelPos = {
-            x: (amIMinus.x + resTop.x) / 2, y: amIMinus.y - 20
-        };
-        doc.netLabels.push({
-            id: IdUtil.generate('nl'), netId: amNetId,
-            text: 'VCC_AM', position: labelPos, global: false
-        });
-    }
-    /** v3.0: ç”µå‹è¡¨å¹¶è”åˆ°åˆ†å‹èŠ‚ç‚¹ä¸Š â€” V+ æ¥è¢«æµ‹é«˜ç‚¹ï¼ŒCOM æ¥ GND */
-    wireVoltmeterInParallel(doc, voltmeter, gndNet) {
-        if (!gndNet)
-            return;
-        // æ‰¾æœ€è¿‘çš„ç”µé˜» â€” ç”µå‹è¡¨æµ‹é‡è¯¥ç”µé˜»çš„å‹é™
-        const resistors = doc.components.filter(c => c.libraryId.startsWith('R_'));
-        if (resistors.length === 0)
-            return;
-        // å°†ç”µå‹è¡¨å”¯ä¸€åˆ†é…åˆ°æŸä¸ªç”µé˜»ï¼ˆæŒ‰è·ç¦»æœ€å°åˆ†é…ï¼‰
-        const vmPos = voltmeter.position;
-        let bestRes = null;
-        let bestDist = Infinity;
-        for (let ri = 0; ri < resistors.length; ri++) {
-            const d = Math.hypot(vmPos.x - resistors[ri].position.x, vmPos.y - resistors[ri].position.y);
-            if (d < bestDist) {
-                bestDist = d;
-                bestRes = resistors[ri];
-            }
-        }
-        if (!bestRes)
-            return;
-        const targetRes = bestRes;
-        // åˆ›å»ºæµ‹é‡ç½‘ç»œï¼ˆä¿¡å·ç±»å‹ï¼‰
-        const senseNetId = IdUtil.generate('net');
-        const senseNet = {
-            id: senseNetId,
-            name: `SENSE_R_${targetRes.refDes}`, type: NetType.SIGNAL, pinIds: []
-        };
-        doc.nets.push(senseNet);
-        // V+ â†’ ç”µé˜»é«˜ç«¯ï¼ˆé€šè¿‡æ ‡å·ï¼Œé¿å…é•¿å¯¼çº¿è·¨è¶Šï¼‰
-        const vmPlusPos = this.estimatePinPos(voltmeter, 'left', 0);
-        // COM â†’ GND
-        const vmComPos = this.estimatePinPos(voltmeter, 'bottom', 0);
-        const gndPin = this.estimatePinPos(targetRes, 'bottom', 0);
-        // ç”µå‹è¡¨ COM æ¥ GNDï¼ˆçŸ­å¯¼çº¿æˆ–æ ‡å·ï¼‰
-        if (Math.abs(vmComPos.x - gndPin.x) < 200) {
-            doc.wires.push({
-                id: IdUtil.generate('wire'), netId: gndNet.id,
-                points: this.orthogonalRoute(vmComPos, gndPin, doc.components),
-                style: WireStyle.ORTHOGONAL
-            });
-        }
-        else {
-            // è¿œè·ç¦»ç”¨æ ‡å·
-            doc.netLabels.push({
-                id: IdUtil.generate('nl'), netId: gndNet.id,
-                text: 'GND', position: { x: vmComPos.x + 10, y: vmComPos.y + 20 },
-                global: false
-            });
-        }
-        // ç”µå‹è¡¨ V+ é€šè¿‡æ ‡å·è¿æ¥åˆ°è¢«æµ‹ç”µé˜»é«˜ç«¯ï¼ˆä»ªå™¨ç¦æ­¢é•¿å¯¼çº¿ï¼‰
-        doc.netLabels.push({
-            id: IdUtil.generate('nl'), netId: senseNetId,
-            text: `SENSE_R_${targetRes.refDes}`,
-            position: { x: vmPlusPos.x - 30, y: vmPlusPos.y - 10 },
-            global: false
-        });
-        // åœ¨è¢«æµ‹ç”µé˜»é«˜ç«¯ä¹Ÿæ”¾æ ‡å·
-        const resTop = this.estimatePinPos(targetRes, 'top', 0);
-        doc.netLabels.push({
-            id: IdUtil.generate('nl'), netId: senseNetId,
-            text: `SENSE_R_${targetRes.refDes}`,
-            position: { x: resTop.x + 10, y: resTop.y - 20 },
-            global: false
-        });
-    }
-    /** v3.0: ç¤ºæ³¢å™¨æ¢é’ˆè¿æ¥ â€” CH1/CH2 é€šè¿‡æ ‡å·è¿æ¥åˆ°ä¿¡å·èŠ‚ç‚¹ */
-    wireScopeProbes(doc, scope, gndNet) {
-        // æ‰¾ä¿¡å·æºï¼ˆè¿æ”¾è¾“å‡ºæˆ–MCU GPIOï¼‰
-        const signalComponents = doc.components.filter(c => c.libraryId.includes('LM358') || c.libraryId.includes('LM324') ||
-            c.libraryId.includes('OP') || c.libraryId.includes('STM32') ||
-            c.libraryId.includes('AT89'));
-        if (signalComponents.length === 0)
-            return;
-        const signal = signalComponents[0];
-        // CH1 é€šè¿‡æ ‡å·è¿æ¥
-        const ch1NetId = IdUtil.generate('net');
-        doc.nets.push({
-            id: ch1NetId, name: 'CH1_PROBE', type: NetType.SIGNAL, pinIds: []
-        });
-        doc.netLabels.push({
-            id: IdUtil.generate('nl'), netId: ch1NetId,
-            text: 'CH1_PROBE',
-            position: { x: scope.position.x - 30, y: scope.position.y + 20 },
-            global: false
-        });
-        doc.netLabels.push({
-            id: IdUtil.generate('nl'), netId: ch1NetId,
-            text: 'CH1_PROBE',
-            position: { x: signal.position.x + 40, y: signal.position.y - 20 },
-            global: false
-        });
-        // GND clip â†’ GND æ ‡å·
-        if (gndNet) {
-            doc.netLabels.push({
-                id: IdUtil.generate('nl'), netId: gndNet.id,
-                text: 'GND',
-                position: { x: scope.position.x - 30, y: scope.position.y + 60 },
-                global: false
-            });
-        }
-    }
-    /** v3.0: é€»è¾‘åˆ†æä»ª/UARTç»ˆç«¯/é¢‘ç‡è®¡ â€” å…¨éƒ¨ç”¨æ ‡å·è¿æ¥ */
-    wireInstrumentByLabel(doc, instr) {
-        const netPrefix = instr.libraryId.includes('UART') ? 'UART' :
-            instr.libraryId.includes('LOGIC') ? 'LA' : 'FC';
-        const chNetId = IdUtil.generate('net');
-        doc.nets.push({
-            id: chNetId, name: `${netPrefix}_CH`, type: NetType.SIGNAL, pinIds: []
-        });
-        doc.netLabels.push({
-            id: IdUtil.generate('nl'), netId: chNetId,
-            text: `${netPrefix}_CH`,
-            position: { x: instr.position.x - 30, y: instr.position.y + 20 },
-            global: false
-        });
-    }
-    /** v3.0: æ¥çº¿å‰©ä½™æœªè¿æ¥çš„å™¨ä»¶å¼•è„š */
-    wireRemainingConnections(doc) {
-        const vccNet = doc.nets.find(n => n.name === 'VCC');
-        const gndNet = doc.nets.find(n => n.name === 'GND');
-        if (!vccNet || !gndNet)
-            return;
-        // å·²è¿æ¥å¼•è„šé›†åˆ
-        const connectedPins = new Set();
-        for (let ni = 0; ni < doc.nets.length; ni++) {
-            const netPins = doc.nets[ni].pinIds;
-            for (let pi = 0; pi < netPins.length; pi++) {
-                connectedPins.add(netPins[pi]);
-            }
-        }
-        for (let i = 0; i < doc.components.length; i++) {
-            const comp = doc.components[i];
-            const id = (comp.libraryId ?? '').toUpperCase();
-            // è·³è¿‡ç”µæº/åœ°ç¬¦å·ï¼ˆå®ƒä»¬æ˜¯ç«¯ç‚¹ï¼‰ã€å·²è¿æ¥çš„å™¨ä»¶ã€ä»ªå™¨ï¼ˆå·²å¤„ç†ï¼‰
-            if (id === 'VCC' || id === 'GND')
-                continue;
-            if (id.includes('AMMETER') || id.includes('VOLTMETER') ||
-                id.includes('VIRTUAL_METER') || id.includes('OSCILLOSCOPE') ||
-                id.includes('LOGIC_ANALYZER') || id.includes('UART_TERMINAL'))
-                continue;
-            // å»è€¦ç”µå®¹æ¥åœ°
-            if (id.startsWith('C_') && id.includes('100')) {
-                const capPin = this.estimatePinPos(comp, 'bottom', 0);
-                const gndPin = this.estimatePinPos(doc.components.find(c => c.libraryId === 'GND') ?? comp, 'top', 0);
-                doc.wires.push({
-                    id: IdUtil.generate('wire'), netId: gndNet.id,
-                    points: this.orthogonalRoute(capPin, gndPin, doc.components),
-                    style: WireStyle.ORTHOGONAL
-                });
-            }
-            // LED â†’ GND (é€šè¿‡é™æµç”µé˜»å·²è¿VCC)
-            if (id.startsWith('LED_')) {
-                // æŸ¥æ‰¾LEDçš„é˜´æå¼•è„š(K)ä½ç½®å‡è®¾
-                const ledPin = this.estimatePinPos(comp, 'bottom', 0);
-                doc.netLabels.push({
-                    id: IdUtil.generate('nl'), netId: gndNet.id,
-                    text: 'GND',
-                    position: { x: ledPin.x, y: ledPin.y + 20 },
-                    global: false
-                });
-            }
-            // ä¸Šæ‹‰/ä¸‹æ‹‰ç”µé˜»è¿æ¥
-            if (id.startsWith('R_')) {
-                // çŸ­ç”µé˜»è¿æ¥ç”¨å¯¼çº¿ï¼Œè¿œè·ç¦»ç”¨æ ‡å·
-                const resPin = this.estimatePinPos(comp, 'right', 0);
-                const nearVcc = Math.abs(comp.position.x - 60) < 150;
-                if (nearVcc && id.includes('10k')) {
-                    // ä¸Šæ‹‰ç”µé˜»æ¥VCC
-                    doc.wires.push({
-                        id: IdUtil.generate('wire'), netId: vccNet.id,
-                        points: this.orthogonalRoute(resPin, this.estimatePinPos(comp, 'left', 0), doc.components),
-                        style: WireStyle.ORTHOGONAL
-                    });
-                }
-            }
-        }
-    }
-    /** ä¼°ç®—å¼•è„šä¸–ç•Œåæ ‡ï¼šä¼˜å…ˆ Kit/PinWorldResolver çœŸè„šï¼Œå†é€€å›è¾¹æ²¿å¯å‘ */
-    estimatePinPos(comp, edge, pinIndex) {
-        const pinName = this.pinNameForEdge(comp, edge, pinIndex);
-        if (pinName.length > 0) {
-            return PinWorldResolver.forComponent(comp, pinName, pinName);
-        }
-        const p = comp.position;
-        const id = (comp.libraryId ?? '').toUpperCase();
-        let w = 60;
-        let h = 40;
-        if (id.includes('STM32') || id.includes('AT89') || id.includes('STC')) {
-            w = 100;
-            h = 80;
-        }
-        else if (id.includes('AMMETER') || id.includes('VOLTMETER') ||
-            id.includes('VIRTUAL_METER') || id.includes('OSCILLOSCOPE')) {
-            w = 100;
-            h = 70;
-        }
-        else if (id === 'VCC' || id === 'GND' || id === 'VEE') {
-            w = 30;
-            h = 30;
-        }
-        else if (id.startsWith('R_')) {
-            w = 60;
-            h = 20;
-        }
-        else if (id.startsWith('C_')) {
-            w = 40;
-            h = 30;
-        }
-        else if (id.startsWith('LED_')) {
-            w = 40;
-            h = 40;
-        }
-        else if (id.includes('XTAL')) {
-            w = 50;
-            h = 40;
-        }
-        switch (edge) {
-            case 'left': return { x: p.x, y: p.y + h / 2 };
-            case 'right': return { x: p.x + w, y: p.y + h / 2 };
-            case 'top': return { x: p.x + w / 2, y: p.y };
-            case 'bottom': return { x: p.x + w / 2, y: p.y + h };
-            default: return { x: p.x + w / 2, y: p.y + h / 2 };
-        }
-    }
-    pinNameForEdge(comp, edge, _pinIndex) {
-        const id = (comp.libraryId ?? '').toUpperCase();
-        if (id.includes('AMMETER')) {
-            if (edge === 'left')
-                return 'I+';
-            if (edge === 'right')
-                return 'I-';
-        }
-        if (id.includes('VOLTMETER') || id.includes('VIRTUAL_METER')) {
-            if (edge === 'left')
-                return 'V+';
-            if (edge === 'bottom' || edge === 'right')
-                return 'COM';
-        }
-        if (id.includes('OSCILLOSCOPE')) {
-            if (edge === 'left')
-                return 'CH1';
-            if (edge === 'bottom')
-                return 'GND';
-        }
-        if (id === 'VCC' || id === 'GND' || id === 'VEE') {
-            return '1';
-        }
-        if (id.startsWith('R_') || id.startsWith('C_') || id.startsWith('LED_') || id.startsWith('L_')) {
-            if (edge === 'top' || edge === 'left')
-                return '1';
-            if (edge === 'bottom' || edge === 'right')
-                return '2';
-        }
-        return '';
-    }
-    /** æ­£äº¤å¸ƒçº¿: æºâ†’æ‹ç‚¹â†’ç›®æ ‡ï¼Œç»•å¼€éšœç¢ */
-    orthogonalRoute(start, end, obstacles) {
-        const dist = Math.hypot(end.x - start.x, end.y - start.y);
-        // çŸ­è·ç¦»ç›´çº¿
-        if (dist < 100) {
-            const mid = {
-                x: Math.abs(end.x - start.x) > Math.abs(end.y - start.y) ?
-                    end.x : start.x,
-                y: Math.abs(end.y - start.y) > Math.abs(end.x - start.x) ?
-                    end.y : start.y
-            };
-            return [start, mid, end];
-        }
-        // é•¿è·ç¦»ç”¨A*è·¯å¾„
-        return this.findPath(start, end, obstacles);
-    }
-    ensurePowerNets(doc) {
-        const hasVcc = doc.nets.some(n => n.name === 'VCC' || n.type === NetType.POWER);
-        const hasGnd = doc.nets.some(n => n.name === 'GND' || n.type === NetType.GROUND);
-        if (!hasVcc) {
-            doc.nets.push({ id: IdUtil.generate('net'), name: 'VCC', type: NetType.POWER, pinIds: [] });
-        }
-        if (!hasGnd) {
-            doc.nets.push({ id: IdUtil.generate('net'), name: 'GND', type: NetType.GROUND, pinIds: [] });
-        }
-    }
-    /** MCUæœ€å°ç³»ç»Ÿå¸ƒçº¿: æ™¶æŒ¯ã€å»è€¦ç”µå®¹ã€å¤ä½ */
-    wireMcuMinimumSystem(doc, mcu) {
-        const crystal = doc.components.find(c => c.libraryId.includes('XTAL'));
-        const caps = doc.components.filter(c => c.libraryId.startsWith('C_'));
-        const resistors = doc.components.filter(c => c.libraryId.startsWith('R_'));
-        const vccNet = doc.nets.find(n => n.name === 'VCC');
-        const gndNet = doc.nets.find(n => n.name === 'GND');
-        // æ™¶æŒ¯åˆ°MCU (OSC_IN/OSC_OUT)
-        if (crystal) {
-            const xtalOut = this.estimatePinPos(crystal, 'right', 0);
-            const mcuXtal = this.estimatePinPos(mcu, 'left', 2);
-            doc.wires.push({
-                id: IdUtil.generate('wire'), netId: IdUtil.generate('net'),
-                points: this.orthogonalRoute(xtalOut, mcuXtal, doc.components),
-                style: WireStyle.ORTHOGONAL
-            });
-            // æ™¶æŒ¯è´Ÿè½½ç”µå®¹æ¥åœ°
-            for (let ci = 0; ci < Math.min(2, caps.length); ci++) {
-                const cap = caps[ci];
-                if (cap.libraryId.includes('22p') || cap.libraryId.includes('22')) {
-                    const capBottom = this.estimatePinPos(cap, 'bottom', 0);
-                    const gndPin = this.estimatePinPos(doc.components.find(c => c.libraryId === 'GND') ?? mcu, 'top', 0);
-                    doc.wires.push({
-                        id: IdUtil.generate('wire'), netId: gndNet.id,
-                        points: this.orthogonalRoute(capBottom, gndPin, doc.components),
-                        style: WireStyle.ORTHOGONAL
-                    });
-                }
-            }
-        }
-        // å»è€¦ç”µå®¹: VDD ä¾§æ¥ VCC, GND ä¾§æ¥åœ°
-        for (let ci = 0; ci < Math.min(3, caps.length); ci++) {
-            const cap = caps[ci];
-            if (cap.libraryId.includes('100n') || cap.libraryId.includes('100')) {
-                const capTop = this.estimatePinPos(cap, 'top', 0);
-                const capBottom = this.estimatePinPos(cap, 'bottom', 0);
-                // å°±è¿‘VCC/GND â€” å¦‚æœé è¿‘VCCç¬¦å·å°±ç”¨å¯¼çº¿ï¼Œå¦åˆ™ç”¨æ ‡å·
-                const vccComp = doc.components.find(c => c.libraryId === 'VCC');
-                if (vccComp && Math.abs(cap.position.x - vccComp.position.x) < 200) {
-                    doc.wires.push({
-                        id: IdUtil.generate('wire'), netId: vccNet.id,
-                        points: this.orthogonalRoute(capTop, this.estimatePinPos(vccComp, 'top', 0), doc.components),
-                        style: WireStyle.ORTHOGONAL
-                    });
-                }
-                else {
-                    doc.netLabels.push({
-                        id: IdUtil.generate('nl'), netId: vccNet.id,
-                        text: 'VCC',
-                        position: { x: capTop.x, y: capTop.y - 15 },
-                        global: false
-                    });
-                }
-                doc.netLabels.push({
-                    id: IdUtil.generate('nl'), netId: gndNet.id,
-                    text: 'GND',
-                    position: { x: capBottom.x, y: capBottom.y + 15 },
-                    global: false
-                });
-            }
-        }
-        // å¤ä½ç”µé˜»: ä¸€ç«¯VCC, ä¸€ç«¯RST
-        for (let ri = 0; ri < Math.min(1, resistors.length); ri++) {
-            const res = resistors[ri];
-            if (res.libraryId.includes('10k')) {
-                const resLeft = this.estimatePinPos(res, 'left', 0);
-                const mcuRst = this.estimatePinPos(mcu, 'left', 1);
-                doc.wires.push({
-                    id: IdUtil.generate('wire'), netId: IdUtil.generate('net'),
-                    points: this.orthogonalRoute(resLeft, mcuRst, doc.components),
-                    style: WireStyle.ORTHOGONAL
-                });
-            }
-        }
-    }
-    createWireBetween(doc, from, to, netId) {
-        const start = this.estimatePinPos(from, 'right', 0);
-        const end = this.estimatePinPos(to, 'left', 0);
-        doc.wires.push({
-            id: IdUtil.generate('wire'),
-            netId,
-            points: this.orthogonalRoute(start, end, doc.components),
-            style: WireStyle.ORTHOGONAL
-        });
-    }
-    createWireToGround(doc, comp, gndNetId) {
-        const start = this.estimatePinPos(comp, 'bottom', 0);
-        const gndComp = doc.components.find(c => c.libraryId === 'GND');
-        if (gndComp) {
-            const end = this.estimatePinPos(gndComp, 'top', 0);
-            doc.wires.push({
-                id: IdUtil.generate('wire'),
-                netId: gndNetId,
-                points: this.orthogonalRoute(start, end, doc.components),
-                style: WireStyle.ORTHOGONAL
-            });
-        }
-        else {
-            doc.wires.push({
-                id: IdUtil.generate('wire'),
-                netId: gndNetId,
-                points: [start, { x: start.x, y: start.y + 60 }],
-                style: WireStyle.ORTHOGONAL
-            });
-        }
-    }
-    /** A* è·¯å¾„æœç´¢ */
-    findPath(start, end, obstacles) {
-        const openList = [];
-        const closedSet = new Set();
-        const startNode = {
-            x: this.snap(start.x), y: this.snap(start.y),
-            g: 0, h: this.heuristic(start, end), f: 0, parent: null
-        };
-        startNode.f = startNode.g + startNode.h;
-        openList.push(startNode);
-        while (openList.length > 0) {
-            openList.sort((a, b) => a.f - b.f);
-            const current = openList.shift();
-            const key = `${current.x},${current.y}`;
-            if (closedSet.has(key))
-                continue;
-            closedSet.add(key);
-            if (Math.abs(current.x - end.x) < this.gridSize && Math.abs(current.y - end.y) < this.gridSize) {
-                return this.reconstructPath(current);
-            }
-            for (const neighbor of this.getNeighbors(current, obstacles)) {
-                const nKey = `${neighbor.x},${neighbor.y}`;
-                if (closedSet.has(nKey))
-                    continue;
-                neighbor.g = current.g + this.gridSize;
-                neighbor.h = this.heuristic({ x: neighbor.x, y: neighbor.y }, end);
-                neighbor.f = neighbor.g + neighbor.h;
-                neighbor.parent = current;
-                openList.push(neighbor);
-            }
-            if (closedSet.size > 800)
-                break;
-        }
-        return [start, { x: start.x, y: end.y }, end];
-    }
-    getNeighbors(node, obstacles) {
-        const dirs = [[0, 1], [0, -1], [1, 0], [-1, 0]];
-        const neighbors = [];
-        for (let i = 0; i < dirs.length; i++) {
-            const dx = dirs[i][0];
-            const dy = dirs[i][1];
-            const nx = node.x + dx * this.gridSize;
-            const ny = node.y + dy * this.gridSize;
-            if (nx >= 0 && nx <= 800 && ny >= 0 && ny <= 600 &&
-                !this.isBlocked(nx, ny, obstacles)) {
-                neighbors.push({ x: nx, y: ny, g: 0, h: 0, f: 0, parent: null });
-            }
-        }
-        return neighbors;
-    }
-    /**
-     * å™¨ä»¶ä½“é®æŒ¡æ£€æµ‹ â€” position æ˜¯å™¨ä»¶ä¸­å¿ƒåæ ‡, åŒ…å›´ç›’é¡»å±…ä¸­ã€‚
-     * è¦†ç›–å™¨ä»¶ç¬¦å·ä½“ + é€‰ä¸­è¾¹è· (â‰ˆÂ±55mil æ°´å¹³ Ã— Â±30mil å‚ç›´, è¦†ç›–æ ‡å‡† 60mil å¼•è„šé—´è· + è¾¹è·)ã€‚
-     */
-    isBlocked(x, y, obstacles) {
-        for (const obs of obstacles) {
-            const cx = obs.position.x;
-            const cy = obs.position.y;
-            if (x >= cx - 55 && x <= cx + 55 &&
-                y >= cy - 30 && y <= cy + 30) {
-                return true;
-            }
-        }
-        return false;
-    }
-    heuristic(a, b) {
-        return Math.abs(a.x - b.x) + Math.abs(a.y - b.y);
-    }
-    reconstructPath(node) {
-        const path = [];
-        let current = node;
-        while (current) {
-            path.unshift({ x: current.x, y: current.y });
-            current = current.parent;
-        }
-        return this.simplifyPath(path);
-    }
-    simplifyPath(path) {
-        if (path.length <= 2)
-            return path;
-        const result = [path[0]];
-        for (let i = 1; i < path.length - 1; i++) {
-            const prev = path[i - 1];
-            const curr = path[i];
-            const next = path[i + 1];
-            const sameX = prev.x === curr.x && curr.x === next.x;
-            const sameY = prev.y === curr.y && curr.y === next.y;
-            if (!sameX && !sameY)
-                result.push(curr);
-        }
-        result.push(path[path.length - 1]);
-        return result;
-    }
-    optimizeWirePaths(doc) {
-        for (const wire of doc.wires) {
-            if (wire.points.length > 2) {
-                wire.points = this.simplifyPath(wire.points);
-            }
-        }
-    }
-    snap(v) {
-        return Math.round(v / this.gridSize) * this.gridSize;
-    }
-}
-//# sourceMappingURL=AutoWiringEngine.js.mapÂ’¦commonÙ\C:\Projects\ElecDraw_Harmony\features\ai_engine\src\main\ets\algorithms\PinWorldResolver.etsÙ\C:\Projects\ElecDraw_Harmony\features\ai_engine\src\main\ets\algorithms\AutoWiringEngine.etsÔrB›ªmoduleName±isLocalDependency¯isNodeEntryFile§pkgPath±belongProjectPath§pkgNameªpkgVersion±dependencyPkgInfo°belongModulePath¬shouldEmitJs¯hostModulesInfo©ai_engineÃÂÙ/C:\Projects\ElecDraw_Harmony\features\ai_engine¼C:\Projects\ElecDraw_Harmony©ai_engine¥1.0.0Ô  Ù/C:\Projects\ElecDraw_Harmony\features\ai_engineÃ‘ÔrC’²hostDependencyName®hostModuleName½./algorithms/AutoWiringEngine©ai_engineÃÚ]W/**
- * AI è‡ªåŠ¨å¸ƒçº¿å¼•æ“ v3.0 â€” å…¨ç”µè·¯ç±»å‹æ”¯æŒ + ä»ªå™¨æ„ŸçŸ¥ + è¿æ¥æ¨¡å¼é€‰æ‹©
- * v3.0: éMCUç”µè·¯å¸ƒçº¿ã€ç”µæµè¡¨ä¸²è”ã€ç”µå‹è¡¨å¹¶è”ã€æ ‡å·vså¯¼çº¿æ™ºèƒ½é€‰æ‹©
- */
-import {
-  SchematicDocument, ComponentInstance, Wire, Net, Point2D,
-  WireStyle, NetType, NetLabel, IdUtil
-} from 'common';
-import { PinWorldResolver } from './PinWorldResolver';
-
-interface WiringNode {
-  x: number;
-  y: number;
-  g: number;
-  h: number;
-  f: number;
-  parent: WiringNode | null;
-}
-
-interface InstrumentInfo {
-  comp: ComponentInstance;
-  type: string;
-}
-
-export class AutoWiringEngine {
-  private gridSize: number = 10;
-
-  /** v3.0: æ”¯æŒæ‰€æœ‰ç”µè·¯ç±»å‹ï¼Œä¸å†è¦æ±‚MCU */
-  autoWire(doc: SchematicDocument): SchematicDocument {
-    const result = JSON.parse(JSON.stringify(doc)) as SchematicDocument;
-    this.ensurePowerNets(result);
-
-    const instruments = this.detectInstruments(result);
-    const mcu = result.components.find(c =>
-      c.libraryId.includes('STM32') || c.libraryId.includes('AT89') || c.libraryId.includes('STC'));
-
-    if (mcu) {
-      this.wireMcuMinimumSystem(result, mcu);
-    }
-
-    if (instruments.length > 0) {
-      this.wireInstruments(result, instruments);
-    }
-
-    this.wireRemainingConnections(result);
-    this.optimizeWirePaths(result);
-    return result;
-  }
-
-  /** v3.0: æ£€æµ‹æ‰€æœ‰ä»ªå™¨å™¨ä»¶ */
-  private detectInstruments(doc: SchematicDocument): InstrumentInfo[] {
-    const result: InstrumentInfo[] = [];
-    for (let i = 0; i < doc.components.length; i++) {
-      const c = doc.components[i];
-      const id = (c.libraryId ?? '').toUpperCase();
-      let type: string = 'other';
-      if (id.includes('AMMETER')) {
-        type = 'ammeter';
-      } else if (id.includes('VOLTMETER') || id.includes('VIRTUAL_METER')) {
-        type = 'voltmeter';
-      } else if (id.includes('MULTIMETER')) {
-        type = 'multimeter';
-      } else if (id.includes('OSCILLOSCOPE')) {
-        type = 'scope';
-      } else if (id.includes('LOGIC_ANALYZER')) {
-        type = 'logic_analyzer';
-      } else if (id.includes('UART_TERMINAL')) {
-        type = 'uart_terminal';
-      } else if (id.includes('FREQ_COUNTER') || id.includes('POWER_METER')) {
-        type = 'freq_counter';
-      } else {
-        continue;
-      }
-      result.push({ comp: c, type });
-    }
-    return result;
-  }
-
-  /** v3.0: ä»ªå™¨å¸ƒçº¿ â€” ç”µæµè¡¨ä¸²è”å…¥ç”µæºå›è·¯ã€ç”µå‹è¡¨å¹¶è”åˆ°è¢«æµ‹èŠ‚ç‚¹ã€ç¤ºæ³¢å™¨æ¢é’ˆè¿æ¥åˆ°ä¿¡å·ç‚¹ */
-  private wireInstruments(doc: SchematicDocument, instruments: InstrumentInfo[]): void {
-    const vccNet = doc.nets.find(n => n.name === 'VCC');
-    const gndNet = doc.nets.find(n => n.name === 'GND');
-
-    for (let i = 0; i < instruments.length; i++) {
-      const instr = instruments[i];
-      switch (instr.type) {
-        case 'ammeter':
-          this.wireAmmeterInSeries(doc, instr.comp, vccNet);
-          break;
-        case 'voltmeter':
-        case 'multimeter':
-          this.wireVoltmeterInParallel(doc, instr.comp, gndNet);
-          break;
-        case 'scope':
-          this.wireScopeProbes(doc, instr.comp, gndNet);
-          break;
-        case 'logic_analyzer':
-        case 'uart_terminal':
-        case 'freq_counter':
-          this.wireInstrumentByLabel(doc, instr.comp);
-          break;
-      }
-    }
-  }
-
-  /** v3.0: ç”µæµè¡¨ä¸²è”åœ¨ VCC ä¸è´Ÿè½½ä¹‹é—´ â€” VCCâ†’I+â†’I-â†’è´Ÿè½½ç”µé˜» */
-  private wireAmmeterInSeries(doc: SchematicDocument, ammeter: ComponentInstance,
-    vccNet: Net | undefined): void {
-    if (!vccNet) return;
-
-    // æŸ¥æ‰¾ VCC ç¬¦å·å’Œç¬¬ä¸€è´Ÿè½½ç”µé˜»
-    const vccComp = doc.components.find(c => c.libraryId === 'VCC');
-    const firstResistor = doc.components.find(c =>
-      c.libraryId.startsWith('R_') && c.libraryId !== 'R_10k' &&
-      c.libraryId !== 'R_4.7k');
-
-    if (!vccComp || !firstResistor) return;
-
-    // åˆ›å»ºä¸­é—´ç½‘ç»œ: VCC_AM (VCCç»è¿‡ç”µæµè¡¨åçš„ç½‘ç»œ)
-    const amNetId = IdUtil.generate('net');
-    const amNet: Net = {
-      id: amNetId, name: 'VCC_AM', type: NetType.SIGNAL, pinIds: []
-    };
-    doc.nets.push(amNet);
-
-    // VCC â†’ I+ (çŸ­å¯¼çº¿)
-    const vccPin = this.estimatePinPos(vccComp, 'top', 0);
-    const amIPlus = this.estimatePinPos(ammeter, 'left', 0);
-    doc.wires.push({
-      id: IdUtil.generate('wire'), netId: vccNet.id,
-      points: this.orthogonalRoute(vccPin, amIPlus, doc.components),
-      style: WireStyle.ORTHOGONAL
-    });
-
-    // I- â†’ ç¬¬ä¸€ç”µé˜» (ç”µæµè¡¨è¾“å‡ºåˆ°è´Ÿè½½ï¼Œå±äº VCC_AM ç½‘ç»œ)
-    const amIMinus = this.estimatePinPos(ammeter, 'right', 0);
-    const resTop = this.estimatePinPos(firstResistor, 'top', 0);
-    doc.wires.push({
-      id: IdUtil.generate('wire'), netId: amNetId,
-      points: this.orthogonalRoute(amIMinus, resTop, doc.components),
-      style: WireStyle.ORTHOGONAL
-    });
-
-    // ç”¨ç½‘ç»œæ ‡å·æ ‡è®° VCC_AMï¼Œç¡®ä¿å…¶ä»–éœ€è¦VCCçš„å™¨ä»¶èƒ½è¯†åˆ«
-    const labelPos: Point2D = {
-      x: (amIMinus.x + resTop.x) / 2, y: amIMinus.y - 20
-    };
-    doc.netLabels.push({
-      id: IdUtil.generate('nl'), netId: amNetId,
-      text: 'VCC_AM', position: labelPos, global: false
-    });
-  }
-
-  /** v3.0: ç”µå‹è¡¨å¹¶è”åˆ°åˆ†å‹èŠ‚ç‚¹ä¸Š â€” V+ æ¥è¢«æµ‹é«˜ç‚¹ï¼ŒCOM æ¥ GND */
-  private wireVoltmeterInParallel(doc: SchematicDocument, voltmeter: ComponentInstance,
-    gndNet: Net | undefined): void {
-    if (!gndNet) return;
-
-    // æ‰¾æœ€è¿‘çš„ç”µé˜» â€” ç”µå‹è¡¨æµ‹é‡è¯¥ç”µé˜»çš„å‹é™
-    const resistors = doc.components.filter(c => c.libraryId.startsWith('R_'));
-    if (resistors.length === 0) return;
-
-    // å°†ç”µå‹è¡¨å”¯ä¸€åˆ†é…åˆ°æŸä¸ªç”µé˜»ï¼ˆæŒ‰è·ç¦»æœ€å°åˆ†é…ï¼‰
-    const vmPos = voltmeter.position;
-    let bestRes: ComponentInstance | null = null;
-    let bestDist = Infinity;
-    for (let ri = 0; ri < resistors.length; ri++) {
-      const d = Math.hypot(vmPos.x - resistors[ri].position.x,
-        vmPos.y - resistors[ri].position.y);
-      if (d < bestDist) { bestDist = d; bestRes = resistors[ri]; }
-    }
-    if (!bestRes) return;
-
-    const targetRes = bestRes;
-
-    // åˆ›å»ºæµ‹é‡ç½‘ç»œï¼ˆä¿¡å·ç±»å‹ï¼‰
-    const senseNetId = IdUtil.generate('net');
-    const senseNet: Net = {
-      id: senseNetId,
-      name: `SENSE_R_${targetRes.refDes}`, type: NetType.SIGNAL, pinIds: []
-    };
-    doc.nets.push(senseNet);
-
-    // V+ â†’ ç”µé˜»é«˜ç«¯ï¼ˆé€šè¿‡æ ‡å·ï¼Œé¿å…é•¿å¯¼çº¿è·¨è¶Šï¼‰
-    const vmPlusPos = this.estimatePinPos(voltmeter, 'left', 0);
-    // COM â†’ GND
-    const vmComPos = this.estimatePinPos(voltmeter, 'bottom', 0);
-    const gndPin = this.estimatePinPos(targetRes, 'bottom', 0);
-
-    // ç”µå‹è¡¨ COM æ¥ GNDï¼ˆçŸ­å¯¼çº¿æˆ–æ ‡å·ï¼‰
-    if (Math.abs(vmComPos.x - gndPin.x) < 200) {
-      doc.wires.push({
-        id: IdUtil.generate('wire'), netId: gndNet.id,
-        points: this.orthogonalRoute(vmComPos, gndPin, doc.components),
-        style: WireStyle.ORTHOGONAL
-      });
-    } else {
-      // è¿œè·ç¦»ç”¨æ ‡å·
-      doc.netLabels.push({
-        id: IdUtil.generate('nl'), netId: gndNet.id,
-        text: 'GND', position: { x: vmComPos.x + 10, y: vmComPos.y + 20 },
-        global: false
-      });
-    }
-
-    // ç”µå‹è¡¨ V+ é€šè¿‡æ ‡å·è¿æ¥åˆ°è¢«æµ‹ç”µé˜»é«˜ç«¯ï¼ˆä»ªå™¨ç¦æ­¢é•¿å¯¼çº¿ï¼‰
-    doc.netLabels.push({
-      id: IdUtil.generate('nl'), netId: senseNetId,
-      text: `SENSE_R_${targetRes.refDes}`,
-      position: { x: vmPlusPos.x - 30, y: vmPlusPos.y - 10 },
-      global: false
-    });
-    // åœ¨è¢«æµ‹ç”µé˜»é«˜ç«¯ä¹Ÿæ”¾æ ‡å·
-    const resTop = this.estimatePinPos(targetRes, 'top', 0);
-    doc.netLabels.push({
-      id: IdUtil.generate('nl'), netId: senseNetId,
-      text: `SENSE_R_${targetRes.refDes}`,
-      position: { x: resTop.x + 10, y: resTop.y - 20 },
-      global: false
-    });
-  }
-
-  /** v3.0: ç¤ºæ³¢å™¨æ¢é’ˆè¿æ¥ â€” CH1/CH2 é€šè¿‡æ ‡å·è¿æ¥åˆ°ä¿¡å·èŠ‚ç‚¹ */
-  private wireScopeProbes(doc: SchematicDocument, scope: ComponentInstance,
-    gndNet: Net | undefined): void {
-    // æ‰¾ä¿¡å·æºï¼ˆè¿æ”¾è¾“å‡ºæˆ–MCU GPIOï¼‰
-    const signalComponents = doc.components.filter(c =>
-      c.libraryId.includes('LM358') || c.libraryId.includes('LM324') ||
-      c.libraryId.includes('OP') || c.libraryId.includes('STM32') ||
-      c.libraryId.includes('AT89'));
-    if (signalComponents.length === 0) return;
-    const signal = signalComponents[0];
-
-    // CH1 é€šè¿‡æ ‡å·è¿æ¥
-    const ch1NetId = IdUtil.generate('net');
-    doc.nets.push({
-      id: ch1NetId, name: 'CH1_PROBE', type: NetType.SIGNAL, pinIds: []
-    });
-    doc.netLabels.push({
-      id: IdUtil.generate('nl'), netId: ch1NetId,
-      text: 'CH1_PROBE',
-      position: { x: scope.position.x - 30, y: scope.position.y + 20 },
-      global: false
-    });
-    doc.netLabels.push({
-      id: IdUtil.generate('nl'), netId: ch1NetId,
-      text: 'CH1_PROBE',
-      position: { x: signal.position.x + 40, y: signal.position.y - 20 },
-      global: false
-    });
-
-    // GND clip â†’ GND æ ‡å·
-    if (gndNet) {
-      doc.netLabels.push({
-        id: IdUtil.generate('nl'), netId: gndNet.id,
-        text: 'GND',
-        position: { x: scope.position.x - 30, y: scope.position.y + 60 },
-        global: false
-      });
-    }
-  }
-
-  /** v3.0: é€»è¾‘åˆ†æä»ª/UARTç»ˆç«¯/é¢‘ç‡è®¡ â€” å…¨éƒ¨ç”¨æ ‡å·è¿æ¥ */
-  private wireInstrumentByLabel(doc: SchematicDocument, instr: ComponentInstance): void {
-    const netPrefix = instr.libraryId.includes('UART') ? 'UART' :
-      instr.libraryId.includes('LOGIC') ? 'LA' : 'FC';
-    const chNetId = IdUtil.generate('net');
-    doc.nets.push({
-      id: chNetId, name: `${netPrefix}_CH`, type: NetType.SIGNAL, pinIds: []
-    });
-    doc.netLabels.push({
-      id: IdUtil.generate('nl'), netId: chNetId,
-      text: `${netPrefix}_CH`,
-      position: { x: instr.position.x - 30, y: instr.position.y + 20 },
-      global: false
-    });
-  }
-
-  /** v3.0: æ¥çº¿å‰©ä½™æœªè¿æ¥çš„å™¨ä»¶å¼•è„š */
-  private wireRemainingConnections(doc: SchematicDocument): void {
-    const vccNet = doc.nets.find(n => n.name === 'VCC');
-    const gndNet = doc.nets.find(n => n.name === 'GND');
-    if (!vccNet || !gndNet) return;
-
-    // å·²è¿æ¥å¼•è„šé›†åˆ
-    const connectedPins = new Set<string>();
-    for (let ni = 0; ni < doc.nets.length; ni++) {
-      const netPins = doc.nets[ni].pinIds;
-      for (let pi = 0; pi < netPins.length; pi++) {
-        connectedPins.add(netPins[pi]);
-      }
-    }
-
-    for (let i = 0; i < doc.components.length; i++) {
-      const comp = doc.components[i];
-      const id = (comp.libraryId ?? '').toUpperCase();
-      // è·³è¿‡ç”µæº/åœ°ç¬¦å·ï¼ˆå®ƒä»¬æ˜¯ç«¯ç‚¹ï¼‰ã€å·²è¿æ¥çš„å™¨ä»¶ã€ä»ªå™¨ï¼ˆå·²å¤„ç†ï¼‰
-      if (id === 'VCC' || id === 'GND') continue;
-      if (id.includes('AMMETER') || id.includes('VOLTMETER') ||
-        id.includes('VIRTUAL_METER') || id.includes('OSCILLOSCOPE') ||
-        id.includes('LOGIC_ANALYZER') || id.includes('UART_TERMINAL')) continue;
-
-      // å»è€¦ç”µå®¹æ¥åœ°
-      if (id.startsWith('C_') && id.includes('100')) {
-        const capPin = this.estimatePinPos(comp, 'bottom', 0);
-        const gndPin = this.estimatePinPos(
-          doc.components.find(c => c.libraryId === 'GND') ?? comp, 'top', 0);
-        doc.wires.push({
-          id: IdUtil.generate('wire'), netId: gndNet.id,
-          points: this.orthogonalRoute(capPin, gndPin, doc.components),
-          style: WireStyle.ORTHOGONAL
-        });
-      }
-
-      // LED â†’ GND (é€šè¿‡é™æµç”µé˜»å·²è¿VCC)
-      if (id.startsWith('LED_')) {
-        // æŸ¥æ‰¾LEDçš„é˜´æå¼•è„š(K)ä½ç½®å‡è®¾
-        const ledPin = this.estimatePinPos(comp, 'bottom', 0);
-        doc.netLabels.push({
-          id: IdUtil.generate('nl'), netId: gndNet.id,
-          text: 'GND',
-          position: { x: ledPin.x, y: ledPin.y + 20 },
-          global: false
-        });
-      }
-
-      // ä¸Šæ‹‰/ä¸‹æ‹‰ç”µé˜»è¿æ¥
-      if (id.startsWith('R_')) {
-        // çŸ­ç”µé˜»è¿æ¥ç”¨å¯¼çº¿ï¼Œè¿œè·ç¦»ç”¨æ ‡å·
-        const resPin = this.estimatePinPos(comp, 'right', 0);
-        const nearVcc = Math.abs(comp.position.x - 60) < 150;
-        if (nearVcc && id.includes('10k')) {
-          // ä¸Šæ‹‰ç”µé˜»æ¥VCC
-          doc.wires.push({
-            id: IdUtil.generate('wire'), netId: vccNet.id,
-            points: this.orthogonalRoute(resPin,
-              this.estimatePinPos(comp, 'left', 0), doc.components),
-            style: WireStyle.ORTHOGONAL
-          });
-        }
-      }
-    }
-  }
-
-  /** ä¼°ç®—å¼•è„šä¸–ç•Œåæ ‡ï¼šä¼˜å…ˆ Kit/PinWorldResolver çœŸè„šï¼Œå†é€€å›è¾¹æ²¿å¯å‘ */
-  private estimatePinPos(comp: ComponentInstance, edge: string, pinIndex: number): Point2D {
-    const pinName = this.pinNameForEdge(comp, edge, pinIndex);
-    if (pinName.length > 0) {
-      return PinWorldResolver.forComponent(comp, pinName, pinName);
-    }
-    const p = comp.position;
-    const id = (comp.libraryId ?? '').toUpperCase();
-    let w = 60; let h = 40;
-    if (id.includes('STM32') || id.includes('AT89') || id.includes('STC')) {
-      w = 100; h = 80;
-    } else if (id.includes('AMMETER') || id.includes('VOLTMETER') ||
-      id.includes('VIRTUAL_METER') || id.includes('OSCILLOSCOPE')) {
-      w = 100; h = 70;
-    } else if (id === 'VCC' || id === 'GND' || id === 'VEE') {
-      w = 30; h = 30;
-    } else if (id.startsWith('R_')) {
-      w = 60; h = 20;
-    } else if (id.startsWith('C_')) {
-      w = 40; h = 30;
-    } else if (id.startsWith('LED_')) {
-      w = 40; h = 40;
-    } else if (id.includes('XTAL')) {
-      w = 50; h = 40;
-    }
-    switch (edge) {
-      case 'left': return { x: p.x, y: p.y + h / 2 };
-      case 'right': return { x: p.x + w, y: p.y + h / 2 };
-      case 'top': return { x: p.x + w / 2, y: p.y };
-      case 'bottom': return { x: p.x + w / 2, y: p.y + h };
-      default: return { x: p.x + w / 2, y: p.y + h / 2 };
-    }
-  }
-
-  private pinNameForEdge(comp: ComponentInstance, edge: string, _pinIndex: number): string {
-    const id = (comp.libraryId ?? '').toUpperCase();
-    if (id.includes('AMMETER')) {
-      if (edge === 'left') return 'I+';
-      if (edge === 'right') return 'I-';
-    }
-    if (id.includes('VOLTMETER') || id.includes('VIRTUAL_METER')) {
-      if (edge === 'left') return 'V+';
-      if (edge === 'bottom' || edge === 'right') return 'COM';
-    }
-    if (id.includes('OSCILLOSCOPE')) {
-      if (edge === 'left') return 'CH1';
-      if (edge === 'bottom') return 'GND';
-    }
-    if (id === 'VCC' || id === 'GND' || id === 'VEE') {
-      return '1';
-    }
-    if (id.startsWith('R_') || id.startsWith('C_') || id.startsWith('LED_') || id.startsWith('L_')) {
-      if (edge === 'top' || edge === 'left') return '1';
-      if (edge === 'bottom' || edge === 'right') return '2';
-    }
-    return '';
-  }
-
-  /** æ­£äº¤å¸ƒçº¿: æºâ†’æ‹ç‚¹â†’ç›®æ ‡ï¼Œç»•å¼€éšœç¢ */
-  private orthogonalRoute(start: Point2D, end: Point2D,
-    obstacles: ComponentInstance[]): Point2D[] {
-    const dist = Math.hypot(end.x - start.x, end.y - start.y);
-    // çŸ­è·ç¦»ç›´çº¿
-    if (dist < 100) {
-      const mid: Point2D = {
-        x: Math.abs(end.x - start.x) > Math.abs(end.y - start.y) ?
-          end.x : start.x,
-        y: Math.abs(end.y - start.y) > Math.abs(end.x - start.x) ?
-          end.y : start.y
-      };
-      return [start, mid, end];
-    }
-    // é•¿è·ç¦»ç”¨A*è·¯å¾„
-    return this.findPath(start, end, obstacles);
-  }
-
-  private ensurePowerNets(doc: SchematicDocument): void {
-    const hasVcc = doc.nets.some(n => n.name === 'VCC' || n.type === NetType.POWER);
-    const hasGnd = doc.nets.some(n => n.name === 'GND' || n.type === NetType.GROUND);
-
-    if (!hasVcc) {
-      doc.nets.push({ id: IdUtil.generate('net'), name: 'VCC', type: NetType.POWER, pinIds: [] });
-    }
-    if (!hasGnd) {
-      doc.nets.push({ id: IdUtil.generate('net'), name: 'GND', type: NetType.GROUND, pinIds: [] });
-    }
-  }
-
-  /** MCUæœ€å°ç³»ç»Ÿå¸ƒçº¿: æ™¶æŒ¯ã€å»è€¦ç”µå®¹ã€å¤ä½ */
-  private wireMcuMinimumSystem(doc: SchematicDocument, mcu: ComponentInstance): void {
-    const crystal = doc.components.find(c => c.libraryId.includes('XTAL'));
-    const caps = doc.components.filter(c => c.libraryId.startsWith('C_'));
-    const resistors = doc.components.filter(c => c.libraryId.startsWith('R_'));
-
-    const vccNet = doc.nets.find(n => n.name === 'VCC')!;
-    const gndNet = doc.nets.find(n => n.name === 'GND')!;
-
-    // æ™¶æŒ¯åˆ°MCU (OSC_IN/OSC_OUT)
-    if (crystal) {
-      const xtalOut = this.estimatePinPos(crystal, 'right', 0);
-      const mcuXtal = this.estimatePinPos(mcu, 'left', 2);
-      doc.wires.push({
-        id: IdUtil.generate('wire'), netId: IdUtil.generate('net'),
-        points: this.orthogonalRoute(xtalOut, mcuXtal, doc.components),
-        style: WireStyle.ORTHOGONAL
-      });
-      // æ™¶æŒ¯è´Ÿè½½ç”µå®¹æ¥åœ°
-      for (let ci = 0; ci < Math.min(2, caps.length); ci++) {
-        const cap = caps[ci];
-        if (cap.libraryId.includes('22p') || cap.libraryId.includes('22')) {
-          const capBottom = this.estimatePinPos(cap, 'bottom', 0);
-          const gndPin = this.estimatePinPos(
-            doc.components.find(c => c.libraryId === 'GND') ?? mcu, 'top', 0);
-          doc.wires.push({
-            id: IdUtil.generate('wire'), netId: gndNet.id,
-            points: this.orthogonalRoute(capBottom, gndPin, doc.components),
-            style: WireStyle.ORTHOGONAL
-          });
-        }
-      }
-    }
-
-    // å»è€¦ç”µå®¹: VDD ä¾§æ¥ VCC, GND ä¾§æ¥åœ°
-    for (let ci = 0; ci < Math.min(3, caps.length); ci++) {
-      const cap = caps[ci];
-      if (cap.libraryId.includes('100n') || cap.libraryId.includes('100')) {
-        const capTop = this.estimatePinPos(cap, 'top', 0);
-        const capBottom = this.estimatePinPos(cap, 'bottom', 0);
-        // å°±è¿‘VCC/GND â€” å¦‚æœé è¿‘VCCç¬¦å·å°±ç”¨å¯¼çº¿ï¼Œå¦åˆ™ç”¨æ ‡å·
-        const vccComp = doc.components.find(c => c.libraryId === 'VCC');
-        if (vccComp && Math.abs(cap.position.x - vccComp.position.x) < 200) {
-          doc.wires.push({
-            id: IdUtil.generate('wire'), netId: vccNet.id,
-            points: this.orthogonalRoute(capTop, this.estimatePinPos(vccComp, 'top', 0),
-              doc.components),
-            style: WireStyle.ORTHOGONAL
-          });
-        } else {
-          doc.netLabels.push({
-            id: IdUtil.generate('nl'), netId: vccNet.id,
-            text: 'VCC',
-            position: { x: capTop.x, y: capTop.y - 15 },
-            global: false
-          });
-        }
-        doc.netLabels.push({
-          id: IdUtil.generate('nl'), netId: gndNet.id,
-          text: 'GND',
-          position: { x: capBottom.x, y: capBottom.y + 15 },
-          global: false
-        });
-      }
-    }
-
-    // å¤ä½ç”µé˜»: ä¸€ç«¯VCC, ä¸€ç«¯RST
-    for (let ri = 0; ri < Math.min(1, resistors.length); ri++) {
-      const res = resistors[ri];
-      if (res.libraryId.includes('10k')) {
-        const resLeft = this.estimatePinPos(res, 'left', 0);
-        const mcuRst = this.estimatePinPos(mcu, 'left', 1);
-        doc.wires.push({
-          id: IdUtil.generate('wire'), netId: IdUtil.generate('net'),
-          points: this.orthogonalRoute(resLeft, mcuRst, doc.components),
-          style: WireStyle.ORTHOGONAL
-        });
-      }
-    }
-  }
-
-  private createWireBetween(doc: SchematicDocument, from: ComponentInstance,
-    to: ComponentInstance, netId: string): void {
-    const start = this.estimatePinPos(from, 'right', 0);
-    const end = this.estimatePinPos(to, 'left', 0);
-    doc.wires.push({
-      id: IdUtil.generate('wire'),
-      netId,
-      points: this.orthogonalRoute(start, end, doc.components),
-      style: WireStyle.ORTHOGONAL
-    });
-  }
-
-  private createWireToGround(doc: SchematicDocument, comp: ComponentInstance, gndNetId: string): void {
-    const start = this.estimatePinPos(comp, 'bottom', 0);
-    const gndComp = doc.components.find(c => c.libraryId === 'GND');
-    if (gndComp) {
-      const end = this.estimatePinPos(gndComp, 'top', 0);
-      doc.wires.push({
-        id: IdUtil.generate('wire'),
-        netId: gndNetId,
-        points: this.orthogonalRoute(start, end, doc.components),
-        style: WireStyle.ORTHOGONAL
-      });
-    } else {
-      doc.wires.push({
-        id: IdUtil.generate('wire'),
-        netId: gndNetId,
-        points: [start, { x: start.x, y: start.y + 60 }],
-        style: WireStyle.ORTHOGONAL
-      });
-    }
-  }
-
-  /** A* è·¯å¾„æœç´¢ */
-  private findPath(start: Point2D, end: Point2D, obstacles: ComponentInstance[]): Point2D[] {
-    const openList: WiringNode[] = [];
-    const closedSet: Set<string> = new Set();
-
-    const startNode: WiringNode = {
-      x: this.snap(start.x), y: this.snap(start.y),
-      g: 0, h: this.heuristic(start, end), f: 0, parent: null
-    };
-    startNode.f = startNode.g + startNode.h;
-    openList.push(startNode);
-
-    while (openList.length > 0) {
-      openList.sort((a, b) => a.f - b.f);
-      const current = openList.shift()!;
-      const key = `${current.x},${current.y}`;
-
-      if (closedSet.has(key)) continue;
-      closedSet.add(key);
-
-      if (Math.abs(current.x - end.x) < this.gridSize && Math.abs(current.y - end.y) < this.gridSize) {
-        return this.reconstructPath(current);
-      }
-
-      for (const neighbor of this.getNeighbors(current, obstacles)) {
-        const nKey = `${neighbor.x},${neighbor.y}`;
-        if (closedSet.has(nKey)) continue;
-        neighbor.g = current.g + this.gridSize;
-        neighbor.h = this.heuristic({ x: neighbor.x, y: neighbor.y }, end);
-        neighbor.f = neighbor.g + neighbor.h;
-        neighbor.parent = current;
-        openList.push(neighbor);
-      }
-
-      if (closedSet.size > 800) break;
-    }
-
-    return [start, { x: start.x, y: end.y }, end];
-  }
-
-  private getNeighbors(node: WiringNode, obstacles: ComponentInstance[]): WiringNode[] {
-    const dirs = [[0, 1], [0, -1], [1, 0], [-1, 0]];
-    const neighbors: WiringNode[] = [];
-    for (let i = 0; i < dirs.length; i++) {
-      const dx = dirs[i][0];
-      const dy = dirs[i][1];
-      const nx = node.x + dx * this.gridSize;
-      const ny = node.y + dy * this.gridSize;
-      if (nx >= 0 && nx <= 800 && ny >= 0 && ny <= 600 &&
-        !this.isBlocked(nx, ny, obstacles)) {
-        neighbors.push({ x: nx, y: ny, g: 0, h: 0, f: 0, parent: null });
-      }
-    }
-    return neighbors;
-  }
-
-  /**
-   * å™¨ä»¶ä½“é®æŒ¡æ£€æµ‹ â€” position æ˜¯å™¨ä»¶ä¸­å¿ƒåæ ‡, åŒ…å›´ç›’é¡»å±…ä¸­ã€‚
-   * è¦†ç›–å™¨ä»¶ç¬¦å·ä½“ + é€‰ä¸­è¾¹è· (â‰ˆÂ±55mil æ°´å¹³ Ã— Â±30mil å‚ç›´, è¦†ç›–æ ‡å‡† 60mil å¼•è„šé—´è· + è¾¹è·)ã€‚
-   */
-  private isBlocked(x: number, y: number, obstacles: ComponentInstance[]): boolean {
-    for (const obs of obstacles) {
-      const cx = obs.position.x;
-      const cy = obs.position.y;
-      if (x >= cx - 55 && x <= cx + 55 &&
-          y >= cy - 30 && y <= cy + 30) {
-        return true;
-      }
-    }
-    return false;
-  }
-
-  private heuristic(a: Point2D, b: Point2D): number {
-    return Math.abs(a.x - b.x) + Math.abs(a.y - b.y);
-  }
-
-  private reconstructPath(node: WiringNode): Point2D[] {
-    const path: Point2D[] = [];
-    let current: WiringNode | null = node;
-    while (current) {
-      path.unshift({ x: current.x, y: current.y });
-      current = current.parent;
-    }
-    return this.simplifyPath(path);
-  }
-
-  private simplifyPath(path: Point2D[]): Point2D[] {
-    if (path.length <= 2) return path;
-    const result: Point2D[] = [path[0]];
-    for (let i = 1; i < path.length - 1; i++) {
-      const prev = path[i - 1];
-      const curr = path[i];
-      const next = path[i + 1];
-      const sameX = prev.x === curr.x && curr.x === next.x;
-      const sameY = prev.y === curr.y && curr.y === next.y;
-      if (!sameX && !sameY) result.push(curr);
-    }
-    result.push(path[path.length - 1]);
-    return result;
-  }
-
-  private optimizeWirePaths(doc: SchematicDocument): void {
-    for (const wire of doc.wires) {
-      if (wire.points.length > 2) {
-        wire.points = this.simplifyPath(wire.points);
-      }
-    }
-  }
-
-  private snap(v: number): number {
-    return Math.round(v / this.gridSize) * this.gridSize;
-  }
-}
-ÔrD•§version¨mappings¥names§sources®sourcesContentÜl‘”    ‘”  ‘”   ‘”   ‘”   ‘”   ‘”  ‘”  ‘”  ‘”  !‘”  $‘”  %‘”  &‘”  (‘”  )‘”  *‘”  ,‘”  -‘”  .‘”  2
-‘”  4‘”  6‘”  8‘”  :‘”  :‘”  <‘”  <‘”  >‘”  >‘”  Ì@‘”  Ì@‘”  ÌB‘”  ÌB‘”  ÌD‘”  ÌD‘”  ÌF‘”  ÌF‘”  ÌH‘”  ÌJ‘”  ÌK‘”  ÌP‘”  ÌQ‘”  ÌS‘”  ÌT‘”  ÌV‘”  ÌY‘”  ÌZ‘”  Ì]‘”  Ì`‘”  Ìa‘”  Ìb‘”  Ìe‘”  Ìf‘”  Ìj
-‘”  Ìl‘”  Ìo‘”  Ìr‘”  Ìt‘”  Ìx‘”  Ìy‘”  Ì{‘”  Ì~‘”  Ì‘”  Ì€‘”  Ì‘”  Ì‚‘”  Ì„‘”  Ì‡‘”  Ìˆ‘”  Ì‰‘”  Ì‹‘”  Ì‘”  Ì‘”  Ì‘‘”  Ì“‘”  Ì–‘”  Ìš
-‘”  Ìœ‘”  Ì ‘”  Ì£‘”  Ì¦‘”  Ì§‘”  Ì©(‘”  Ì©ÌB‘”  Ìª‘”  Ì«‘”  Ì±‘”  Ì²‘”  Ì³‘”  Ìµ‘”  Ì¸‘”  Ìº‘”  Ì»‘”  Ì¾‘”  Ì¿‘”  ÌÀ‘”  ÌÁ‘”  ÌÃ‘”  ÌÄ‘”  ÌÄ‘”  ÌÆ‘”  ÌÇ‘”  ÌÉ‘”  ÌÊ‘”  ÌË‘”  ÌÎ‘”  ÌĞ‘”  ÌÑ‘”  ÌÒ‘”  ÌÓ‘”  ÌÕ‘”  ÌÖ‘”  ÌØ‘”  ÌÙ‘”  ÌÚ‘”  ÌÛ‘”  Ìß
-‘”  Ìâ‘”  Ìä‘”  Ìæ‘”  Ìç‘”  Ìë‘”  Ìì‘”  Ìí‘”  Ìî‘”  Ìğ‘”  Ìò‘”  Ìó‘”  Ìô‘”  Ìö‘”  Ìø‘”  Ìù‘”  Ìü‘”  Ìı‘”  Ìş‘”  Ìÿ‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í	‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í
-‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í ‘”  Í"‘”  Í#‘”  Í%‘”  Í'‘”  Í)‘”  Í*‘”  Í/‘”  Í0‘”  Í1‘”  Í3‘”  Í4
-‘”  Í5
-‘”  Í7	‘”  Í8‘”  Í;‘”  Í=‘”  Í>‘”  Í?
-‘”  Í@
-‘”  ÍA
-‘”  ÍB
-‘”  ÍC	‘”  ÍD‘”  ÍG‘”  ÍI‘”  ÍJ‘”  ÍM
-‘”  ÍN‘”  ÍR‘”  ÍS	‘”  ÍT‘”  ÍU‘”  ÍY
-‘”  ÍZ‘”  Í[‘”  Í]‘”  Í^‘”  Í_‘”  Íc‘”  Íc‘”  Íd‘”  Íf‘”  Íh‘”  Íh‘”  Íj‘”  Íj‘”  Íl‘”  Íl‘”  Ín‘”  Ín‘”  Íp‘”  Íq‘”  Íw‘”  Íz
-‘”  Í{‘”  Í|‘”  Í}‘”  Í~‘”  Í‘”  Í€‘”  Í‘”  Í‚‘”  Í‚1‘”  Íƒ‘”  Í„‘”  Í…‘”  Í†‘”  Í‡‘”  Í‰‘”  ÍŠ‘”  ÍŒ‘”  ÍŒ-‘”  Í‘”  Í1‘”  Í‘”  Í‘”  Í“
-‘”  Í˜‘”  Íš
-‘”  Íœ
-‘”  Í‘”  ÍŸ‘”  Í¤
-‘”  Í©‘”  Íª‘”  Í¬‘”  Í­‘”  Í¶‘”  Í·‘”  Íº‘”  Í»‘”  Í¼‘”  Í½‘”  Í¾‘”  Í¿‘”  ÍÁ‘”  ÍÄ‘”  ÍÅ‘”  ÍÆ
-‘”  ÍÇ
-‘”  ÍÉ
-‘”  ÍÊ‘”  ÍË‘”  ÍÍ‘”  ÍÎ	‘”  ÍÏ‘”  ÍĞ‘”  ÍÔ‘”  ÍÕ‘”  ÍÖ‘”  Í×‘”  ÍÙ‘”  ÍÛ
-‘”  ÍÜ‘”  Íà‘”  Íá	‘”  Íá‘”  Íâ
-‘”  Íã‘”  Íä‘”  Íå‘”  Íæ‘”  Íç‘”  Íè	‘”  Íé‘”  Íê
-‘”  Íë
-‘”  Íì
-‘”  Íí
-‘”  Íî	‘”  Íï‘”  Íğ‘”  Íô‘”  Íö‘”  Í÷‘”  Íø‘”  Íù
-‘”  Íú
-‘”  Íü	‘”  Íı‘”  Íş‘”  Í
-‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í
-‘”  Í
-‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í#
-‘”  Í%‘”  Í'‘”  Í(‘”  Í,‘”  Í.‘”  Í/‘”  Í0‘”  Í3‘”  Í4‘”  Í6‘”  Í7‘”  Í8‘”  Í<‘”  Í@‘”  ÍA‘”  ÍB‘”  ÍD‘”  ÍE‘”  ÍG‘”  ÍK‘”  ÍM‘”  ÍR‘”  ÍT‘”  ÍU‘”  ÍV‘”  ÍW‘”  ÍZ‘”  Í]‘”  Í^
-‘”  Í_‘”  Í`‘”  Ía‘”  Íd‘”  Íe‘”  Íf‘”  Íg‘”  Ín
-‘”  Íq‘”  Ír‘”  Ís‘”  Ít‘”  Íu‘”  Íx
-‘”  Íy‘”  Íy‘”  Í{‘”  Í}‘”  Í‘”  Í€‘”  Í‘”  Í‘”  Í‚‘”  Íƒ‘”  Í„‘”  Í‡
-‘”  Íˆ‘”  Í‰‘”  Í‹‘”  ÍŒ‘”  Í
-‘”  Í‘”  Í’‘Ù\C:\Projects\ElecDraw_Harmony\features\ai_engine\src\main\ets\algorithms\AutoWiringEngine.ets‘Ú]W/**
- * AI è‡ªåŠ¨å¸ƒçº¿å¼•æ“ v3.0 â€” å…¨ç”µè·¯ç±»å‹æ”¯æŒ + ä»ªå™¨æ„ŸçŸ¥ + è¿æ¥æ¨¡å¼é€‰æ‹©
- * v3.0: éMCUç”µè·¯å¸ƒçº¿ã€ç”µæµè¡¨ä¸²è”ã€ç”µå‹è¡¨å¹¶è”ã€æ ‡å·vså¯¼çº¿æ™ºèƒ½é€‰æ‹©
- */
-import {
-  SchematicDocument, ComponentInstance, Wire, Net, Point2D,
-  WireStyle, NetType, NetLabel, IdUtil
-} from 'common';
-import { PinWorldResolver } from './PinWorldResolver';
-
-interface WiringNode {
-  x: number;
-  y: number;
-  g: number;
-  h: number;
-  f: number;
-  parent: WiringNode | null;
-}
-
-interface InstrumentInfo {
-  comp: ComponentInstance;
-  type: string;
-}
-
-export class AutoWiringEngine {
-  private gridSize: number = 10;
-
-  /** v3.0: æ”¯æŒæ‰€æœ‰ç”µè·¯ç±»å‹ï¼Œä¸å†è¦æ±‚MCU */
-  autoWire(doc: SchematicDocument): SchematicDocument {
-    const result = JSON.parse(JSON.stringify(doc)) as SchematicDocument;
-    this.ensurePowerNets(result);
-
-    const instruments = this.detectInstruments(result);
-    const mcu = result.components.find(c =>
-      c.libraryId.includes('STM32') || c.libraryId.includes('AT89') || c.libraryId.includes('STC'));
-
-    if (mcu) {
-      this.wireMcuMinimumSystem(result, mcu);
-    }
-
-    if (instruments.length > 0) {
-      this.wireInstruments(result, instruments);
-    }
-
-    this.wireRemainingConnections(result);
-    this.optimizeWirePaths(result);
-    return result;
-  }
-
-  /** v3.0: æ£€æµ‹æ‰€æœ‰ä»ªå™¨å™¨ä»¶ */
-  private detectInstruments(doc: SchematicDocument): InstrumentInfo[] {
-    const result: InstrumentInfo[] = [];
-    for (let i = 0; i < doc.components.length; i++) {
-      const c = doc.components[i];
-      const id = (c.libraryId ?? '').toUpperCase();
-      let type: string = 'other';
-      if (id.includes('AMMETER')) {
-        type = 'ammeter';
-      } else if (id.includes('VOLTMETER') || id.includes('VIRTUAL_METER')) {
-        type = 'voltmeter';
-      } else if (id.includes('MULTIMETER')) {
-        type = 'multimeter';
-      } else if (id.includes('OSCILLOSCOPE')) {
-        type = 'scope';
-      } else if (id.includes('LOGIC_ANALYZER')) {
-        type = 'logic_analyzer';
-      } else if (id.includes('UART_TERMINAL')) {
-        type = 'uart_terminal';
-      } else if (id.includes('FREQ_COUNTER') || id.includes('POWER_METER')) {
-        type = 'freq_counter';
-      } else {
-        continue;
-      }
-      result.push({ comp: c, type });
-    }
-    return result;
-  }
-
-  /** v3.0: ä»ªå™¨å¸ƒçº¿ â€” ç”µæµè¡¨ä¸²è”å…¥ç”µæºå›è·¯ã€ç”µå‹è¡¨å¹¶è”åˆ°è¢«æµ‹èŠ‚ç‚¹ã€ç¤ºæ³¢å™¨æ¢é’ˆè¿æ¥åˆ°ä¿¡å·ç‚¹ */
-  private wireInstruments(doc: SchematicDocument, instruments: InstrumentInfo[]): void {
-    const vccNet = doc.nets.find(n => n.name === 'VCC');
-    const gndNet = doc.nets.find(n => n.name === 'GND');
-
-    for (let i = 0; i < instruments.length; i++) {
-      const instr = instruments[i];
-      switch (instr.type) {
-        case 'ammeter':
-          this.wireAmmeterInSeries(doc, instr.comp, vccNet);
-          break;
-        case 'voltmeter':
-        case 'multimeter':
-          this.wireVoltmeterInParallel(doc, instr.comp, gndNet);
-          break;
-        case 'scope':
-          this.wireScopeProbes(doc, instr.comp, gndNet);
-          break;
-        case 'logic_analyzer':
-        case 'uart_terminal':
-        case 'freq_counter':
-          this.wireInstrumentByLabel(doc, instr.comp);
-          break;
-      }
-    }
-  }
-
-  /** v3.0: ç”µæµè¡¨ä¸²è”åœ¨ VCC ä¸è´Ÿè½½ä¹‹é—´ â€” VCCâ†’I+â†’I-â†’è´Ÿè½½ç”µé˜» */
-  private wireAmmeterInSeries(doc: SchematicDocument, ammeter: ComponentInstance,
-    vccNet: Net | undefined): void {
-    if (!vccNet) return;
-
-    // æŸ¥æ‰¾ VCC ç¬¦å·å’Œç¬¬ä¸€è´Ÿè½½ç”µé˜»
-    const vccComp = doc.components.find(c => c.libraryId === 'VCC');
-    const firstResistor = doc.components.find(c =>
-      c.libraryId.startsWith('R_') && c.libraryId !== 'R_10k' &&
-      c.libraryId !== 'R_4.7k');
-
-    if (!vccComp || !firstResistor) return;
-
-    // åˆ›å»ºä¸­é—´ç½‘ç»œ: VCC_AM (VCCç»è¿‡ç”µæµè¡¨åçš„ç½‘ç»œ)
-    const amNetId = IdUtil.generate('net');
-    const amNet: Net = {
-      id: amNetId, name: 'VCC_AM', type: NetType.SIGNAL, pinIds: []
-    };
-    doc.nets.push(amNet);
-
-    // VCC â†’ I+ (çŸ­å¯¼çº¿)
-    const vccPin = this.estimatePinPos(vccComp, 'top', 0);
-    const amIPlus = this.estimatePinPos(ammeter, 'left', 0);
-    doc.wires.push({
-      id: IdUtil.generate('wire'), netId: vccNet.id,
-      points: this.orthogonalRoute(vccPin, amIPlus, doc.components),
-      style: WireStyle.ORTHOGONAL
-    });
-
-    // I- â†’ ç¬¬ä¸€ç”µé˜» (ç”µæµè¡¨è¾“å‡ºåˆ°è´Ÿè½½ï¼Œå±äº VCC_AM ç½‘ç»œ)
-    const amIMinus = this.estimatePinPos(ammeter, 'right', 0);
-    const resTop = this.estimatePinPos(firstResistor, 'top', 0);
-    doc.wires.push({
-      id: IdUtil.generate('wire'), netId: amNetId,
-      points: this.orthogonalRoute(amIMinus, resTop, doc.components),
-      style: WireStyle.ORTHOGONAL
-    });
-
-    // ç”¨ç½‘ç»œæ ‡å·æ ‡è®° VCC_AMï¼Œç¡®ä¿å…¶ä»–éœ€è¦VCCçš„å™¨ä»¶èƒ½è¯†åˆ«
-    const labelPos: Point2D = {
-      x: (amIMinus.x + resTop.x) / 2, y: amIMinus.y - 20
-    };
-    doc.netLabels.push({
-      id: IdUtil.generate('nl'), netId: amNetId,
-      text: 'VCC_AM', position: labelPos, global: false
-    });
-  }
-
-  /** v3.0: ç”µå‹è¡¨å¹¶è”åˆ°åˆ†å‹èŠ‚ç‚¹ä¸Š â€” V+ æ¥è¢«æµ‹é«˜ç‚¹ï¼ŒCOM æ¥ GND */
-  private wireVoltmeterInParallel(doc: SchematicDocument, voltmeter: ComponentInstance,
-    gndNet: Net | undefined): void {
-    if (!gndNet) return;
-
-    // æ‰¾æœ€è¿‘çš„ç”µé˜» â€” ç”µå‹è¡¨æµ‹é‡è¯¥ç”µé˜»çš„å‹é™
-    const resistors = doc.components.filter(c => c.libraryId.startsWith('R_'));
-    if (resistors.length === 0) return;
-
-    // å°†ç”µå‹è¡¨å”¯ä¸€åˆ†é…åˆ°æŸä¸ªç”µé˜»ï¼ˆæŒ‰è·ç¦»æœ€å°åˆ†é…ï¼‰
-    const vmPos = voltmeter.position;
-    let bestRes: ComponentInstance | null = null;
-    let bestDist = Infinity;
-    for (let ri = 0; ri < resistors.length; ri++) {
-      const d = Math.hypot(vmPos.x - resistors[ri].position.x,
-        vmPos.y - resistors[ri].position.y);
-      if (d < bestDist) { bestDist = d; bestRes = resistors[ri]; }
-    }
-    if (!bestRes) return;
-
-    const targetRes = bestRes;
-
-    // åˆ›å»ºæµ‹é‡ç½‘ç»œï¼ˆä¿¡å·ç±»å‹ï¼‰
-    const senseNetId = IdUtil.generate('net');
-    const senseNet: Net = {
-      id: senseNetId,
-      name: `SENSE_R_${targetRes.refDes}`, type: NetType.SIGNAL, pinIds: []
-    };
-    doc.nets.push(senseNet);
-
-    // V+ â†’ ç”µé˜»é«˜ç«¯ï¼ˆé€šè¿‡æ ‡å·ï¼Œé¿å…é•¿å¯¼çº¿è·¨è¶Šï¼‰
-    const vmPlusPos = this.estimatePinPos(voltmeter, 'left', 0);
-    // COM â†’ GND
-    const vmComPos = this.estimatePinPos(voltmeter, 'bottom', 0);
-    const gndPin = this.estimatePinPos(targetRes, 'bottom', 0);
-
-    // ç”µå‹è¡¨ COM æ¥ GNDï¼ˆçŸ­å¯¼çº¿æˆ–æ ‡å·ï¼‰
-    if (Math.abs(vmComPos.x - gndPin.x) < 200) {
-      doc.wires.push({
-        id: IdUtil.generate('wire'), netId: gndNet.id,
-        points: this.orthogonalRoute(vmComPos, gndPin, doc.components),
-        style: WireStyle.ORTHOGONAL
-      });
-    } else {
-      // è¿œè·ç¦»ç”¨æ ‡å·
-      doc.netLabels.push({
-        id: IdUtil.generate('nl'), netId: gndNet.id,
-        text: 'GND', position: { x: vmComPos.x + 10, y: vmComPos.y + 20 },
-        global: false
-      });
-    }
-
-    // ç”µå‹è¡¨ V+ é€šè¿‡æ ‡å·è¿æ¥åˆ°è¢«æµ‹ç”µé˜»é«˜ç«¯ï¼ˆä»ªå™¨ç¦æ­¢é•¿å¯¼çº¿ï¼‰
-    doc.netLabels.push({
-      id: IdUtil.generate('nl'), netId: senseNetId,
-      text: `SENSE_R_${targetRes.refDes}`,
-      position: { x: vmPlusPos.x - 30, y: vmPlusPos.y - 10 },
-      global: false
-    });
-    // åœ¨è¢«æµ‹ç”µé˜»é«˜ç«¯ä¹Ÿæ”¾æ ‡å·
-    const resTop = this.estimatePinPos(targetRes, 'top', 0);
-    doc.netLabels.push({
-      id: IdUtil.generate('nl'), netId: senseNetId,
-      text: `SENSE_R_${targetRes.refDes}`,
-      position: { x: resTop.x + 10, y: resTop.y - 20 },
-      global: false
-    });
-  }
-
-  /** v3.0: ç¤ºæ³¢å™¨æ¢é’ˆè¿æ¥ â€” CH1/CH2 é€šè¿‡æ ‡å·è¿æ¥åˆ°ä¿¡å·èŠ‚ç‚¹ */
-  private wireScopeProbes(doc: SchematicDocument, scope: ComponentInstance,
-    gndNet: Net | undefined): void {
-    // æ‰¾ä¿¡å·æºï¼ˆè¿æ”¾è¾“å‡ºæˆ–MCU GPIOï¼‰
-    const signalComponents = doc.components.filter(c =>
-      c.libraryId.includes('LM358') || c.libraryId.includes('LM324') ||
-      c.libraryId.includes('OP') || c.libraryId.includes('STM32') ||
-      c.libraryId.includes('AT89'));
-    if (signalComponents.length === 0) return;
-    const signal = signalComponents[0];
-
-    // CH1 é€šè¿‡æ ‡å·è¿æ¥
-    const ch1NetId = IdUtil.generate('net');
-    doc.nets.push({
-      id: ch1NetId, name: 'CH1_PROBE', type: NetType.SIGNAL, pinIds: []
-    });
-    doc.netLabels.push({
-      id: IdUtil.generate('nl'), netId: ch1NetId,
-      text: 'CH1_PROBE',
-      position: { x: scope.position.x - 30, y: scope.position.y + 20 },
-      global: false
-    });
-    doc.netLabels.push({
-      id: IdUtil.generate('nl'), netId: ch1NetId,
-      text: 'CH1_PROBE',
-      position: { x: signal.position.x + 40, y: signal.position.y - 20 },
-      global: false
-    });
-
-    // GND clip â†’ GND æ ‡å·
-    if (gndNet) {
-      doc.netLabels.push({
-        id: IdUtil.generate('nl'), netId: gndNet.id,
-        text: 'GND',
-        position: { x: scope.position.x - 30, y: scope.position.y + 60 },
-        global: false
-      });
-    }
-  }
-
-  /** v3.0: é€»è¾‘åˆ†æä»ª/UARTç»ˆç«¯/é¢‘ç‡è®¡ â€” å…¨éƒ¨ç”¨æ ‡å·è¿æ¥ */
-  private wireInstrumentByLabel(doc: SchematicDocument, instr: ComponentInstance): void {
-    const netPrefix = instr.libraryId.includes('UART') ? 'UART' :
-      instr.libraryId.includes('LOGIC') ? 'LA' : 'FC';
-    const chNetId = IdUtil.generate('net');
-    doc.nets.push({
-      id: chNetId, name: `${netPrefix}_CH`, type: NetType.SIGNAL, pinIds: []
-    });
-    doc.netLabels.push({
-      id: IdUtil.generate('nl'), netId: chNetId,
-      text: `${netPrefix}_CH`,
-      position: { x: instr.position.x - 30, y: instr.position.y + 20 },
-      global: false
-    });
-  }
-
-  /** v3.0: æ¥çº¿å‰©ä½™æœªè¿æ¥çš„å™¨ä»¶å¼•è„š */
-  private wireRemainingConnections(doc: SchematicDocument): void {
-    const vccNet = doc.nets.find(n => n.name === 'VCC');
-    const gndNet = doc.nets.find(n => n.name === 'GND');
-    if (!vccNet || !gndNet) return;
-
-    // å·²è¿æ¥å¼•è„šé›†åˆ
-    const connectedPins = new Set<string>();
-    for (let ni = 0; ni < doc.nets.length; ni++) {
-      const netPins = doc.nets[ni].pinIds;
-      for (let pi = 0; pi < netPins.length; pi++) {
-        connectedPins.add(netPins[pi]);
-      }
-    }
-
-    for (let i = 0; i < doc.components.length; i++) {
-      const comp = doc.components[i];
-      const id = (comp.libraryId ?? '').toUpperCase();
-      // è·³è¿‡ç”µæº/åœ°ç¬¦å·ï¼ˆå®ƒä»¬æ˜¯ç«¯ç‚¹ï¼‰ã€å·²è¿æ¥çš„å™¨ä»¶ã€ä»ªå™¨ï¼ˆå·²å¤„ç†ï¼‰
-      if (id === 'VCC' || id === 'GND') continue;
-      if (id.includes('AMMETER') || id.includes('VOLTMETER') ||
-        id.includes('VIRTUAL_METER') || id.includes('OSCILLOSCOPE') ||
-        id.includes('LOGIC_ANALYZER') || id.includes('UART_TERMINAL')) continue;
-
-      // å»è€¦ç”µå®¹æ¥åœ°
-      if (id.startsWith('C_') && id.includes('100')) {
-        const capPin = this.estimatePinPos(comp, 'bottom', 0);
-        const gndPin = this.estimatePinPos(
-          doc.components.find(c => c.libraryId === 'GND') ?? comp, 'top', 0);
-        doc.wires.push({
-          id: IdUtil.generate('wire'), netId: gndNet.id,
-          points: this.orthogonalRoute(capPin, gndPin, doc.components),
-          style: WireStyle.ORTHOGONAL
-        });
-      }
-
-      // LED â†’ GND (é€šè¿‡é™æµç”µé˜»å·²è¿VCC)
-      if (id.startsWith('LED_')) {
-        // æŸ¥æ‰¾LEDçš„é˜´æå¼•è„š(K)ä½ç½®å‡è®¾
-        const ledPin = this.estimatePinPos(comp, 'bottom', 0);
-        doc.netLabels.push({
-          id: IdUtil.generate('nl'), netId: gndNet.id,
-          text: 'GND',
-          position: { x: ledPin.x, y: ledPin.y + 20 },
-          global: false
-        });
-      }
-
-      // ä¸Šæ‹‰/ä¸‹æ‹‰ç”µé˜»è¿æ¥
-      if (id.startsWith('R_')) {
-        // çŸ­ç”µé˜»è¿æ¥ç”¨å¯¼çº¿ï¼Œè¿œè·ç¦»ç”¨æ ‡å·
-        const resPin = this.estimatePinPos(comp, 'right', 0);
-        const nearVcc = Math.abs(comp.position.x - 60) < 150;
-        if (nearVcc && id.includes('10k')) {
-          // ä¸Šæ‹‰ç”µé˜»æ¥VCC
-          doc.wires.push({
-            id: IdUtil.generate('wire'), netId: vccNet.id,
-            points: this.orthogonalRoute(resPin,
-              this.estimatePinPos(comp, 'left', 0), doc.components),
-            style: WireStyle.ORTHOGONAL
-          });
-        }
-      }
-    }
-  }
-
-  /** ä¼°ç®—å¼•è„šä¸–ç•Œåæ ‡ï¼šä¼˜å…ˆ Kit/PinWorldResolver çœŸè„šï¼Œå†é€€å›è¾¹æ²¿å¯å‘ */
-  private estimatePinPos(comp: ComponentInstance, edge: string, pinIndex: number): Point2D {
-    const pinName = this.pinNameForEdge(comp, edge, pinIndex);
-    if (pinName.length > 0) {
-      return PinWorldResolver.forComponent(comp, pinName, pinName);
-    }
-    const p = comp.position;
-    const id = (comp.libraryId ?? '').toUpperCase();
-    let w = 60; let h = 40;
-    if (id.includes('STM32') || id.includes('AT89') || id.includes('STC')) {
-      w = 100; h = 80;
-    } else if (id.includes('AMMETER') || id.includes('VOLTMETER') ||
-      id.includes('VIRTUAL_METER') || id.includes('OSCILLOSCOPE')) {
-      w = 100; h = 70;
-    } else if (id === 'VCC' || id === 'GND' || id === 'VEE') {
-      w = 30; h = 30;
-    } else if (id.startsWith('R_')) {
-      w = 60; h = 20;
-    } else if (id.startsWith('C_')) {
-      w = 40; h = 30;
-    } else if (id.startsWith('LED_')) {
-      w = 40; h = 40;
-    } else if (id.includes('XTAL')) {
-      w = 50; h = 40;
-    }
-    switch (edge) {
-      case 'left': return { x: p.x, y: p.y + h / 2 };
-      case 'right': return { x: p.x + w, y: p.y + h / 2 };
-      case 'top': return { x: p.x + w / 2, y: p.y };
-      case 'bottom': return { x: p.x + w / 2, y: p.y + h };
-      default: return { x: p.x + w / 2, y: p.y + h / 2 };
-    }
-  }
-
-  private pinNameForEdge(comp: ComponentInstance, edge: string, _pinIndex: number): string {
-    const id = (comp.libraryId ?? '').toUpperCase();
-    if (id.includes('AMMETER')) {
-      if (edge === 'left') return 'I+';
-      if (edge === 'right') return 'I-';
-    }
-    if (id.includes('VOLTMETER') || id.includes('VIRTUAL_METER')) {
-      if (edge === 'left') return 'V+';
-      if (edge === 'bottom' || edge === 'right') return 'COM';
-    }
-    if (id.includes('OSCILLOSCOPE')) {
-      if (edge === 'left') return 'CH1';
-      if (edge === 'bottom') return 'GND';
-    }
-    if (id === 'VCC' || id === 'GND' || id === 'VEE') {
-      return '1';
-    }
-    if (id.startsWith('R_') || id.startsWith('C_') || id.startsWith('LED_') || id.startsWith('L_')) {
-      if (edge === 'top' || edge === 'left') return '1';
-      if (edge === 'bottom' || edge === 'right') return '2';
-    }
-    return '';
-  }
-
-  /** æ­£äº¤å¸ƒçº¿: æºâ†’æ‹ç‚¹â†’ç›®æ ‡ï¼Œç»•å¼€éšœç¢ */
-  private orthogonalRoute(start: Point2D, end: Point2D,
-    obstacles: ComponentInstance[]): Point2D[] {
-    const dist = Math.hypot(end.x - start.x, end.y - start.y);
-    // çŸ­è·ç¦»ç›´çº¿
-    if (dist < 100) {
-      const mid: Point2D = {
-        x: Math.abs(end.x - start.x) > Math.abs(end.y - start.y) ?
-          end.x : start.x,
-        y: Math.abs(end.y - start.y) > Math.abs(end.x - start.x) ?
-          end.y : start.y
-      };
-      return [start, mid, end];
-    }
-    // é•¿è·ç¦»ç”¨A*è·¯å¾„
-    return this.findPath(start, end, obstacles);
-  }
-
-  private ensurePowerNets(doc: SchematicDocument): void {
-    const hasVcc = doc.nets.some(n => n.name === 'VCC' || n.type === NetType.POWER);
-    const hasGnd = doc.nets.some(n => n.name === 'GND' || n.type === NetType.GROUND);
-
-    if (!hasVcc) {
-      doc.nets.push({ id: IdUtil.generate('net'), name: 'VCC', type: NetType.POWER, pinIds: [] });
-    }
-    if (!hasGnd) {
-      doc.nets.push({ id: IdUtil.generate('net'), name: 'GND', type: NetType.GROUND, pinIds: [] });
-    }
-  }
-
-  /** MCUæœ€å°ç³»ç»Ÿå¸ƒçº¿: æ™¶æŒ¯ã€å»è€¦ç”µå®¹ã€å¤ä½ */
-  private wireMcuMinimumSystem(doc: SchematicDocument, mcu: ComponentInstance): void {
-    const crystal = doc.components.find(c => c.libraryId.includes('XTAL'));
-    const caps = doc.components.filter(c => c.libraryId.startsWith('C_'));
-    const resistors = doc.components.filter(c => c.libraryId.startsWith('R_'));
-
-    const vccNet = doc.nets.find(n => n.name === 'VCC')!;
-    const gndNet = doc.nets.find(n => n.name === 'GND')!;
-
-    // æ™¶æŒ¯åˆ°MCU (OSC_IN/OSC_OUT)
-    if (crystal) {
-      const xtalOut = this.estimatePinPos(crystal, 'right', 0);
-      const mcuXtal = this.estimatePinPos(mcu, 'left', 2);
-      doc.wires.push({
-        id: IdUtil.generate('wire'), netId: IdUtil.generate('net'),
-        points: this.orthogonalRoute(xtalOut, mcuXtal, doc.components),
-        style: WireStyle.ORTHOGONAL
-      });
-      // æ™¶æŒ¯è´Ÿè½½ç”µå®¹æ¥åœ°
-      for (let ci = 0; ci < Math.min(2, caps.length); ci++) {
-        const cap = caps[ci];
-        if (cap.libraryId.includes('22p') || cap.libraryId.includes('22')) {
-          const capBottom = this.estimatePinPos(cap, 'bottom', 0);
-          const gndPin = this.estimatePinPos(
-            doc.components.find(c => c.libraryId === 'GND') ?? mcu, 'top', 0);
-          doc.wires.push({
-            id: IdUtil.generate('wire'), netId: gndNet.id,
-            points: this.orthogonalRoute(capBottom, gndPin, doc.components),
-            style: WireStyle.ORTHOGONAL
-          });
-        }
-      }
-    }
-
-    // å»è€¦ç”µå®¹: VDD ä¾§æ¥ VCC, GND ä¾§æ¥åœ°
-    for (let ci = 0; ci < Math.min(3, caps.length); ci++) {
-      const cap = caps[ci];
-      if (cap.libraryId.includes('100n') || cap.libraryId.includes('100')) {
-        const capTop = this.estimatePinPos(cap, 'top', 0);
-        const capBottom = this.estimatePinPos(cap, 'bottom', 0);
-        // å°±è¿‘VCC/GND â€” å¦‚æœé è¿‘VCCç¬¦å·å°±ç”¨å¯¼çº¿ï¼Œå¦åˆ™ç”¨æ ‡å·
-        const vccComp = doc.components.find(c => c.libraryId === 'VCC');
-        if (vccComp && Math.abs(cap.position.x - vccComp.position.x) < 200) {
-          doc.wires.push({
-            id: IdUtil.generate('wire'), netId: vccNet.id,
-            points: this.orthogonalRoute(capTop, this.estimatePinPos(vccComp, 'top', 0),
-              doc.components),
-            style: WireStyle.ORTHOGONAL
-          });
-        } else {
-          doc.netLabels.push({
-            id: IdUtil.generate('nl'), netId: vccNet.id,
-            text: 'VCC',
-            position: { x: capTop.x, y: capTop.y - 15 },
-            global: false
-          });
-        }
-        doc.netLabels.push({
-          id: IdUtil.generate('nl'), netId: gndNet.id,
-          text: 'GND',
-          position: { x: capBottom.x, y: capBottom.y + 15 },
-          global: false
-        });
-      }
-    }
-
-    // å¤ä½ç”µé˜»: ä¸€ç«¯VCC, ä¸€ç«¯RST
-    for (let ri = 0; ri < Math.min(1, resistors.length); ri++) {
-      const res = resistors[ri];
-      if (res.libraryId.includes('10k')) {
-        const resLeft = this.estimatePinPos(res, 'left', 0);
-        const mcuRst = this.estimatePinPos(mcu, 'left', 1);
-        doc.wires.push({
-          id: IdUtil.generate('wire'), netId: IdUtil.generate('net'),
-          points: this.orthogonalRoute(resLeft, mcuRst, doc.components),
-          style: WireStyle.ORTHOGONAL
-        });
-      }
-    }
-  }
-
-  private createWireBetween(doc: SchematicDocument, from: ComponentInstance,
-    to: ComponentInstance, netId: string): void {
-    const start = this.estimatePinPos(from, 'right', 0);
-    const end = this.estimatePinPos(to, 'left', 0);
-    doc.wires.push({
-      id: IdUtil.generate('wire'),
-      netId,
-      points: this.orthogonalRoute(start, end, doc.components),
-      style: WireStyle.ORTHOGONAL
-    });
-  }
-
-  private createWireToGround(doc: SchematicDocument, comp: ComponentInstance, gndNetId: string): void {
-    const start = this.estimatePinPos(comp, 'bottom', 0);
-    const gndComp = doc.components.find(c => c.libraryId === 'GND');
-    if (gndComp) {
-      const end = this.estimatePinPos(gndComp, 'top', 0);
-      doc.wires.push({
-        id: IdUtil.generate('wire'),
-        netId: gndNetId,
-        points: this.orthogonalRoute(start, end, doc.components),
-        style: WireStyle.ORTHOGONAL
-      });
-    } else {
-      doc.wires.push({
-        id: IdUtil.generate('wire'),
-        netId: gndNetId,
-        points: [start, { x: start.x, y: start.y + 60 }],
-        style: WireStyle.ORTHOGONAL
-      });
-    }
-  }
-
-  /** A* è·¯å¾„æœç´¢ */
-  private findPath(start: Point2D, end: Point2D, obstacles: ComponentInstance[]): Point2D[] {
-    const openList: WiringNode[] = [];
-    const closedSet: Set<string> = new Set();
-
-    const startNode: WiringNode = {
-      x: this.snap(start.x), y: this.snap(start.y),
-      g: 0, h: this.heuristic(start, end), f: 0, parent: null
-    };
-    startNode.f = startNode.g + startNode.h;
-    openList.push(startNode);
-
-    while (openList.length > 0) {
-      openList.sort((a, b) => a.f - b.f);
-      const current = openList.shift()!;
-      const key = `${current.x},${current.y}`;
-
-      if (closedSet.has(key)) continue;
-      closedSet.add(key);
-
-      if (Math.abs(current.x - end.x) < this.gridSize && Math.abs(current.y - end.y) < this.gridSize) {
-        return this.reconstructPath(current);
-      }
-
-      for (const neighbor of this.getNeighbors(current, obstacles)) {
-        const nKey = `${neighbor.x},${neighbor.y}`;
-        if (closedSet.has(nKey)) continue;
-        neighbor.g = current.g + this.gridSize;
-        neighbor.h = this.heuristic({ x: neighbor.x, y: neighbor.y }, end);
-        neighbor.f = neighbor.g + neighbor.h;
-        neighbor.parent = current;
-        openList.push(neighbor);
-      }
-
-      if (closedSet.size > 800) break;
-    }
-
-    return [start, { x: start.x, y: end.y }, end];
-  }
-
-  private getNeighbors(node: WiringNode, obstacles: ComponentInstance[]): WiringNode[] {
-    const dirs = [[0, 1], [0, -1], [1, 0], [-1, 0]];
-    const neighbors: WiringNode[] = [];
-    for (let i = 0; i < dirs.length; i++) {
-      const dx = dirs[i][0];
-      const dy = dirs[i][1];
-      const nx = node.x + dx * this.gridSize;
-      const ny = node.y + dy * this.gridSize;
-      if (nx >= 0 && nx <= 800 && ny >= 0 && ny <= 600 &&
-        !this.isBlocked(nx, ny, obstacles)) {
-        neighbors.push({ x: nx, y: ny, g: 0, h: 0, f: 0, parent: null });
-      }
-    }
-    return neighbors;
-  }
-
-  /**
-   * å™¨ä»¶ä½“é®æŒ¡æ£€æµ‹ â€” position æ˜¯å™¨ä»¶ä¸­å¿ƒåæ ‡, åŒ…å›´ç›’é¡»å±…ä¸­ã€‚
-   * è¦†ç›–å™¨ä»¶ç¬¦å·ä½“ + é€‰ä¸­è¾¹è· (â‰ˆÂ±55mil æ°´å¹³ Ã— Â±30mil å‚ç›´, è¦†ç›–æ ‡å‡† 60mil å¼•è„šé—´è· + è¾¹è·)ã€‚
-   */
-  private isBlocked(x: number, y: number, obstacles: ComponentInstance[]): boolean {
-    for (const obs of obstacles) {
-      const cx = obs.position.x;
-      const cy = obs.position.y;
-      if (x >= cx - 55 && x <= cx + 55 &&
-          y >= cy - 30 && y <= cy + 30) {
-        return true;
-      }
-    }
-    return false;
-  }
-
-  private heuristic(a: Point2D, b: Point2D): number {
-    return Math.abs(a.x - b.x) + Math.abs(a.y - b.y);
-  }
-
-  private reconstructPath(node: WiringNode): Point2D[] {
-    const path: Point2D[] = [];
-    let current: WiringNode | null = node;
-    while (current) {
-      path.unshift({ x: current.x, y: current.y });
-      current = current.parent;
-    }
-    return this.simplifyPath(path);
-  }
-
-  private simplifyPath(path: Point2D[]): Point2D[] {
-    if (path.length <= 2) return path;
-    const result: Point2D[] = [path[0]];
-    for (let i = 1; i < path.length - 1; i++) {
-      const prev = path[i - 1];
-      const curr = path[i];
-      const next = path[i + 1];
-      const sameX = prev.x === curr.x && curr.x === next.x;
-      const sameY = prev.y === curr.y && curr.y === next.y;
-      if (!sameX && !sameY) result.push(curr);
-    }
-    result.push(path[path.length - 1]);
-    return result;
-  }
-
-  private optimizeWirePaths(doc: SchematicDocument): void {
-    for (const wire of doc.wires) {
-      if (wire.points.length > 2) {
-        wire.points = this.simplifyPath(wire.points);
-      }
-    }
-  }
-
-  private snap(v: number): number {
-    return Math.round(v / this.gridSize) * this.gridSize;
-  }
-}
-ÔrE’²./PinWorldResolver¦commonÔrF—ªassertions¨external¢id¤meta±moduleSideEffectsªresolvedByµsyntheticNamedExportsAÂÙ\C:\Projects\ElecDraw_Harmony\features\ai_engine\src\main\ets\algorithms\PinWorldResolver.etsAÃªoh-resolveÂFAÃ¦commonAÃªoh-resolveÂ‘ÔrG’§missing¦pluginÃ¦genAbcÂÔ  ÔrH”²dynamicImportCache¹exportAllDeclarationCache»exportNamedDeclarationCache«importCache‘ÔrI–¤type¥start£end«declarationªspecifiers¦source¶ExportNamedDeclarationÌÏÍb>ÔrJ–¤type¥start£end¢idªsuperClass¤body°ClassDeclarationÌÖÍb>ÔrK”¤type¥start£end¤nameªIdentifierÌÜÌì°AutoWiringEngineÀÔrL”¤type¥start£end¤body©ClassBodyÌíÍb>Ü ÔrM˜¤type¥start£end¦static¨computed£key¤kind¥value°MethodDefinitionÌôÍ'ÂÂKªIdentifierÌôÌÿ«constructor«constructorÔrN™¤type¥start£end¢idªexpression©generator¥async¦params¤body²FunctionExpressionÌÿÍ'ÀÂÂÂL®BlockStatementÍÍ'‘ÔrO”¤type¥start£endªexpression³ExpressionStatementÍÍ ÔrP–¤type¥start£end¨operator¤left¥right´AssignmentExpressionÍÍ¡=ÔrQ—¤type¥start£end¦object¨property¨computed¨optional°MemberExpressionÍÍÔrR“¤type¥start£end®ThisExpressionÍÍKªIdentifierÍÍ¨gridSizeÂÂÔrS•¤type¥start£end¥value£raw§LiteralÍÍ
-¢10M°MethodDefinitionÍPÍÂÂÂKªIdentifierÍPÍX¨autoWire¦methodN²FunctionExpressionÍXÍÂÀÂÂÂ‘KªIdentifierÍYÍ\£docL®BlockStatementÍ^ÍÂ™ÔrT•¤type¥start£end¬declarations¤kind³VariableDeclarationÍiÍ˜‘ÔrU•¤type¥start£end¢id¤init²VariableDeclaratorÍoÍ—KªIdentifierÍoÍu¦resultÔrV–¤type¥start£end¦callee©arguments¨optional®CallExpressionÍxÍ—Q°MemberExpressionÍxÍ‚KªIdentifierÍxÍ|¤JSONKªIdentifierÍ}Í‚¥parseÂÂ‘V®CallExpressionÍƒÍ–Q°MemberExpressionÍƒÍ‘KªIdentifierÍƒÍ‡¤JSONKªIdentifierÍˆÍ‘©stringifyÂÂ‘KªIdentifierÍ’Í•£docÂÂ¥constO³ExpressionStatementÍ¢Í¿V®CallExpressionÍ¢Í¾Q°MemberExpressionÍ¢Í¶R®ThisExpressionÍ¢Í¦KªIdentifierÍ§Í¶¯ensurePowerNetsÂÂ‘KªIdentifierÍ·Í½¦resultÂT³VariableDeclarationÍÉÍü‘U²VariableDeclaratorÍÏÍûKªIdentifierÍÏÍÚ«instrumentsV®CallExpressionÍİÍûQ°MemberExpressionÍİÍóR®ThisExpressionÍİÍáKªIdentifierÍâÍó±detectInstrumentsÂÂ‘KªIdentifierÍôÍú¦resultÂ¥constT³VariableDeclarationÍÍŒ‘U²VariableDeclaratorÍÍ‹KªIdentifierÍÍ£mcuV®CallExpressionÍÍ‹Q°MemberExpressionÍÍ(Q°MemberExpressionÍÍ#KªIdentifierÍÍ¦resultKªIdentifierÍÍ#ªcomponentsÂÂKªIdentifierÍ$Í(¤findÂÂ‘N·ArrowFunctionExpressionÍ)ÍŠÀÃÂÂ‘KªIdentifierÍ)Í*¡cÔrW–¤type¥start£end¤left¨operator¥right±LogicalExpressionÍ.ÍŠW±LogicalExpressionÍ.ÍkV®CallExpressionÍ.ÍKQ°MemberExpressionÍ.ÍBQ°MemberExpressionÍ.Í9KªIdentifierÍ.Í/¡cKªIdentifierÍ0Í9©libraryIdÂÂKªIdentifierÍ:ÍB¨includesÂÂ‘S§LiteralÍCÍJ¥STM32§'STM32'Â¢||V®CallExpressionÍOÍkQ°MemberExpressionÍOÍcQ°MemberExpressionÍOÍZKªIdentifierÍOÍP¡cKªIdentifierÍQÍZ©libraryIdÂÂKªIdentifierÍ[Íc¨includesÂÂ‘S§LiteralÍdÍj¤AT89¦'AT89'Â¢||V®CallExpressionÍoÍŠQ°MemberExpressionÍoÍƒQ°MemberExpressionÍoÍzKªIdentifierÍoÍp¡cKªIdentifierÍqÍz©libraryIdÂÂKªIdentifierÍ{Íƒ¨includesÂÂ‘S§LiteralÍ„Í‰£STC¥'STC'ÂÂ¥constÔrX–¤type¥start£end¤testªconsequent©alternate«IfStatementÍ–ÍàKªIdentifierÍšÍ£mcuL®BlockStatementÍŸÍà‘O³ExpressionStatementÍ®ÍÕV®CallExpressionÍ®ÍÔQ°MemberExpressionÍ®ÍÇR®ThisExpressionÍ®Í²KªIdentifierÍ³ÍÇ´wireMcuMinimumSystemÂÂ’KªIdentifierÍÈÍÎ¦resultKªIdentifierÍĞÍÓ£mcuÂÀX«IfStatementÍêÍJW°BinaryExpressionÍîÍQ°MemberExpressionÍîÍ KªIdentifierÍîÍù«instrumentsKªIdentifierÍúÍ ¦lengthÂÂ¡>S§LiteralÍÍ ¡0L®BlockStatementÍÍJ‘O³ExpressionStatementÍÍ?V®CallExpressionÍÍ>Q°MemberExpressionÍÍ)R®ThisExpressionÍÍKªIdentifierÍÍ)¯wireInstrumentsÂÂ’KªIdentifierÍ*Í0¦resultKªIdentifierÍ2Í=«instrumentsÂÀO³ExpressionStatementÍTÍzV®CallExpressionÍTÍyQ°MemberExpressionÍTÍqR®ThisExpressionÍTÍXKªIdentifierÍYÍq¸wireRemainingConnectionsÂÂ‘KªIdentifierÍrÍx¦resultÂO³ExpressionStatementÍ„Í£V®CallExpressionÍ„Í¢Q°MemberExpressionÍ„ÍšR®ThisExpressionÍ„ÍˆKªIdentifierÍ‰Íš±optimizeWirePathsÂÂ‘KªIdentifierÍ›Í¡¦resultÂÔrY”¤type¥start£end¨argument¯ReturnStatementÍ­Í»KªIdentifierÍ´Íº¦resultM°MethodDefinitionÍãÍ…ÂÂKªIdentifierÍãÍô±detectInstruments¦methodN²FunctionExpressionÍôÍ…ÀÂÂÂ‘KªIdentifierÍõÍø£docL®BlockStatementÍúÍ…“T³VariableDeclarationÍÍ‘U²VariableDeclaratorÍÍKªIdentifierÍÍ¦resultÔrZ”¤type¥start£end¨elements¯ArrayExpressionÍÍ¥constÔr[—¤type¥start£end¤init¤test¦update¤body¬ForStatementÍ!ÍfT³VariableDeclarationÍ&Í/‘U²VariableDeclaratorÍ*Í/KªIdentifierÍ*Í+¡iS§LiteralÍ.Í/ ¡0£letW°BinaryExpressionÍ1ÍJKªIdentifierÍ1Í2¡i¡<Q°MemberExpressionÍ5ÍJQ°MemberExpressionÍ5ÍCKªIdentifierÍ5Í8£docKªIdentifierÍ9ÍCªcomponentsÂÂKªIdentifierÍDÍJ¦lengthÂÂÔr\–¤type¥start£end¨operator¦prefix¨argument°UpdateExpressionÍLÍO¢++ÂKªIdentifierÍLÍM¡iL®BlockStatementÍQÍf•T³VariableDeclarationÍ`Í|‘U²VariableDeclaratorÍfÍ{KªIdentifierÍfÍg¡cQ°MemberExpressionÍjÍ{Q°MemberExpressionÍjÍxKªIdentifierÍjÍm£docKªIdentifierÍnÍxªcomponentsÂÂKªIdentifierÍyÍz¡iÃÂ¥constT³VariableDeclarationÍŠÍ·‘U²VariableDeclaratorÍÍ¶KªIdentifierÍÍ’¢idV®CallExpressionÍ•Í¶Q°MemberExpressionÍ•Í´W±LogicalExpressionÍ–Í§Q°MemberExpressionÍ–Í¡KªIdentifierÍ–Í—¡cKªIdentifierÍ˜Í¡©libraryIdÂÂ¢??S§LiteralÍ¥Í§ ¢''KªIdentifierÍ©Í´«toUpperCaseÂÂÂ¥constT³VariableDeclarationÍÅÍØ‘U²VariableDeclaratorÍÉÍ×KªIdentifierÍÉÍÍ¤typeS§LiteralÍĞÍ×¥other§'other'£letX«IfStatementÍæÍ.V®CallExpressionÍêÍ Q°MemberExpressionÍêÍõKªIdentifierÍêÍì¢idKªIdentifierÍíÍõ¨includesÂÂ‘S§LiteralÍöÍÿ§AMMETER©'AMMETER'ÂL®BlockStatementÍÍ5‘O³ExpressionStatementÍÍ&P´AssignmentExpressionÍÍ%¡=KªIdentifierÍÍ¤typeS§LiteralÍÍ%§ammeter©'ammeter'X«IfStatementÍHÍ.W±LogicalExpressionÍLÍ„V®CallExpressionÍLÍdQ°MemberExpressionÍLÍWKªIdentifierÍLÍN¢idKªIdentifierÍOÍW¨includesÂÂ‘S§LiteralÍXÍc©VOLTMETER«'VOLTMETER'Â¢||V®CallExpressionÍhÍ„Q°MemberExpressionÍhÍsKªIdentifierÍhÍj¢idKªIdentifierÍkÍs¨includesÂÂ‘S§LiteralÍtÍƒ­VIRTUAL_METER¯'VIRTUAL_METER'ÂL®BlockStatementÍ†Í»‘O³ExpressionStatementÍ™Í¬P´AssignmentExpressionÍ™Í«¡=KªIdentifierÍ™Í¤typeS§LiteralÍ Í«©voltmeter«'voltmeter'X«IfStatementÍÎÍ.V®CallExpressionÍÒÍëQ°MemberExpressionÍÒÍİKªIdentifierÍÒÍÔ¢idKªIdentifierÍÕÍİ¨includesÂÂ‘S§LiteralÍŞÍêªMULTIMETER¬'MULTIMETER'ÂL®BlockStatementÍíÍ#‘O³ExpressionStatementÍ ÍP´AssignmentExpressionÍ Í¡=KªIdentifierÍ Í¤typeS§LiteralÍÍªmultimeter¬'multimeter'X«IfStatementÍ6Í.V®CallExpressionÍ:ÍUQ°MemberExpressionÍ:ÍEKªIdentifierÍ:Í<¢idKªIdentifierÍ=ÍE¨includesÂÂ‘S§LiteralÍFÍT¬OSCILLOSCOPE®'OSCILLOSCOPE'ÂL®BlockStatementÍWÍˆ‘O³ExpressionStatementÍjÍyP´AssignmentExpressionÍjÍx¡=KªIdentifierÍjÍn¤typeS§LiteralÍqÍx¥scope§'scope'X«IfStatementÍ›Í.V®CallExpressionÍŸÍ¼Q°MemberExpressionÍŸÍªKªIdentifierÍŸÍ¡¢idKªIdentifierÍ¢Íª¨includesÂÂ‘S§LiteralÍ«Í»®LOGIC_ANALYZER°'LOGIC_ANALYZER'ÂL®BlockStatementÍ¾Íø‘O³ExpressionStatementÍÑÍéP´AssignmentExpressionÍÑÍè¡=KªIdentifierÍÑÍÕ¤typeS§LiteralÍØÍè®logic_analyzer°'logic_analyzer'X«IfStatementÍÍ.V®CallExpressionÍÍ+Q°MemberExpressionÍÍKªIdentifierÍÍ¢idKªIdentifierÍÍ¨includesÂÂ‘S§LiteralÍÍ*­UART_TERMINAL¯'UART_TERMINAL'ÂL®BlockStatementÍ-Íf‘O³ExpressionStatementÍ@ÍWP´AssignmentExpressionÍ@ÍV¡=KªIdentifierÍ@ÍD¤typeS§LiteralÍGÍV­uart_terminal¯'uart_terminal'X«IfStatementÍyÍ.W±LogicalExpressionÍ}Í¶V®CallExpressionÍ}Í˜Q°MemberExpressionÍ}ÍˆKªIdentifierÍ}Í¢idKªIdentifierÍ€Íˆ¨includesÂÂ‘S§LiteralÍ‰Í—¬FREQ_COUNTER®'FREQ_COUNTER'Â¢||V®CallExpressionÍœÍ¶Q°MemberExpressionÍœÍ§KªIdentifierÍœÍ¢idKªIdentifierÍŸÍ§¨includesÂÂ‘S§LiteralÍ¨Íµ«POWER_METER­'POWER_METER'ÂL®BlockStatementÍ¸Íğ‘O³ExpressionStatementÍËÍáP´AssignmentExpressionÍËÍà¡=KªIdentifierÍËÍÏ¤typeS§LiteralÍÒÍà¬freq_counter®'freq_counter'L®BlockStatementÍÍ.‘Ôr]”¤type¥start£end¥label±ContinueStatementÍÍÀO³ExpressionStatementÍ<Í[V®CallExpressionÍ<ÍZQ°MemberExpressionÍ<ÍGKªIdentifierÍ<ÍB¦resultKªIdentifierÍCÍG¤pushÂÂ‘Ôr^”¤type¥start£endªproperties°ObjectExpressionÍHÍY’Ôr_™¤type¥start£end¦method©shorthand¨computed£key¥value¤kind¨PropertyÍJÍQÂÂÂKªIdentifierÍJÍN¤compKªIdentifierÍPÍQ¡c¤initÔr`™¤type¥start£end¦method©shorthand¨computed£key¤kind¥value¨PropertyÍSÍWÂÃÂKªIdentifierÍSÍW¤type¤initKªIdentifierÍSÍW¤typeÂY¯ReturnStatementÍpÍ~KªIdentifierÍwÍ}¦resultM°MethodDefinitionÍÆÍ’ÂÂKªIdentifierÍÆÍÕ¯wireInstruments¦methodN²FunctionExpressionÍÕÍ’ÀÂÂÂ’KªIdentifierÍÖÍÙ£docKªIdentifierÍÛÍæ«instrumentsL®BlockStatementÍèÍ’“T³VariableDeclarationÍóÍ	'‘U²VariableDeclaratorÍùÍ	&KªIdentifierÍùÍÿ¦vccNetV®CallExpressionÍ	Í	&Q°MemberExpressionÍ	Í	Q°MemberExpressionÍ	Í	
-KªIdentifierÍ	Í	£docKªIdentifierÍ	Í	
-¤netsÂÂKªIdentifierÍ	Í	¤findÂÂ‘N·ArrowFunctionExpressionÍ	Í	%ÀÃÂÂ‘KªIdentifierÍ	Í	¡nW°BinaryExpressionÍ	Í	%Q°MemberExpressionÍ	Í	KªIdentifierÍ	Í	¡nKªIdentifierÍ	Í	¤nameÂÂ£===S§LiteralÍ	 Í	%£VCC¥'VCC'Â¥constT³VariableDeclarationÍ	1Í	e‘U²VariableDeclaratorÍ	7Í	dKªIdentifierÍ	7Í	=¦gndNetV®CallExpressionÍ	@Í	dQ°MemberExpressionÍ	@Í	MQ°MemberExpressionÍ	@Í	HKªIdentifierÍ	@Í	C£docKªIdentifierÍ	DÍ	H¤netsÂÂKªIdentifierÍ	IÍ	M¤findÂÂ‘N·ArrowFunctionExpressionÍ	NÍ	cÀÃÂÂ‘KªIdentifierÍ	NÍ	O¡nW°BinaryExpressionÍ	SÍ	cQ°MemberExpressionÍ	SÍ	YKªIdentifierÍ	SÍ	T¡nKªIdentifierÍ	UÍ	Y¤nameÂÂ£===S§LiteralÍ	^Í	c£GND¥'GND'Â¥const[¬ForStatementÍ	oÍ‹T³VariableDeclarationÍ	tÍ	}‘U²VariableDeclaratorÍ	xÍ	}KªIdentifierÍ	xÍ	y¡iS§LiteralÍ	|Í	} ¡0£letW°BinaryExpressionÍ	Í	•KªIdentifierÍ	Í	€¡i¡<Q°MemberExpressionÍ	ƒÍ	•KªIdentifierÍ	ƒÍ	«instrumentsKªIdentifierÍ	Í	•¦lengthÂÂ\°UpdateExpressionÍ	—Í	š¢++ÂKªIdentifierÍ	—Í	˜¡iL®BlockStatementÍ	œÍ‹’T³VariableDeclarationÍ	«Í	È‘U²VariableDeclaratorÍ	±Í	ÇKªIdentifierÍ	±Í	¶¥instrQ°MemberExpressionÍ	¹Í	ÇKªIdentifierÍ	¹Í	Ä«instrumentsKªIdentifierÍ	ÅÍ	Æ¡iÃÂ¥constÔra•¤type¥start£end¬discriminant¥cases¯SwitchStatementÍ	ÖÍ€Q°MemberExpressionÍ	ŞÍ	èKªIdentifierÍ	ŞÍ	ã¥instrKªIdentifierÍ	äÍ	è¤typeÂÂ—Ôrb•¤type¥start£endªconsequent¤testªSwitchCaseÍ	ıÍ
-p’O³ExpressionStatementÍ
-"Í
-TV®CallExpressionÍ
-"Í
-SQ°MemberExpressionÍ
-"Í
-:R®ThisExpressionÍ
-"Í
-&KªIdentifierÍ
-'Í
-:³wireAmmeterInSeriesÂÂ“KªIdentifierÍ
-;Í
->£docQ°MemberExpressionÍ
-@Í
-JKªIdentifierÍ
-@Í
-E¥instrKªIdentifierÍ
-FÍ
-J¤compÂÂKªIdentifierÍ
-LÍ
-R¦vccNetÂ]®BreakStatementÍ
-jÍ
-pÀS§LiteralÍ
-Í
-§ammeter©'ammeter'bªSwitchCaseÍ
-‚Í
-“S§LiteralÍ
-‡Í
-’©voltmeter«'voltmeter'bªSwitchCaseÍ
-¥Í’O³ExpressionStatementÍ
-ÍÍV®CallExpressionÍ
-ÍÍQ°MemberExpressionÍ
-ÍÍ
-éR®ThisExpressionÍ
-ÍÍ
-ÑKªIdentifierÍ
-ÒÍ
-é·wireVoltmeterInParallelÂÂ“KªIdentifierÍ
-êÍ
-í£docQ°MemberExpressionÍ
-ïÍ
-ùKªIdentifierÍ
-ïÍ
-ô¥instrKªIdentifierÍ
-õÍ
-ù¤compÂÂKªIdentifierÍ
-ûÍ¦gndNetÂ]®BreakStatementÍÍÀS§LiteralÍ
-ªÍ
-¶ªmultimeter¬'multimeter'bªSwitchCaseÍ1Í’O³ExpressionStatementÍTÍ‚V®CallExpressionÍTÍQ°MemberExpressionÍTÍhR®ThisExpressionÍTÍXKªIdentifierÍYÍh¯wireScopeProbesÂÂ“KªIdentifierÍiÍl£docQ°MemberExpressionÍnÍxKªIdentifierÍnÍs¥instrKªIdentifierÍtÍx¤compÂÂKªIdentifierÍzÍ€¦gndNetÂ]®BreakStatementÍ˜ÍÀS§LiteralÍ6Í=¥scope§'scope'bªSwitchCaseÍ°ÍÆS§LiteralÍµÍÅ®logic_analyzer°'logic_analyzer'bªSwitchCaseÍØÍíS§LiteralÍİÍì­uart_terminal¯'uart_terminal'bªSwitchCaseÍÿÍq’O³ExpressionStatementÍ)ÍUV®CallExpressionÍ)ÍTQ°MemberExpressionÍ)ÍCR®ThisExpressionÍ)Í-KªIdentifierÍ.ÍCµwireInstrumentByLabelÂÂ’KªIdentifierÍDÍG£docQ°MemberExpressionÍIÍSKªIdentifierÍIÍN¥instrKªIdentifierÍOÍS¤compÂÂÂ]®BreakStatementÍkÍqÀS§LiteralÍÍ¬freq_counter®'freq_counter'M°MethodDefinitionÍÌÍŒÂÂKªIdentifierÍÌÍß³wireAmmeterInSeries¦methodN²FunctionExpressionÍßÍŒÀÂÂÂ“KªIdentifierÍàÍã£docKªIdentifierÍåÍì§ammeterKªIdentifierÍîÍô¦vccNetL®BlockStatementÍöÍŒŸX«IfStatementÍÍ"\¯UnaryExpressionÍÍ¡!ÃKªIdentifierÍÍ¦vccNetY¯ReturnStatementÍÍ"ÀÀT³VariableDeclarationÍIÍ‰‘U²VariableDeclaratorÍOÍˆKªIdentifierÍOÍV§vccCompV®CallExpressionÍYÍˆQ°MemberExpressionÍYÍlQ°MemberExpressionÍYÍgKªIdentifierÍYÍ\£docKªIdentifierÍ]ÍgªcomponentsÂÂKªIdentifierÍhÍl¤findÂÂ‘N·ArrowFunctionExpressionÍmÍ‡ÀÃÂÂ‘KªIdentifierÍmÍn¡cW°BinaryExpressionÍrÍ‡Q°MemberExpressionÍrÍ}KªIdentifierÍrÍs¡cKªIdentifierÍtÍ}©libraryIdÂÂ£===S§LiteralÍ‚Í‡£VCC¥'VCC'Â¥constT³VariableDeclarationÍ“Í$‘U²VariableDeclaratorÍ™Í#KªIdentifierÍ™Í¦­firstResistorV®CallExpressionÍ©Í#Q°MemberExpressionÍ©Í¼Q°MemberExpressionÍ©Í·KªIdentifierÍ©Í¬£docKªIdentifierÍ­Í·ªcomponentsÂÂKªIdentifierÍ¸Í¼¤findÂÂ‘N·ArrowFunctionExpressionÍ½Í"ÀÃÂÂ‘KªIdentifierÍ½Í¾¡cW±LogicalExpressionÍÂÍ"W±LogicalExpressionÍÂÍùV®CallExpressionÍÂÍŞQ°MemberExpressionÍÂÍØQ°MemberExpressionÍÂÍÍKªIdentifierÍÂÍÃ¡cKªIdentifierÍÄÍÍ©libraryIdÂÂKªIdentifierÍÎÍØªstartsWithÂÂ‘S§LiteralÍÙÍİ¢R_¤'R_'Â¢&&W°BinaryExpressionÍâÍùQ°MemberExpressionÍâÍíKªIdentifierÍâÍã¡cKªIdentifierÍäÍí©libraryIdÂÂ£!==S§LiteralÍòÍù¥R_10k§'R_10k'¢&&W°BinaryExpressionÍ
-Í"Q°MemberExpressionÍ
-ÍKªIdentifierÍ
-Í¡cKªIdentifierÍÍ©libraryIdÂÂ£!==S§LiteralÍÍ"¦R_4.7k¨'R_4.7k'Â¥constX«IfStatementÍ.ÍbW±LogicalExpressionÍ2ÍL\¯UnaryExpressionÍ2Í:¡!ÃKªIdentifierÍ3Í:§vccComp¢||\¯UnaryExpressionÍ>ÍL¡!ÃKªIdentifierÍ?ÍL­firstResistorY¯ReturnStatementÍ[ÍbÀÀT³VariableDeclarationÍ–Í½‘U²VariableDeclaratorÍœÍ¼KªIdentifierÍœÍ£§amNetIdV®CallExpressionÍ¦Í¼Q°MemberExpressionÍ¦ÍµKªIdentifierÍ¦Í¬¦IdUtilKªIdentifierÍ­Íµ¨generateÂÂ‘S§LiteralÍ¶Í»£net¥'net'Â¥constT³VariableDeclarationÍÇÍ-‘U²VariableDeclaratorÍÍÍ,KªIdentifierÍÍÍÒ¥amNet^°ObjectExpressionÍÕÍ,”_¨PropertyÍäÍïÂÂÂKªIdentifierÍäÍæ¢idKªIdentifierÍèÍï§amNetId¤init_¨PropertyÍñÍÿÂÂÂKªIdentifierÍñÍõ¤nameS§LiteralÍ÷Íÿ¦VCC_AM¨'VCC_AM'¤init_¨PropertyÍÍÂÂÂKªIdentifierÍÍ¤typeQ°MemberExpressionÍÍKªIdentifierÍÍ§NetTypeKªIdentifierÍÍ¦SIGNALÂÂ¤init_¨PropertyÍÍ!ÂÂÂKªIdentifierÍÍ¦pinIdsZ¯ArrayExpressionÍÍ!¤init¥constO³ExpressionStatementÍ7ÍLV®CallExpressionÍ7ÍKQ°MemberExpressionÍ7ÍDQ°MemberExpressionÍ7Í?KªIdentifierÍ7Í:£docKªIdentifierÍ;Í?¤netsÂÂKªIdentifierÍ@ÍD¤pushÂÂ‘KªIdentifierÍEÍJ¥amNetÂT³VariableDeclarationÍqÍ§‘U²VariableDeclaratorÍwÍ¦KªIdentifierÍwÍ}¦vccPinV®CallExpressionÍ€Í¦Q°MemberExpressionÍ€Í“R®ThisExpressionÍ€Í„KªIdentifierÍ…Í“®estimatePinPosÂÂ“KªIdentifierÍ”Í›§vccCompS§LiteralÍÍ¢£top¥'top'S§LiteralÍ¤Í¥ ¡0Â¥constT³VariableDeclarationÍ±Íé‘U²VariableDeclaratorÍ·ÍèKªIdentifierÍ·Í¾§amIPlusV®CallExpressionÍÁÍèQ°MemberExpressionÍÁÍÔR®ThisExpressionÍÁÍÅKªIdentifierÍÆÍÔ®estimatePinPosÂÂ“KªIdentifierÍÕÍÜ§ammeterS§LiteralÍŞÍä¤left¦'left'S§LiteralÍæÍç ¡0Â¥constO³ExpressionStatementÍóÍÁV®CallExpressionÍóÍÀQ°MemberExpressionÍóÍQ°MemberExpressionÍóÍüKªIdentifierÍóÍö£docKªIdentifierÍ÷Íü¥wiresÂÂKªIdentifierÍıÍ¤pushÂÂ‘^°ObjectExpressionÍÍ¿”_¨PropertyÍÍ,ÂÂÂKªIdentifierÍÍ¢idV®CallExpressionÍÍ,Q°MemberExpressionÍÍ$KªIdentifierÍÍ¦IdUtilKªIdentifierÍÍ$¨generateÂÂ‘S§LiteralÍ%Í+¤wire¦'wire'Â¤init_¨PropertyÍ.Í>ÂÂÂKªIdentifierÍ.Í3¥netIdQ°MemberExpressionÍ5Í>KªIdentifierÍ5Í;¦vccNetKªIdentifierÍ<Í>¢idÂÂ¤init_¨PropertyÍMÍŠÂÂÂKªIdentifierÍMÍS¦pointsV®CallExpressionÍUÍŠQ°MemberExpressionÍUÍiR®ThisExpressionÍUÍYKªIdentifierÍZÍi¯orthogonalRouteÂÂ“KªIdentifierÍjÍp¦vccPinKªIdentifierÍrÍy§amIPlusQ°MemberExpressionÍ{Í‰KªIdentifierÍ{Í~£docKªIdentifierÍÍ‰ªcomponentsÂÂÂ¤init_¨PropertyÍ™Í´ÂÂÂKªIdentifierÍ™Í¥styleQ°MemberExpressionÍ Í´KªIdentifierÍ Í©©WireStyleKªIdentifierÍªÍ´ªORTHOGONALÂÂ¤initÂT³VariableDeclarationÍùÍ3‘U²VariableDeclaratorÍÿÍ2KªIdentifierÍÿÍ¨amIMinusV®CallExpressionÍ
-Í2Q°MemberExpressionÍ
-ÍR®ThisExpressionÍ
-ÍKªIdentifierÍÍ®estimatePinPosÂÂ“KªIdentifierÍÍ%§ammeterS§LiteralÍ'Í.¥right§'right'S§LiteralÍ0Í1 ¡0Â¥constT³VariableDeclarationÍ=Íy‘U²VariableDeclaratorÍCÍxKªIdentifierÍCÍI¦resTopV®CallExpressionÍLÍxQ°MemberExpressionÍLÍ_R®ThisExpressionÍLÍPKªIdentifierÍQÍ_®estimatePinPosÂÂ“KªIdentifierÍ`Ím­firstResistorS§LiteralÍoÍt£top¥'top'S§LiteralÍvÍw ¡0Â¥constO³ExpressionStatementÍƒÍPV®CallExpressionÍƒÍOQ°MemberExpressionÍƒÍ‘Q°MemberExpressionÍƒÍŒKªIdentifierÍƒÍ†£docKªIdentifierÍ‡ÍŒ¥wiresÂÂKªIdentifierÍÍ‘¤pushÂÂ‘^°ObjectExpressionÍ’ÍN”_¨PropertyÍ¡Í¼ÂÂÂKªIdentifierÍ¡Í£¢idV®CallExpressionÍ¥Í¼Q°MemberExpressionÍ¥Í´KªIdentifierÍ¥Í«¦IdUtilKªIdentifierÍ¬Í´¨generateÂÂ‘S§LiteralÍµÍ»¤wire¦'wire'Â¤init_¨PropertyÍ¾ÍÌÂÂÂKªIdentifierÍ¾ÍÃ¥netIdKªIdentifierÍÅÍÌ§amNetId¤init_¨PropertyÍÛÍÂÂÂKªIdentifierÍÛÍá¦pointsV®CallExpressionÍãÍQ°MemberExpressionÍãÍ÷R®ThisExpressionÍãÍçKªIdentifierÍèÍ÷¯orthogonalRouteÂÂ“KªIdentifierÍøÍ ¨amIMinusKªIdentifierÍÍ¦resTopQ°MemberExpressionÍ
-ÍKªIdentifierÍ
-Í£docKªIdentifierÍÍªcomponentsÂÂÂ¤init_¨PropertyÍ(ÍCÂÂÂKªIdentifierÍ(Í-¥styleQ°MemberExpressionÍ/ÍCKªIdentifierÍ/Í8©WireStyleKªIdentifierÍ9ÍCªORTHOGONALÂÂ¤initÂT³VariableDeclarationÍ…Íã‘U²VariableDeclaratorÍ‹ÍâKªIdentifierÍ‹Í“¨labelPos^°ObjectExpressionÍ–Íâ’_¨PropertyÍ¥ÍÃÂÂÂKªIdentifierÍ¥Í¦¡xW°BinaryExpressionÍ¨ÍÃW°BinaryExpressionÍ©Í¾Q°MemberExpressionÍ©Í³KªIdentifierÍ©Í±¨amIMinusKªIdentifierÍ²Í³¡xÂÂ¡+Q°MemberExpressionÍ¶Í¾KªIdentifierÍ¶Í¼¦resTopKªIdentifierÍ½Í¾¡xÂÂ¡/S§LiteralÍÂÍÃ¡2¤init_¨PropertyÍÅÍ×ÂÂÂKªIdentifierÍÅÍÆ¡yW°BinaryExpressionÍÈÍ×Q°MemberExpressionÍÈÍÒKªIdentifierÍÈÍĞ¨amIMinusKªIdentifierÍÑÍÒ¡yÂÂ¡-S§LiteralÍÕÍ×¢20¤init¥constO³ExpressionStatementÍíÍ…V®CallExpressionÍíÍ„Q°MemberExpressionÍíÍÿQ°MemberExpressionÍíÍúKªIdentifierÍíÍğ£docKªIdentifierÍñÍú©netLabelsÂÂKªIdentifierÍûÍÿ¤pushÂÂ‘^°ObjectExpressionÍ Íƒ•_¨PropertyÍÍ(ÂÂÂKªIdentifierÍÍ¢idV®CallExpressionÍÍ(Q°MemberExpressionÍÍ"KªIdentifierÍÍ¦IdUtilKªIdentifierÍÍ"¨generateÂÂ‘S§LiteralÍ#Í'¢nl¤'nl'Â¤init_¨PropertyÍ*Í8ÂÂÂKªIdentifierÍ*Í/¥netIdKªIdentifierÍ1Í8§amNetId¤init_¨PropertyÍGÍUÂÂÂKªIdentifierÍGÍK¤textS§LiteralÍMÍU¦VCC_AM¨'VCC_AM'¤init_¨PropertyÍWÍiÂÂÂKªIdentifierÍWÍ_¨positionKªIdentifierÍaÍi¨labelPos¤init_¨PropertyÍkÍxÂÂÂKªIdentifierÍkÍq¦globalS§LiteralÍsÍxÂ¥false¤initÂM°MethodDefinitionÍÅÍÄÂÂKªIdentifierÍÅÍÜ·wireVoltmeterInParallel¦methodN²FunctionExpressionÍÜÍÄÀÂÂÂ“KªIdentifierÍİÍà£docKªIdentifierÍâÍë©voltmeterKªIdentifierÍíÍó¦gndNetL®BlockStatementÍõÍÄÜ X«IfStatementÍ Í!\¯UnaryExpressionÍÍ¡!ÃKªIdentifierÍÍ¦gndNetY¯ReturnStatementÍÍ!ÀÀT³VariableDeclarationÍLÍ—‘U²VariableDeclaratorÍRÍ–KªIdentifierÍRÍ[©resistorsV®CallExpressionÍ^Í–Q°MemberExpressionÍ^ÍsQ°MemberExpressionÍ^ÍlKªIdentifierÍ^Ía£docKªIdentifierÍbÍlªcomponentsÂÂKªIdentifierÍmÍs¦filterÂÂ‘N·ArrowFunctionExpressionÍtÍ•ÀÃÂÂ‘KªIdentifierÍtÍu¡cV®CallExpressionÍyÍ•Q°MemberExpressionÍyÍQ°MemberExpressionÍyÍ„KªIdentifierÍyÍz¡cKªIdentifierÍ{Í„©libraryIdÂÂKªIdentifierÍ…ÍªstartsWithÂÂ‘S§LiteralÍÍ”¢R_¤'R_'ÂÂ¥constX«IfStatementÍ¡ÍÑW°BinaryExpressionÍ¥Í»Q°MemberExpressionÍ¥ÍµKªIdentifierÍ¥Í®©resistorsKªIdentifierÍ¯Íµ¦lengthÂÂ£===S§LiteralÍºÍ» ¡0Y¯ReturnStatementÍÊÍÑÀÀT³VariableDeclarationÍşÍ‘U²VariableDeclaratorÍÍKªIdentifierÍÍ	¥vmPosQ°MemberExpressionÍÍKªIdentifierÍÍ©voltmeterKªIdentifierÍÍ¨positionÂÂ¥constT³VariableDeclarationÍ)Í<‘U²VariableDeclaratorÍ-Í;KªIdentifierÍ-Í4§bestResS§LiteralÍ7Í;À¤null£letT³VariableDeclarationÍFÍ^‘U²VariableDeclaratorÍJÍ]KªIdentifierÍJÍR¨bestDistKªIdentifierÍUÍ]¨Infinity£let[¬ForStatementÍhÍ†T³VariableDeclarationÍmÍw‘U²VariableDeclaratorÍqÍwKªIdentifierÍqÍs¢riS§LiteralÍvÍw ¡0£letW°BinaryExpressionÍyÍKªIdentifierÍyÍ{¢ri¡<Q°MemberExpressionÍ~ÍKªIdentifierÍ~Í‡©resistorsKªIdentifierÍˆÍ¦lengthÂÂ\°UpdateExpressionÍÍ”¢++ÂKªIdentifierÍÍ’¢riL®BlockStatementÍ–Í†’T³VariableDeclarationÍ¥Í‘U²VariableDeclaratorÍ«ÍKªIdentifierÍ«Í¬¡dV®CallExpressionÍ¯ÍQ°MemberExpressionÍ¯Í¹KªIdentifierÍ¯Í³¤MathKªIdentifierÍ´Í¹¥hypotÂÂ’W°BinaryExpressionÍºÍÜQ°MemberExpressionÍºÍÁKªIdentifierÍºÍ¿¥vmPosKªIdentifierÍÀÍÁ¡xÂÂ¡-Q°MemberExpressionÍÄÍÜQ°MemberExpressionÍÄÍÚQ°MemberExpressionÍÄÍÑKªIdentifierÍÄÍÍ©resistorsKªIdentifierÍÎÍĞ¢riÃÂKªIdentifierÍÒÍÚ¨positionÂÂKªIdentifierÍÛÍÜ¡xÂÂW°BinaryExpressionÍŞÍ Q°MemberExpressionÍŞÍåKªIdentifierÍŞÍã¥vmPosKªIdentifierÍäÍå¡yÂÂ¡-Q°MemberExpressionÍèÍ Q°MemberExpressionÍèÍşQ°MemberExpressionÍèÍõKªIdentifierÍèÍñ©resistorsKªIdentifierÍòÍô¢riÃÂKªIdentifierÍöÍş¨positionÂÂKªIdentifierÍÿÍ ¡yÂÂÂ¥constX«IfStatementÍÍ{W°BinaryExpressionÍÍ KªIdentifierÍÍ¡d¡<KªIdentifierÍÍ ¨bestDistL®BlockStatementÍ"Í{’O³ExpressionStatementÍ5ÍBP´AssignmentExpressionÍ5ÍA¡=KªIdentifierÍ5Í=¨bestDistKªIdentifierÍ@ÍA¡dO³ExpressionStatementÍTÍlP´AssignmentExpressionÍTÍk¡=KªIdentifierÍTÍ[§bestResQ°MemberExpressionÍ^ÍkKªIdentifierÍ^Íg©resistorsKªIdentifierÍhÍj¢riÃÂÀX«IfStatementÍÍ²\¯UnaryExpressionÍ”Íœ¡!ÃKªIdentifierÍ•Íœ§bestResY¯ReturnStatementÍ«Í²ÀÀT³VariableDeclarationÍ¼ÍÖ‘U²VariableDeclaratorÍÂÍÕKªIdentifierÍÂÍË©targetResKªIdentifierÍÎÍÕ§bestRes¥constT³VariableDeclarationÍùÍ#‘U²VariableDeclaratorÍÿÍ"KªIdentifierÍÿÍ	ªsenseNetIdV®CallExpressionÍÍ"Q°MemberExpressionÍÍKªIdentifierÍÍ¦IdUtilKªIdentifierÍÍ¨generateÂÂ‘S§LiteralÍÍ!£net¥'net'Â¥constT³VariableDeclarationÍ-Í»‘U²VariableDeclaratorÍ3ÍºKªIdentifierÍ3Í;¨senseNet^°ObjectExpressionÍ>Íº”_¨PropertyÍMÍ[ÂÂÂKªIdentifierÍMÍO¢idKªIdentifierÍQÍ[ªsenseNetId¤init_¨PropertyÍjÍÂÂÂKªIdentifierÍjÍn¤nameÔrc•¤type¥start£end«expressions¦quasis¯TemplateLiteralÍpÍ‘Q°MemberExpressionÍ{Í‹KªIdentifierÍ{Í„©targetResKªIdentifierÍ…Í‹¦refDesÂÂ’Ôrd•¤type¥start£end¥value¤tail¯TemplateElementÍqÍyÔre’£raw¦cooked¨SENSE_R_¨SENSE_R_Âd¯TemplateElementÍŒÍŒe  Ã¤init_¨PropertyÍÍ£ÂÂÂKªIdentifierÍÍ“¤typeQ°MemberExpressionÍ•Í£KªIdentifierÍ•Íœ§NetTypeKªIdentifierÍÍ£¦SIGNALÂÂ¤init_¨PropertyÍ¥Í¯ÂÂÂKªIdentifierÍ¥Í«¦pinIdsZ¯ArrayExpressionÍ­Í¯¤init¥constO³ExpressionStatementÍÅÍİV®CallExpressionÍÅÍÜQ°MemberExpressionÍÅÍÒQ°MemberExpressionÍÅÍÍKªIdentifierÍÅÍÈ£docKªIdentifierÍÉÍÍ¤netsÂÂKªIdentifierÍÎÍÒ¤pushÂÂ‘KªIdentifierÍÓÍÛ¨senseNetÂT³VariableDeclarationÍÍG‘U²VariableDeclaratorÍÍFKªIdentifierÍÍ©vmPlusPosV®CallExpressionÍÍFQ°MemberExpressionÍÍ0R®ThisExpressionÍÍ!KªIdentifierÍ"Í0®estimatePinPosÂÂ“KªIdentifierÍ1Í:©voltmeterS§LiteralÍ<ÍB¤left¦'left'S§LiteralÍDÍE ¡0Â¥constT³VariableDeclarationÍgÍ¤‘U²VariableDeclaratorÍmÍ£KªIdentifierÍmÍu¨vmComPosV®CallExpressionÍxÍ£Q°MemberExpressionÍxÍ‹R®ThisExpressionÍxÍ|KªIdentifierÍ}Í‹®estimatePinPosÂÂ“KªIdentifierÍŒÍ•©voltmeterS§LiteralÍ—ÍŸ¦bottom¨'bottom'S§LiteralÍ¡Í¢ ¡0Â¥constT³VariableDeclarationÍ®Íé‘U²VariableDeclaratorÍ´ÍèKªIdentifierÍ´Íº¦gndPinV®CallExpressionÍ½ÍèQ°MemberExpressionÍ½ÍĞR®ThisExpressionÍ½ÍÁKªIdentifierÍÂÍĞ®estimatePinPosÂÂ“KªIdentifierÍÑÍÚ©targetResS§LiteralÍÜÍä¦bottom¨'bottom'S§LiteralÍæÍç ¡0Â¥constX«IfStatementÍÍOW°BinaryExpressionÍÍ>V®CallExpressionÍÍ8Q°MemberExpressionÍÍ!KªIdentifierÍÍ¤MathKªIdentifierÍÍ!£absÂÂ‘W°BinaryExpressionÍ"Í7Q°MemberExpressionÍ"Í,KªIdentifierÍ"Í*¨vmComPosKªIdentifierÍ+Í,¡xÂÂ¡-Q°MemberExpressionÍ/Í7KªIdentifierÍ/Í5¦gndPinKªIdentifierÍ6Í7¡xÂÂÂ¡<S§LiteralÍ;Í>ÌÈ£200L®BlockStatementÍ@Í9‘O³ExpressionStatementÍOÍ.V®CallExpressionÍOÍ-Q°MemberExpressionÍOÍ]Q°MemberExpressionÍOÍXKªIdentifierÍOÍR£docKªIdentifierÍSÍX¥wiresÂÂKªIdentifierÍYÍ]¤pushÂÂ‘^°ObjectExpressionÍ^Í,”_¨PropertyÍqÍŒÂÂÂKªIdentifierÍqÍs¢idV®CallExpressionÍuÍŒQ°MemberExpressionÍuÍ„KªIdentifierÍuÍ{¦IdUtilKªIdentifierÍ|Í„¨generateÂÂ‘S§LiteralÍ…Í‹¤wire¦'wire'Â¤init_¨PropertyÍÍÂÂÂKªIdentifierÍÍ“¥netIdQ°MemberExpressionÍ•ÍKªIdentifierÍ•Í›¦gndNetKªIdentifierÍœÍ¢idÂÂ¤init_¨PropertyÍ±ÍïÂÂÂKªIdentifierÍ±Í·¦pointsV®CallExpressionÍ¹ÍïQ°MemberExpressionÍ¹ÍÍR®ThisExpressionÍ¹Í½KªIdentifierÍ¾ÍÍ¯orthogonalRouteÂÂ“KªIdentifierÍÎÍÖ¨vmComPosKªIdentifierÍØÍŞ¦gndPinQ°MemberExpressionÍàÍîKªIdentifierÍàÍã£docKªIdentifierÍäÍîªcomponentsÂÂÂ¤init_¨PropertyÍÍÂÂÂKªIdentifierÍÍ¥styleQ°MemberExpressionÍ	ÍKªIdentifierÍ	Í©WireStyleKªIdentifierÍÍªORTHOGONALÂÂ¤initÂL®BlockStatementÍHÍO‘O³ExpressionStatementÍnÍDV®CallExpressionÍnÍCQ°MemberExpressionÍnÍ€Q°MemberExpressionÍnÍ{KªIdentifierÍnÍq£docKªIdentifierÍrÍ{©netLabelsÂÂKªIdentifierÍ|Í€¤pushÂÂ‘^°ObjectExpressionÍÍB•_¨PropertyÍ”Í­ÂÂÂKªIdentifierÍ”Í–¢idV®CallExpressionÍ˜Í­Q°MemberExpressionÍ˜Í§KªIdentifierÍ˜Í¦IdUtilKªIdentifierÍŸÍ§¨generateÂÂ‘S§LiteralÍ¨Í¬¢nl¤'nl'Â¤init_¨PropertyÍ¯Í¿ÂÂÂKªIdentifierÍ¯Í´¥netIdQ°MemberExpressionÍ¶Í¿KªIdentifierÍ¶Í¼¦gndNetKªIdentifierÍ½Í¿¢idÂÂ¤init_¨PropertyÍÒÍİÂÂÂKªIdentifierÍÒÍÖ¤textS§LiteralÍØÍİ£GND¥'GND'¤init_¨PropertyÍßÍÂÂÂKªIdentifierÍßÍç¨position^°ObjectExpressionÍéÍ’_¨PropertyÍëÍıÂÂÂKªIdentifierÍëÍì¡xW°BinaryExpressionÍîÍıQ°MemberExpressionÍîÍøKªIdentifierÍîÍö¨vmComPosKªIdentifierÍ÷Íø¡xÂÂ¡+S§LiteralÍûÍı
-¢10¤init_¨PropertyÍÿÍÂÂÂKªIdentifierÍÿÍ ¡yW°BinaryExpressionÍÍQ°MemberExpressionÍÍKªIdentifierÍÍ
-¨vmComPosKªIdentifierÍÍ¡yÂÂ¡+S§LiteralÍÍ¢20¤init¤init_¨PropertyÍ&Í3ÂÂÂKªIdentifierÍ&Í,¦globalS§LiteralÍ.Í3Â¥false¤initÂO³ExpressionStatementÍƒÍqV®CallExpressionÍƒÍpQ°MemberExpressionÍƒÍ•Q°MemberExpressionÍƒÍKªIdentifierÍƒÍ†£docKªIdentifierÍ‡Í©netLabelsÂÂKªIdentifierÍ‘Í•¤pushÂÂ‘^°ObjectExpressionÍ–Ío•_¨PropertyÍ¥Í¾ÂÂÂKªIdentifierÍ¥Í§¢idV®CallExpressionÍ©Í¾Q°MemberExpressionÍ©Í¸KªIdentifierÍ©Í¯¦IdUtilKªIdentifierÍ°Í¸¨generateÂÂ‘S§LiteralÍ¹Í½¢nl¤'nl'Â¤init_¨PropertyÍÀÍÑÂÂÂKªIdentifierÍÀÍÅ¥netIdKªIdentifierÍÇÍÑªsenseNetId¤init_¨PropertyÍàÍÂÂÂKªIdentifierÍàÍä¤textc¯TemplateLiteralÍæÍ‘Q°MemberExpressionÍñÍKªIdentifierÍñÍú©targetResKªIdentifierÍûÍ¦refDesÂÂ’d¯TemplateElementÍçÍïe¨SENSE_R_¨SENSE_R_Âd¯TemplateElementÍÍe  Ã¤init_¨PropertyÍÍHÂÂÂKªIdentifierÍÍ¨position^°ObjectExpressionÍÍH’_¨PropertyÍÍ1ÂÂÂKªIdentifierÍÍ¡xW°BinaryExpressionÍ!Í1Q°MemberExpressionÍ!Í,KªIdentifierÍ!Í*©vmPlusPosKªIdentifierÍ+Í,¡xÂÂ¡-S§LiteralÍ/Í1¢30¤init_¨PropertyÍ3ÍFÂÂÂKªIdentifierÍ3Í4¡yW°BinaryExpressionÍ6ÍFQ°MemberExpressionÍ6ÍAKªIdentifierÍ6Í?©vmPlusPosKªIdentifierÍ@ÍA¡yÂÂ¡-S§LiteralÍDÍF
-¢10¤init¤init_¨PropertyÍWÍdÂÂÂKªIdentifierÍWÍ]¦globalS§LiteralÍ_ÍdÂ¥false¤initÂT³VariableDeclarationÍ“ÍË‘U²VariableDeclaratorÍ™ÍÊKªIdentifierÍ™ÍŸ¦resTopV®CallExpressionÍ¢ÍÊQ°MemberExpressionÍ¢ÍµR®ThisExpressionÍ¢Í¦KªIdentifierÍ§Íµ®estimatePinPosÂÂ“KªIdentifierÍ¶Í¿©targetResS§LiteralÍÁÍÆ£top¥'top'S§LiteralÍÈÍÉ ¡0Â¥constO³ExpressionStatementÍÕÍ½V®CallExpressionÍÕÍ¼Q°MemberExpressionÍÕÍçQ°MemberExpressionÍÕÍâKªIdentifierÍÕÍØ£docKªIdentifierÍÙÍâ©netLabelsÂÂKªIdentifierÍãÍç¤pushÂÂ‘^°ObjectExpressionÍèÍ»•_¨PropertyÍ÷ÍÂÂÂKªIdentifierÍ÷Íù¢idV®CallExpressionÍûÍQ°MemberExpressionÍûÍ
-KªIdentifierÍûÍ¦IdUtilKªIdentifierÍÍ
-¨generateÂÂ‘S§LiteralÍÍ¢nl¤'nl'Â¤init_¨PropertyÍÍ#ÂÂÂKªIdentifierÍÍ¥netIdKªIdentifierÍÍ#ªsenseNetId¤init_¨PropertyÍ2ÍUÂÂÂKªIdentifierÍ2Í6¤textc¯TemplateLiteralÍ8ÍU‘Q°MemberExpressionÍCÍSKªIdentifierÍCÍL©targetResKªIdentifierÍMÍS¦refDesÂÂ’d¯TemplateElementÍ9ÍAe¨SENSE_R_¨SENSE_R_Âd¯TemplateElementÍTÍTe  Ã¤init_¨PropertyÍdÍ”ÂÂÂKªIdentifierÍdÍl¨position^°ObjectExpressionÍnÍ”’_¨PropertyÍpÍ€ÂÂÂKªIdentifierÍpÍq¡xW°BinaryExpressionÍsÍ€Q°MemberExpressionÍsÍ{KªIdentifierÍsÍy¦resTopKªIdentifierÍzÍ{¡xÂÂ¡+S§LiteralÍ~Í€
-¢10¤init_¨PropertyÍ‚Í’ÂÂÂKªIdentifierÍ‚Íƒ¡yW°BinaryExpressionÍ…Í’Q°MemberExpressionÍ…ÍKªIdentifierÍ…Í‹¦resTopKªIdentifierÍŒÍ¡yÂÂ¡-S§LiteralÍÍ’¢20¤init¤init_¨PropertyÍ£Í°ÂÂÂKªIdentifierÍ£Í©¦globalS§LiteralÍ«Í°Â¥false¤initÂM°MethodDefinitionÍúÍ#ˆÂÂKªIdentifierÍúÍ	¯wireScopeProbes¦methodN²FunctionExpressionÍ	Í#ˆÀÂÂÂ“KªIdentifierÍ
-Í£docKªIdentifierÍÍ¥scopeKªIdentifierÍÍ¦gndNetL®BlockStatementÍÍ#ˆ˜T³VariableDeclarationÍIÍ6‘U²VariableDeclaratorÍOÍ5KªIdentifierÍOÍ_°signalComponentsV®CallExpressionÍbÍ5Q°MemberExpressionÍbÍwQ°MemberExpressionÍbÍpKªIdentifierÍbÍe£docKªIdentifierÍfÍpªcomponentsÂÂKªIdentifierÍqÍw¦filterÂÂ‘N·ArrowFunctionExpressionÍxÍ4ÀÃÂÂ‘KªIdentifierÍxÍy¡cW±LogicalExpressionÍ}Í4W±LogicalExpressionÍ}ÍW±LogicalExpressionÍ}ÍæW±LogicalExpressionÍ}Í»V®CallExpressionÍ}ÍšQ°MemberExpressionÍ}Í‘Q°MemberExpressionÍ}ÍˆKªIdentifierÍ}Í~¡cKªIdentifierÍÍˆ©libraryIdÂÂKªIdentifierÍ‰Í‘¨includesÂÂ‘S§LiteralÍ’Í™¥LM358§'LM358'Â¢||V®CallExpressionÍÍ»Q°MemberExpressionÍÍ²Q°MemberExpressionÍÍ©KªIdentifierÍÍŸ¡cKªIdentifierÍ Í©©libraryIdÂÂKªIdentifierÍªÍ²¨includesÂÂ‘S§LiteralÍ³Íº¥LM324§'LM324'Â¢||V®CallExpressionÍÌÍæQ°MemberExpressionÍÌÍàQ°MemberExpressionÍÌÍ×KªIdentifierÍÌÍÍ¡cKªIdentifierÍÎÍ×©libraryIdÂÂKªIdentifierÍØÍà¨includesÂÂ‘S§LiteralÍáÍå¢OP¤'OP'Â¢||V®CallExpressionÍêÍQ°MemberExpressionÍêÍşQ°MemberExpressionÍêÍõKªIdentifierÍêÍë¡cKªIdentifierÍìÍõ©libraryIdÂÂKªIdentifierÍöÍş¨includesÂÂ‘S§LiteralÍÿÍ¥STM32§'STM32'Â¢||V®CallExpressionÍÍ4Q°MemberExpressionÍÍ,Q°MemberExpressionÍÍ#KªIdentifierÍÍ¡cKªIdentifierÍÍ#©libraryIdÂÂKªIdentifierÍ$Í,¨includesÂÂ‘S§LiteralÍ-Í3¤AT89¦'AT89'ÂÂ¥constX«IfStatementÍ@ÍwW°BinaryExpressionÍDÍaQ°MemberExpressionÍDÍ[KªIdentifierÍDÍT°signalComponentsKªIdentifierÍUÍ[¦lengthÂÂ£===S§LiteralÍ`Ía ¡0Y¯ReturnStatementÍpÍwÀÀT³VariableDeclarationÍÍ¤‘U²VariableDeclaratorÍ‡Í£KªIdentifierÍ‡Í¦signalQ°MemberExpressionÍÍ£KªIdentifierÍÍ °signalComponentsS§LiteralÍ¡Í¢ ¡0ÃÂ¥constT³VariableDeclarationÍÅÍí‘U²VariableDeclaratorÍËÍìKªIdentifierÍËÍÓ¨ch1NetIdV®CallExpressionÍÖÍìQ°MemberExpressionÍÖÍåKªIdentifierÍÖÍÜ¦IdUtilKªIdentifierÍİÍå¨generateÂÂ‘S§LiteralÍæÍë£net¥'net'Â¥constO³ExpressionStatementÍ÷Í bV®CallExpressionÍ÷Í aQ°MemberExpressionÍ÷Í Q°MemberExpressionÍ÷ÍÿKªIdentifierÍ÷Íú£docKªIdentifierÍûÍÿ¤netsÂÂKªIdentifierÍ  Í ¤pushÂÂ‘^°ObjectExpressionÍ Í `”_¨PropertyÍ Í  ÂÂÂKªIdentifierÍ Í ¢idKªIdentifierÍ Í  ¨ch1NetId¤init_¨PropertyÍ "Í 3ÂÂÂKªIdentifierÍ "Í &¤nameS§LiteralÍ (Í 3©CH1_PROBE«'CH1_PROBE'¤init_¨PropertyÍ 5Í IÂÂÂKªIdentifierÍ 5Í 9¤typeQ°MemberExpressionÍ ;Í IKªIdentifierÍ ;Í B§NetTypeKªIdentifierÍ CÍ I¦SIGNALÂÂ¤init_¨PropertyÍ KÍ UÂÂÂKªIdentifierÍ KÍ Q¦pinIdsZ¯ArrayExpressionÍ SÍ U¤initÂO³ExpressionStatementÍ lÍ!PV®CallExpressionÍ lÍ!OQ°MemberExpressionÍ lÍ ~Q°MemberExpressionÍ lÍ yKªIdentifierÍ lÍ o£docKªIdentifierÍ pÍ y©netLabelsÂÂKªIdentifierÍ zÍ ~¤pushÂÂ‘^°ObjectExpressionÍ Í!N•_¨PropertyÍ Í §ÂÂÂKªIdentifierÍ Í ¢idV®CallExpressionÍ ’Í §Q°MemberExpressionÍ ’Í ¡KªIdentifierÍ ’Í ˜¦IdUtilKªIdentifierÍ ™Í ¡¨generateÂÂ‘S§LiteralÍ ¢Í ¦¢nl¤'nl'Â¤init_¨PropertyÍ ©Í ¸ÂÂÂKªIdentifierÍ ©Í ®¥netIdKªIdentifierÍ °Í ¸¨ch1NetId¤init_¨PropertyÍ ÇÍ ØÂÂÂKªIdentifierÍ ÇÍ Ë¤textS§LiteralÍ ÍÍ Ø©CH1_PROBE«'CH1_PROBE'¤init_¨PropertyÍ çÍ!'ÂÂÂKªIdentifierÍ çÍ ï¨position^°ObjectExpressionÍ ñÍ!'’_¨PropertyÍ óÍ!ÂÂÂKªIdentifierÍ óÍ ô¡xW°BinaryExpressionÍ öÍ!Q°MemberExpressionÍ öÍ!Q°MemberExpressionÍ öÍ!KªIdentifierÍ öÍ û¥scopeKªIdentifierÍ üÍ!¨positionÂÂKªIdentifierÍ!Í!¡xÂÂ¡-S§LiteralÍ!	Í!¢30¤init_¨PropertyÍ!Í!%ÂÂÂKªIdentifierÍ!Í!¡yW°BinaryExpressionÍ!Í!%Q°MemberExpressionÍ!Í! Q°MemberExpressionÍ!Í!KªIdentifierÍ!Í!¥scopeKªIdentifierÍ!Í!¨positionÂÂKªIdentifierÍ!Í! ¡yÂÂ¡+S§LiteralÍ!#Í!%¢20¤init¤init_¨PropertyÍ!6Í!CÂÂÂKªIdentifierÍ!6Í!<¦globalS§LiteralÍ!>Í!CÂ¥false¤initÂO³ExpressionStatementÍ!ZÍ"@V®CallExpressionÍ!ZÍ"?Q°MemberExpressionÍ!ZÍ!lQ°MemberExpressionÍ!ZÍ!gKªIdentifierÍ!ZÍ!]£docKªIdentifierÍ!^Í!g©netLabelsÂÂKªIdentifierÍ!hÍ!l¤pushÂÂ‘^°ObjectExpressionÍ!mÍ">•_¨PropertyÍ!|Í!•ÂÂÂKªIdentifierÍ!|Í!~¢idV®CallExpressionÍ!€Í!•Q°MemberExpressionÍ!€Í!KªIdentifierÍ!€Í!†¦IdUtilKªIdentifierÍ!‡Í!¨generateÂÂ‘S§LiteralÍ!Í!”¢nl¤'nl'Â¤init_¨PropertyÍ!—Í!¦ÂÂÂKªIdentifierÍ!—Í!œ¥netIdKªIdentifierÍ!Í!¦¨ch1NetId¤init_¨PropertyÍ!µÍ!ÆÂÂÂKªIdentifierÍ!µÍ!¹¤textS§LiteralÍ!»Í!Æ©CH1_PROBE«'CH1_PROBE'¤init_¨PropertyÍ!ÕÍ"ÂÂÂKªIdentifierÍ!ÕÍ!İ¨position^°ObjectExpressionÍ!ßÍ"’_¨PropertyÍ!áÍ!úÂÂÂKªIdentifierÍ!áÍ!â¡xW°BinaryExpressionÍ!äÍ!úQ°MemberExpressionÍ!äÍ!õQ°MemberExpressionÍ!äÍ!óKªIdentifierÍ!äÍ!ê¦signalKªIdentifierÍ!ëÍ!ó¨positionÂÂKªIdentifierÍ!ôÍ!õ¡xÂÂ¡+S§LiteralÍ!øÍ!ú(¢40¤init_¨PropertyÍ!üÍ"ÂÂÂKªIdentifierÍ!üÍ!ı¡yW°BinaryExpressionÍ!ÿÍ"Q°MemberExpressionÍ!ÿÍ"Q°MemberExpressionÍ!ÿÍ"KªIdentifierÍ!ÿÍ"¦signalKªIdentifierÍ"Í"¨positionÂÂKªIdentifierÍ"Í"¡yÂÂ¡-S§LiteralÍ"Í"¢20¤init¤init_¨PropertyÍ"&Í"3ÂÂÂKªIdentifierÍ"&Í",¦globalS§LiteralÍ".Í"3Â¥false¤initÂX«IfStatementÍ"hÍ#KªIdentifierÍ"lÍ"r¦gndNetL®BlockStatementÍ"tÍ#‘O³ExpressionStatementÍ"ƒÍ#vV®CallExpressionÍ"ƒÍ#uQ°MemberExpressionÍ"ƒÍ"•Q°MemberExpressionÍ"ƒÍ"KªIdentifierÍ"ƒÍ"†£docKªIdentifierÍ"‡Í"©netLabelsÂÂKªIdentifierÍ"‘Í"•¤pushÂÂ‘^°ObjectExpressionÍ"–Í#t•_¨PropertyÍ"©Í"ÂÂÂÂKªIdentifierÍ"©Í"«¢idV®CallExpressionÍ"­Í"ÂQ°MemberExpressionÍ"­Í"¼KªIdentifierÍ"­Í"³¦IdUtilKªIdentifierÍ"´Í"¼¨generateÂÂ‘S§LiteralÍ"½Í"Á¢nl¤'nl'Â¤init_¨PropertyÍ"ÄÍ"ÔÂÂÂKªIdentifierÍ"ÄÍ"É¥netIdQ°MemberExpressionÍ"ËÍ"ÔKªIdentifierÍ"ËÍ"Ñ¦gndNetKªIdentifierÍ"ÒÍ"Ô¢idÂÂ¤init_¨PropertyÍ"çÍ"òÂÂÂKªIdentifierÍ"çÍ"ë¤textS§LiteralÍ"íÍ"ò£GND¥'GND'¤init_¨PropertyÍ#Í#EÂÂÂKªIdentifierÍ#Í#¨position^°ObjectExpressionÍ#Í#E’_¨PropertyÍ#Í#)ÂÂÂKªIdentifierÍ#Í#¡xW°BinaryExpressionÍ#Í#)Q°MemberExpressionÍ#Í#$Q°MemberExpressionÍ#Í#"KªIdentifierÍ#Í#¥scopeKªIdentifierÍ#Í#"¨positionÂÂKªIdentifierÍ##Í#$¡xÂÂ¡-S§LiteralÍ#'Í#)¢30¤init_¨PropertyÍ#+Í#CÂÂÂKªIdentifierÍ#+Í#,¡yW°BinaryExpressionÍ#.Í#CQ°MemberExpressionÍ#.Í#>Q°MemberExpressionÍ#.Í#<KªIdentifierÍ#.Í#3¥scopeKªIdentifierÍ#4Í#<¨positionÂÂKªIdentifierÍ#=Í#>¡yÂÂ¡+S§LiteralÍ#AÍ#C<¢60¤init¤init_¨PropertyÍ#XÍ#eÂÂÂKªIdentifierÍ#XÍ#^¦globalS§LiteralÍ#`Í#eÂ¥false¤initÂÀM°MethodDefinitionÍ#»Í&ÂÂKªIdentifierÍ#»Í#ĞµwireInstrumentByLabel¦methodN²FunctionExpressionÍ#ĞÍ&ÀÂÂÂ’KªIdentifierÍ#ÑÍ#Ô£docKªIdentifierÍ#ÖÍ#Û¥instrL®BlockStatementÍ#İÍ&”T³VariableDeclarationÍ#èÍ$c‘U²VariableDeclaratorÍ#îÍ$bKªIdentifierÍ#îÍ#÷©netPrefixXµConditionalExpressionÍ#úÍ$bV®CallExpressionÍ#úÍ$Q°MemberExpressionÍ#úÍ$Q°MemberExpressionÍ#úÍ$	KªIdentifierÍ#úÍ#ÿ¥instrKªIdentifierÍ$ Í$	©libraryIdÂÂKªIdentifierÍ$
-Í$¨includesÂÂ‘S§LiteralÍ$Í$¤UART¦'UART'ÂS§LiteralÍ$Í$#¤UART¦'UART'XµConditionalExpressionÍ$3Í$bV®CallExpressionÍ$3Í$TQ°MemberExpressionÍ$3Í$KQ°MemberExpressionÍ$3Í$BKªIdentifierÍ$3Í$8¥instrKªIdentifierÍ$9Í$B©libraryIdÂÂKªIdentifierÍ$CÍ$K¨includesÂÂ‘S§LiteralÍ$LÍ$S¥LOGIC§'LOGIC'ÂS§LiteralÍ$WÍ$[¢LA¤'LA'S§LiteralÍ$^Í$b¢FC¤'FC'¥constT³VariableDeclarationÍ$mÍ$”‘U²VariableDeclaratorÍ$sÍ$“KªIdentifierÍ$sÍ$z§chNetIdV®CallExpressionÍ$}Í$“Q°MemberExpressionÍ$}Í$ŒKªIdentifierÍ$}Í$ƒ¦IdUtilKªIdentifierÍ$„Í$Œ¨generateÂÂ‘S§LiteralÍ$Í$’£net¥'net'Â¥constO³ExpressionStatementÍ$Í%V®CallExpressionÍ$Í%Q°MemberExpressionÍ$Í$«Q°MemberExpressionÍ$Í$¦KªIdentifierÍ$Í$¡£docKªIdentifierÍ$¢Í$¦¤netsÂÂKªIdentifierÍ$§Í$«¤pushÂÂ‘^°ObjectExpressionÍ$¬Í%”_¨PropertyÍ$»Í$ÆÂÂÂKªIdentifierÍ$»Í$½¢idKªIdentifierÍ$¿Í$Æ§chNetId¤init_¨PropertyÍ$ÈÍ$ßÂÂÂKªIdentifierÍ$ÈÍ$Ì¤namec¯TemplateLiteralÍ$ÎÍ$ß‘KªIdentifierÍ$ÑÍ$Ú©netPrefix’d¯TemplateElementÍ$ÏÍ$Ïe  Âd¯TemplateElementÍ$ÛÍ$Şe£_CH£_CHÃ¤init_¨PropertyÍ$áÍ$õÂÂÂKªIdentifierÍ$áÍ$å¤typeQ°MemberExpressionÍ$çÍ$õKªIdentifierÍ$çÍ$î§NetTypeKªIdentifierÍ$ïÍ$õ¦SIGNALÂÂ¤init_¨PropertyÍ$÷Í%ÂÂÂKªIdentifierÍ$÷Í$ı¦pinIdsZ¯ArrayExpressionÍ$ÿÍ%¤initÂO³ExpressionStatementÍ%Í&V®CallExpressionÍ%Í& Q°MemberExpressionÍ%Í%*Q°MemberExpressionÍ%Í%%KªIdentifierÍ%Í%£docKªIdentifierÍ%Í%%©netLabelsÂÂKªIdentifierÍ%&Í%*¤pushÂÂ‘^°ObjectExpressionÍ%+Í%ÿ•_¨PropertyÍ%:Í%SÂÂÂKªIdentifierÍ%:Í%<¢idV®CallExpressionÍ%>Í%SQ°MemberExpressionÍ%>Í%MKªIdentifierÍ%>Í%D¦IdUtilKªIdentifierÍ%EÍ%M¨generateÂÂ‘S§LiteralÍ%NÍ%R¢nl¤'nl'Â¤init_¨PropertyÍ%UÍ%cÂÂÂKªIdentifierÍ%UÍ%Z¥netIdKªIdentifierÍ%\Í%c§chNetId¤init_¨PropertyÍ%rÍ%‰ÂÂÂKªIdentifierÍ%rÍ%v¤textc¯TemplateLiteralÍ%xÍ%‰‘KªIdentifierÍ%{Í%„©netPrefix’d¯TemplateElementÍ%yÍ%ye  Âd¯TemplateElementÍ%…Í%ˆe£_CH£_CHÃ¤init_¨PropertyÍ%˜Í%ØÂÂÂKªIdentifierÍ%˜Í% ¨position^°ObjectExpressionÍ%¢Í%Ø’_¨PropertyÍ%¤Í%¼ÂÂÂKªIdentifierÍ%¤Í%¥¡xW°BinaryExpressionÍ%§Í%¼Q°MemberExpressionÍ%§Í%·Q°MemberExpressionÍ%§Í%µKªIdentifierÍ%§Í%¬¥instrKªIdentifierÍ%­Í%µ¨positionÂÂKªIdentifierÍ%¶Í%·¡xÂÂ¡-S§LiteralÍ%ºÍ%¼¢30¤init_¨PropertyÍ%¾Í%ÖÂÂÂKªIdentifierÍ%¾Í%¿¡yW°BinaryExpressionÍ%ÁÍ%ÖQ°MemberExpressionÍ%ÁÍ%ÑQ°MemberExpressionÍ%ÁÍ%ÏKªIdentifierÍ%ÁÍ%Æ¥instrKªIdentifierÍ%ÇÍ%Ï¨positionÂÂKªIdentifierÍ%ĞÍ%Ñ¡yÂÂ¡+S§LiteralÍ%ÔÍ%Ö¢20¤init¤init_¨PropertyÍ%çÍ%ôÂÂÂKªIdentifierÍ%çÍ%í¦globalS§LiteralÍ%ïÍ%ôÂ¥false¤initÂM°MethodDefinitionÍ&-Í0óÂÂKªIdentifierÍ&-Í&E¸wireRemainingConnections¦methodN²FunctionExpressionÍ&EÍ0óÀÂÂÂ‘KªIdentifierÍ&FÍ&I£docL®BlockStatementÍ&KÍ0ó–T³VariableDeclarationÍ&VÍ&Š‘U²VariableDeclaratorÍ&\Í&‰KªIdentifierÍ&\Í&b¦vccNetV®CallExpressionÍ&eÍ&‰Q°MemberExpressionÍ&eÍ&rQ°MemberExpressionÍ&eÍ&mKªIdentifierÍ&eÍ&h£docKªIdentifierÍ&iÍ&m¤netsÂÂKªIdentifierÍ&nÍ&r¤findÂÂ‘N·ArrowFunctionExpressionÍ&sÍ&ˆÀÃÂÂ‘KªIdentifierÍ&sÍ&t¡nW°BinaryExpressionÍ&xÍ&ˆQ°MemberExpressionÍ&xÍ&~KªIdentifierÍ&xÍ&y¡nKªIdentifierÍ&zÍ&~¤nameÂÂ£===S§LiteralÍ&ƒÍ&ˆ£VCC¥'VCC'Â¥constT³VariableDeclarationÍ&”Í&È‘U²VariableDeclaratorÍ&šÍ&ÇKªIdentifierÍ&šÍ& ¦gndNetV®CallExpressionÍ&£Í&ÇQ°MemberExpressionÍ&£Í&°Q°MemberExpressionÍ&£Í&«KªIdentifierÍ&£Í&¦£docKªIdentifierÍ&§Í&«¤netsÂÂKªIdentifierÍ&¬Í&°¤findÂÂ‘N·ArrowFunctionExpressionÍ&±Í&ÆÀÃÂÂ‘KªIdentifierÍ&±Í&²¡nW°BinaryExpressionÍ&¶Í&ÆQ°MemberExpressionÍ&¶Í&¼KªIdentifierÍ&¶Í&·¡nKªIdentifierÍ&¸Í&¼¤nameÂÂ£===S§LiteralÍ&ÁÍ&Æ£GND¥'GND'Â¥constX«IfStatementÍ&ÒÍ&şW±LogicalExpressionÍ&ÖÍ&è\¯UnaryExpressionÍ&ÖÍ&İ¡!ÃKªIdentifierÍ&×Í&İ¦vccNet¢||\¯UnaryExpressionÍ&áÍ&è¡!ÃKªIdentifierÍ&âÍ&è¦gndNetY¯ReturnStatementÍ&÷Í&şÀÀT³VariableDeclarationÍ'Í'<‘U²VariableDeclaratorÍ'"Í';KªIdentifierÍ'"Í'/­connectedPinsÔrf•¤type¥start£end¦callee©arguments­NewExpressionÍ'2Í';KªIdentifierÍ'6Í'9£Set¥const[¬ForStatementÍ'FÍ(,T³VariableDeclarationÍ'KÍ'U‘U²VariableDeclaratorÍ'OÍ'UKªIdentifierÍ'OÍ'Q¢niS§LiteralÍ'TÍ'U ¡0£letW°BinaryExpressionÍ'WÍ'kKªIdentifierÍ'WÍ'Y¢ni¡<Q°MemberExpressionÍ'\Í'kQ°MemberExpressionÍ'\Í'dKªIdentifierÍ'\Í'_£docKªIdentifierÍ'`Í'd¤netsÂÂKªIdentifierÍ'eÍ'k¦lengthÂÂ\°UpdateExpressionÍ'mÍ'q¢++ÂKªIdentifierÍ'mÍ'o¢niL®BlockStatementÍ'sÍ(,’T³VariableDeclarationÍ'‚Í'¦‘U²VariableDeclaratorÍ'ˆÍ'¥KªIdentifierÍ'ˆÍ'§netPinsQ°MemberExpressionÍ'’Í'¥Q°MemberExpressionÍ'’Í'Q°MemberExpressionÍ'’Í'šKªIdentifierÍ'’Í'•£docKªIdentifierÍ'–Í'š¤netsÂÂKªIdentifierÍ'›Í'¢niÃÂKªIdentifierÍ'ŸÍ'¥¦pinIdsÂÂ¥const[¬ForStatementÍ'´Í(!T³VariableDeclarationÍ'¹Í'Ã‘U²VariableDeclaratorÍ'½Í'ÃKªIdentifierÍ'½Í'¿¢piS§LiteralÍ'ÂÍ'Ã ¡0£letW°BinaryExpressionÍ'ÅÍ'ØKªIdentifierÍ'ÅÍ'Ç¢pi¡<Q°MemberExpressionÍ'ÊÍ'ØKªIdentifierÍ'ÊÍ'Ñ§netPinsKªIdentifierÍ'ÒÍ'Ø¦lengthÂÂ\°UpdateExpressionÍ'ÚÍ'Ş¢++ÂKªIdentifierÍ'ÚÍ'Ü¢piL®BlockStatementÍ'àÍ(!‘O³ExpressionStatementÍ'óÍ(V®CallExpressionÍ'óÍ(Q°MemberExpressionÍ'óÍ(KªIdentifierÍ'óÍ( ­connectedPinsKªIdentifierÍ(Í(£addÂÂ‘Q°MemberExpressionÍ(Í(KªIdentifierÍ(Í(§netPinsKªIdentifierÍ(Í(¢piÃÂÂ[¬ForStatementÍ(6Í0ìT³VariableDeclarationÍ(;Í(D‘U²VariableDeclaratorÍ(?Í(DKªIdentifierÍ(?Í(@¡iS§LiteralÍ(CÍ(D ¡0£letW°BinaryExpressionÍ(FÍ(_KªIdentifierÍ(FÍ(G¡i¡<Q°MemberExpressionÍ(JÍ(_Q°MemberExpressionÍ(JÍ(XKªIdentifierÍ(JÍ(M£docKªIdentifierÍ(NÍ(XªcomponentsÂÂKªIdentifierÍ(YÍ(_¦lengthÂÂ\°UpdateExpressionÍ(aÍ(d¢++ÂKªIdentifierÍ(aÍ(b¡iL®BlockStatementÍ(fÍ0ì—T³VariableDeclarationÍ(uÍ(”‘U²VariableDeclaratorÍ({Í(“KªIdentifierÍ({Í(¤compQ°MemberExpressionÍ(‚Í(“Q°MemberExpressionÍ(‚Í(KªIdentifierÍ(‚Í(…£docKªIdentifierÍ(†Í(ªcomponentsÂÂKªIdentifierÍ(‘Í(’¡iÃÂ¥constT³VariableDeclarationÍ(¢Í(Ò‘U²VariableDeclaratorÍ(¨Í(ÑKªIdentifierÍ(¨Í(ª¢idV®CallExpressionÍ(­Í(ÑQ°MemberExpressionÍ(­Í(ÏW±LogicalExpressionÍ(®Í(ÂQ°MemberExpressionÍ(®Í(¼KªIdentifierÍ(®Í(²¤compKªIdentifierÍ(³Í(¼©libraryIdÂÂ¢??S§LiteralÍ(ÀÍ(Â ¢''KªIdentifierÍ(ÄÍ(Ï«toUpperCaseÂÂÂ¥constX«IfStatementÍ)Í)KW±LogicalExpressionÍ)Í)/W°BinaryExpressionÍ)Í)KªIdentifierÍ)Í)¢id£===S§LiteralÍ)Í)£VCC¥'VCC'¢||W°BinaryExpressionÍ)#Í)/KªIdentifierÍ)#Í)%¢id£===S§LiteralÍ)*Í)/£GND¥'GND']±ContinueStatementÍ)BÍ)KÀÀX«IfStatementÍ)YÍ*MW±LogicalExpressionÍ)]Í*1W±LogicalExpressionÍ)]Í*W±LogicalExpressionÍ)]Í)ßW±LogicalExpressionÍ)]Í)ÀW±LogicalExpressionÍ)]Í)V®CallExpressionÍ)]Í)sQ°MemberExpressionÍ)]Í)hKªIdentifierÍ)]Í)_¢idKªIdentifierÍ)`Í)h¨includesÂÂ‘S§LiteralÍ)iÍ)r§AMMETER©'AMMETER'Â¢||V®CallExpressionÍ)wÍ)Q°MemberExpressionÍ)wÍ)‚KªIdentifierÍ)wÍ)y¢idKªIdentifierÍ)zÍ)‚¨includesÂÂ‘S§LiteralÍ)ƒÍ)©VOLTMETER«'VOLTMETER'Â¢||V®CallExpressionÍ)¤Í)ÀQ°MemberExpressionÍ)¤Í)¯KªIdentifierÍ)¤Í)¦¢idKªIdentifierÍ)§Í)¯¨includesÂÂ‘S§LiteralÍ)°Í)¿­VIRTUAL_METER¯'VIRTUAL_METER'Â¢||V®CallExpressionÍ)ÄÍ)ßQ°MemberExpressionÍ)ÄÍ)ÏKªIdentifierÍ)ÄÍ)Æ¢idKªIdentifierÍ)ÇÍ)Ï¨includesÂÂ‘S§LiteralÍ)ĞÍ)Ş¬OSCILLOSCOPE®'OSCILLOSCOPE'Â¢||V®CallExpressionÍ)ôÍ*Q°MemberExpressionÍ)ôÍ)ÿKªIdentifierÍ)ôÍ)ö¢idKªIdentifierÍ)÷Í)ÿ¨includesÂÂ‘S§LiteralÍ* Í*®LOGIC_ANALYZER°'LOGIC_ANALYZER'Â¢||V®CallExpressionÍ*Í*1Q°MemberExpressionÍ*Í* KªIdentifierÍ*Í*¢idKªIdentifierÍ*Í* ¨includesÂÂ‘S§LiteralÍ*!Í*0­UART_TERMINAL¯'UART_TERMINAL'Â]±ContinueStatementÍ*DÍ*MÀÀX«IfStatementÍ*rÍ,pW±LogicalExpressionÍ*vÍ*ŸV®CallExpressionÍ*vÍ*‰Q°MemberExpressionÍ*vÍ*ƒKªIdentifierÍ*vÍ*x¢idKªIdentifierÍ*yÍ*ƒªstartsWithÂÂ‘S§LiteralÍ*„Í*ˆ¢C_¤'C_'Â¢&&V®CallExpressionÍ*Í*ŸQ°MemberExpressionÍ*Í*˜KªIdentifierÍ*Í*¢idKªIdentifierÍ*Í*˜¨includesÂÂ‘S§LiteralÍ*™Í*£100¥'100'ÂL®BlockStatementÍ*¡Í,p“T³VariableDeclarationÍ*´Í*ê‘U²VariableDeclaratorÍ*ºÍ*éKªIdentifierÍ*ºÍ*À¦capPinV®CallExpressionÍ*ÃÍ*éQ°MemberExpressionÍ*ÃÍ*ÖR®ThisExpressionÍ*ÃÍ*ÇKªIdentifierÍ*ÈÍ*Ö®estimatePinPosÂÂ“KªIdentifierÍ*×Í*Û¤compS§LiteralÍ*İÍ*å¦bottom¨'bottom'S§LiteralÍ*çÍ*è ¡0Â¥constT³VariableDeclarationÍ*üÍ+b‘U²VariableDeclaratorÍ+Í+aKªIdentifierÍ+Í+¦gndPinV®CallExpressionÍ+Í+aQ°MemberExpressionÍ+Í+R®ThisExpressionÍ+Í+KªIdentifierÍ+Í+®estimatePinPosÂÂ“W±LogicalExpressionÍ+Í+VV®CallExpressionÍ+Í+NQ°MemberExpressionÍ+Í+2Q°MemberExpressionÍ+Í+-KªIdentifierÍ+Í+"£docKªIdentifierÍ+#Í+-ªcomponentsÂÂKªIdentifierÍ+.Í+2¤findÂÂ‘N·ArrowFunctionExpressionÍ+3Í+MÀÃÂÂ‘KªIdentifierÍ+3Í+4¡cW°BinaryExpressionÍ+8Í+MQ°MemberExpressionÍ+8Í+CKªIdentifierÍ+8Í+9¡cKªIdentifierÍ+:Í+C©libraryIdÂÂ£===S§LiteralÍ+HÍ+M£GND¥'GND'Â¢??KªIdentifierÍ+RÍ+V¤compS§LiteralÍ+XÍ+]£top¥'top'S§LiteralÍ+_Í+` ¡0Â¥constO³ExpressionStatementÍ+tÍ,aV®CallExpressionÍ+tÍ,`Q°MemberExpressionÍ+tÍ+‚Q°MemberExpressionÍ+tÍ+}KªIdentifierÍ+tÍ+w£docKªIdentifierÍ+xÍ+}¥wiresÂÂKªIdentifierÍ+~Í+‚¤pushÂÂ‘^°ObjectExpressionÍ+ƒÍ,_”_¨PropertyÍ+šÍ+µÂÂÂKªIdentifierÍ+šÍ+œ¢idV®CallExpressionÍ+Í+µQ°MemberExpressionÍ+Í+­KªIdentifierÍ+Í+¤¦IdUtilKªIdentifierÍ+¥Í+­¨generateÂÂ‘S§LiteralÍ+®Í+´¤wire¦'wire'Â¤init_¨PropertyÍ+·Í+ÇÂÂÂKªIdentifierÍ+·Í+¼¥netIdQ°MemberExpressionÍ+¾Í+ÇKªIdentifierÍ+¾Í+Ä¦gndNetKªIdentifierÍ+ÅÍ+Ç¢idÂÂ¤init_¨PropertyÍ+ŞÍ,ÂÂÂKªIdentifierÍ+ŞÍ+ä¦pointsV®CallExpressionÍ+æÍ,Q°MemberExpressionÍ+æÍ+úR®ThisExpressionÍ+æÍ+êKªIdentifierÍ+ëÍ+ú¯orthogonalRouteÂÂ“KªIdentifierÍ+ûÍ,¦capPinKªIdentifierÍ,Í,	¦gndPinQ°MemberExpressionÍ,Í,KªIdentifierÍ,Í,£docKªIdentifierÍ,Í,ªcomponentsÂÂÂ¤init_¨PropertyÍ,1Í,LÂÂÂKªIdentifierÍ,1Í,6¥styleQ°MemberExpressionÍ,8Í,LKªIdentifierÍ,8Í,A©WireStyleKªIdentifierÍ,BÍ,LªORTHOGONALÂÂ¤initÂÀX«IfStatementÍ,¦Í.CV®CallExpressionÍ,ªÍ,¿Q°MemberExpressionÍ,ªÍ,·KªIdentifierÍ,ªÍ,¬¢idKªIdentifierÍ,­Í,·ªstartsWithÂÂ‘S§LiteralÍ,¸Í,¾¤LED_¦'LED_'ÂL®BlockStatementÍ,ÁÍ.C’T³VariableDeclarationÍ,úÍ-0‘U²VariableDeclaratorÍ- Í-/KªIdentifierÍ- Í-¦ledPinV®CallExpressionÍ-	Í-/Q°MemberExpressionÍ-	Í-R®ThisExpressionÍ-	Í-KªIdentifierÍ-Í-®estimatePinPosÂÂ“KªIdentifierÍ-Í-!¤compS§LiteralÍ-#Í-+¦bottom¨'bottom'S§LiteralÍ--Í-. ¡0Â¥constO³ExpressionStatementÍ-BÍ.4V®CallExpressionÍ-BÍ.3Q°MemberExpressionÍ-BÍ-TQ°MemberExpressionÍ-BÍ-OKªIdentifierÍ-BÍ-E£docKªIdentifierÍ-FÍ-O©netLabelsÂÂKªIdentifierÍ-PÍ-T¤pushÂÂ‘^°ObjectExpressionÍ-UÍ.2•_¨PropertyÍ-lÍ-…ÂÂÂKªIdentifierÍ-lÍ-n¢idV®CallExpressionÍ-pÍ-…Q°MemberExpressionÍ-pÍ-KªIdentifierÍ-pÍ-v¦IdUtilKªIdentifierÍ-wÍ-¨generateÂÂ‘S§LiteralÍ-€Í-„¢nl¤'nl'Â¤init_¨PropertyÍ-‡Í-—ÂÂÂKªIdentifierÍ-‡Í-Œ¥netIdQ°MemberExpressionÍ-Í-—KªIdentifierÍ-Í-”¦gndNetKªIdentifierÍ-•Í-—¢idÂÂ¤init_¨PropertyÍ-®Í-¹ÂÂÂKªIdentifierÍ-®Í-²¤textS§LiteralÍ-´Í-¹£GND¥'GND'¤init_¨PropertyÍ-ĞÍ-ûÂÂÂKªIdentifierÍ-ĞÍ-Ø¨position^°ObjectExpressionÍ-ÚÍ-û’_¨PropertyÍ-ÜÍ-çÂÂÂKªIdentifierÍ-ÜÍ-İ¡xQ°MemberExpressionÍ-ßÍ-çKªIdentifierÍ-ßÍ-å¦ledPinKªIdentifierÍ-æÍ-ç¡xÂÂ¤init_¨PropertyÍ-éÍ-ùÂÂÂKªIdentifierÍ-éÍ-ê¡yW°BinaryExpressionÍ-ìÍ-ùQ°MemberExpressionÍ-ìÍ-ôKªIdentifierÍ-ìÍ-ò¦ledPinKªIdentifierÍ-óÍ-ô¡yÂÂ¡+S§LiteralÍ-÷Í-ù¢20¤init¤init_¨PropertyÍ.Í.ÂÂÂKªIdentifierÍ.Í.¦globalS§LiteralÍ.Í.Â¥false¤initÂÀX«IfStatementÍ.kÍ0áV®CallExpressionÍ.oÍ.‚Q°MemberExpressionÍ.oÍ.|KªIdentifierÍ.oÍ.q¢idKªIdentifierÍ.rÍ.|ªstartsWithÂÂ‘S§LiteralÍ.}Í.¢R_¤'R_'ÂL®BlockStatementÍ.„Í0á“T³VariableDeclarationÍ.»Í.ğ‘U²VariableDeclaratorÍ.ÁÍ.ïKªIdentifierÍ.ÁÍ.Ç¦resPinV®CallExpressionÍ.ÊÍ.ïQ°MemberExpressionÍ.ÊÍ.İR®ThisExpressionÍ.ÊÍ.ÎKªIdentifierÍ.ÏÍ.İ®estimatePinPosÂÂ“KªIdentifierÍ.ŞÍ.â¤compS§LiteralÍ.äÍ.ë¥right§'right'S§LiteralÍ.íÍ.î ¡0Â¥constT³VariableDeclarationÍ/Í/7‘U²VariableDeclaratorÍ/Í/6KªIdentifierÍ/Í/§nearVccW°BinaryExpressionÍ/Í/6V®CallExpressionÍ/Í/0Q°MemberExpressionÍ/Í/KªIdentifierÍ/Í/¤MathKªIdentifierÍ/Í/£absÂÂ‘W°BinaryExpressionÍ/Í//Q°MemberExpressionÍ/Í/*Q°MemberExpressionÍ/Í/(KªIdentifierÍ/Í/¤compKªIdentifierÍ/ Í/(¨positionÂÂKªIdentifierÍ/)Í/*¡xÂÂ¡-S§LiteralÍ/-Í//<¢60Â¡<S§LiteralÍ/3Í/6Ì–£150¥constX«IfStatementÍ/IÍ0ÒW±LogicalExpressionÍ/MÍ/jKªIdentifierÍ/MÍ/T§nearVcc¢&&V®CallExpressionÍ/XÍ/jQ°MemberExpressionÍ/XÍ/cKªIdentifierÍ/XÍ/Z¢idKªIdentifierÍ/[Í/c¨includesÂÂ‘S§LiteralÍ/dÍ/i£10k¥'10k'ÂL®BlockStatementÍ/lÍ0Ò‘O³ExpressionStatementÍ/¤Í0¿V®CallExpressionÍ/¤Í0¾Q°MemberExpressionÍ/¤Í/²Q°MemberExpressionÍ/¤Í/­KªIdentifierÍ/¤Í/§£docKªIdentifierÍ/¨Í/­¥wiresÂÂKªIdentifierÍ/®Í/²¤pushÂÂ‘^°ObjectExpressionÍ/³Í0½”_¨PropertyÍ/ÎÍ/éÂÂÂKªIdentifierÍ/ÎÍ/Ğ¢idV®CallExpressionÍ/ÒÍ/éQ°MemberExpressionÍ/ÒÍ/áKªIdentifierÍ/ÒÍ/Ø¦IdUtilKªIdentifierÍ/ÙÍ/á¨generateÂÂ‘S§LiteralÍ/âÍ/è¤wire¦'wire'Â¤init_¨PropertyÍ/ëÍ/ûÂÂÂKªIdentifierÍ/ëÍ/ğ¥netIdQ°MemberExpressionÍ/òÍ/ûKªIdentifierÍ/òÍ/ø¦vccNetKªIdentifierÍ/ùÍ/û¢idÂÂ¤init_¨PropertyÍ0Í0pÂÂÂKªIdentifierÍ0Í0¦pointsV®CallExpressionÍ0Í0pQ°MemberExpressionÍ0Í02R®ThisExpressionÍ0Í0"KªIdentifierÍ0#Í02¯orthogonalRouteÂÂ“KªIdentifierÍ03Í09¦resPinV®CallExpressionÍ0;Í0_Q°MemberExpressionÍ0;Í0NR®ThisExpressionÍ0;Í0?KªIdentifierÍ0@Í0N®estimatePinPosÂÂ“KªIdentifierÍ0OÍ0S¤compS§LiteralÍ0UÍ0[¤left¦'left'S§LiteralÍ0]Í0^ ¡0ÂQ°MemberExpressionÍ0aÍ0oKªIdentifierÍ0aÍ0d£docKªIdentifierÍ0eÍ0oªcomponentsÂÂÂ¤init_¨PropertyÍ0‹Í0¦ÂÂÂKªIdentifierÍ0‹Í0¥styleQ°MemberExpressionÍ0’Í0¦KªIdentifierÍ0’Í0›©WireStyleKªIdentifierÍ0œÍ0¦ªORTHOGONALÂÂ¤initÂÀÀM°MethodDefinitionÍ11Í7GÂÂKªIdentifierÍ11Í1?®estimatePinPos¦methodN²FunctionExpressionÍ1?Í7GÀÂÂÂ“KªIdentifierÍ1@Í1D¤compKªIdentifierÍ1FÍ1J¤edgeKªIdentifierÍ1LÍ1T¨pinIndexL®BlockStatementÍ1VÍ7G˜T³VariableDeclarationÍ1aÍ1›‘U²VariableDeclaratorÍ1gÍ1šKªIdentifierÍ1gÍ1n§pinNameV®CallExpressionÍ1qÍ1šQ°MemberExpressionÍ1qÍ1„R®ThisExpressionÍ1qÍ1uKªIdentifierÍ1vÍ1„®pinNameForEdgeÂÂ“KªIdentifierÍ1…Í1‰¤compKªIdentifierÍ1‹Í1¤edgeKªIdentifierÍ1‘Í1™¨pinIndexÂ¥constX«IfStatementÍ1¥Í2W°BinaryExpressionÍ1©Í1»Q°MemberExpressionÍ1©Í1·KªIdentifierÍ1©Í1°§pinNameKªIdentifierÍ1±Í1·¦lengthÂÂ¡>S§LiteralÍ1ºÍ1» ¡0L®BlockStatementÍ1½Í2‘Y¯ReturnStatementÍ1ÌÍ2	V®CallExpressionÍ1ÓÍ2Q°MemberExpressionÍ1ÓÍ1ğKªIdentifierÍ1ÓÍ1ã°PinWorldResolverKªIdentifierÍ1äÍ1ğ¬forComponentÂÂ“KªIdentifierÍ1ñÍ1õ¤compKªIdentifierÍ1÷Í1ş§pinNameKªIdentifierÍ2 Í2§pinNameÂÀT³VariableDeclarationÍ2Í26‘U²VariableDeclaratorÍ2$Í25KªIdentifierÍ2$Í2%¡pQ°MemberExpressionÍ2(Í25KªIdentifierÍ2(Í2,¤compKªIdentifierÍ2-Í25¨positionÂÂ¥constT³VariableDeclarationÍ2@Í2p‘U²VariableDeclaratorÍ2FÍ2oKªIdentifierÍ2FÍ2H¢idV®CallExpressionÍ2KÍ2oQ°MemberExpressionÍ2KÍ2mW±LogicalExpressionÍ2LÍ2`Q°MemberExpressionÍ2LÍ2ZKªIdentifierÍ2LÍ2P¤compKªIdentifierÍ2QÍ2Z©libraryIdÂÂ¢??S§LiteralÍ2^Í2` ¢''KªIdentifierÍ2bÍ2m«toUpperCaseÂÂÂ¥constT³VariableDeclarationÍ2zÍ2…‘U²VariableDeclaratorÍ2~Í2„KªIdentifierÍ2~Í2¡wS§LiteralÍ2‚Í2„<¢60£letT³VariableDeclarationÍ2Í2š‘U²VariableDeclaratorÍ2“Í2™KªIdentifierÍ2“Í2”¡hS§LiteralÍ2—Í2™(¢40£letX«IfStatementÍ2¤Í5İW±LogicalExpressionÍ2¨Í2éW±LogicalExpressionÍ2¨Í2ÓV®CallExpressionÍ2¨Í2¼Q°MemberExpressionÍ2¨Í2³KªIdentifierÍ2¨Í2ª¢idKªIdentifierÍ2«Í2³¨includesÂÂ‘S§LiteralÍ2´Í2»¥STM32§'STM32'Â¢||V®CallExpressionÍ2ÀÍ2ÓQ°MemberExpressionÍ2ÀÍ2ËKªIdentifierÍ2ÀÍ2Â¢idKªIdentifierÍ2ÃÍ2Ë¨includesÂÂ‘S§LiteralÍ2ÌÍ2Ò¤AT89¦'AT89'Â¢||V®CallExpressionÍ2×Í2éQ°MemberExpressionÍ2×Í2âKªIdentifierÍ2×Í2Ù¢idKªIdentifierÍ2ÚÍ2â¨includesÂÂ‘S§LiteralÍ2ãÍ2è£STC¥'STC'ÂL®BlockStatementÍ2ëÍ3"’O³ExpressionStatementÍ2úÍ3P´AssignmentExpressionÍ2úÍ3¡=KªIdentifierÍ2úÍ2û¡wS§LiteralÍ2şÍ3Ìd£100O³ExpressionStatementÍ3Í3P´AssignmentExpressionÍ3Í3¡=KªIdentifierÍ3Í3¡hS§LiteralÍ3Í3ÌP¢80X«IfStatementÍ31Í5İW±LogicalExpressionÍ35Í3³W±LogicalExpressionÍ35Í3”W±LogicalExpressionÍ35Í3gV®CallExpressionÍ35Í3KQ°MemberExpressionÍ35Í3@KªIdentifierÍ35Í37¢idKªIdentifierÍ38Í3@¨includesÂÂ‘S§LiteralÍ3AÍ3J§AMMETER©'AMMETER'Â¢||V®CallExpressionÍ3OÍ3gQ°MemberExpressionÍ3OÍ3ZKªIdentifierÍ3OÍ3Q¢idKªIdentifierÍ3RÍ3Z¨includesÂÂ‘S§LiteralÍ3[Í3f©VOLTMETER«'VOLTMETER'Â¢||V®CallExpressionÍ3xÍ3”Q°MemberExpressionÍ3xÍ3ƒKªIdentifierÍ3xÍ3z¢idKªIdentifierÍ3{Í3ƒ¨includesÂÂ‘S§LiteralÍ3„Í3“­VIRTUAL_METER¯'VIRTUAL_METER'Â¢||V®CallExpressionÍ3˜Í3³Q°MemberExpressionÍ3˜Í3£KªIdentifierÍ3˜Í3š¢idKªIdentifierÍ3›Í3£¨includesÂÂ‘S§LiteralÍ3¤Í3²¬OSCILLOSCOPE®'OSCILLOSCOPE'ÂL®BlockStatementÍ3µÍ3ì’O³ExpressionStatementÍ3ÄÍ3ÌP´AssignmentExpressionÍ3ÄÍ3Ë¡=KªIdentifierÍ3ÄÍ3Å¡wS§LiteralÍ3ÈÍ3ËÌd£100O³ExpressionStatementÍ3ÚÍ3áP´AssignmentExpressionÍ3ÚÍ3à¡=KªIdentifierÍ3ÚÍ3Û¡hS§LiteralÍ3ŞÍ3àÌF¢70X«IfStatementÍ3ûÍ5İW±LogicalExpressionÍ3ÿÍ4+W±LogicalExpressionÍ3ÿÍ4W°BinaryExpressionÍ3ÿÍ4KªIdentifierÍ3ÿÍ4¢id£===S§LiteralÍ4Í4£VCC¥'VCC'¢||W°BinaryExpressionÍ4Í4KªIdentifierÍ4Í4¢id£===S§LiteralÍ4Í4£GND¥'GND'¢||W°BinaryExpressionÍ4Í4+KªIdentifierÍ4Í4!¢id£===S§LiteralÍ4&Í4+£VEE¥'VEE'L®BlockStatementÍ4-Í4c’O³ExpressionStatementÍ4<Í4CP´AssignmentExpressionÍ4<Í4B¡=KªIdentifierÍ4<Í4=¡wS§LiteralÍ4@Í4B¢30O³ExpressionStatementÍ4QÍ4XP´AssignmentExpressionÍ4QÍ4W¡=KªIdentifierÍ4QÍ4R¡hS§LiteralÍ4UÍ4W¢30X«IfStatementÍ4rÍ5İV®CallExpressionÍ4vÍ4‰Q°MemberExpressionÍ4vÍ4ƒKªIdentifierÍ4vÍ4x¢idKªIdentifierÍ4yÍ4ƒªstartsWithÂÂ‘S§LiteralÍ4„Í4ˆ¢R_¤'R_'ÂL®BlockStatementÍ4‹Í4Á’O³ExpressionStatementÍ4šÍ4¡P´AssignmentExpressionÍ4šÍ4 ¡=KªIdentifierÍ4šÍ4›¡wS§LiteralÍ4Í4 <¢60O³ExpressionStatementÍ4¯Í4¶P´AssignmentExpressionÍ4¯Í4µ¡=KªIdentifierÍ4¯Í4°¡hS§LiteralÍ4³Í4µ¢20X«IfStatementÍ4ĞÍ5İV®CallExpressionÍ4ÔÍ4çQ°MemberExpressionÍ4ÔÍ4áKªIdentifierÍ4ÔÍ4Ö¢idKªIdentifierÍ4×Í4áªstartsWithÂÂ‘S§LiteralÍ4âÍ4æ¢C_¤'C_'ÂL®BlockStatementÍ4éÍ5’O³ExpressionStatementÍ4øÍ4ÿP´AssignmentExpressionÍ4øÍ4ş¡=KªIdentifierÍ4øÍ4ù¡wS§LiteralÍ4üÍ4ş(¢40O³ExpressionStatementÍ5Í5P´AssignmentExpressionÍ5Í5¡=KªIdentifierÍ5Í5¡hS§LiteralÍ5Í5¢30X«IfStatementÍ5.Í5İV®CallExpressionÍ52Í5GQ°MemberExpressionÍ52Í5?KªIdentifierÍ52Í54¢idKªIdentifierÍ55Í5?ªstartsWithÂÂ‘S§LiteralÍ5@Í5F¤LED_¦'LED_'ÂL®BlockStatementÍ5IÍ5’O³ExpressionStatementÍ5XÍ5_P´AssignmentExpressionÍ5XÍ5^¡=KªIdentifierÍ5XÍ5Y¡wS§LiteralÍ5\Í5^(¢40O³ExpressionStatementÍ5mÍ5tP´AssignmentExpressionÍ5mÍ5s¡=KªIdentifierÍ5mÍ5n¡hS§LiteralÍ5qÍ5s(¢40X«IfStatementÍ5Í5İV®CallExpressionÍ5’Í5¥Q°MemberExpressionÍ5’Í5KªIdentifierÍ5’Í5”¢idKªIdentifierÍ5•Í5¨includesÂÂ‘S§LiteralÍ5Í5¤¤XTAL¦'XTAL'ÂL®BlockStatementÍ5§Í5İ’O³ExpressionStatementÍ5¶Í5½P´AssignmentExpressionÍ5¶Í5¼¡=KªIdentifierÍ5¶Í5·¡wS§LiteralÍ5ºÍ5¼2¢50O³ExpressionStatementÍ5ËÍ5ÒP´AssignmentExpressionÍ5ËÍ5Ñ¡=KªIdentifierÍ5ËÍ5Ì¡hS§LiteralÍ5ÏÍ5Ñ(¢40Àa¯SwitchStatementÍ5çÍ7@KªIdentifierÍ5ïÍ5ó¤edge•bªSwitchCaseÍ6Í63‘Y¯ReturnStatementÍ6Í63^°ObjectExpressionÍ6Í62’_¨PropertyÍ6Í6 ÂÂÂKªIdentifierÍ6Í6¡xQ°MemberExpressionÍ6Í6 KªIdentifierÍ6Í6¡pKªIdentifierÍ6Í6 ¡xÂÂ¤init_¨PropertyÍ6"Í60ÂÂÂKªIdentifierÍ6"Í6#¡yW°BinaryExpressionÍ6%Í60Q°MemberExpressionÍ6%Í6(KªIdentifierÍ6%Í6&¡pKªIdentifierÍ6'Í6(¡yÂÂ¡+W°BinaryExpressionÍ6+Í60KªIdentifierÍ6+Í6,¡h¡/S§LiteralÍ6/Í60¡2¤initS§LiteralÍ6	Í6¤left¦'left'bªSwitchCaseÍ6AÍ6u‘Y¯ReturnStatementÍ6OÍ6u^°ObjectExpressionÍ6VÍ6t’_¨PropertyÍ6XÍ6bÂÂÂKªIdentifierÍ6XÍ6Y¡xW°BinaryExpressionÍ6[Í6bQ°MemberExpressionÍ6[Í6^KªIdentifierÍ6[Í6\¡pKªIdentifierÍ6]Í6^¡xÂÂ¡+KªIdentifierÍ6aÍ6b¡w¤init_¨PropertyÍ6dÍ6rÂÂÂKªIdentifierÍ6dÍ6e¡yW°BinaryExpressionÍ6gÍ6rQ°MemberExpressionÍ6gÍ6jKªIdentifierÍ6gÍ6h¡pKªIdentifierÍ6iÍ6j¡yÂÂ¡+W°BinaryExpressionÍ6mÍ6rKªIdentifierÍ6mÍ6n¡h¡/S§LiteralÍ6qÍ6r¡2¤initS§LiteralÍ6FÍ6M¥right§'right'bªSwitchCaseÍ6ƒÍ6±‘Y¯ReturnStatementÍ6Í6±^°ObjectExpressionÍ6–Í6°’_¨PropertyÍ6˜Í6¦ÂÂÂKªIdentifierÍ6˜Í6™¡xW°BinaryExpressionÍ6›Í6¦Q°MemberExpressionÍ6›Í6KªIdentifierÍ6›Í6œ¡pKªIdentifierÍ6Í6¡xÂÂ¡+W°BinaryExpressionÍ6¡Í6¦KªIdentifierÍ6¡Í6¢¡w¡/S§LiteralÍ6¥Í6¦¡2¤init_¨PropertyÍ6¨Í6®ÂÂÂKªIdentifierÍ6¨Í6©¡yQ°MemberExpressionÍ6«Í6®KªIdentifierÍ6«Í6¬¡pKªIdentifierÍ6­Í6®¡yÂÂ¤initS§LiteralÍ6ˆÍ6£top¥'top'bªSwitchCaseÍ6¿Í6ô‘Y¯ReturnStatementÍ6ÎÍ6ô^°ObjectExpressionÍ6ÕÍ6ó’_¨PropertyÍ6×Í6åÂÂÂKªIdentifierÍ6×Í6Ø¡xW°BinaryExpressionÍ6ÚÍ6åQ°MemberExpressionÍ6ÚÍ6İKªIdentifierÍ6ÚÍ6Û¡pKªIdentifierÍ6ÜÍ6İ¡xÂÂ¡+W°BinaryExpressionÍ6àÍ6åKªIdentifierÍ6àÍ6á¡w¡/S§LiteralÍ6äÍ6å¡2¤init_¨PropertyÍ6çÍ6ñÂÂÂKªIdentifierÍ6çÍ6è¡yW°BinaryExpressionÍ6êÍ6ñQ°MemberExpressionÍ6êÍ6íKªIdentifierÍ6êÍ6ë¡pKªIdentifierÍ6ìÍ6í¡yÂÂ¡+KªIdentifierÍ6ğÍ6ñ¡h¤initS§LiteralÍ6ÄÍ6Ì¦bottom¨'bottom'bªSwitchCaseÍ7Í75‘Y¯ReturnStatementÍ7Í75^°ObjectExpressionÍ7Í74’_¨PropertyÍ7Í7"ÂÂÂKªIdentifierÍ7Í7¡xW°BinaryExpressionÍ7Í7"Q°MemberExpressionÍ7Í7KªIdentifierÍ7Í7¡pKªIdentifierÍ7Í7¡xÂÂ¡+W°BinaryExpressionÍ7Í7"KªIdentifierÍ7Í7¡w¡/S§LiteralÍ7!Í7"¡2¤init_¨PropertyÍ7$Í72ÂÂÂKªIdentifierÍ7$Í7%¡yW°BinaryExpressionÍ7'Í72Q°MemberExpressionÍ7'Í7*KªIdentifierÍ7'Í7(¡pKªIdentifierÍ7)Í7*¡yÂÂ¡+W°BinaryExpressionÍ7-Í72KªIdentifierÍ7-Í7.¡h¡/S§LiteralÍ71Í72¡2¤initÀM°MethodDefinitionÍ7MÍ;ŸÂÂKªIdentifierÍ7MÍ7[®pinNameForEdge¦methodN²FunctionExpressionÍ7[Í;ŸÀÂÂÂ“KªIdentifierÍ7\Í7`¤compKªIdentifierÍ7bÍ7f¤edgeKªIdentifierÍ7hÍ7q©_pinIndexL®BlockStatementÍ7sÍ;Ÿ—T³VariableDeclarationÍ7~Í7®‘U²VariableDeclaratorÍ7„Í7­KªIdentifierÍ7„Í7†¢idV®CallExpressionÍ7‰Í7­Q°MemberExpressionÍ7‰Í7«W±LogicalExpressionÍ7ŠÍ7Q°MemberExpressionÍ7ŠÍ7˜KªIdentifierÍ7ŠÍ7¤compKªIdentifierÍ7Í7˜©libraryIdÂÂ¢??S§LiteralÍ7œÍ7 ¢''KªIdentifierÍ7 Í7««toUpperCaseÂÂÂ¥constX«IfStatementÍ7¸Í8aV®CallExpressionÍ7¼Í7ÒQ°MemberExpressionÍ7¼Í7ÇKªIdentifierÍ7¼Í7¾¢idKªIdentifierÍ7¿Í7Ç¨includesÂÂ‘S§LiteralÍ7ÈÍ7Ñ§AMMETER©'AMMETER'ÂL®BlockStatementÍ7ÔÍ8a’X«IfStatementÍ7ãÍ8W°BinaryExpressionÍ7çÍ7öKªIdentifierÍ7çÍ7ë¤edge£===S§LiteralÍ7ğÍ7ö¤left¦'left'Y¯ReturnStatementÍ8	Í8S§LiteralÍ8Í8¢I+¤'I+'ÀX«IfStatementÍ8#Í8VW°BinaryExpressionÍ8'Í87KªIdentifierÍ8'Í8+¤edge£===S§LiteralÍ80Í87¥right§'right'Y¯ReturnStatementÍ8JÍ8VS§LiteralÍ8QÍ8U¢I-¤'I-'ÀÀX«IfStatementÍ8kÍ9LW±LogicalExpressionÍ8oÍ8§V®CallExpressionÍ8oÍ8‡Q°MemberExpressionÍ8oÍ8zKªIdentifierÍ8oÍ8q¢idKªIdentifierÍ8rÍ8z¨includesÂÂ‘S§LiteralÍ8{Í8†©VOLTMETER«'VOLTMETER'Â¢||V®CallExpressionÍ8‹Í8§Q°MemberExpressionÍ8‹Í8–KªIdentifierÍ8‹Í8¢idKªIdentifierÍ8Í8–¨includesÂÂ‘S§LiteralÍ8—Í8¦­VIRTUAL_METER¯'VIRTUAL_METER'ÂL®BlockStatementÍ8©Í9L’X«IfStatementÍ8¸Í8êW°BinaryExpressionÍ8¼Í8ËKªIdentifierÍ8¼Í8À¤edge£===S§LiteralÍ8ÅÍ8Ë¤left¦'left'Y¯ReturnStatementÍ8ŞÍ8êS§LiteralÍ8åÍ8é¢V+¤'V+'ÀX«IfStatementÍ8øÍ9AW±LogicalExpressionÍ8üÍ9!W°BinaryExpressionÍ8üÍ9KªIdentifierÍ8üÍ9 ¤edge£===S§LiteralÍ9Í9¦bottom¨'bottom'¢||W°BinaryExpressionÍ9Í9!KªIdentifierÍ9Í9¤edge£===S§LiteralÍ9Í9!¥right§'right'Y¯ReturnStatementÍ94Í9AS§LiteralÍ9;Í9@£COM¥'COM'ÀÀX«IfStatementÍ9VÍ:V®CallExpressionÍ9ZÍ9uQ°MemberExpressionÍ9ZÍ9eKªIdentifierÍ9ZÍ9\¢idKªIdentifierÍ9]Í9e¨includesÂÂ‘S§LiteralÍ9fÍ9t¬OSCILLOSCOPE®'OSCILLOSCOPE'ÂL®BlockStatementÍ9wÍ:’X«IfStatementÍ9†Í9¹W°BinaryExpressionÍ9ŠÍ9™KªIdentifierÍ9ŠÍ9¤edge£===S§LiteralÍ9“Í9™¤left¦'left'Y¯ReturnStatementÍ9¬Í9¹S§LiteralÍ9³Í9¸£CH1¥'CH1'ÀX«IfStatementÍ9ÇÍ9üW°BinaryExpressionÍ9ËÍ9ÜKªIdentifierÍ9ËÍ9Ï¤edge£===S§LiteralÍ9ÔÍ9Ü¦bottom¨'bottom'Y¯ReturnStatementÍ9ïÍ9üS§LiteralÍ9öÍ9û£GND¥'GND'ÀÀX«IfStatementÍ:Í:hW±LogicalExpressionÍ:Í:AW±LogicalExpressionÍ:Í:1W°BinaryExpressionÍ:Í:!KªIdentifierÍ:Í:¢id£===S§LiteralÍ:Í:!£VCC¥'VCC'¢||W°BinaryExpressionÍ:%Í:1KªIdentifierÍ:%Í:'¢id£===S§LiteralÍ:,Í:1£GND¥'GND'¢||W°BinaryExpressionÍ:5Í:AKªIdentifierÍ:5Í:7¢id£===S§LiteralÍ:<Í:A£VEE¥'VEE'L®BlockStatementÍ:CÍ:h‘Y¯ReturnStatementÍ:RÍ:]S§LiteralÍ:YÍ:\¡1£'1'ÀX«IfStatementÍ:rÍ;„W±LogicalExpressionÍ:vÍ:ĞW±LogicalExpressionÍ:vÍ:¹W±LogicalExpressionÍ:vÍ: V®CallExpressionÍ:vÍ:‰Q°MemberExpressionÍ:vÍ:ƒKªIdentifierÍ:vÍ:x¢idKªIdentifierÍ:yÍ:ƒªstartsWithÂÂ‘S§LiteralÍ:„Í:ˆ¢R_¤'R_'Â¢||V®CallExpressionÍ:Í: Q°MemberExpressionÍ:Í:šKªIdentifierÍ:Í:¢idKªIdentifierÍ:Í:šªstartsWithÂÂ‘S§LiteralÍ:›Í:Ÿ¢C_¤'C_'Â¢||V®CallExpressionÍ:¤Í:¹Q°MemberExpressionÍ:¤Í:±KªIdentifierÍ:¤Í:¦¢idKªIdentifierÍ:§Í:±ªstartsWithÂÂ‘S§LiteralÍ:²Í:¸¤LED_¦'LED_'Â¢||V®CallExpressionÍ:½Í:ĞQ°MemberExpressionÍ:½Í:ÊKªIdentifierÍ:½Í:¿¢idKªIdentifierÍ:ÀÍ:ÊªstartsWithÂÂ‘S§LiteralÍ:ËÍ:Ï¢L_¤'L_'ÂL®BlockStatementÍ:ÒÍ;„’X«IfStatementÍ:áÍ;$W±LogicalExpressionÍ:åÍ;W°BinaryExpressionÍ:åÍ:óKªIdentifierÍ:åÍ:é¤edge£===S§LiteralÍ:îÍ:ó£top¥'top'¢||W°BinaryExpressionÍ:÷Í;KªIdentifierÍ:÷Í:û¤edge£===S§LiteralÍ; Í;¤left¦'left'Y¯ReturnStatementÍ;Í;$S§LiteralÍ; Í;#¡1£'1'ÀX«IfStatementÍ;2Í;yW±LogicalExpressionÍ;6Í;[W°BinaryExpressionÍ;6Í;GKªIdentifierÍ;6Í;:¤edge£===S§LiteralÍ;?Í;G¦bottom¨'bottom'¢||W°BinaryExpressionÍ;KÍ;[KªIdentifierÍ;KÍ;O¤edge£===S§LiteralÍ;TÍ;[¥right§'right'Y¯ReturnStatementÍ;nÍ;yS§LiteralÍ;uÍ;x¡2£'2'ÀÀY¯ReturnStatementÍ;Í;˜S§LiteralÍ;•Í;— ¢''M°MethodDefinitionÍ;ÄÍ=ïÂÂKªIdentifierÍ;ÄÍ;Ó¯orthogonalRoute¦methodN²FunctionExpressionÍ;ÓÍ=ïÀÂÂÂ“KªIdentifierÍ;ÔÍ;Ù¥startKªIdentifierÍ;ÛÍ;Ş£endKªIdentifierÍ;àÍ;é©obstaclesL®BlockStatementÍ;ëÍ=ï“T³VariableDeclarationÍ;öÍ<0‘U²VariableDeclaratorÍ;üÍ</KªIdentifierÍ;üÍ< ¤distV®CallExpressionÍ<Í</Q°MemberExpressionÍ<Í<KªIdentifierÍ<Í<¤MathKªIdentifierÍ<Í<¥hypotÂÂ’W°BinaryExpressionÍ<Í<Q°MemberExpressionÍ<Í<KªIdentifierÍ<Í<£endKªIdentifierÍ<Í<¡xÂÂ¡-Q°MemberExpressionÍ<Í<KªIdentifierÍ<Í<¥startKªIdentifierÍ<Í<¡xÂÂW°BinaryExpressionÍ<Í<.Q°MemberExpressionÍ<Í<$KªIdentifierÍ<Í<"£endKªIdentifierÍ<#Í<$¡yÂÂ¡-Q°MemberExpressionÍ<'Í<.KªIdentifierÍ<'Í<,¥startKªIdentifierÍ<-Í<.¡yÂÂÂ¥constX«IfStatementÍ<LÍ=W°BinaryExpressionÍ<PÍ<ZKªIdentifierÍ<PÍ<T¤dist¡<S§LiteralÍ<WÍ<ZÌd£100L®BlockStatementÍ<\Í=’T³VariableDeclarationÍ<kÍ=k‘U²VariableDeclaratorÍ<qÍ=jKªIdentifierÍ<qÍ<t£mid^°ObjectExpressionÍ<wÍ=j’_¨PropertyÍ<ŠÍ<éÂÂÂKªIdentifierÍ<ŠÍ<‹¡xXµConditionalExpressionÍ<Í<éW°BinaryExpressionÍ<Í<ÂV®CallExpressionÍ<Í<¦Q°MemberExpressionÍ<Í<•KªIdentifierÍ<Í<‘¤MathKªIdentifierÍ<’Í<•£absÂÂ‘W°BinaryExpressionÍ<–Í<¥Q°MemberExpressionÍ<–Í<›KªIdentifierÍ<–Í<™£endKªIdentifierÍ<šÍ<›¡xÂÂ¡-Q°MemberExpressionÍ<Í<¥KªIdentifierÍ<Í<£¥startKªIdentifierÍ<¤Í<¥¡xÂÂÂ¡>V®CallExpressionÍ<©Í<ÂQ°MemberExpressionÍ<©Í<±KªIdentifierÍ<©Í<­¤MathKªIdentifierÍ<®Í<±£absÂÂ‘W°BinaryExpressionÍ<²Í<ÁQ°MemberExpressionÍ<²Í<·KªIdentifierÍ<²Í<µ£endKªIdentifierÍ<¶Í<·¡yÂÂ¡-Q°MemberExpressionÍ<ºÍ<ÁKªIdentifierÍ<ºÍ<¿¥startKªIdentifierÍ<ÀÍ<Á¡yÂÂÂQ°MemberExpressionÍ<ÚÍ<ßKªIdentifierÍ<ÚÍ<İ£endKªIdentifierÍ<ŞÍ<ß¡xÂÂQ°MemberExpressionÍ<âÍ<éKªIdentifierÍ<âÍ<ç¥startKªIdentifierÍ<èÍ<é¡xÂÂ¤init_¨PropertyÍ<üÍ=[ÂÂÂKªIdentifierÍ<üÍ<ı¡yXµConditionalExpressionÍ<ÿÍ=[W°BinaryExpressionÍ<ÿÍ=4V®CallExpressionÍ<ÿÍ=Q°MemberExpressionÍ<ÿÍ=KªIdentifierÍ<ÿÍ=¤MathKªIdentifierÍ=Í=£absÂÂ‘W°BinaryExpressionÍ=Í=Q°MemberExpressionÍ=Í=KªIdentifierÍ=Í=£endKªIdentifierÍ=Í=¡yÂÂ¡-Q°MemberExpressionÍ=Í=KªIdentifierÍ=Í=¥startKªIdentifierÍ=Í=¡yÂÂÂ¡>V®CallExpressionÍ=Í=4Q°MemberExpressionÍ=Í=#KªIdentifierÍ=Í=¤MathKªIdentifierÍ= Í=#£absÂÂ‘W°BinaryExpressionÍ=$Í=3Q°MemberExpressionÍ=$Í=)KªIdentifierÍ=$Í='£endKªIdentifierÍ=(Í=)¡xÂÂ¡-Q°MemberExpressionÍ=,Í=3KªIdentifierÍ=,Í=1¥startKªIdentifierÍ=2Í=3¡xÂÂÂQ°MemberExpressionÍ=LÍ=QKªIdentifierÍ=LÍ=O£endKªIdentifierÍ=PÍ=Q¡yÂÂQ°MemberExpressionÍ=TÍ=[KªIdentifierÍ=TÍ=Y¥startKªIdentifierÍ=ZÍ=[¡yÂÂ¤init¥constY¯ReturnStatementÍ=yÍ=’Z¯ArrayExpressionÍ=€Í=‘“KªIdentifierÍ=Í=†¥startKªIdentifierÍ=ˆÍ=‹£midKªIdentifierÍ=Í=£endÀY¯ReturnStatementÍ=¼Í=èV®CallExpressionÍ=ÃÍ=çQ°MemberExpressionÍ=ÃÍ=ĞR®ThisExpressionÍ=ÃÍ=ÇKªIdentifierÍ=ÈÍ=Ğ¨findPathÂÂ“KªIdentifierÍ=ÑÍ=Ö¥startKªIdentifierÍ=ØÍ=Û£endKªIdentifierÍ=İÍ=æ©obstaclesÂM°MethodDefinitionÍ=õÍ?âÂÂKªIdentifierÍ=õÍ>¯ensurePowerNets¦methodN²FunctionExpressionÍ>Í?âÀÂÂÂ‘KªIdentifierÍ>Í>£docL®BlockStatementÍ>
-Í?â”T³VariableDeclarationÍ>Í>e‘U²VariableDeclaratorÍ>Í>dKªIdentifierÍ>Í>!¦hasVccV®CallExpressionÍ>$Í>dQ°MemberExpressionÍ>$Í>1Q°MemberExpressionÍ>$Í>,KªIdentifierÍ>$Í>'£docKªIdentifierÍ>(Í>,¤netsÂÂKªIdentifierÍ>-Í>1¤someÂÂ‘N·ArrowFunctionExpressionÍ>2Í>cÀÃÂÂ‘KªIdentifierÍ>2Í>3¡nW±LogicalExpressionÍ>7Í>cW°BinaryExpressionÍ>7Í>GQ°MemberExpressionÍ>7Í>=KªIdentifierÍ>7Í>8¡nKªIdentifierÍ>9Í>=¤nameÂÂ£===S§LiteralÍ>BÍ>G£VCC¥'VCC'¢||W°BinaryExpressionÍ>KÍ>cQ°MemberExpressionÍ>KÍ>QKªIdentifierÍ>KÍ>L¡nKªIdentifierÍ>MÍ>Q¤typeÂÂ£===Q°MemberExpressionÍ>VÍ>cKªIdentifierÍ>VÍ>]§NetTypeKªIdentifierÍ>^Í>c¥POWERÂÂÂ¥constT³VariableDeclarationÍ>oÍ>À‘U²VariableDeclaratorÍ>uÍ>¿KªIdentifierÍ>uÍ>{¦hasGndV®CallExpressionÍ>~Í>¿Q°MemberExpressionÍ>~Í>‹Q°MemberExpressionÍ>~Í>†KªIdentifierÍ>~Í>£docKªIdentifierÍ>‚Í>†¤netsÂÂKªIdentifierÍ>‡Í>‹¤someÂÂ‘N·ArrowFunctionExpressionÍ>ŒÍ>¾ÀÃÂÂ‘KªIdentifierÍ>ŒÍ>¡nW±LogicalExpressionÍ>‘Í>¾W°BinaryExpressionÍ>‘Í>¡Q°MemberExpressionÍ>‘Í>—KªIdentifierÍ>‘Í>’¡nKªIdentifierÍ>“Í>—¤nameÂÂ£===S§LiteralÍ>œÍ>¡£GND¥'GND'¢||W°BinaryExpressionÍ>¥Í>¾Q°MemberExpressionÍ>¥Í>«KªIdentifierÍ>¥Í>¦¡nKªIdentifierÍ>§Í>«¤typeÂÂ£===Q°MemberExpressionÍ>°Í>¾KªIdentifierÍ>°Í>·§NetTypeKªIdentifierÍ>¸Í>¾¦GROUNDÂÂÂ¥constX«IfStatementÍ>ÊÍ?M\¯UnaryExpressionÍ>ÎÍ>Õ¡!ÃKªIdentifierÍ>ÏÍ>Õ¦hasVccL®BlockStatementÍ>×Í?M‘O³ExpressionStatementÍ>æÍ?BV®CallExpressionÍ>æÍ?AQ°MemberExpressionÍ>æÍ>óQ°MemberExpressionÍ>æÍ>îKªIdentifierÍ>æÍ>é£docKªIdentifierÍ>êÍ>î¤netsÂÂKªIdentifierÍ>ïÍ>ó¤pushÂÂ‘^°ObjectExpressionÍ>ôÍ?@”_¨PropertyÍ>öÍ?ÂÂÂKªIdentifierÍ>öÍ>ø¢idV®CallExpressionÍ>úÍ?Q°MemberExpressionÍ>úÍ?	KªIdentifierÍ>úÍ? ¦IdUtilKªIdentifierÍ?Í?	¨generateÂÂ‘S§LiteralÍ?
-Í?£net¥'net'Â¤init_¨PropertyÍ?Í?ÂÂÂKªIdentifierÍ?Í?¤nameS§LiteralÍ?Í?£VCC¥'VCC'¤init_¨PropertyÍ?Í?2ÂÂÂKªIdentifierÍ?Í?#¤typeQ°MemberExpressionÍ?%Í?2KªIdentifierÍ?%Í?,§NetTypeKªIdentifierÍ?-Í?2¥POWERÂÂ¤init_¨PropertyÍ?4Í?>ÂÂÂKªIdentifierÍ?4Í?:¦pinIdsZ¯ArrayExpressionÍ?<Í?>¤initÂÀX«IfStatementÍ?WÍ?Û\¯UnaryExpressionÍ?[Í?b¡!ÃKªIdentifierÍ?\Í?b¦hasGndL®BlockStatementÍ?dÍ?Û‘O³ExpressionStatementÍ?sÍ?ĞV®CallExpressionÍ?sÍ?ÏQ°MemberExpressionÍ?sÍ?€Q°MemberExpressionÍ?sÍ?{KªIdentifierÍ?sÍ?v£docKªIdentifierÍ?wÍ?{¤netsÂÂKªIdentifierÍ?|Í?€¤pushÂÂ‘^°ObjectExpressionÍ?Í?Î”_¨PropertyÍ?ƒÍ?ÂÂÂKªIdentifierÍ?ƒÍ?…¢idV®CallExpressionÍ?‡Í?Q°MemberExpressionÍ?‡Í?–KªIdentifierÍ?‡Í?¦IdUtilKªIdentifierÍ?Í?–¨generateÂÂ‘S§LiteralÍ?—Í?œ£net¥'net'Â¤init_¨PropertyÍ?ŸÍ?ªÂÂÂKªIdentifierÍ?ŸÍ?£¤nameS§LiteralÍ?¥Í?ª£GND¥'GND'¤init_¨PropertyÍ?¬Í?ÀÂÂÂKªIdentifierÍ?¬Í?°¤typeQ°MemberExpressionÍ?²Í?ÀKªIdentifierÍ?²Í?¹§NetTypeKªIdentifierÍ?ºÍ?À¦GROUNDÂÂ¤init_¨PropertyÍ?ÂÍ?ÌÂÂÂKªIdentifierÍ?ÂÍ?È¦pinIdsZ¯ArrayExpressionÍ?ÊÍ?Ì¤initÂÀM°MethodDefinitionÍ@
-ÍN´ÂÂKªIdentifierÍ@
-Í@´wireMcuMinimumSystem¦methodN²FunctionExpressionÍ@ÍN´ÀÂÂÂ’KªIdentifierÍ@Í@"£docKªIdentifierÍ@$Í@'£mcuL®BlockStatementÍ@)ÍN´˜T³VariableDeclarationÍ@4Í@{‘U²VariableDeclaratorÍ@:Í@zKªIdentifierÍ@:Í@A§crystalV®CallExpressionÍ@DÍ@zQ°MemberExpressionÍ@DÍ@WQ°MemberExpressionÍ@DÍ@RKªIdentifierÍ@DÍ@G£docKªIdentifierÍ@HÍ@RªcomponentsÂÂKªIdentifierÍ@SÍ@W¤findÂÂ‘N·ArrowFunctionExpressionÍ@XÍ@yÀÃÂÂ‘KªIdentifierÍ@XÍ@Y¡cV®CallExpressionÍ@]Í@yQ°MemberExpressionÍ@]Í@qQ°MemberExpressionÍ@]Í@hKªIdentifierÍ@]Í@^¡cKªIdentifierÍ@_Í@h©libraryIdÂÂKªIdentifierÍ@iÍ@q¨includesÂÂ‘S§LiteralÍ@rÍ@x¤XTAL¦'XTAL'ÂÂ¥constT³VariableDeclarationÍ@…Í@Ë‘U²VariableDeclaratorÍ@‹Í@ÊKªIdentifierÍ@‹Í@¤capsV®CallExpressionÍ@’Í@ÊQ°MemberExpressionÍ@’Í@§Q°MemberExpressionÍ@’Í@ KªIdentifierÍ@’Í@•£docKªIdentifierÍ@–Í@ ªcomponentsÂÂKªIdentifierÍ@¡Í@§¦filterÂÂ‘N·ArrowFunctionExpressionÍ@¨Í@ÉÀÃÂÂ‘KªIdentifierÍ@¨Í@©¡cV®CallExpressionÍ@­Í@ÉQ°MemberExpressionÍ@­Í@ÃQ°MemberExpressionÍ@­Í@¸KªIdentifierÍ@­Í@®¡cKªIdentifierÍ@¯Í@¸©libraryIdÂÂKªIdentifierÍ@¹Í@ÃªstartsWithÂÂ‘S§LiteralÍ@ÄÍ@È¢C_¤'C_'ÂÂ¥constT³VariableDeclarationÍ@ÕÍA ‘U²VariableDeclaratorÍ@ÛÍAKªIdentifierÍ@ÛÍ@ä©resistorsV®CallExpressionÍ@çÍAQ°MemberExpressionÍ@çÍ@üQ°MemberExpressionÍ@çÍ@õKªIdentifierÍ@çÍ@ê£docKªIdentifierÍ@ëÍ@õªcomponentsÂÂKªIdentifierÍ@öÍ@ü¦filterÂÂ‘N·ArrowFunctionExpressionÍ@ıÍAÀÃÂÂ‘KªIdentifierÍ@ıÍ@ş¡cV®CallExpressionÍAÍAQ°MemberExpressionÍAÍAQ°MemberExpressionÍAÍAKªIdentifierÍAÍA¡cKªIdentifierÍAÍA©libraryIdÂÂKªIdentifierÍAÍAªstartsWithÂÂ‘S§LiteralÍAÍA¢R_¤'R_'ÂÂ¥constT³VariableDeclarationÍA*ÍA^‘U²VariableDeclaratorÍA0ÍA]KªIdentifierÍA0ÍA6¦vccNetV®CallExpressionÍA9ÍA]Q°MemberExpressionÍA9ÍAFQ°MemberExpressionÍA9ÍAAKªIdentifierÍA9ÍA<£docKªIdentifierÍA=ÍAA¤netsÂÂKªIdentifierÍABÍAF¤findÂÂ‘N·ArrowFunctionExpressionÍAGÍA\ÀÃÂÂ‘KªIdentifierÍAGÍAH¡nW°BinaryExpressionÍALÍA\Q°MemberExpressionÍALÍARKªIdentifierÍALÍAM¡nKªIdentifierÍANÍAR¤nameÂÂ£===S§LiteralÍAWÍA\£VCC¥'VCC'Â¥constT³VariableDeclarationÍAhÍAœ‘U²VariableDeclaratorÍAnÍA›KªIdentifierÍAnÍAt¦gndNetV®CallExpressionÍAwÍA›Q°MemberExpressionÍAwÍA„Q°MemberExpressionÍAwÍAKªIdentifierÍAwÍAz£docKªIdentifierÍA{ÍA¤netsÂÂKªIdentifierÍA€ÍA„¤findÂÂ‘N·ArrowFunctionExpressionÍA…ÍAšÀÃÂÂ‘KªIdentifierÍA…ÍA†¡nW°BinaryExpressionÍAŠÍAšQ°MemberExpressionÍAŠÍAKªIdentifierÍAŠÍA‹¡nKªIdentifierÍAŒÍA¤nameÂÂ£===S§LiteralÍA•ÍAš£GND¥'GND'Â¥constX«IfStatementÍAÊÍFBKªIdentifierÍAÎÍAÕ§crystalL®BlockStatementÍA×ÍFB”T³VariableDeclarationÍAæÍB‘U²VariableDeclaratorÍAìÍBKªIdentifierÍAìÍAó§xtalOutV®CallExpressionÍAöÍBQ°MemberExpressionÍAöÍB	R®ThisExpressionÍAöÍAúKªIdentifierÍAûÍB	®estimatePinPosÂÂ“KªIdentifierÍB
-ÍB§crystalS§LiteralÍBÍB¥right§'right'S§LiteralÍBÍB ¡0Â¥constT³VariableDeclarationÍB-ÍBa‘U²VariableDeclaratorÍB3ÍB`KªIdentifierÍB3ÍB:§mcuXtalV®CallExpressionÍB=ÍB`Q°MemberExpressionÍB=ÍBPR®ThisExpressionÍB=ÍBAKªIdentifierÍBBÍBP®estimatePinPosÂÂ“KªIdentifierÍBQÍBT£mcuS§LiteralÍBVÍB\¤left¦'left'S§LiteralÍB^ÍB_¡2Â¥constO³ExpressionStatementÍBoÍC[V®CallExpressionÍBoÍCZQ°MemberExpressionÍBoÍB}Q°MemberExpressionÍBoÍBxKªIdentifierÍBoÍBr£docKªIdentifierÍBsÍBx¥wiresÂÂKªIdentifierÍByÍB}¤pushÂÂ‘^°ObjectExpressionÍB~ÍCY”_¨PropertyÍB‘ÍB¬ÂÂÂKªIdentifierÍB‘ÍB“¢idV®CallExpressionÍB•ÍB¬Q°MemberExpressionÍB•ÍB¤KªIdentifierÍB•ÍB›¦IdUtilKªIdentifierÍBœÍB¤¨generateÂÂ‘S§LiteralÍB¥ÍB«¤wire¦'wire'Â¤init_¨PropertyÍB®ÍBËÂÂÂKªIdentifierÍB®ÍB³¥netIdV®CallExpressionÍBµÍBËQ°MemberExpressionÍBµÍBÄKªIdentifierÍBµÍB»¦IdUtilKªIdentifierÍB¼ÍBÄ¨generateÂÂ‘S§LiteralÍBÅÍBÊ£net¥'net'Â¤init_¨PropertyÍBŞÍCÂÂÂKªIdentifierÍBŞÍBä¦pointsV®CallExpressionÍBæÍCQ°MemberExpressionÍBæÍBúR®ThisExpressionÍBæÍBêKªIdentifierÍBëÍBú¯orthogonalRouteÂÂ“KªIdentifierÍBûÍC§xtalOutKªIdentifierÍCÍC§mcuXtalQ°MemberExpressionÍCÍCKªIdentifierÍCÍC£docKªIdentifierÍCÍCªcomponentsÂÂÂ¤init_¨PropertyÍC/ÍCJÂÂÂKªIdentifierÍC/ÍC4¥styleQ°MemberExpressionÍC6ÍCJKªIdentifierÍC6ÍC?©WireStyleKªIdentifierÍC@ÍCJªORTHOGONALÂÂ¤initÂ[¬ForStatementÍC‚ÍF7T³VariableDeclarationÍC‡ÍC‘‘U²VariableDeclaratorÍC‹ÍC‘KªIdentifierÍC‹ÍC¢ciS§LiteralÍCÍC‘ ¡0£letW°BinaryExpressionÍC“ÍC°KªIdentifierÍC“ÍC•¢ci¡<V®CallExpressionÍC˜ÍC°Q°MemberExpressionÍC˜ÍC KªIdentifierÍC˜ÍCœ¤MathKªIdentifierÍCÍC £minÂÂ’S§LiteralÍC¡ÍC¢¡2Q°MemberExpressionÍC¤ÍC¯KªIdentifierÍC¤ÍC¨¤capsKªIdentifierÍC©ÍC¯¦lengthÂÂÂ\°UpdateExpressionÍC²ÍC¶¢++ÂKªIdentifierÍC²ÍC´¢ciL®BlockStatementÍC¸ÍF7’T³VariableDeclarationÍCËÍCà‘U²VariableDeclaratorÍCÑÍCßKªIdentifierÍCÑÍCÔ£capQ°MemberExpressionÍC×ÍCßKªIdentifierÍC×ÍCÛ¤capsKªIdentifierÍCÜÍCŞ¢ciÃÂ¥constX«IfStatementÍCòÍF(W±LogicalExpressionÍCöÍD3V®CallExpressionÍCöÍDQ°MemberExpressionÍCöÍDQ°MemberExpressionÍCöÍDKªIdentifierÍCöÍCù£capKªIdentifierÍCúÍD©libraryIdÂÂKªIdentifierÍDÍD¨includesÂÂ‘S§LiteralÍDÍD£22p¥'22p'Â¢||V®CallExpressionÍDÍD3Q°MemberExpressionÍDÍD-Q°MemberExpressionÍDÍD$KªIdentifierÍDÍD£capKªIdentifierÍDÍD$©libraryIdÂÂKªIdentifierÍD%ÍD-¨includesÂÂ‘S§LiteralÍD.ÍD2¢22¤'22'ÂL®BlockStatementÍD5ÍF(“T³VariableDeclarationÍDLÍD„‘U²VariableDeclaratorÍDRÍDƒKªIdentifierÍDRÍD[©capBottomV®CallExpressionÍD^ÍDƒQ°MemberExpressionÍD^ÍDqR®ThisExpressionÍD^ÍDbKªIdentifierÍDcÍDq®estimatePinPosÂÂ“KªIdentifierÍDrÍDu£capS§LiteralÍDwÍD¦bottom¨'bottom'S§LiteralÍDÍD‚ ¡0Â¥constT³VariableDeclarationÍDšÍDÿ‘U²VariableDeclaratorÍD ÍDşKªIdentifierÍD ÍD¦¦gndPinV®CallExpressionÍD©ÍDşQ°MemberExpressionÍD©ÍD¼R®ThisExpressionÍD©ÍD­KªIdentifierÍD®ÍD¼®estimatePinPosÂÂ“W±LogicalExpressionÍD½ÍDóV®CallExpressionÍD½ÍDìQ°MemberExpressionÍD½ÍDĞQ°MemberExpressionÍD½ÍDËKªIdentifierÍD½ÍDÀ£docKªIdentifierÍDÁÍDËªcomponentsÂÂKªIdentifierÍDÌÍDĞ¤findÂÂ‘N·ArrowFunctionExpressionÍDÑÍDëÀÃÂÂ‘KªIdentifierÍDÑÍDÒ¡cW°BinaryExpressionÍDÖÍDëQ°MemberExpressionÍDÖÍDáKªIdentifierÍDÖÍD×¡cKªIdentifierÍDØÍDá©libraryIdÂÂ£===S§LiteralÍDæÍDë£GND¥'GND'Â¢??KªIdentifierÍDğÍDó£mcuS§LiteralÍDõÍDú£top¥'top'S§LiteralÍDüÍDı ¡0Â¥constO³ExpressionStatementÍEÍFV®CallExpressionÍEÍFQ°MemberExpressionÍEÍE#Q°MemberExpressionÍEÍEKªIdentifierÍEÍE£docKªIdentifierÍEÍE¥wiresÂÂKªIdentifierÍEÍE#¤pushÂÂ‘^°ObjectExpressionÍE$ÍF”_¨PropertyÍE?ÍEZÂÂÂKªIdentifierÍE?ÍEA¢idV®CallExpressionÍECÍEZQ°MemberExpressionÍECÍERKªIdentifierÍECÍEI¦IdUtilKªIdentifierÍEJÍER¨generateÂÂ‘S§LiteralÍESÍEY¤wire¦'wire'Â¤init_¨PropertyÍE\ÍElÂÂÂKªIdentifierÍE\ÍEa¥netIdQ°MemberExpressionÍEcÍElKªIdentifierÍEcÍEi¦gndNetKªIdentifierÍEjÍEl¢idÂÂ¤init_¨PropertyÍE‡ÍEÆÂÂÂKªIdentifierÍE‡ÍE¦pointsV®CallExpressionÍEÍEÆQ°MemberExpressionÍEÍE£R®ThisExpressionÍEÍE“KªIdentifierÍE”ÍE£¯orthogonalRouteÂÂ“KªIdentifierÍE¤ÍE­©capBottomKªIdentifierÍE¯ÍEµ¦gndPinQ°MemberExpressionÍE·ÍEÅKªIdentifierÍE·ÍEº£docKªIdentifierÍE»ÍEÅªcomponentsÂÂÂ¤init_¨PropertyÍEáÍEüÂÂÂKªIdentifierÍEáÍEæ¥styleQ°MemberExpressionÍEèÍEüKªIdentifierÍEèÍEñ©WireStyleKªIdentifierÍEòÍEüªORTHOGONALÂÂ¤initÂÀÀ[¬ForStatementÍFrÍL<T³VariableDeclarationÍFwÍF‘U²VariableDeclaratorÍF{ÍFKªIdentifierÍF{ÍF}¢ciS§LiteralÍF€ÍF ¡0£letW°BinaryExpressionÍFƒÍF KªIdentifierÍFƒÍF…¢ci¡<V®CallExpressionÍFˆÍF Q°MemberExpressionÍFˆÍFKªIdentifierÍFˆÍFŒ¤MathKªIdentifierÍFÍF£minÂÂ’S§LiteralÍF‘ÍF’¡3Q°MemberExpressionÍF”ÍFŸKªIdentifierÍF”ÍF˜¤capsKªIdentifierÍF™ÍFŸ¦lengthÂÂÂ\°UpdateExpressionÍF¢ÍF¦¢++ÂKªIdentifierÍF¢ÍF¤¢ciL®BlockStatementÍF¨ÍL<’T³VariableDeclarationÍF·ÍFÌ‘U²VariableDeclaratorÍF½ÍFËKªIdentifierÍF½ÍFÀ£capQ°MemberExpressionÍFÃÍFËKªIdentifierÍFÃÍFÇ¤capsKªIdentifierÍFÈÍFÊ¢ciÃÂ¥constX«IfStatementÍFÚÍL1W±LogicalExpressionÍFŞÍGV®CallExpressionÍFŞÍFüQ°MemberExpressionÍFŞÍFôQ°MemberExpressionÍFŞÍFëKªIdentifierÍFŞÍFá£capKªIdentifierÍFâÍFë©libraryIdÂÂKªIdentifierÍFìÍFô¨includesÂÂ‘S§LiteralÍFõÍFû¤100n¦'100n'Â¢||V®CallExpressionÍG ÍGQ°MemberExpressionÍG ÍGQ°MemberExpressionÍG ÍGKªIdentifierÍG ÍG£capKªIdentifierÍGÍG©libraryIdÂÂKªIdentifierÍGÍG¨includesÂÂ‘S§LiteralÍGÍG£100¥'100'ÂL®BlockStatementÍGÍL1•T³VariableDeclarationÍG2ÍGd‘U²VariableDeclaratorÍG8ÍGcKªIdentifierÍG8ÍG>¦capTopV®CallExpressionÍGAÍGcQ°MemberExpressionÍGAÍGTR®ThisExpressionÍGAÍGEKªIdentifierÍGFÍGT®estimatePinPosÂÂ“KªIdentifierÍGUÍGX£capS§LiteralÍGZÍG_£top¥'top'S§LiteralÍGaÍGb ¡0Â¥constT³VariableDeclarationÍGvÍG®‘U²VariableDeclaratorÍG|ÍG­KªIdentifierÍG|ÍG…©capBottomV®CallExpressionÍGˆÍG­Q°MemberExpressionÍGˆÍG›R®ThisExpressionÍGˆÍGŒKªIdentifierÍGÍG›®estimatePinPosÂÂ“KªIdentifierÍGœÍGŸ£capS§LiteralÍG¡ÍG©¦bottom¨'bottom'S§LiteralÍG«ÍG¬ ¡0Â¥constT³VariableDeclarationÍGôÍH4‘U²VariableDeclaratorÍGúÍH3KªIdentifierÍGúÍH§vccCompV®CallExpressionÍHÍH3Q°MemberExpressionÍHÍHQ°MemberExpressionÍHÍHKªIdentifierÍHÍH£docKªIdentifierÍHÍHªcomponentsÂÂKªIdentifierÍHÍH¤findÂÂ‘N·ArrowFunctionExpressionÍHÍH2ÀÃÂÂ‘KªIdentifierÍHÍH¡cW°BinaryExpressionÍHÍH2Q°MemberExpressionÍHÍH(KªIdentifierÍHÍH¡cKªIdentifierÍHÍH(©libraryIdÂÂ£===S§LiteralÍH-ÍH2£VCC¥'VCC'Â¥constX«IfStatementÍHFÍKW±LogicalExpressionÍHJÍHˆKªIdentifierÍHJÍHQ§vccComp¢&&W°BinaryExpressionÍHUÍHˆV®CallExpressionÍHUÍH‚Q°MemberExpressionÍHUÍH]KªIdentifierÍHUÍHY¤MathKªIdentifierÍHZÍH]£absÂÂ‘W°BinaryExpressionÍH^ÍHQ°MemberExpressionÍH^ÍHlQ°MemberExpressionÍH^ÍHjKªIdentifierÍH^ÍHa£capKªIdentifierÍHbÍHj¨positionÂÂKªIdentifierÍHkÍHl¡xÂÂ¡-Q°MemberExpressionÍHoÍHQ°MemberExpressionÍHoÍHKªIdentifierÍHoÍHv§vccCompKªIdentifierÍHwÍH¨positionÂÂKªIdentifierÍH€ÍH¡xÂÂÂ¡<S§LiteralÍH…ÍHˆÌÈ£200L®BlockStatementÍHŠÍIÑ‘O³ExpressionStatementÍH¡ÍI¾V®CallExpressionÍH¡ÍI½Q°MemberExpressionÍH¡ÍH¯Q°MemberExpressionÍH¡ÍHªKªIdentifierÍH¡ÍH¤£docKªIdentifierÍH¥ÍHª¥wiresÂÂKªIdentifierÍH«ÍH¯¤pushÂÂ‘^°ObjectExpressionÍH°ÍI¼”_¨PropertyÍHËÍHæÂÂÂKªIdentifierÍHËÍHÍ¢idV®CallExpressionÍHÏÍHæQ°MemberExpressionÍHÏÍHŞKªIdentifierÍHÏÍHÕ¦IdUtilKªIdentifierÍHÖÍHŞ¨generateÂÂ‘S§LiteralÍHßÍHå¤wire¦'wire'Â¤init_¨PropertyÍHèÍHøÂÂÂKªIdentifierÍHèÍHí¥netIdQ°MemberExpressionÍHïÍHøKªIdentifierÍHïÍHõ¦vccNetKªIdentifierÍHöÍHø¢idÂÂ¤init_¨PropertyÍIÍIoÂÂÂKªIdentifierÍIÍI¦pointsV®CallExpressionÍIÍIoQ°MemberExpressionÍIÍI/R®ThisExpressionÍIÍIKªIdentifierÍI ÍI/¯orthogonalRouteÂÂ“KªIdentifierÍI0ÍI6¦capTopV®CallExpressionÍI8ÍI^Q°MemberExpressionÍI8ÍIKR®ThisExpressionÍI8ÍI<KªIdentifierÍI=ÍIK®estimatePinPosÂÂ“KªIdentifierÍILÍIS§vccCompS§LiteralÍIUÍIZ£top¥'top'S§LiteralÍI\ÍI] ¡0ÂQ°MemberExpressionÍI`ÍInKªIdentifierÍI`ÍIc£docKªIdentifierÍIdÍInªcomponentsÂÂÂ¤init_¨PropertyÍIŠÍI¥ÂÂÂKªIdentifierÍIŠÍI¥styleQ°MemberExpressionÍI‘ÍI¥KªIdentifierÍI‘ÍIš©WireStyleKªIdentifierÍI›ÍI¥ªORTHOGONALÂÂ¤initÂL®BlockStatementÍIèÍK‘O³ExpressionStatementÍIÿÍKV®CallExpressionÍIÿÍKQ°MemberExpressionÍIÿÍJQ°MemberExpressionÍIÿÍJKªIdentifierÍIÿÍJ£docKªIdentifierÍJÍJ©netLabelsÂÂKªIdentifierÍJÍJ¤pushÂÂ‘^°ObjectExpressionÍJÍK•_¨PropertyÍJ-ÍJFÂÂÂKªIdentifierÍJ-ÍJ/¢idV®CallExpressionÍJ1ÍJFQ°MemberExpressionÍJ1ÍJ@KªIdentifierÍJ1ÍJ7¦IdUtilKªIdentifierÍJ8ÍJ@¨generateÂÂ‘S§LiteralÍJAÍJE¢nl¤'nl'Â¤init_¨PropertyÍJHÍJXÂÂÂKªIdentifierÍJHÍJM¥netIdQ°MemberExpressionÍJOÍJXKªIdentifierÍJOÍJU¦vccNetKªIdentifierÍJVÍJX¢idÂÂ¤init_¨PropertyÍJsÍJ~ÂÂÂKªIdentifierÍJsÍJw¤textS§LiteralÍJyÍJ~£VCC¥'VCC'¤init_¨PropertyÍJ™ÍJÄÂÂÂKªIdentifierÍJ™ÍJ¡¨position^°ObjectExpressionÍJ£ÍJÄ’_¨PropertyÍJ¥ÍJ°ÂÂÂKªIdentifierÍJ¥ÍJ¦¡xQ°MemberExpressionÍJ¨ÍJ°KªIdentifierÍJ¨ÍJ®¦capTopKªIdentifierÍJ¯ÍJ°¡xÂÂ¤init_¨PropertyÍJ²ÍJÂÂÂÂKªIdentifierÍJ²ÍJ³¡yW°BinaryExpressionÍJµÍJÂQ°MemberExpressionÍJµÍJ½KªIdentifierÍJµÍJ»¦capTopKªIdentifierÍJ¼ÍJ½¡yÂÂ¡-S§LiteralÍJÀÍJÂ¢15¤init¤init_¨PropertyÍJßÍJìÂÂÂKªIdentifierÍJßÍJå¦globalS§LiteralÍJçÍJìÂ¥false¤initÂO³ExpressionStatementÍK*ÍL"V®CallExpressionÍK*ÍL!Q°MemberExpressionÍK*ÍK<Q°MemberExpressionÍK*ÍK7KªIdentifierÍK*ÍK-£docKªIdentifierÍK.ÍK7©netLabelsÂÂKªIdentifierÍK8ÍK<¤pushÂÂ‘^°ObjectExpressionÍK=ÍL •_¨PropertyÍKTÍKmÂÂÂKªIdentifierÍKTÍKV¢idV®CallExpressionÍKXÍKmQ°MemberExpressionÍKXÍKgKªIdentifierÍKXÍK^¦IdUtilKªIdentifierÍK_ÍKg¨generateÂÂ‘S§LiteralÍKhÍKl¢nl¤'nl'Â¤init_¨PropertyÍKoÍKÂÂÂKªIdentifierÍKoÍKt¥netIdQ°MemberExpressionÍKvÍKKªIdentifierÍKvÍK|¦gndNetKªIdentifierÍK}ÍK¢idÂÂ¤init_¨PropertyÍK–ÍK¡ÂÂÂKªIdentifierÍK–ÍKš¤textS§LiteralÍKœÍK¡£GND¥'GND'¤init_¨PropertyÍK¸ÍKéÂÂÂKªIdentifierÍK¸ÍKÀ¨position^°ObjectExpressionÍKÂÍKé’_¨PropertyÍKÄÍKÒÂÂÂKªIdentifierÍKÄÍKÅ¡xQ°MemberExpressionÍKÇÍKÒKªIdentifierÍKÇÍKĞ©capBottomKªIdentifierÍKÑÍKÒ¡xÂÂ¤init_¨PropertyÍKÔÍKçÂÂÂKªIdentifierÍKÔÍKÕ¡yW°BinaryExpressionÍK×ÍKçQ°MemberExpressionÍK×ÍKâKªIdentifierÍK×ÍKà©capBottomKªIdentifierÍKáÍKâ¡yÂÂ¡+S§LiteralÍKåÍKç¢15¤init¤init_¨PropertyÍL ÍLÂÂÂKªIdentifierÍL ÍL¦globalS§LiteralÍLÍLÂ¥false¤initÂÀ[¬ForStatementÍLeÍN­T³VariableDeclarationÍLjÍLt‘U²VariableDeclaratorÍLnÍLtKªIdentifierÍLnÍLp¢riS§LiteralÍLsÍLt ¡0£letW°BinaryExpressionÍLvÍL˜KªIdentifierÍLvÍLx¢ri¡<V®CallExpressionÍL{ÍL˜Q°MemberExpressionÍL{ÍLƒKªIdentifierÍL{ÍL¤MathKªIdentifierÍL€ÍLƒ£minÂÂ’S§LiteralÍL„ÍL…¡1Q°MemberExpressionÍL‡ÍL—KªIdentifierÍL‡ÍL©resistorsKªIdentifierÍL‘ÍL—¦lengthÂÂÂ\°UpdateExpressionÍLšÍL¢++ÂKªIdentifierÍLšÍLœ¢riL®BlockStatementÍL ÍN­’T³VariableDeclarationÍL¯ÍLÉ‘U²VariableDeclaratorÍLµÍLÈKªIdentifierÍLµÍL¸£resQ°MemberExpressionÍL»ÍLÈKªIdentifierÍL»ÍLÄ©resistorsKªIdentifierÍLÅÍLÇ¢riÃÂ¥constX«IfStatementÍL×ÍN¢V®CallExpressionÍLÛÍLøQ°MemberExpressionÍLÛÍLñQ°MemberExpressionÍLÛÍLèKªIdentifierÍLÛÍLŞ£resKªIdentifierÍLßÍLè©libraryIdÂÂKªIdentifierÍLéÍLñ¨includesÂÂ‘S§LiteralÍLòÍL÷£10k¥'10k'ÂL®BlockStatementÍLúÍN¢“T³VariableDeclarationÍMÍMA‘U²VariableDeclaratorÍMÍM@KªIdentifierÍMÍM§resLeftV®CallExpressionÍMÍM@Q°MemberExpressionÍMÍM0R®ThisExpressionÍMÍM!KªIdentifierÍM"ÍM0®estimatePinPosÂÂ“KªIdentifierÍM1ÍM4£resS§LiteralÍM6ÍM<¤left¦'left'S§LiteralÍM>ÍM? ¡0Â¥constT³VariableDeclarationÍMSÍM†‘U²VariableDeclaratorÍMYÍM…KªIdentifierÍMYÍM_¦mcuRstV®CallExpressionÍMbÍM…Q°MemberExpressionÍMbÍMuR®ThisExpressionÍMbÍMfKªIdentifierÍMgÍMu®estimatePinPosÂÂ“KªIdentifierÍMvÍMy£mcuS§LiteralÍM{ÍM¤left¦'left'S§LiteralÍMƒÍM„¡1Â¥constO³ExpressionStatementÍM˜ÍN“V®CallExpressionÍM˜ÍN’Q°MemberExpressionÍM˜ÍM¦Q°MemberExpressionÍM˜ÍM¡KªIdentifierÍM˜ÍM›£docKªIdentifierÍMœÍM¡¥wiresÂÂKªIdentifierÍM¢ÍM¦¤pushÂÂ‘^°ObjectExpressionÍM§ÍN‘”_¨PropertyÍM¾ÍMÙÂÂÂKªIdentifierÍM¾ÍMÀ¢idV®CallExpressionÍMÂÍMÙQ°MemberExpressionÍMÂÍMÑKªIdentifierÍMÂÍMÈ¦IdUtilKªIdentifierÍMÉÍMÑ¨generateÂÂ‘S§LiteralÍMÒÍMØ¤wire¦'wire'Â¤init_¨PropertyÍMÛÍMøÂÂÂKªIdentifierÍMÛÍMà¥netIdV®CallExpressionÍMâÍMøQ°MemberExpressionÍMâÍMñKªIdentifierÍMâÍMè¦IdUtilKªIdentifierÍMéÍMñ¨generateÂÂ‘S§LiteralÍMòÍM÷£net¥'net'Â¤init_¨PropertyÍNÍNLÂÂÂKªIdentifierÍNÍN¦pointsV®CallExpressionÍNÍNLQ°MemberExpressionÍNÍN+R®ThisExpressionÍNÍNKªIdentifierÍNÍN+¯orthogonalRouteÂÂ“KªIdentifierÍN,ÍN3§resLeftKªIdentifierÍN5ÍN;¦mcuRstQ°MemberExpressionÍN=ÍNKKªIdentifierÍN=ÍN@£docKªIdentifierÍNAÍNKªcomponentsÂÂÂ¤init_¨PropertyÍNcÍN~ÂÂÂKªIdentifierÍNcÍNh¥styleQ°MemberExpressionÍNjÍN~KªIdentifierÍNjÍNs©WireStyleKªIdentifierÍNtÍN~ªORTHOGONALÂÂ¤initÂÀM°MethodDefinitionÍNºÍP6ÂÂKªIdentifierÍNºÍNË±createWireBetween¦methodN²FunctionExpressionÍNËÍP6ÀÂÂÂ”KªIdentifierÍNÌÍNÏ£docKªIdentifierÍNÑÍNÕ¤fromKªIdentifierÍN×ÍNÙ¢toKªIdentifierÍNÛÍNà¥netIdL®BlockStatementÍNâÍP6“T³VariableDeclarationÍNíÍO!‘U²VariableDeclaratorÍNóÍO KªIdentifierÍNóÍNø¥startV®CallExpressionÍNûÍO Q°MemberExpressionÍNûÍOR®ThisExpressionÍNûÍNÿKªIdentifierÍO ÍO®estimatePinPosÂÂ“KªIdentifierÍOÍO¤fromS§LiteralÍOÍO¥right§'right'S§LiteralÍOÍO ¡0Â¥constT³VariableDeclarationÍO+ÍOZ‘U²VariableDeclaratorÍO1ÍOYKªIdentifierÍO1ÍO4£endV®CallExpressionÍO7ÍOYQ°MemberExpressionÍO7ÍOJR®ThisExpressionÍO7ÍO;KªIdentifierÍO<ÍOJ®estimatePinPosÂÂ“KªIdentifierÍOKÍOM¢toS§LiteralÍOOÍOU¤left¦'left'S§LiteralÍOWÍOX ¡0Â¥constO³ExpressionStatementÍOdÍP/V®CallExpressionÍOdÍP.Q°MemberExpressionÍOdÍOrQ°MemberExpressionÍOdÍOmKªIdentifierÍOdÍOg£docKªIdentifierÍOhÍOm¥wiresÂÂKªIdentifierÍOnÍOr¤pushÂÂ‘^°ObjectExpressionÍOsÍP-”_¨PropertyÍO‚ÍOÂÂÂKªIdentifierÍO‚ÍO„¢idV®CallExpressionÍO†ÍOQ°MemberExpressionÍO†ÍO•KªIdentifierÍO†ÍOŒ¦IdUtilKªIdentifierÍOÍO•¨generateÂÂ‘S§LiteralÍO–ÍOœ¤wire¦'wire'Â¤init`¨PropertyÍO¬ÍO±ÂÃÂKªIdentifierÍO¬ÍO±¥netId¤initKªIdentifierÍO¬ÍO±¥netId_¨PropertyÍOÀÍOøÂÂÂKªIdentifierÍOÀÍOÆ¦pointsV®CallExpressionÍOÈÍOøQ°MemberExpressionÍOÈÍOÜR®ThisExpressionÍOÈÍOÌKªIdentifierÍOÍÍOÜ¯orthogonalRouteÂÂ“KªIdentifierÍOİÍOâ¥startKªIdentifierÍOäÍOç£endQ°MemberExpressionÍOéÍO÷KªIdentifierÍOéÍOì£docKªIdentifierÍOíÍO÷ªcomponentsÂÂÂ¤init_¨PropertyÍPÍP"ÂÂÂKªIdentifierÍPÍP¥styleQ°MemberExpressionÍPÍP"KªIdentifierÍPÍP©WireStyleKªIdentifierÍPÍP"ªORTHOGONALÂÂ¤initÂM°MethodDefinitionÍP<ÍSZÂÂKªIdentifierÍP<ÍPN²createWireToGround¦methodN²FunctionExpressionÍPNÍSZÀÂÂÂ“KªIdentifierÍPOÍPR£docKªIdentifierÍPTÍPX¤compKªIdentifierÍPZÍPb¨gndNetIdL®BlockStatementÍPdÍSZ“T³VariableDeclarationÍPoÍP¤‘U²VariableDeclaratorÍPuÍP£KªIdentifierÍPuÍPz¥startV®CallExpressionÍP}ÍP£Q°MemberExpressionÍP}ÍPR®ThisExpressionÍP}ÍPKªIdentifierÍP‚ÍP®estimatePinPosÂÂ“KªIdentifierÍP‘ÍP•¤compS§LiteralÍP—ÍPŸ¦bottom¨'bottom'S§LiteralÍP¡ÍP¢ ¡0Â¥constT³VariableDeclarationÍP®ÍPî‘U²VariableDeclaratorÍP´ÍPíKªIdentifierÍP´ÍP»§gndCompV®CallExpressionÍP¾ÍPíQ°MemberExpressionÍP¾ÍPÑQ°MemberExpressionÍP¾ÍPÌKªIdentifierÍP¾ÍPÁ£docKªIdentifierÍPÂÍPÌªcomponentsÂÂKªIdentifierÍPÍÍPÑ¤findÂÂ‘N·ArrowFunctionExpressionÍPÒÍPìÀÃÂÂ‘KªIdentifierÍPÒÍPÓ¡cW°BinaryExpressionÍP×ÍPìQ°MemberExpressionÍP×ÍPâKªIdentifierÍP×ÍPØ¡cKªIdentifierÍPÙÍPâ©libraryIdÂÂ£===S§LiteralÍPçÍPì£GND¥'GND'Â¥constX«IfStatementÍPøÍSSKªIdentifierÍPüÍQ§gndCompL®BlockStatementÍQÍRI’T³VariableDeclarationÍQÍQG‘U²VariableDeclaratorÍQÍQFKªIdentifierÍQÍQ£endV®CallExpressionÍQ ÍQFQ°MemberExpressionÍQ ÍQ3R®ThisExpressionÍQ ÍQ$KªIdentifierÍQ%ÍQ3®estimatePinPosÂÂ“KªIdentifierÍQ4ÍQ;§gndCompS§LiteralÍQ=ÍQB£top¥'top'S§LiteralÍQDÍQE ¡0Â¥constO³ExpressionStatementÍQUÍR>V®CallExpressionÍQUÍR=Q°MemberExpressionÍQUÍQcQ°MemberExpressionÍQUÍQ^KªIdentifierÍQUÍQX£docKªIdentifierÍQYÍQ^¥wiresÂÂKªIdentifierÍQ_ÍQc¤pushÂÂ‘^°ObjectExpressionÍQdÍR<”_¨PropertyÍQwÍQ’ÂÂÂKªIdentifierÍQwÍQy¢idV®CallExpressionÍQ{ÍQ’Q°MemberExpressionÍQ{ÍQŠKªIdentifierÍQ{ÍQ¦IdUtilKªIdentifierÍQ‚ÍQŠ¨generateÂÂ‘S§LiteralÍQ‹ÍQ‘¤wire¦'wire'Â¤init_¨PropertyÍQ¥ÍQ´ÂÂÂKªIdentifierÍQ¥ÍQª¥netIdKªIdentifierÍQ¬ÍQ´¨gndNetId¤init_¨PropertyÍQÇÍQÿÂÂÂKªIdentifierÍQÇÍQÍ¦pointsV®CallExpressionÍQÏÍQÿQ°MemberExpressionÍQÏÍQãR®ThisExpressionÍQÏÍQÓKªIdentifierÍQÔÍQã¯orthogonalRouteÂÂ“KªIdentifierÍQäÍQé¥startKªIdentifierÍQëÍQî£endQ°MemberExpressionÍQğÍQşKªIdentifierÍQğÍQó£docKªIdentifierÍQôÍQşªcomponentsÂÂÂ¤init_¨PropertyÍRÍR-ÂÂÂKªIdentifierÍRÍR¥styleQ°MemberExpressionÍRÍR-KªIdentifierÍRÍR"©WireStyleKªIdentifierÍR#ÍR-ªORTHOGONALÂÂ¤initÂL®BlockStatementÍRXÍSS‘O³ExpressionStatementÍRgÍSHV®CallExpressionÍRgÍSGQ°MemberExpressionÍRgÍRuQ°MemberExpressionÍRgÍRpKªIdentifierÍRgÍRj£docKªIdentifierÍRkÍRp¥wiresÂÂKªIdentifierÍRqÍRu¤pushÂÂ‘^°ObjectExpressionÍRvÍSF”_¨PropertyÍR‰ÍR¤ÂÂÂKªIdentifierÍR‰ÍR‹¢idV®CallExpressionÍRÍR¤Q°MemberExpressionÍRÍRœKªIdentifierÍRÍR“¦IdUtilKªIdentifierÍR”ÍRœ¨generateÂÂ‘S§LiteralÍRÍR£¤wire¦'wire'Â¤init_¨PropertyÍR·ÍRÆÂÂÂKªIdentifierÍR·ÍR¼¥netIdKªIdentifierÍR¾ÍRÆ¨gndNetId¤init_¨PropertyÍRÙÍS	ÂÂÂKªIdentifierÍRÙÍRß¦pointsZ¯ArrayExpressionÍRáÍS	’KªIdentifierÍRâÍRç¥start^°ObjectExpressionÍRéÍS’_¨PropertyÍRëÍRõÂÂÂKªIdentifierÍRëÍRì¡xQ°MemberExpressionÍRîÍRõKªIdentifierÍRîÍRó¥startKªIdentifierÍRôÍRõ¡xÂÂ¤init_¨PropertyÍR÷ÍSÂÂÂKªIdentifierÍR÷ÍRø¡yW°BinaryExpressionÍRúÍSQ°MemberExpressionÍRúÍSKªIdentifierÍRúÍRÿ¥startKªIdentifierÍS ÍS¡yÂÂ¡+S§LiteralÍSÍS<¢60¤init¤init_¨PropertyÍSÍS7ÂÂÂKªIdentifierÍSÍS!¥styleQ°MemberExpressionÍS#ÍS7KªIdentifierÍS#ÍS,©WireStyleKªIdentifierÍS-ÍS7ªORTHOGONALÂÂ¤initÂM°MethodDefinitionÍStÍY0ÂÂKªIdentifierÍStÍS|¨findPath¦methodN²FunctionExpressionÍS|ÍY0ÀÂÂÂ“KªIdentifierÍS}ÍS‚¥startKªIdentifierÍS„ÍS‡£endKªIdentifierÍS‰ÍS’©obstaclesL®BlockStatementÍS”ÍY0—T³VariableDeclarationÍSŸÍS³‘U²VariableDeclaratorÍS¥ÍS²KªIdentifierÍS¥ÍS­¨openListZ¯ArrayExpressionÍS°ÍS²¥constT³VariableDeclarationÍS½ÍSÙ‘U²VariableDeclaratorÍSÃÍSØKªIdentifierÍSÃÍSÌ©closedSetf­NewExpressionÍSÏÍSØKªIdentifierÍSÓÍSÖ£Set¥constT³VariableDeclarationÍSãÍT‚‘U²VariableDeclaratorÍSéÍTKªIdentifierÍSéÍSò©startNode^°ObjectExpressionÍSõÍT–_¨PropertyÍTÍTÂÂÂKªIdentifierÍTÍT¡xV®CallExpressionÍTÍTQ°MemberExpressionÍTÍTR®ThisExpressionÍTÍTKªIdentifierÍTÍT¤snapÂÂ‘Q°MemberExpressionÍTÍTKªIdentifierÍTÍT¥startKªIdentifierÍTÍT¡xÂÂÂ¤init_¨PropertyÍTÍT0ÂÂÂKªIdentifierÍTÍT¡yV®CallExpressionÍTÍT0Q°MemberExpressionÍTÍT'R®ThisExpressionÍTÍT"KªIdentifierÍT#ÍT'¤snapÂÂ‘Q°MemberExpressionÍT(ÍT/KªIdentifierÍT(ÍT-¥startKªIdentifierÍT.ÍT/¡yÂÂÂ¤init_¨PropertyÍT?ÍTCÂÂÂKªIdentifierÍT?ÍT@¡gS§LiteralÍTBÍTC ¡0¤init_¨PropertyÍTEÍTbÂÂÂKªIdentifierÍTEÍTF¡hV®CallExpressionÍTHÍTbQ°MemberExpressionÍTHÍTVR®ThisExpressionÍTHÍTLKªIdentifierÍTMÍTV©heuristicÂÂ’KªIdentifierÍTWÍT\¥startKªIdentifierÍT^ÍTa£endÂ¤init_¨PropertyÍTdÍThÂÂÂKªIdentifierÍTdÍTe¡fS§LiteralÍTgÍTh ¡0¤init_¨PropertyÍTjÍTvÂÂÂKªIdentifierÍTjÍTp¦parentS§LiteralÍTrÍTvÀ¤null¤init¥constO³ExpressionStatementÍTŒÍT´P´AssignmentExpressionÍTŒÍT³¡=Q°MemberExpressionÍTŒÍT—KªIdentifierÍTŒÍT•©startNodeKªIdentifierÍT–ÍT—¡fÂÂW°BinaryExpressionÍTšÍT³Q°MemberExpressionÍTšÍT¥KªIdentifierÍTšÍT£©startNodeKªIdentifierÍT¤ÍT¥¡gÂÂ¡+Q°MemberExpressionÍT¨ÍT³KªIdentifierÍT¨ÍT±©startNodeKªIdentifierÍT²ÍT³¡hÂÂO³ExpressionStatementÍT¾ÍT×V®CallExpressionÍT¾ÍTÖQ°MemberExpressionÍT¾ÍTËKªIdentifierÍT¾ÍTÆ¨openListKªIdentifierÍTÇÍTË¤pushÂÂ‘KªIdentifierÍTÌÍTÕ©startNodeÂÔrg•¤type¥start£end¤test¤body®WhileStatementÍTáÍXñW°BinaryExpressionÍTèÍTûQ°MemberExpressionÍTèÍT÷KªIdentifierÍTèÍTğ¨openListKªIdentifierÍTñÍT÷¦lengthÂÂ¡>S§LiteralÍTúÍTû ¡0L®BlockStatementÍTıÍXñ˜O³ExpressionStatementÍUÍU/V®CallExpressionÍUÍU.Q°MemberExpressionÍUÍUKªIdentifierÍUÍU¨openListKªIdentifierÍUÍU¤sortÂÂ‘N·ArrowFunctionExpressionÍUÍU-ÀÃÂÂ’KªIdentifierÍUÍU¡aKªIdentifierÍUÍU¡bW°BinaryExpressionÍU$ÍU-Q°MemberExpressionÍU$ÍU'KªIdentifierÍU$ÍU%¡aKªIdentifierÍU&ÍU'¡fÂÂ¡-Q°MemberExpressionÍU*ÍU-KªIdentifierÍU*ÍU+¡bKªIdentifierÍU,ÍU-¡fÂÂÂT³VariableDeclarationÍU=ÍU^‘U²VariableDeclaratorÍUCÍU]KªIdentifierÍUCÍUJ§currentV®CallExpressionÍUMÍU]Q°MemberExpressionÍUMÍU[KªIdentifierÍUMÍUU¨openListKªIdentifierÍUVÍU[¥shiftÂÂÂ¥constT³VariableDeclarationÍUlÍU”‘U²VariableDeclaratorÍUrÍU“KªIdentifierÍUrÍUu£keyc¯TemplateLiteralÍUxÍU“’Q°MemberExpressionÍU{ÍU„KªIdentifierÍU{ÍU‚§currentKªIdentifierÍUƒÍU„¡xÂÂQ°MemberExpressionÍUˆÍU‘KªIdentifierÍUˆÍU§currentKªIdentifierÍUÍU‘¡yÂÂ“d¯TemplateElementÍUyÍUye  Âd¯TemplateElementÍU…ÍU†e¡,¡,Âd¯TemplateElementÍU’ÍU’e  Ã¥constX«IfStatementÍU¢ÍUÔV®CallExpressionÍU¦ÍU¸Q°MemberExpressionÍU¦ÍU³KªIdentifierÍU¦ÍU¯©closedSetKªIdentifierÍU°ÍU³£hasÂÂ‘KªIdentifierÍU´ÍU·£keyÂ]±ContinueStatementÍUËÍUÔÀÀO³ExpressionStatementÍUâÍUõV®CallExpressionÍUâÍUôQ°MemberExpressionÍUâÍUïKªIdentifierÍUâÍUë©closedSetKªIdentifierÍUìÍUï£addÂÂ‘KªIdentifierÍUğÍUó£keyÂX«IfStatementÍVÍVªW±LogicalExpressionÍVÍVaW°BinaryExpressionÍVÍV2V®CallExpressionÍVÍV"Q°MemberExpressionÍVÍVKªIdentifierÍVÍV¤MathKªIdentifierÍVÍV£absÂÂ‘W°BinaryExpressionÍVÍV!Q°MemberExpressionÍVÍVKªIdentifierÍVÍV§currentKªIdentifierÍVÍV¡xÂÂ¡-Q°MemberExpressionÍVÍV!KªIdentifierÍVÍV£endKªIdentifierÍV ÍV!¡xÂÂÂ¡<Q°MemberExpressionÍV%ÍV2R®ThisExpressionÍV%ÍV)KªIdentifierÍV*ÍV2¨gridSizeÂÂ¢&&W°BinaryExpressionÍV6ÍVaV®CallExpressionÍV6ÍVQQ°MemberExpressionÍV6ÍV>KªIdentifierÍV6ÍV:¤MathKªIdentifierÍV;ÍV>£absÂÂ‘W°BinaryExpressionÍV?ÍVPQ°MemberExpressionÍV?ÍVHKªIdentifierÍV?ÍVF§currentKªIdentifierÍVGÍVH¡yÂÂ¡-Q°MemberExpressionÍVKÍVPKªIdentifierÍVKÍVN£endKªIdentifierÍVOÍVP¡yÂÂÂ¡<Q°MemberExpressionÍVTÍVaR®ThisExpressionÍVTÍVXKªIdentifierÍVYÍVa¨gridSizeÂÂL®BlockStatementÍVcÍVª‘Y¯ReturnStatementÍVvÍV›V®CallExpressionÍV}ÍVšQ°MemberExpressionÍV}ÍV‘R®ThisExpressionÍV}ÍVKªIdentifierÍV‚ÍV‘¯reconstructPathÂÂ‘KªIdentifierÍV’ÍV™§currentÂÀÔrh—¤type¥start£end¥await¤left¥right¤body®ForOfStatementÍV¸ÍX§ÂT³VariableDeclarationÍV½ÍVË‘U²VariableDeclaratorÍVÃÍVËKªIdentifierÍVÃÍVË¨neighborÀ¥constV®CallExpressionÍVÏÍVôQ°MemberExpressionÍVÏÍVàR®ThisExpressionÍVÏÍVÓKªIdentifierÍVÔÍVà¬getNeighborsÂÂ’KªIdentifierÍVáÍVè§currentKªIdentifierÍVêÍVó©obstaclesÂL®BlockStatementÍVöÍX§—T³VariableDeclarationÍW	ÍW4‘U²VariableDeclaratorÍWÍW3KªIdentifierÍWÍW¤nKeyc¯TemplateLiteralÍWÍW3’Q°MemberExpressionÍWÍW#KªIdentifierÍWÍW!¨neighborKªIdentifierÍW"ÍW#¡xÂÂQ°MemberExpressionÍW'ÍW1KªIdentifierÍW'ÍW/¨neighborKªIdentifierÍW0ÍW1¡yÂÂ“d¯TemplateElementÍWÍWe  Âd¯TemplateElementÍW$ÍW%e¡,¡,Âd¯TemplateElementÍW2ÍW2e  Ã¥constX«IfStatementÍWFÍW}V®CallExpressionÍWJÍW]Q°MemberExpressionÍWJÍWWKªIdentifierÍWJÍWS©closedSetKªIdentifierÍWTÍWW£hasÂÂ‘KªIdentifierÍWXÍW\¤nKeyÂ]±ContinueStatementÍWtÍW}ÀÀO³ExpressionStatementÍWÍW¶P´AssignmentExpressionÍWÍWµ¡=Q°MemberExpressionÍWÍW™KªIdentifierÍWÍW—¨neighborKªIdentifierÍW˜ÍW™¡gÂÂW°BinaryExpressionÍWœÍWµQ°MemberExpressionÍWœÍW¥KªIdentifierÍWœÍW£§currentKªIdentifierÍW¤ÍW¥¡gÂÂ¡+Q°MemberExpressionÍW¨ÍWµR®ThisExpressionÍW¨ÍW¬KªIdentifierÍW­ÍWµ¨gridSizeÂÂO³ExpressionStatementÍWÈÍXP´AssignmentExpressionÍWÈÍX
-¡=Q°MemberExpressionÍWÈÍWÒKªIdentifierÍWÈÍWĞ¨neighborKªIdentifierÍWÑÍWÒ¡hÂÂV®CallExpressionÍWÕÍX
-Q°MemberExpressionÍWÕÍWãR®ThisExpressionÍWÕÍWÙKªIdentifierÍWÚÍWã©heuristicÂÂ’^°ObjectExpressionÍWäÍX’_¨PropertyÍWæÍWóÂÂÂKªIdentifierÍWæÍWç¡xQ°MemberExpressionÍWéÍWóKªIdentifierÍWéÍWñ¨neighborKªIdentifierÍWòÍWó¡xÂÂ¤init_¨PropertyÍWõÍXÂÂÂKªIdentifierÍWõÍWö¡yQ°MemberExpressionÍWøÍXKªIdentifierÍWøÍX ¨neighborKªIdentifierÍXÍX¡yÂÂ¤initKªIdentifierÍXÍX	£endÂO³ExpressionStatementÍXÍXBP´AssignmentExpressionÍXÍXA¡=Q°MemberExpressionÍXÍX'KªIdentifierÍXÍX%¨neighborKªIdentifierÍX&ÍX'¡fÂÂW°BinaryExpressionÍX*ÍXAQ°MemberExpressionÍX*ÍX4KªIdentifierÍX*ÍX2¨neighborKªIdentifierÍX3ÍX4¡gÂÂ¡+Q°MemberExpressionÍX7ÍXAKªIdentifierÍX7ÍX?¨neighborKªIdentifierÍX@ÍXA¡hÂÂO³ExpressionStatementÍXTÍXnP´AssignmentExpressionÍXTÍXm¡=Q°MemberExpressionÍXTÍXcKªIdentifierÍXTÍX\¨neighborKªIdentifierÍX]ÍXc¦parentÂÂKªIdentifierÍXfÍXm§currentO³ExpressionStatementÍX€ÍX˜V®CallExpressionÍX€ÍX—Q°MemberExpressionÍX€ÍXKªIdentifierÍX€ÍXˆ¨openListKªIdentifierÍX‰ÍX¤pushÂÂ‘KªIdentifierÍXÍX–¨neighborÂX«IfStatementÍXµÍXæW°BinaryExpressionÍX¹ÍXÍQ°MemberExpressionÍX¹ÍXÇKªIdentifierÍX¹ÍXÂ©closedSetKªIdentifierÍXÃÍXÇ¤sizeÂÂ¡>S§LiteralÍXÊÍXÍÍ £800]®BreakStatementÍXàÍXæÀÀY¯ReturnStatementÍXûÍY)Z¯ArrayExpressionÍYÍY(“KªIdentifierÍYÍY¥start^°ObjectExpressionÍY
-ÍY"’_¨PropertyÍYÍYÂÂÂKªIdentifierÍYÍY¡xQ°MemberExpressionÍYÍYKªIdentifierÍYÍY¥startKªIdentifierÍYÍY¡xÂÂ¤init_¨PropertyÍYÍY ÂÂÂKªIdentifierÍYÍY¡yQ°MemberExpressionÍYÍY KªIdentifierÍYÍY£endKªIdentifierÍYÍY ¡yÂÂ¤initKªIdentifierÍY$ÍY'£endM°MethodDefinitionÍY6Í[˜ÂÂKªIdentifierÍY6ÍYB¬getNeighbors¦methodN²FunctionExpressionÍYBÍ[˜ÀÂÂÂ’KªIdentifierÍYCÍYG¤nodeKªIdentifierÍYIÍYR©obstaclesL®BlockStatementÍYTÍ[˜”T³VariableDeclarationÍY_ÍY‘U²VariableDeclaratorÍYeÍYKªIdentifierÍYeÍYi¤dirsZ¯ArrayExpressionÍYlÍY”Z¯ArrayExpressionÍYmÍYs’S§LiteralÍYnÍYo ¡0S§LiteralÍYqÍYr¡1Z¯ArrayExpressionÍYuÍY|’S§LiteralÍYvÍYw ¡0\¯UnaryExpressionÍYyÍY{¡-ÃS§LiteralÍYzÍY{¡1Z¯ArrayExpressionÍY~ÍY„’S§LiteralÍYÍY€¡1S§LiteralÍY‚ÍYƒ ¡0Z¯ArrayExpressionÍY†ÍY’\¯UnaryExpressionÍY‡ÍY‰¡-ÃS§LiteralÍYˆÍY‰¡1S§LiteralÍY‹ÍYŒ ¡0¥constT³VariableDeclarationÍY™ÍY®‘U²VariableDeclaratorÍYŸÍY­KªIdentifierÍYŸÍY¨©neighborsZ¯ArrayExpressionÍY«ÍY­¥const[¬ForStatementÍY¸Í[vT³VariableDeclarationÍY½ÍYÆ‘U²VariableDeclaratorÍYÁÍYÆKªIdentifierÍYÁÍYÂ¡iS§LiteralÍYÅÍYÆ ¡0£letW°BinaryExpressionÍYÈÍY×KªIdentifierÍYÈÍYÉ¡i¡<Q°MemberExpressionÍYÌÍY×KªIdentifierÍYÌÍYĞ¤dirsKªIdentifierÍYÑÍY×¦lengthÂÂ\°UpdateExpressionÍYÙÍYÜ¢++ÂKªIdentifierÍYÙÍYÚ¡iL®BlockStatementÍYŞÍ[v•T³VariableDeclarationÍYíÍZ‘U²VariableDeclaratorÍYóÍZKªIdentifierÍYóÍYõ¢dxQ°MemberExpressionÍYøÍZQ°MemberExpressionÍYøÍYÿKªIdentifierÍYøÍYü¤dirsKªIdentifierÍYıÍYş¡iÃÂS§LiteralÍZ ÍZ ¡0ÃÂ¥constT³VariableDeclarationÍZÍZ'‘U²VariableDeclaratorÍZÍZ&KªIdentifierÍZÍZ¢dyQ°MemberExpressionÍZÍZ&Q°MemberExpressionÍZÍZ#KªIdentifierÍZÍZ ¤dirsKªIdentifierÍZ!ÍZ"¡iÃÂS§LiteralÍZ$ÍZ%¡1ÃÂ¥constT³VariableDeclarationÍZ5ÍZ\‘U²VariableDeclaratorÍZ;ÍZ[KªIdentifierÍZ;ÍZ=¢nxW°BinaryExpressionÍZ@ÍZ[Q°MemberExpressionÍZ@ÍZFKªIdentifierÍZ@ÍZD¤nodeKªIdentifierÍZEÍZF¡xÂÂ¡+W°BinaryExpressionÍZIÍZ[KªIdentifierÍZIÍZK¢dx¡*Q°MemberExpressionÍZNÍZ[R®ThisExpressionÍZNÍZRKªIdentifierÍZSÍZ[¨gridSizeÂÂ¥constT³VariableDeclarationÍZjÍZ‘‘U²VariableDeclaratorÍZpÍZKªIdentifierÍZpÍZr¢nyW°BinaryExpressionÍZuÍZQ°MemberExpressionÍZuÍZ{KªIdentifierÍZuÍZy¤nodeKªIdentifierÍZzÍZ{¡yÂÂ¡+W°BinaryExpressionÍZ~ÍZKªIdentifierÍZ~ÍZ€¢dy¡*Q°MemberExpressionÍZƒÍZR®ThisExpressionÍZƒÍZ‡KªIdentifierÍZˆÍZ¨gridSizeÂÂ¥constX«IfStatementÍZŸÍ[kW±LogicalExpressionÍZ£Í[W±LogicalExpressionÍZ£ÍZÏW±LogicalExpressionÍZ£ÍZÂW±LogicalExpressionÍZ£ÍZ·W°BinaryExpressionÍZ£ÍZªKªIdentifierÍZ£ÍZ¥¢nx¢>=S§LiteralÍZ©ÍZª ¡0¢&&W°BinaryExpressionÍZ®ÍZ·KªIdentifierÍZ®ÍZ°¢nx¢<=S§LiteralÍZ´ÍZ·Í £800¢&&W°BinaryExpressionÍZ»ÍZÂKªIdentifierÍZ»ÍZ½¢ny¢>=S§LiteralÍZÁÍZÂ ¡0¢&&W°BinaryExpressionÍZÆÍZÏKªIdentifierÍZÆÍZÈ¢ny¢<=S§LiteralÍZÌÍZÏÍX£600¢&&\¯UnaryExpressionÍZäÍ[¡!ÃV®CallExpressionÍZåÍ[Q°MemberExpressionÍZåÍZóR®ThisExpressionÍZåÍZéKªIdentifierÍZêÍZó©isBlockedÂÂ“KªIdentifierÍZôÍZö¢nxKªIdentifierÍZøÍZú¢nyKªIdentifierÍZüÍ[©obstaclesÂL®BlockStatementÍ[Í[k‘O³ExpressionStatementÍ[Í[\V®CallExpressionÍ[Í[[Q°MemberExpressionÍ[Í[)KªIdentifierÍ[Í[$©neighborsKªIdentifierÍ[%Í[)¤pushÂÂ‘^°ObjectExpressionÍ[*Í[Z–_¨PropertyÍ[,Í[1ÂÂÂKªIdentifierÍ[,Í[-¡xKªIdentifierÍ[/Í[1¢nx¤init_¨PropertyÍ[3Í[8ÂÂÂKªIdentifierÍ[3Í[4¡yKªIdentifierÍ[6Í[8¢ny¤init_¨PropertyÍ[:Í[>ÂÂÂKªIdentifierÍ[:Í[;¡gS§LiteralÍ[=Í[> ¡0¤init_¨PropertyÍ[@Í[DÂÂÂKªIdentifierÍ[@Í[A¡hS§LiteralÍ[CÍ[D ¡0¤init_¨PropertyÍ[FÍ[JÂÂÂKªIdentifierÍ[FÍ[G¡fS§LiteralÍ[IÍ[J ¡0¤init_¨PropertyÍ[LÍ[XÂÂÂKªIdentifierÍ[LÍ[R¦parentS§LiteralÍ[TÍ[XÀ¤null¤initÂÀY¯ReturnStatementÍ[€Í[‘KªIdentifierÍ[‡Í[©neighborsM°MethodDefinitionÍ\#Í]oÂÂKªIdentifierÍ\#Í\,©isBlocked¦methodN²FunctionExpressionÍ\,Í]oÀÂÂÂ“KªIdentifierÍ\-Í\.¡xKªIdentifierÍ\0Í\1¡yKªIdentifierÍ\3Í\<©obstaclesL®BlockStatementÍ\>Í]o’h®ForOfStatementÍ\IÍ]QÂT³VariableDeclarationÍ\NÍ\W‘U²VariableDeclaratorÍ\TÍ\WKªIdentifierÍ\TÍ\W£obsÀ¥constKªIdentifierÍ\[Í\d©obstaclesL®BlockStatementÍ\fÍ]Q“T³VariableDeclarationÍ\uÍ\‘U²VariableDeclaratorÍ\{Í\KªIdentifierÍ\{Í\}¢cxQ°MemberExpressionÍ\€Í\Q°MemberExpressionÍ\€Í\ŒKªIdentifierÍ\€Í\ƒ£obsKªIdentifierÍ\„Í\Œ¨positionÂÂKªIdentifierÍ\Í\¡xÂÂ¥constT³VariableDeclarationÍ\Í\·‘U²VariableDeclaratorÍ\£Í\¶KªIdentifierÍ\£Í\¥¢cyQ°MemberExpressionÍ\¨Í\¶Q°MemberExpressionÍ\¨Í\´KªIdentifierÍ\¨Í\«£obsKªIdentifierÍ\¬Í\´¨positionÂÂKªIdentifierÍ\µÍ\¶¡yÂÂ¥constX«IfStatementÍ\ÅÍ]FW±LogicalExpressionÍ\ÉÍ]W±LogicalExpressionÍ\ÉÍ]W±LogicalExpressionÍ\ÉÍ\åW°BinaryExpressionÍ\ÉÍ\ÕKªIdentifierÍ\ÉÍ\Ê¡x¢>=W°BinaryExpressionÍ\ÎÍ\ÕKªIdentifierÍ\ÎÍ\Ğ¢cx¡-S§LiteralÍ\ÓÍ\Õ7¢55¢&&W°BinaryExpressionÍ\ÙÍ\åKªIdentifierÍ\ÙÍ\Ú¡x¢<=W°BinaryExpressionÍ\ŞÍ\åKªIdentifierÍ\ŞÍ\à¢cx¡+S§LiteralÍ\ãÍ\å7¢55¢&&W°BinaryExpressionÍ\úÍ]KªIdentifierÍ\úÍ\û¡y¢>=W°BinaryExpressionÍ\ÿÍ]KªIdentifierÍ\ÿÍ]¢cy¡-S§LiteralÍ]Í]¢30¢&&W°BinaryExpressionÍ]
-Í]KªIdentifierÍ]
-Í]¡y¢<=W°BinaryExpressionÍ]Í]KªIdentifierÍ]Í]¢cy¡+S§LiteralÍ]Í]¢30L®BlockStatementÍ]Í]F‘Y¯ReturnStatementÍ]+Í]7S§LiteralÍ]2Í]6Ã¤trueÀY¯ReturnStatementÍ][Í]hS§LiteralÍ]bÍ]gÂ¥falseM°MethodDefinitionÍ]uÍ]ÈÂÂKªIdentifierÍ]uÍ]~©heuristic¦methodN²FunctionExpressionÍ]~Í]ÈÀÂÂÂ’KªIdentifierÍ]Í]€¡aKªIdentifierÍ]‚Í]ƒ¡bL®BlockStatementÍ]…Í]È‘Y¯ReturnStatementÍ]Í]ÁW°BinaryExpressionÍ]—Í]ÀV®CallExpressionÍ]—Í]ªQ°MemberExpressionÍ]—Í]ŸKªIdentifierÍ]—Í]›¤MathKªIdentifierÍ]œÍ]Ÿ£absÂÂ‘W°BinaryExpressionÍ] Í]©Q°MemberExpressionÍ] Í]£KªIdentifierÍ] Í]¡¡aKªIdentifierÍ]¢Í]£¡xÂÂ¡-Q°MemberExpressionÍ]¦Í]©KªIdentifierÍ]¦Í]§¡bKªIdentifierÍ]¨Í]©¡xÂÂÂ¡+V®CallExpressionÍ]­Í]ÀQ°MemberExpressionÍ]­Í]µKªIdentifierÍ]­Í]±¤MathKªIdentifierÍ]²Í]µ£absÂÂ‘W°BinaryExpressionÍ]¶Í]¿Q°MemberExpressionÍ]¶Í]¹KªIdentifierÍ]¶Í]·¡aKªIdentifierÍ]¸Í]¹¡yÂÂ¡-Q°MemberExpressionÍ]¼Í]¿KªIdentifierÍ]¼Í]½¡bKªIdentifierÍ]¾Í]¿¡yÂÂÂM°MethodDefinitionÍ]ÎÍ^ÔÂÂKªIdentifierÍ]ÎÍ]İ¯reconstructPath¦methodN²FunctionExpressionÍ]İÍ^ÔÀÂÂÂ‘KªIdentifierÍ]ŞÍ]â¤nodeL®BlockStatementÍ]äÍ^Ô”T³VariableDeclarationÍ]ïÍ]ÿ‘U²VariableDeclaratorÍ]õÍ]şKªIdentifierÍ]õÍ]ù¤pathZ¯ArrayExpressionÍ]üÍ]ş¥constT³VariableDeclarationÍ^	Í^‘U²VariableDeclaratorÍ^Í^KªIdentifierÍ^Í^§currentKªIdentifierÍ^Í^¤node£letg®WhileStatementÍ^&Í^¤KªIdentifierÍ^-Í^4§currentL®BlockStatementÍ^6Í^¤’O³ExpressionStatementÍ^EÍ^rV®CallExpressionÍ^EÍ^qQ°MemberExpressionÍ^EÍ^QKªIdentifierÍ^EÍ^I¤pathKªIdentifierÍ^JÍ^Q§unshiftÂÂ‘^°ObjectExpressionÍ^RÍ^p’_¨PropertyÍ^TÍ^`ÂÂÂKªIdentifierÍ^TÍ^U¡xQ°MemberExpressionÍ^WÍ^`KªIdentifierÍ^WÍ^^§currentKªIdentifierÍ^_Í^`¡xÂÂ¤init_¨PropertyÍ^bÍ^nÂÂÂKªIdentifierÍ^bÍ^c¡yQ°MemberExpressionÍ^eÍ^nKªIdentifierÍ^eÍ^l§currentKªIdentifierÍ^mÍ^n¡yÂÂ¤initÂO³ExpressionStatementÍ^€Í^™P´AssignmentExpressionÍ^€Í^˜¡=KªIdentifierÍ^€Í^‡§currentQ°MemberExpressionÍ^ŠÍ^˜KªIdentifierÍ^ŠÍ^‘§currentKªIdentifierÍ^’Í^˜¦parentÂÂY¯ReturnStatementÍ^®Í^ÍV®CallExpressionÍ^µÍ^ÌQ°MemberExpressionÍ^µÍ^ÆR®ThisExpressionÍ^µÍ^¹KªIdentifierÍ^ºÍ^Æ¬simplifyPathÂÂ‘KªIdentifierÍ^ÇÍ^Ë¤pathÂM°MethodDefinitionÍ^ÚÍaÂÂKªIdentifierÍ^ÚÍ^æ¬simplifyPath¦methodN²FunctionExpressionÍ^æÍaÀÂÂÂ‘KªIdentifierÍ^çÍ^ë¤pathL®BlockStatementÍ^íÍa•X«IfStatementÍ^øÍ_'W°BinaryExpressionÍ^üÍ_Q°MemberExpressionÍ^üÍ_KªIdentifierÍ^üÍ_ ¤pathKªIdentifierÍ_Í_¦lengthÂÂ¢<=S§LiteralÍ_Í_¡2Y¯ReturnStatementÍ_Í_'KªIdentifierÍ_"Í_&¤pathÀT³VariableDeclarationÍ_1Í_J‘U²VariableDeclaratorÍ_7Í_IKªIdentifierÍ_7Í_=¦resultZ¯ArrayExpressionÍ_@Í_I‘Q°MemberExpressionÍ_AÍ_HKªIdentifierÍ_AÍ_E¤pathS§LiteralÍ_FÍ_G ¡0ÃÂ¥const[¬ForStatementÍ_TÍ`ÈT³VariableDeclarationÍ_YÍ_b‘U²VariableDeclaratorÍ_]Í_bKªIdentifierÍ_]Í_^¡iS§LiteralÍ_aÍ_b¡1£letW°BinaryExpressionÍ_dÍ_wKªIdentifierÍ_dÍ_e¡i¡<W°BinaryExpressionÍ_hÍ_wQ°MemberExpressionÍ_hÍ_sKªIdentifierÍ_hÍ_l¤pathKªIdentifierÍ_mÍ_s¦lengthÂÂ¡-S§LiteralÍ_vÍ_w¡1\°UpdateExpressionÍ_yÍ_|¢++ÂKªIdentifierÍ_yÍ_z¡iL®BlockStatementÍ_~Í`È–T³VariableDeclarationÍ_Í_¦‘U²VariableDeclaratorÍ_“Í_¥KªIdentifierÍ_“Í_—¤prevQ°MemberExpressionÍ_šÍ_¥KªIdentifierÍ_šÍ_¤pathW°BinaryExpressionÍ_ŸÍ_¤KªIdentifierÍ_ŸÍ_ ¡i¡-S§LiteralÍ_£Í_¤¡1ÃÂ¥constT³VariableDeclarationÍ_´Í_É‘U²VariableDeclaratorÍ_ºÍ_ÈKªIdentifierÍ_ºÍ_¾¤currQ°MemberExpressionÍ_ÁÍ_ÈKªIdentifierÍ_ÁÍ_Å¤pathKªIdentifierÍ_ÆÍ_Ç¡iÃÂ¥constT³VariableDeclarationÍ_×Í_ğ‘U²VariableDeclaratorÍ_İÍ_ïKªIdentifierÍ_İÍ_á¤nextQ°MemberExpressionÍ_äÍ_ïKªIdentifierÍ_äÍ_è¤pathW°BinaryExpressionÍ_éÍ_îKªIdentifierÍ_éÍ_ê¡i¡+S§LiteralÍ_íÍ_î¡1ÃÂ¥constT³VariableDeclarationÍ_şÍ`3‘U²VariableDeclaratorÍ`Í`2KªIdentifierÍ`Í`	¥sameXW±LogicalExpressionÍ`Í`2W°BinaryExpressionÍ`Í`Q°MemberExpressionÍ`Í`KªIdentifierÍ`Í`¤prevKªIdentifierÍ`Í`¡xÂÂ£===Q°MemberExpressionÍ`Í`KªIdentifierÍ`Í`¤currKªIdentifierÍ`Í`¡xÂÂ¢&&W°BinaryExpressionÍ`!Í`2Q°MemberExpressionÍ`!Í`'KªIdentifierÍ`!Í`%¤currKªIdentifierÍ`&Í`'¡xÂÂ£===Q°MemberExpressionÍ`,Í`2KªIdentifierÍ`,Í`0¤nextKªIdentifierÍ`1Í`2¡xÂÂ¥constT³VariableDeclarationÍ`AÍ`v‘U²VariableDeclaratorÍ`GÍ`uKªIdentifierÍ`GÍ`L¥sameYW±LogicalExpressionÍ`OÍ`uW°BinaryExpressionÍ`OÍ``Q°MemberExpressionÍ`OÍ`UKªIdentifierÍ`OÍ`S¤prevKªIdentifierÍ`TÍ`U¡yÂÂ£===Q°MemberExpressionÍ`ZÍ``KªIdentifierÍ`ZÍ`^¤currKªIdentifierÍ`_Í``¡yÂÂ¢&&W°BinaryExpressionÍ`dÍ`uQ°MemberExpressionÍ`dÍ`jKªIdentifierÍ`dÍ`h¤currKªIdentifierÍ`iÍ`j¡yÂÂ£===Q°MemberExpressionÍ`oÍ`uKªIdentifierÍ`oÍ`s¤nextKªIdentifierÍ`tÍ`u¡yÂÂ¥constX«IfStatementÍ`„Í`½W±LogicalExpressionÍ`ˆÍ`˜\¯UnaryExpressionÍ`ˆÍ`¡!ÃKªIdentifierÍ`‰Í`¥sameX¢&&\¯UnaryExpressionÍ`’Í`˜¡!ÃKªIdentifierÍ`“Í`˜¥sameYO³ExpressionStatementÍ`«Í`½V®CallExpressionÍ`«Í`¼Q°MemberExpressionÍ`«Í`¶KªIdentifierÍ`«Í`±¦resultKªIdentifierÍ`²Í`¶¤pushÂÂ‘KªIdentifierÍ`·Í`»¤currÂÀO³ExpressionStatementÍ`ÒÍ`õV®CallExpressionÍ`ÒÍ`ôQ°MemberExpressionÍ`ÒÍ`İKªIdentifierÍ`ÒÍ`Ø¦resultKªIdentifierÍ`ÙÍ`İ¤pushÂÂ‘Q°MemberExpressionÍ`ŞÍ`óKªIdentifierÍ`ŞÍ`â¤pathW°BinaryExpressionÍ`ãÍ`òQ°MemberExpressionÍ`ãÍ`îKªIdentifierÍ`ãÍ`ç¤pathKªIdentifierÍ`èÍ`î¦lengthÂÂ¡-S§LiteralÍ`ñÍ`ò¡1ÃÂÂY¯ReturnStatementÍ`ÿÍaKªIdentifierÍaÍa¦resultM°MethodDefinitionÍaÍaæÂÂKªIdentifierÍaÍa+±optimizeWirePaths¦methodN²FunctionExpressionÍa+ÍaæÀÂÂÂ‘KªIdentifierÍa,Ía/£docL®BlockStatementÍa1Íaæ‘h®ForOfStatementÍa<ÍaßÂT³VariableDeclarationÍaAÍaK‘U²VariableDeclaratorÍaGÍaKKªIdentifierÍaGÍaK¤wireÀ¥constQ°MemberExpressionÍaOÍaXKªIdentifierÍaOÍaR£docKªIdentifierÍaSÍaX¥wiresÂÂL®BlockStatementÍaZÍaß‘X«IfStatementÍaiÍaÔW°BinaryExpressionÍamÍaƒQ°MemberExpressionÍamÍaQ°MemberExpressionÍamÍaxKªIdentifierÍamÍaq¤wireKªIdentifierÍarÍax¦pointsÂÂKªIdentifierÍayÍa¦lengthÂÂ¡>S§LiteralÍa‚Íaƒ¡2L®BlockStatementÍa…ÍaÔ‘O³ExpressionStatementÍa˜ÍaÅP´AssignmentExpressionÍa˜ÍaÄ¡=Q°MemberExpressionÍa˜Ía£KªIdentifierÍa˜Íaœ¤wireKªIdentifierÍaÍa£¦pointsÂÂV®CallExpressionÍa¦ÍaÄQ°MemberExpressionÍa¦Ía·R®ThisExpressionÍa¦ÍaªKªIdentifierÍa«Ía·¬simplifyPathÂÂ‘Q°MemberExpressionÍa¸ÍaÃKªIdentifierÍa¸Ía¼¤wireKªIdentifierÍa½ÍaÃ¦pointsÂÂÂÀM°MethodDefinitionÍaìÍb;ÂÂKªIdentifierÍaìÍağ¤snap¦methodN²FunctionExpressionÍağÍb;ÀÂÂÂ‘KªIdentifierÍañÍaò¡vL®BlockStatementÍaôÍb;‘Y¯ReturnStatementÍaÿÍb4W°BinaryExpressionÍbÍb3V®CallExpressionÍbÍb#Q°MemberExpressionÍbÍbKªIdentifierÍbÍb
-¤MathKªIdentifierÍbÍb¥roundÂÂ‘W°BinaryExpressionÍbÍb"KªIdentifierÍbÍb¡v¡/Q°MemberExpressionÍbÍb"R®ThisExpressionÍbÍbKªIdentifierÍbÍb"¨gridSizeÂÂÂ¡*Q°MemberExpressionÍb&Íb3R®ThisExpressionÍb&Íb*KªIdentifierÍb+Íb3¨gridSizeÂÂÀ’Ôri•¤type¥start£endªspecifiers¦source±ImportDeclarationÌaÌ•“Ôrj•¤type¥start£end¨imported¥local¯ImportSpecifierÌjÌsKªIdentifierÌjÌs©WireStyleKªIdentifierÌjÌs©WireStylej¯ImportSpecifierÌuÌ|KªIdentifierÌuÌ|§NetTypeKªIdentifierÌuÌ|§NetTypej¯ImportSpecifierÌ~Ì„KªIdentifierÌ~Ì„¦IdUtilKªIdentifierÌ~Ì„¦IdUtilS§LiteralÌŒÌ”¦common¨'common'i±ImportDeclarationÌ—ÌÍ‘j¯ImportSpecifierÌ Ì°KªIdentifierÌ Ì°°PinWorldResolverKªIdentifierÌ Ì°°PinWorldResolverS§LiteralÌ¸ÌÌ²./PinWorldResolver´'./PinWorldResolver'

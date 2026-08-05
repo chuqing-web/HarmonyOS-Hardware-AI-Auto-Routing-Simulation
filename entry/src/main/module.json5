@@ -33,14 +33,6 @@
     ],
     "requestPermissions": [
       {
-        "name": "ohos.permission.sec.ACCESS_UDID",
-        "reason": "$string:udid_permission_reason",
-        "usedScene": {
-          "abilities": ["EntryAbility"],
-          "when": "inuse"
-        }
-      },
-      {
         "name": "ohos.permission.INTERNET",
         "reason": "$string:internet_permission_reason",
         "usedScene": {

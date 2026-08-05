@@ -12,6 +12,7 @@ interface AiApiConfigSection_Params {
     newApiUrl?: string;
     newApiFormat?: string;
     newAuthField?: string;
+    newApiStream?: boolean;
     selectedProvider?: AiProviderType;
     apiFormatIdx?: number;
     editingApiId?: string;
@@ -29,7 +30,7 @@ interface AiApiConfigSection_Params {
 import { AppService } from "@bundle:com.elecdraw.aischsim/entry/ets/services/AppService";
 import { AiProviderType, LoadBalanceMode } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
 import type { AiApiConfig, Result } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
-import { ProteusClassicBtn, ProteusChipGrid, ProteusTextInput } from "@bundle:com.elecdraw.aischsim/entry/ets/components/proteus/ProteusWidgets";
+import { ProteusClassicBtn, ProteusChipGrid, ProteusTextInput, ProteusSwitch } from "@bundle:com.elecdraw.aischsim/entry/ets/components/proteus/ProteusWidgets";
 import { ProteusColors, ProteusDimens, ProteusFonts } from "@bundle:com.elecdraw.aischsim/entry/ets/theme/ProteusTheme";
 interface ApiFormatOption {
     label: string;
@@ -54,6 +55,7 @@ export class AiApiConfigSection extends ViewPU {
         this.__newApiUrl = new ObservedPropertySimplePU('', this, "newApiUrl");
         this.__newApiFormat = new ObservedPropertySimplePU('openai', this, "newApiFormat");
         this.__newAuthField = new ObservedPropertySimplePU('', this, "newAuthField");
+        this.__newApiStream = new ObservedPropertySimplePU(false, this, "newApiStream");
         this.__selectedProvider = new ObservedPropertySimplePU(AiProviderType.DEEPSEEK, this, "selectedProvider");
         this.__apiFormatIdx = new ObservedPropertySimplePU(2, this, "apiFormatIdx");
         this.__editingApiId = new ObservedPropertySimplePU('', this, "editingApiId");
@@ -111,6 +113,9 @@ export class AiApiConfigSection extends ViewPU {
         if (params.newAuthField !== undefined) {
             this.newAuthField = params.newAuthField;
         }
+        if (params.newApiStream !== undefined) {
+            this.newApiStream = params.newApiStream;
+        }
         if (params.selectedProvider !== undefined) {
             this.selectedProvider = params.selectedProvider;
         }
@@ -165,6 +170,7 @@ export class AiApiConfigSection extends ViewPU {
         this.__newApiUrl.purgeDependencyOnElmtId(rmElmtId);
         this.__newApiFormat.purgeDependencyOnElmtId(rmElmtId);
         this.__newAuthField.purgeDependencyOnElmtId(rmElmtId);
+        this.__newApiStream.purgeDependencyOnElmtId(rmElmtId);
         this.__selectedProvider.purgeDependencyOnElmtId(rmElmtId);
         this.__apiFormatIdx.purgeDependencyOnElmtId(rmElmtId);
         this.__editingApiId.purgeDependencyOnElmtId(rmElmtId);
@@ -184,6 +190,7 @@ export class AiApiConfigSection extends ViewPU {
         this.__newApiUrl.aboutToBeDeleted();
         this.__newApiFormat.aboutToBeDeleted();
         this.__newAuthField.aboutToBeDeleted();
+        this.__newApiStream.aboutToBeDeleted();
         this.__selectedProvider.aboutToBeDeleted();
         this.__apiFormatIdx.aboutToBeDeleted();
         this.__editingApiId.aboutToBeDeleted();
@@ -265,6 +272,13 @@ export class AiApiConfigSection extends ViewPU {
     set newAuthField(newValue: string) {
         this.__newAuthField.set(newValue);
     }
+    private __newApiStream: ObservedPropertySimplePU<boolean>;
+    get newApiStream() {
+        return this.__newApiStream.get();
+    }
+    set newApiStream(newValue: boolean) {
+        this.__newApiStream.set(newValue);
+    }
     private __selectedProvider: ObservedPropertySimplePU<AiProviderType>;
     get selectedProvider() {
         return this.__selectedProvider.get();
@@ -345,6 +359,7 @@ export class AiApiConfigSection extends ViewPU {
         this.newApiKey = '';
         this.newApiUrl = '';
         this.newApiModel = '';
+        this.newApiStream = false;
         this.newAuthField = this.selectedProvider === AiProviderType.CLAUDE ? 'x-api-key' : '';
     }
     private beginEditApi(api: AiApiConfig): void {
@@ -359,6 +374,7 @@ export class AiApiConfigSection extends ViewPU {
         this.newApiKey = '';
         this.newApiUrl = src.baseUrl;
         this.newApiModel = src.model;
+        this.newApiStream = src.stream === true;
         this.selectedProvider = src.provider;
         let pIdx = 0;
         for (let i = 0; i < this.providerTypes.length; i++) {
@@ -452,20 +468,23 @@ export class AiApiConfigSection extends ViewPU {
                 if (useHeaders) {
                     upd = this.appService.aiApiManager.updateApi(this.editingApiId, {
                         name: nameVal, provider: this.selectedProvider, baseUrl: urlVal,
-                        model: modelVal, apiKey: keyTrim, customHeaders: headers, remark: remarkVal
+                        model: modelVal, apiKey: keyTrim, customHeaders: headers, remark: remarkVal,
+                        stream: this.newApiStream
                     });
                 }
                 else {
                     upd = this.appService.aiApiManager.updateApi(this.editingApiId, {
                         name: nameVal, provider: this.selectedProvider, baseUrl: urlVal,
-                        model: modelVal, apiKey: keyTrim, remark: remarkVal
+                        model: modelVal, apiKey: keyTrim, remark: remarkVal,
+                        stream: this.newApiStream
                     });
                 }
             }
             else {
                 upd = this.appService.aiApiManager.updateApi(this.editingApiId, {
                     name: nameVal, provider: this.selectedProvider, baseUrl: urlVal,
-                    model: modelVal, remark: remarkVal
+                    model: modelVal, remark: remarkVal,
+                    stream: this.newApiStream
                 });
             }
             if (!upd.success) {
@@ -486,9 +505,10 @@ export class AiApiConfigSection extends ViewPU {
         }
         const config = tmpl.data;
         config.apiKey = this.newApiKey;
-        config.model = this.newApiModel || config.model;
-        config.name = this.newApiName || config.name || 'New API';
-        config.baseUrl = this.newApiUrl || config.baseUrl;
+        config.model = (this.newApiModel || config.model).trim();
+        config.name = (this.newApiName || config.name || 'New API').trim();
+        config.baseUrl = (this.newApiUrl || config.baseUrl).trim();
+        config.stream = this.newApiStream;
         if (this.newAuthField.length > 0 && this.newApiKey.length > 0) {
             const lower = this.newAuthField.toLowerCase();
             if (lower !== 'bearer' && lower !== 'authorization') {
@@ -555,7 +575,7 @@ export class AiApiConfigSection extends ViewPU {
                                 this.showAddForm = true;
                             }
                         }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiApiConfigSection.ets", line: 270, col: 9 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiApiConfigSection.ets", line: 277, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -646,7 +666,7 @@ export class AiApiConfigSection extends ViewPU {
                                             this.newAuthField = '';
                                         }
                                     }
-                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiApiConfigSection.ets", line: 294, col: 11 });
+                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiApiConfigSection.ets", line: 301, col: 11 });
                                 ViewPU.create(componentCall);
                                 let paramsLambda = () => {
                                     return {
@@ -731,7 +751,7 @@ export class AiApiConfigSection extends ViewPU {
                                     placeholder: 'https://example.com （可选）',
                                     text: this.newApiUrl,
                                     onChange: (v: string) => { this.newApiUrl = v; }
-                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiApiConfigSection.ets", line: 337, col: 13 });
+                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiApiConfigSection.ets", line: 344, col: 13 });
                                 ViewPU.create(componentCall);
                                 let paramsLambda = () => {
                                     return {
@@ -777,7 +797,7 @@ export class AiApiConfigSection extends ViewPU {
                                     text: this.newApiKey,
                                     password: true,
                                     onChange: (v: string) => { this.newApiKey = v; }
-                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiApiConfigSection.ets", line: 348, col: 13 });
+                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiApiConfigSection.ets", line: 355, col: 13 });
                                 ViewPU.create(componentCall);
                                 let paramsLambda = () => {
                                     return {
@@ -853,7 +873,7 @@ export class AiApiConfigSection extends ViewPU {
                                     placeholder: 'x-api-key（Claude）或留空用 Bearer',
                                     text: this.newAuthField,
                                     onChange: (v: string) => { this.newAuthField = v; }
-                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiApiConfigSection.ets", line: 376, col: 13 });
+                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiApiConfigSection.ets", line: 383, col: 13 });
                                 ViewPU.create(componentCall);
                                 let paramsLambda = () => {
                                     return {
@@ -898,7 +918,7 @@ export class AiApiConfigSection extends ViewPU {
                                     placeholder: 'claude-sonnet-4-6',
                                     text: this.newApiModel,
                                     onChange: (v: string) => { this.newApiModel = v; }
-                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiApiConfigSection.ets", line: 387, col: 13 });
+                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiApiConfigSection.ets", line: 394, col: 13 });
                                 ViewPU.create(componentCall);
                                 let paramsLambda = () => {
                                     return {
@@ -919,6 +939,50 @@ export class AiApiConfigSection extends ViewPU {
                     }
                     __Common__.pop();
                     Row.pop();
+                    this.observeComponentCreation2((elmtId, isInitialRender) => {
+                        Row.create();
+                        Row.width('100%');
+                        Row.alignItems(VerticalAlign.Center);
+                        Row.margin({ bottom: 4 });
+                    }, Row);
+                    this.observeComponentCreation2((elmtId, isInitialRender) => {
+                        Text.create('流式回复（SSE）');
+                        Text.fontSize(ProteusFonts.PARAM_KEY);
+                        Text.fontColor(ProteusColors.TEXT_LABEL);
+                        Text.width(ProteusDimens.PARAM_LABEL_WIDTH);
+                    }, Text);
+                    Text.pop();
+                    this.observeComponentCreation2((elmtId, isInitialRender) => {
+                        Text.create('长生成持续回包，绕开网关/代理响应上限');
+                        Text.fontSize(9);
+                        Text.fontColor(ProteusColors.TEXT_SECONDARY);
+                        Text.layoutWeight(1);
+                    }, Text);
+                    Text.pop();
+                    {
+                        this.observeComponentCreation2((elmtId, isInitialRender) => {
+                            if (isInitialRender) {
+                                let componentCall = new ProteusSwitch(this, {
+                                    isOn: this.newApiStream,
+                                    onChange: (on: boolean) => { this.newApiStream = on; }
+                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiApiConfigSection.ets", line: 408, col: 13 });
+                                ViewPU.create(componentCall);
+                                let paramsLambda = () => {
+                                    return {
+                                        isOn: this.newApiStream,
+                                        onChange: (on: boolean) => { this.newApiStream = on; }
+                                    };
+                                };
+                                componentCall.paramsGenerator_ = paramsLambda;
+                            }
+                            else {
+                                this.updateStateVarsOfChildByElmtId(elmtId, {
+                                    isOn: this.newApiStream
+                                });
+                            }
+                        }, { name: "ProteusSwitch" });
+                    }
+                    Row.pop();
                     {
                         this.observeComponentCreation2((elmtId, isInitialRender) => {
                             if (isInitialRender) {
@@ -926,7 +990,7 @@ export class AiApiConfigSection extends ViewPU {
                                     label: this.editingApiId.length > 0 ? '更新 API' : '保存 API',
                                     widthVal: '100%',
                                     onAction: () => { this.saveApiFromForm(); }
-                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiApiConfigSection.ets", line: 394, col: 11 });
+                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiApiConfigSection.ets", line: 414, col: 11 });
                                 ViewPU.create(componentCall);
                                 let paramsLambda = () => {
                                     return {
@@ -979,7 +1043,7 @@ export class AiApiConfigSection extends ViewPU {
                             this.appService.aiApiManager.setLoadBalanceStrategy(this.loadBalanceModes[idx]);
                             this.statusMessage = `负载均衡: ${this.loadBalanceLabels[idx]}`;
                         }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiApiConfigSection.ets", line: 412, col: 7 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiApiConfigSection.ets", line: 432, col: 7 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -1104,7 +1168,7 @@ export class AiApiConfigSection extends ViewPU {
                                 label: api.id === this.defaultApiId ? '已选' : '选用',
                                 widthVal: 44,
                                 onAction: () => { this.selectAsDefault(api); }
-                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiApiConfigSection.ets", line: 457, col: 15 });
+                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiApiConfigSection.ets", line: 477, col: 15 });
                             ViewPU.create(componentCall);
                             let paramsLambda = () => {
                                 return {
@@ -1129,7 +1193,7 @@ export class AiApiConfigSection extends ViewPU {
                             let componentCall = new ProteusClassicBtn(this, {
                                 label: '编辑', widthVal: 44,
                                 onAction: () => { this.beginEditApi(api); }
-                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiApiConfigSection.ets", line: 462, col: 15 });
+                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiApiConfigSection.ets", line: 482, col: 15 });
                             ViewPU.create(componentCall);
                             let paramsLambda = () => {
                                 return {
@@ -1161,7 +1225,7 @@ export class AiApiConfigSection extends ViewPU {
                                     this.appService.syncAiApiConfigsToProject();
                                     this.refreshList();
                                 }
-                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiApiConfigSection.ets", line: 466, col: 15 });
+                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiApiConfigSection.ets", line: 486, col: 15 });
                             ViewPU.create(componentCall);
                             let paramsLambda = () => {
                                 return {
@@ -1202,7 +1266,7 @@ export class AiApiConfigSection extends ViewPU {
                                     this.appService.syncAiApiConfigsToProject();
                                     this.refreshList();
                                 }
-                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiApiConfigSection.ets", line: 478, col: 15 });
+                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiApiConfigSection.ets", line: 498, col: 15 });
                             ViewPU.create(componentCall);
                             let paramsLambda = () => {
                                 return {
@@ -1243,7 +1307,7 @@ export class AiApiConfigSection extends ViewPU {
                                     }
                                     this.refreshList();
                                 }
-                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiApiConfigSection.ets", line: 490, col: 15 });
+                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiApiConfigSection.ets", line: 510, col: 15 });
                             ViewPU.create(componentCall);
                             let paramsLambda = () => {
                                 return {

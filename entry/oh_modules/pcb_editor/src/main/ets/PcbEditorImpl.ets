@@ -24,7 +24,7 @@ import {
   PcbAppearance, PcbAppearanceMode, defaultPcbAppearance, normalizePcbAppearance, PcbRatsnestEdge,
   PcbViaKind, PcbRouteCornerMode, rebuildPcbNets, buildRatsnest, routeByCornerMode, findNetClass,
   sumTrackLengthForNet, PcbSpatialIndex, PcbSpatialItem, PcbSpatialKind, PcbSpatialRect,
-  matchDiffPairLengths, Pcb3dDisplayMode
+  matchDiffPairLengths, Pcb3dDisplayMode, netCopperConnectsPads
 } from 'common';
 
 export { PcbToolMode } from './api/IPcbEditor';
@@ -1842,24 +1842,51 @@ export class PcbEditorImpl implements IPcbEditor {
     const rules = this.document.metadata.designRules;
     this.refreshConnectivity();
 
-    const routedNets: Set<string> = new Set();
-    for (const trk of this.document.tracks) { if (trk.netId.length > 0) routedNets.add(trk.netId); }
-    for (const via of this.document.vias) { if (via.netId.length > 0) routedNets.add(via.netId); }
-
     const reportedUnrouted: Set<string> = new Set();
-    for (const fp of this.document.footprints) {
-      for (const pad of fp.pads) {
-        if (!pad.netName || pad.netName.length === 0) continue;
-        const nid = pad.netId ?? '';
-        if (nid.length > 0 && !routedNets.has(nid) && !reportedUnrouted.has(nid)) {
-          reportedUnrouted.add(nid);
-          violations.push({
-            id: IdUtil.generate('drc'), severity: PcbDrcSeverity.WARNING,
-            ruleType: PcbDrcRuleType.UNROUTED_NET,
-            message: `未布线网络: ${pad.netName}`, position: fp.position,
-            netId: nid, footprintId: fp.id
-          });
+    for (const net of this.document.nets) {
+      const nid = net.id;
+      if (nid.length === 0 || reportedUnrouted.has(nid)) {
+        continue;
+      }
+      let padCount = 0;
+      for (const fp of this.document.footprints) {
+        for (const pad of fp.pads) {
+          if ((pad.netId ?? '') === nid) {
+            padCount++;
+          }
         }
+      }
+      if (padCount < 2) {
+        continue;
+      }
+      if (!netCopperConnectsPads(this.document, nid, this.document.tracks, this.document.vias)) {
+        reportedUnrouted.add(nid);
+        let hasCu = false;
+        for (const trk of this.document.tracks) {
+          if (trk.netId === nid) {
+            hasCu = true;
+            break;
+          }
+        }
+        if (!hasCu) {
+          for (const via of this.document.vias) {
+            if (via.netId === nid) {
+              hasCu = true;
+              break;
+            }
+          }
+        }
+        // orphan 铜按 ERROR，纯未布按 WARNING（AI QA 另有连通门禁）
+        violations.push({
+          id: IdUtil.generate('drc'),
+          severity: hasCu ? PcbDrcSeverity.ERROR : PcbDrcSeverity.WARNING,
+          ruleType: PcbDrcRuleType.UNROUTED_NET,
+          message: hasCu
+            ? `网络未连通(有孤儿铜): ${net.name}`
+            : `未布线网络: ${net.name}`,
+          position: undefined,
+          netId: nid
+        });
       }
     }
 

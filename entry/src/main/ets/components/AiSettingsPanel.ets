@@ -5,7 +5,7 @@ import { AppService, AiGenLogEntry, AiGenerateMode, AiGenerateStrategy } from '.
 import { AiApiConfig, AiProviderType, LoadBalanceMode, Logger, INSTR_TRACE_TAG,
   ClarificationQuestion, ClarificationAnswer, Result } from 'common';
 import { AiApiConfigSection } from './AiApiConfigSection';
-import { ProteusClassicBtn, ProteusChipGrid, ProteusTextArea, ProteusTextInput } from './proteus/ProteusWidgets';
+import { ProteusClassicBtn, ProteusChipGrid, ProteusTextArea, ProteusTextInput, ProteusSwitch } from './proteus/ProteusWidgets';
 import { ProteusColors, ProteusDimens, ProteusFonts } from '../theme/ProteusTheme';
 
 interface ApiFormatOption {
@@ -44,6 +44,7 @@ export struct AiSettingsPanel {
   @State newApiUrl: string = '';
   @State newApiFormat: string = 'openai';
   @State newAuthField: string = '';
+  @State newApiStream: boolean = false;
   @State selectedProvider: AiProviderType = AiProviderType.DEEPSEEK;
   @State apiFormatIdx: number = 2;
   /** 非空表示正在编辑已保存配置（保存走 updateApi） */
@@ -120,6 +121,7 @@ export struct AiSettingsPanel {
     this.newApiKey = '';
     this.newApiUrl = '';
     this.newApiModel = '';
+    this.newApiStream = false;
     this.newAuthField = this.selectedProvider === AiProviderType.CLAUDE ? 'x-api-key' : '';
   }
 
@@ -136,6 +138,7 @@ export struct AiSettingsPanel {
     this.newApiKey = '';
     this.newApiUrl = src.baseUrl;
     this.newApiModel = src.model;
+    this.newApiStream = src.stream === true;
     this.selectedProvider = src.provider;
     let pIdx = 0;
     for (let i = 0; i < this.providerTypes.length; i++) {
@@ -236,7 +239,8 @@ export struct AiSettingsPanel {
             model: modelVal,
             apiKey: keyTrim,
             customHeaders: headers,
-            remark: remarkVal
+            remark: remarkVal,
+            stream: this.newApiStream
           });
         } else {
           upd = this.appService.aiApiManager.updateApi(this.editingApiId, {
@@ -245,7 +249,8 @@ export struct AiSettingsPanel {
             baseUrl: urlVal,
             model: modelVal,
             apiKey: keyTrim,
-            remark: remarkVal
+            remark: remarkVal,
+            stream: this.newApiStream
           });
         }
       } else {
@@ -254,7 +259,8 @@ export struct AiSettingsPanel {
           provider: this.selectedProvider,
           baseUrl: urlVal,
           model: modelVal,
-          remark: remarkVal
+          remark: remarkVal,
+          stream: this.newApiStream
         });
       }
       if (!upd.success) {
@@ -291,9 +297,10 @@ export struct AiSettingsPanel {
     }
     const config = tmpl.data;
     config.apiKey = this.newApiKey;
-    config.model = this.newApiModel || config.model;
-    config.name = this.newApiName || config.name || 'New API';
-    config.baseUrl = this.newApiUrl || config.baseUrl;
+    config.model = (this.newApiModel || config.model).trim();
+    config.name = (this.newApiName || config.name || 'New API').trim();
+    config.baseUrl = (this.newApiUrl || config.baseUrl).trim();
+    config.stream = this.newApiStream;
     if (this.newAuthField.length > 0 && this.newApiKey.length > 0) {
       const lower = this.newAuthField.toLowerCase();
       if (lower !== 'bearer' && lower !== 'authorization') {
@@ -978,6 +985,19 @@ export struct AiSettingsPanel {
             })
               .layoutWeight(1)
               .key(`api_model_input_${this.editingApiId}`)
+          }.width('100%').alignItems(VerticalAlign.Center).margin({ bottom: 4 })
+
+          Row() {
+            Text('流式回复（SSE）')
+              .fontSize(ProteusFonts.PARAM_KEY).fontColor(ProteusColors.TEXT_LABEL)
+              .width(ProteusDimens.PARAM_LABEL_WIDTH)
+            Text('长生成持续回包，绕开网关/代理响应上限')
+              .fontSize(9).fontColor(ProteusColors.TEXT_SECONDARY)
+              .layoutWeight(1)
+            ProteusSwitch({
+              isOn: this.newApiStream,
+              onChange: (on: boolean) => { this.newApiStream = on; }
+            })
           }.width('100%').alignItems(VerticalAlign.Center).margin({ bottom: 4 })
 
           ProteusClassicBtn({

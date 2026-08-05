@@ -30,6 +30,7 @@ import { PCB_PLACEMENT_PROMPT } from './templates/PcbPlacementPrompt';
 import { PCB_NET_PLAN_PROMPT } from './templates/PcbNetPlanPrompt';
 import { PCB_ROUTE_PROMPT } from './templates/PcbRoutePrompt';
 import { PCB_QA_REPAIR_PROMPT } from './templates/PcbQaRepairPrompt';
+import { PCB_GEOMETRY_PROMPT } from './templates/PcbGeometryPrompt';
 import { CircuitIntent } from '../algorithms/CircuitIntent';
 import {
   assembleDeviceSelectSystem, assembleNetPlanSystem
@@ -308,7 +309,7 @@ function buildInstrumentPinCheatsheet(library: IComponentLibrary): string {
 /** 从 template.id 推断阶段名（device_select_v5 → device_select） */
 function inferStageFromTemplateId(id: string): string {
   const keys = [
-    'pcb_placement', 'pcb_net_plan', 'pcb_route', 'pcb_qa_repair',
+    'pcb_placement', 'pcb_net_plan', 'pcb_route', 'pcb_geometry', 'pcb_qa_repair',
     'device_select', 'modular_plan', 'net_plan', 'self_review',
     'edit_plan', 'gen_sch', 'layout', 'route', 'diag'
   ];
@@ -351,6 +352,8 @@ export class PromptLoader {
         return PCB_NET_PLAN_PROMPT;
       case 'pcb_route':
         return PCB_ROUTE_PROMPT;
+      case 'pcb_geometry':
+        return PCB_GEOMETRY_PROMPT;
       case 'pcb_qa_repair':
         return PCB_QA_REPAIR_PROMPT;
       default:

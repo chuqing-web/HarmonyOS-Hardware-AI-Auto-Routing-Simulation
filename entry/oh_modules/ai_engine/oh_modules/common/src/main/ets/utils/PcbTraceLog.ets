@@ -30,8 +30,11 @@ interface SchPinOnNet {
 function isLayoutableSchComp(comp: ComponentInstance): boolean {
   const lib = comp.libraryId.toLowerCase();
   if (lib.startsWith('gnd') || lib.startsWith('vcc') || lib.startsWith('vee') ||
-    lib.startsWith('power') || lib.includes('probe') || lib.includes('instrument') ||
-    lib.includes('oscilloscope') || lib.includes('multimeter') || lib.includes('generator')) {
+    lib.startsWith('vac') || lib.startsWith('power') || lib.includes('probe') ||
+    lib.includes('instrument') || lib.includes('oscilloscope') || lib.includes('multimeter') ||
+    lib.includes('generator') || lib.includes('voltmeter') || lib.includes('ammeter') ||
+    lib.includes('power_meter') || lib.includes('freq_counter') || lib.includes('logic_analyzer') ||
+    lib.includes('uart_terminal') || lib.includes('virtual_meter') || lib.includes('signal_gen')) {
     return false;
   }
   if (comp.refDes.startsWith('#')) {
@@ -235,8 +238,9 @@ export function tracePcbSchCompare(schematic: SchematicDocument, doc: PcbDocumen
   for (let i = 0; i < doc.footprints.length; i++) {
     const fp = doc.footprints[i];
     if (fp.schematicCompId === undefined || fp.schematicCompId.length === 0) {
+      // 预期行为：J1/H1-4（ensureBoardAccessories）与保留的仪器探针无原理图器件 → info 非 warn
       orphanFp++;
-      tracePcbWarn('ORPHAN_FP', `${fp.refDes} def=${fp.defId} — 无 schematicCompId`);
+      tracePcb('ORPHAN_FP', `${fp.refDes} def=${fp.defId} — 无 schematicCompId（板配件/探针，预期）`);
       continue;
     }
     let found = false;

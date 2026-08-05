@@ -1,2127 +1,0 @@
-Ôr@Ÿªassertions¤code´customTransformCache¬dependencies¢id¤meta±moduleSideEffects¬originalCode±originalSourcemap«resolvedIds®sourcemapChainµsyntheticNamedExportsµtransformDependencies®transformFiles¨cacheAstÔrAÚjÒ/**
- * ERC ç”µæ°”è§„åˆ™æ£€æŸ¥å¼•æ“ - å¯¹é½ Proteus è§„åˆ™é›†
- */
-import { ErcSeverity, ErcRuleType, NetType, PinType } from '../types/CommonTypes';
-import { IdUtil } from './IdUtil';
-import { appendArray } from './MapHelpers';
-import { DeviceHitGeometry, WIRE_OBSTACLE_PAD } from './DeviceHitGeometry';
-export class ErcEngine {
-    static run(doc, mcuLibraryIds, pinResolver) {
-        const violations = [];
-        appendArray(violations, ErcEngine.checkFloatingNets(doc));
-        appendArray(violations, ErcEngine.checkDuplicateNetNames(doc));
-        appendArray(violations, ErcEngine.checkUnconnectedPins(doc, pinResolver));
-        appendArray(violations, ErcEngine.checkPinTypeConflicts(doc, pinResolver));
-        appendArray(violations, ErcEngine.checkLabelOverDevice(doc, pinResolver));
-        appendArray(violations, ErcEngine.checkMcuRequirements(doc, mcuLibraryIds));
-        appendArray(violations, ErcEngine.checkPowerPins(doc));
-        appendArray(violations, ErcEngine.checkSubcircuitPorts(doc));
-        return violations;
-    }
-    static checkFloatingNets(doc) {
-        const result = [];
-        for (let i = 0; i < doc.nets.length; i++) {
-            const net = doc.nets[i];
-            if (ErcEngine.isPowerOrGroundNet(net)) {
-                // æ‹“æ‰‘æ¯æ¬¡ ensureNet(VCC/GND/VEE)ï¼šæ— è„šä¸”ç”»å¸ƒæ— å¯¹åº”ç”µæºç¬¦å· â†’ é¢„ç½®ç©ºè½¨ï¼Œä¸æŠ¥å™ª
-                if (net.pinIds.length === 0 && !ErcEngine.docHasMatchingPowerSymbol(doc, net)) {
-                    continue;
-                }
-                // å·²æœ‰ç¬¦å·å…¥ç½‘ä½†å‡ ä¹æ— è´Ÿè½½ï¼šINFOï¼Œä¸æŒ¡é—¨ç¦
-                if (net.pinIds.length <= 1) {
-                    result.push(ErcEngine.makeViolation(ErcSeverity.INFO, ErcRuleType.FLOATING_NET, `ç”µæº/åœ°ç½‘ç»œ "${net.name}" ä»…ç¬¦å·å…¥ç½‘ï¼ˆå¾…æ¥è´Ÿè½½ï¼‰`, net.id, undefined, undefined, 'å°† GND/VCC/VEE ç¬¦å·ç”¨å¯¼çº¿è¿æ¥åˆ°å™¨ä»¶ç”µæºè„š'));
-                }
-                continue;
-            }
-            if (net.pinIds.length === 0) {
-                continue;
-            }
-            if (net.pinIds.length <= 1 && net.type === NetType.SIGNAL) {
-                const nm = (net.name ?? '').trim();
-                const isAuto = nm.length === 0 || /^NET_\d+$/i.test(nm) || /^net_topo/i.test(nm);
-                if (!isAuto) {
-                    // æœ‰æ„ä¹‰ç½‘åä»… 1 è„šï¼šå¤šä¸ºæ ‡å·æœªå¹¶ç½‘ / æ··åˆ mode åˆ†è£‚ â†’ æŒ¡ AI é—¨ç¦
-                    result.push(ErcEngine.makeViolation(ErcSeverity.WARNING, ErcRuleType.FLOATING_NET, `ä¿¡å·ç½‘ç»œ "${nm}" æœªå®Œå…¨è¿æ¥ï¼ˆä»… 1 è„šï¼Œæ ‡å·å¯èƒ½æœªå¹¶ç½‘ï¼‰`, net.id, undefined, undefined, 'æ£€æŸ¥åŒåç½‘ç»œæ ‡å·æ˜¯å¦è½åœ¨åŒä¸€å‡ ä½•ç½‘ï¼Œæˆ–æ”¹ä¸ºå¯¼çº¿ç›´è¿'));
-                }
-                else {
-                    result.push(ErcEngine.makeViolation(ErcSeverity.INFO, ErcRuleType.FLOATING_NET, `ç½‘ç»œ "${net.name}" ä»…æœ‰ä¸€å¤„è¿æ¥ï¼ˆå¾…å¹¶ç½‘/æ ‡å·ï¼‰`, net.id, undefined, undefined, 'æ·»åŠ ç½‘ç»œæ ‡å·æˆ–è¿æ¥åˆ°å™¨ä»¶å¼•è„š'));
-                }
-            }
-        }
-        return result;
-    }
-    /** ç”µæº/åœ°ç½‘ç»œï¼ˆä¸åº”æŒ‰æ™®é€šä¿¡å·ç½‘ç»œåšæ‚¬ç©ºåˆ¤å®šï¼‰ */
-    static isPowerOrGroundNet(net) {
-        if (net.type === NetType.POWER || net.type === NetType.GROUND) {
-            return true;
-        }
-        const upper = (net.name ?? '').toUpperCase();
-        return upper === 'GND' || upper === 'VSS' || upper === 'VEE' ||
-            upper === 'VCC' || upper === 'VDD' || upper === '0' ||
-            upper === '-12V' || upper === '-5V';
-    }
-    /** ç”»å¸ƒæ˜¯å¦å·²æ”¾ç½®ä¸è¯¥è½¨å¯¹åº”çš„ç”µæº/åœ°ç¬¦å·ï¼ˆVCC/GND/VEEï¼‰ */
-    static docHasMatchingPowerSymbol(doc, net) {
-        const want = ErcEngine.powerSymbolLibForNet(net);
-        if (want.length === 0) {
-            return false;
-        }
-        for (let i = 0; i < doc.components.length; i++) {
-            const lib = (doc.components[i].libraryId ?? '').toUpperCase();
-            if (lib === want || lib.endsWith(`/${want}`)) {
-                return true;
-            }
-        }
-        return false;
-    }
-    /** è½¨ç½‘å â†’ å¯¹åº”ç”µæºç¬¦å· libraryIdï¼›éæ ‡å‡†åè¿”å›ç©º */
-    static powerSymbolLibForNet(net) {
-        const upper = (net.name ?? '').toUpperCase();
-        if (upper === 'VCC' || upper === 'VDD') {
-            return 'VCC';
-        }
-        if (upper === 'GND' || upper === 'VSS' || upper === '0') {
-            return 'GND';
-        }
-        if (upper === 'VEE' || upper === '-12V' || upper === '-5V') {
-            return 'VEE';
-        }
-        if (net.type === NetType.GROUND) {
-            return 'GND';
-        }
-        return '';
-    }
-    static checkDuplicateNetNames(doc) {
-        const result = [];
-        const names = new Map();
-        for (let i = 0; i < doc.nets.length; i++) {
-            const net = doc.nets[i];
-            if (!net.name || net.name.startsWith('NET_')) {
-                continue;
-            }
-            if (names.has(net.name)) {
-                result.push(ErcEngine.makeViolation(ErcSeverity.WARNING, ErcRuleType.DUPLICATE_NET, `é‡å¤ç½‘ç»œæ ‡å· "${net.name}"ï¼ˆåŒåå°†å¹¶ç½‘ï¼›è‹¥éæœ‰æ„è¯·æ”¹åï¼‰`, net.id, undefined, undefined, 'ä¸ºæ¯ä¸ªç‹¬ç«‹ç½‘ç»œä½¿ç”¨å”¯ä¸€æ ‡å·ï¼Œæˆ–ç¡®è®¤åŒåå¹¶ç½‘æ„å›¾'));
-            }
-            else {
-                names.set(net.name, net.id);
-            }
-        }
-        return result;
-    }
-    static checkUnconnectedPins(doc, pinResolver) {
-        const result = [];
-        // Build connected pins map: compId -> Set<pinDefId>
-        // Net.pinIds format: "${compId}:${pinDefId}:${pinDefName}"
-        const connectedPins = new Map();
-        for (let i = 0; i < doc.nets.length; i++) {
-            const net = doc.nets[i];
-            for (let j = 0; j < net.pinIds.length; j++) {
-                const parts = net.pinIds[j].split(':');
-                if (parts.length >= 2) {
-                    const compId = parts[0];
-                    const pinDefId = parts[1];
-                    if (!connectedPins.has(compId)) {
-                        connectedPins.set(compId, new Set());
-                    }
-                    connectedPins.get(compId).add(pinDefId);
-                }
-            }
-        }
-        for (let i = 0; i < doc.components.length; i++) {
-            const comp = doc.components[i];
-            const pinDefs = ErcEngine.resolvePinIds(comp.libraryId, pinResolver);
-            const compConnected = connectedPins.get(comp.id);
-            for (let p = 0; p < pinDefs.length; p++) {
-                const pinDefId = pinDefs[p];
-                if (!compConnected || !compConnected.has(pinDefId)) {
-                    result.push(ErcEngine.makeViolation(ErcSeverity.INFO, ErcRuleType.UNCONNECTED_PIN, `å™¨ä»¶ ${comp.refDes} å¼•è„š ${pinDefId} æœªè¿æ¥`, undefined, comp.id, pinDefId, 'è¿æ¥å¼•è„šæˆ–æ·»åŠ  No ERC æ ‡è®°'));
-                }
-            }
-        }
-        return result;
-    }
-    /**
-     * KiCad-like å¼•è„šç”µæ°”ç±»å‹å†²çªçŸ©é˜µï¼ˆåŒç½‘ï¼‰ï¼š
-     * Out+Out â†’ ERRORï¼›Out/BiDi+Power â†’ ERRORï¼›BiDi+Out/BiDi â†’ WARNINGï¼›
-     * Passive/Input/OC å¯å…±ç½‘ï¼›Power+Ground åŒç½‘ â†’ ERRORã€‚
-     */
-    static checkPinTypeConflicts(doc, pinResolver) {
-        const result = [];
-        if (pinResolver == null) {
-            return result;
-        }
-        for (let ni = 0; ni < doc.nets.length; ni++) {
-            const net = doc.nets[ni];
-            if (net.pinIds.length < 2) {
-                continue;
-            }
-            let outN = 0;
-            let bidN = 0;
-            let pwrN = 0;
-            let gndN = 0;
-            let ocN = 0;
-            let passiveN = 0;
-            const drivers = [];
-            for (let pi = 0; pi < net.pinIds.length; pi++) {
-                const parts = net.pinIds[pi].split(':');
-                if (parts.length < 2) {
-                    continue;
-                }
-                const comp = doc.components.find(c => c.id === parts[0]);
-                if (comp === undefined) {
-                    continue;
-                }
-                const pins = pinResolver(comp.libraryId);
-                if (pins == null) {
-                    continue;
-                }
-                let pin = null;
-                for (let j = 0; j < pins.length; j++) {
-                    if (pins[j].id === parts[1] || pins[j].name === parts[1] ||
-                        (parts.length >= 3 && pins[j].name === parts[2])) {
-                        pin = pins[j];
-                        break;
-                    }
-                }
-                if (pin === null) {
-                    continue;
-                }
-                const tag = `${comp.refDes}.${pin.name || pin.id}`;
-                if (pin.type === PinType.OUTPUT) {
-                    outN++;
-                    drivers.push(tag);
-                }
-                else if (pin.type === PinType.BIDIRECTIONAL) {
-                    bidN++;
-                    drivers.push(tag);
-                }
-                else if (pin.type === PinType.POWER) {
-                    pwrN++;
-                    drivers.push(tag);
-                }
-                else if (pin.type === PinType.GROUND) {
-                    gndN++;
-                    drivers.push(tag);
-                }
-                else if (pin.type === PinType.OPEN_COLLECTOR) {
-                    ocN++;
-                }
-                else if (pin.type === PinType.PASSIVE || pin.type === PinType.ANALOG ||
-                    pin.type === PinType.INPUT) {
-                    passiveN++;
-                }
-            }
-            if (pwrN > 0 && gndN > 0) {
-                result.push(ErcEngine.makeViolation(ErcSeverity.ERROR, ErcRuleType.PIN_CONFLICT, `ç½‘ç»œ "${net.name}" ç”µæºè„šä¸åœ°è„šåŒç½‘ï¼ˆçŸ­è·¯ï¼‰`, net.id, undefined, undefined, 'æ£€æŸ¥ç”µæº/åœ°å¸ƒçº¿ï¼Œé¿å… VCC ä¸ GND å¹¶ç½‘'));
-            }
-            if (outN >= 2) {
-                result.push(ErcEngine.makeViolation(ErcSeverity.ERROR, ErcRuleType.PIN_CONFLICT, `ç½‘ç»œ "${net.name}" å¤šè¾“å‡ºé©±åŠ¨å†²çªï¼ˆ${drivers.slice(0, 4).join(', ')}ï¼‰`, net.id, undefined, undefined, 'å‹¿å°†ä¸¤ä¸ª OUTPUT ç›´è¿ï¼›åŠ ç¼“å†²æˆ–æ”¹çº¿'));
-            }
-            else if (outN >= 1 && bidN >= 1) {
-                result.push(ErcEngine.makeViolation(ErcSeverity.WARNING, ErcRuleType.PIN_CONFLICT, `ç½‘ç»œ "${net.name}" OUTPUT ä¸ BIDI å…±ç½‘ï¼ˆ${drivers.slice(0, 4).join(', ')}ï¼‰`, net.id, undefined, undefined, 'ç¡®è®¤æ€»çº¿äº‰ç”¨å¯æ¥å—ï¼Œå¦åˆ™éš”ç¦»é©±åŠ¨'));
-            }
-            else if (bidN >= 2) {
-                result.push(ErcEngine.makeViolation(ErcSeverity.INFO, ErcRuleType.PIN_CONFLICT, `ç½‘ç»œ "${net.name}" å¤šä¸ª BIDI å…±ç½‘ï¼ˆå¯èƒ½æ€»çº¿äº‰ç”¨ï¼‰`, net.id, undefined, undefined, 'ç¡®è®¤åˆ†æ—¶é©±åŠ¨æˆ–åŠ æ–¹å‘æ§åˆ¶'));
-            }
-            // Out/BiDi ç›´è¿ç”µæºï¼šæ— é˜»å®¹ç­‰åŒç½‘ PASSIVE æ—¶ ERRORï¼›æœ‰ PASSIVE é™ä¸º WARNINGï¼ˆå°‘è¯¯æ€ï¼‰
-            if ((outN > 0 || bidN > 0) && pwrN > 0) {
-                result.push(ErcEngine.makeViolation(passiveN > 0 ? ErcSeverity.WARNING : ErcSeverity.ERROR, ErcRuleType.PIN_CONFLICT, `ç½‘ç»œ "${net.name}" ä¿¡å·é©±åŠ¨è„šä¸ç”µæºè„šåŒç½‘`, net.id, undefined, undefined, 'ä¿¡å·ç½‘å‹¿ç›´æ¥æŒ‚åˆ° VCC/ç”µæºè„š'));
-            }
-            // OC å¹¶è”å…è®¸ï¼›OC+å¼º OUTPUT è­¦å‘Š
-            if (ocN > 0 && outN > 0) {
-                result.push(ErcEngine.makeViolation(ErcSeverity.WARNING, ErcRuleType.PIN_CONFLICT, `ç½‘ç»œ "${net.name}" å¼€æ¼ä¸æ¨æŒ½è¾“å‡ºå…±ç½‘`, net.id, undefined, undefined, 'å¼€æ¼ç½‘åº”ä»…æ¥ OC/è¾“å…¥/ä¸Šæ‹‰ï¼Œå‹¿æ¥æ¨æŒ½ OUTPUT'));
-            }
-        }
-        return result;
-    }
-    /** H4ï¼šä¿¡å·æ ‡å·é”šç‚¹è½å…¥å™¨ä»¶é€‰ä¸­åŒºï¼ˆå‹ä½ç¬¦å·ï¼‰ */
-    static checkLabelOverDevice(doc, pinResolver) {
-        const result = [];
-        const labels = doc.netLabels;
-        if (labels === undefined || labels.length === 0 || pinResolver == null) {
-            return result;
-        }
-        for (let li = 0; li < labels.length; li++) {
-            const lb = labels[li];
-            const upper = (lb.text ?? '').toUpperCase();
-            // ç”µæº/åœ°æ ‡å·å¸¸è´´åœ¨ç”µæºç¬¦ä¸Šï¼Œä¸ç®— H4
-            if (upper === 'VCC' || upper === 'VDD' || upper === 'V+' || upper === 'VEE' ||
-                upper === 'GND' || upper === 'VSS' || upper === '0') {
-                continue;
-            }
-            for (let ci = 0; ci < doc.components.length; ci++) {
-                const comp = doc.components[ci];
-                const resolvedPins = pinResolver(comp.libraryId);
-                const pins = resolvedPins !== null ? resolvedPins : [];
-                const di = {
-                    instUuid: comp.id,
-                    libDevId: comp.libraryId,
-                    refName: comp.refDes,
-                    x: comp.position.x,
-                    y: comp.position.y,
-                    rotate: comp.rotation,
-                    mirrorH: comp.mirrored,
-                    mirrorV: false,
-                    params: new Map(),
-                    pinVoltage: new Map(),
-                    hidden: false,
-                    subCircuitRef: '',
-                    ercErrorMsg: ''
-                };
-                const hit = DeviceHitGeometry.hitRectFromDeviceInst(di, pins, WIRE_OBSTACLE_PAD);
-                if (!DeviceHitGeometry.pointInRect(lb.position.x, lb.position.y, hit)) {
-                    continue;
-                }
-                result.push(ErcEngine.makeViolation(ErcSeverity.WARNING, ErcRuleType.LABEL_OVER_DEVICE, `ç½‘ç»œæ ‡å· "${lb.text}" å‹åœ¨å™¨ä»¶ ${comp.refDes} ä¸Š`, lb.netId, comp.id, undefined, 'å°†æ ‡å·ç§»åˆ°å¼•è„šå¤–ä¾§ï¼Œé¿å…è¦†ç›–ç¬¦å·'));
-                break;
-            }
-        }
-        return result;
-    }
-    /** Resolve pin IDs: use dynamic resolver when available, fall back to static map */
-    static resolvePinIds(libraryId, pinResolver) {
-        if (pinResolver != null) {
-            const pins = pinResolver(libraryId);
-            if (pins != null && pins.length > 0) {
-                const ids = [];
-                for (let i = 0; i < pins.length; i++) {
-                    ids.push(pins[i].id);
-                }
-                return ids;
-            }
-        }
-        return ErcEngine.getPinDefs(libraryId);
-    }
-    static checkMcuRequirements(doc, mcuIds) {
-        const result = [];
-        const mcus = doc.components.filter(c => mcuIds.has(c.libraryId) ||
-            c.libraryId.includes('AT89') || c.libraryId.includes('STC') || c.libraryId.includes('STM32'));
-        for (let i = 0; i < mcus.length; i++) {
-            const mcu = mcus[i];
-            const hasCrystal = doc.components.some(c => c.libraryId.includes('CRYSTAL') || c.libraryId.includes('XTAL'));
-            const hasCap = doc.components.filter(c => c.libraryId.startsWith('C_')).length >= 2;
-            const hasResistor = doc.components.some(c => c.libraryId.startsWith('R_'));
-            if (!hasCrystal) {
-                result.push(ErcEngine.makeViolation(ErcSeverity.WARNING, ErcRuleType.MISSING_CRYSTAL, `MCU ${mcu.refDes} ç¼ºå°‘æ™¶æŒ¯ç”µè·¯`, undefined, mcu.id, undefined, 'å¤–ç½®æ™¶æŒ¯æˆ–ç¡®è®¤ä½¿ç”¨å†…éƒ¨æ—¶é’Ÿï¼ˆSTC/éƒ¨åˆ† STM32ï¼‰'));
-            }
-            if (!hasCap) {
-                result.push(ErcEngine.makeViolation(ErcSeverity.WARNING, ErcRuleType.MISSING_RESET, `MCU ${mcu.refDes} å¯èƒ½ç¼ºå°‘å»è€¦/å¤ä½ç”µå®¹`, undefined, mcu.id, undefined, 'æ·»åŠ  100nF å»è€¦ç”µå®¹å’Œ 10kÎ© ä¸Šæ‹‰ç”µé˜»'));
-            }
-            if (!hasResistor && !hasCap) {
-                result.push(ErcEngine.makeViolation(ErcSeverity.WARNING, ErcRuleType.MISSING_RESET, `MCU ${mcu.refDes} å¤ä½ç”µè·¯å¯èƒ½ä¸å®Œæ•´`, undefined, mcu.id, undefined, 'æ·»åŠ  RST å¼•è„š 10kÎ© ä¸Šæ‹‰å’Œ 100nF ç”µå®¹'));
-            }
-        }
-        return result;
-    }
-    static checkPowerPins(doc) {
-        const result = [];
-        let hasVcc = false;
-        let hasGnd = false;
-        let hasAltSource = false;
-        let hasMcuOrDigital = false;
-        for (let i = 0; i < doc.nets.length; i++) {
-            const net = doc.nets[i];
-            if (net.type === NetType.POWER || net.name === 'VCC' || net.name === 'VDD') {
-                hasVcc = true;
-            }
-            if (net.type === NetType.GROUND || net.name === 'GND' || net.name === 'VSS') {
-                hasGnd = true;
-            }
-        }
-        for (let ci = 0; ci < doc.components.length; ci++) {
-            const lib = doc.components[ci].libraryId;
-            if (lib === 'VCC') {
-                hasVcc = true;
-            }
-            if (lib === 'GND') {
-                hasGnd = true;
-            }
-            if (lib === 'VAC' || lib === 'SIGNAL_GEN' || lib === 'VEE') {
-                hasAltSource = true;
-            }
-            if (lib.includes('AT89') || lib.includes('STC') || lib.includes('STM32') ||
-                lib.includes('74HC') || lib.includes('GATE_')) {
-                hasMcuOrDigital = true;
-            }
-        }
-        // çº¯äº¤æµ/ä¿¡å·æºå®éªŒå¯ä¸å¼ºåˆ¶ VCCï¼›æœ‰ MCU/æ•°å­—åˆ™ä»è¦æ±‚æ­£ç”µæº
-        if (!hasVcc && (hasMcuOrDigital || !hasAltSource)) {
-            result.push(ErcEngine.makeViolation(ErcSeverity.ERROR, ErcRuleType.POWER_REVERSED, 'åŸç†å›¾ç¼ºå°‘ç”µæºç½‘ç»œ (VCC/VDD)', undefined, undefined, undefined, 'æ·»åŠ ç”µæºç¬¦å·å¹¶è¿æ¥åˆ°å™¨ä»¶ç”µæºè„š'));
-        }
-        if (!hasGnd) {
-            result.push(ErcEngine.makeViolation(ErcSeverity.ERROR, ErcRuleType.POWER_REVERSED, 'åŸç†å›¾ç¼ºå°‘åœ°ç½‘ç»œ (GND/VSS)', undefined, undefined, undefined, 'æ·»åŠ åœ°ç¬¦å·å¹¶è¿æ¥åˆ°ç”µè·¯ GND'));
-        }
-        return result;
-    }
-    static checkSubcircuitPorts(doc) {
-        const result = [];
-        for (let i = 0; i < doc.subcircuits.length; i++) {
-            const sub = doc.subcircuits[i];
-            if (!sub.ports || sub.ports.length === 0) {
-                result.push(ErcEngine.makeViolation(ErcSeverity.WARNING, ErcRuleType.PORT_MISMATCH, `å­ç”µè·¯ "${sub.name}" æœªå®šä¹‰ç«¯å£`, undefined, sub.id, undefined, 'ä¸ºå­ç”µè·¯æ·»åŠ è¾“å…¥/è¾“å‡ºç«¯å£å®šä¹‰'));
-            }
-        }
-        return result;
-    }
-    /** Returns actual pin definition IDs for a given library component type */
-    static getPinDefs(libraryId) {
-        // Two-pin passives (R, C, L, XTAL, FUSE)
-        if (libraryId.startsWith('R_') || libraryId.startsWith('C_') ||
-            libraryId.startsWith('L_') || libraryId.startsWith('XTAL_') ||
-            libraryId.startsWith('FUSE_')) {
-            return ['1', '2'];
-        }
-        if (libraryId.startsWith('POT_')) {
-            return ['1', '2', 'W'];
-        }
-        // LEDs and diodes
-        if (libraryId.startsWith('LED_') || libraryId === '1N4148' ||
-            libraryId === '1N4007' || libraryId === '1N5819') {
-            return ['A', 'K'];
-        }
-        // Switch / relay coil (+ optional contact pins when present)
-        if (libraryId === 'SW_PUSH') {
-            return ['1', '2'];
-        }
-        if (libraryId === 'RELAY_SPDT') {
-            return ['1', '2', 'COM', 'NO', 'NC'];
-        }
-        if (libraryId === 'BUZZER') {
-            return ['1', '2'];
-        }
-        // Power symbols (pin.id is '1' from makePin('1', 'VCC', ...) / makePin('1', 'GND', ...))
-        if (libraryId === 'VCC')
-            return ['1'];
-        if (libraryId === 'GND')
-            return ['1'];
-        if (libraryId === 'VEE')
-            return ['1'];
-        if (libraryId === 'VAC')
-            return ['1', '2'];
-        if (libraryId === 'SIGNAL_GEN')
-            return ['OUT', 'GND'];
-        // Op-amps
-        if (libraryId === 'UA741')
-            return ['IN+', 'IN-', 'OUT', 'VCC', 'VEE'];
-        if (libraryId === 'LM358' || libraryId === 'TL082') {
-            return ['IN+1', 'IN-1', 'OUT1', 'IN+2', 'IN-2', 'OUT2', 'V+', 'V-'];
-        }
-        if (libraryId === 'LM555' || libraryId === 'NE555') {
-            return ['GND', 'TRIG', 'OUT', 'RESET', 'CTRL', 'THRES', 'DISCH', 'VCC'];
-        }
-        // Voltage regulators (3-terminal, genPins 3)
-        if (libraryId === 'LM7805' || libraryId === 'LM7812' || libraryId === 'AMS1117_3V3') {
-            return ['1', '2', '3'];
-        }
-        // MCUs â€” å…·åè„šï¼ˆä¸ NamedDevicePins / BuiltinComponents å¯¹é½ï¼‰
-        if (libraryId.includes('STM32F407')) {
-            return ErcEngine.stm32Pins100();
-        }
-        if (libraryId.includes('STM32F030')) {
-            return ErcEngine.stm32Pins32();
-        }
-        if (libraryId.includes('STM32')) {
-            return ErcEngine.stm32Pins48();
-        }
-        if (libraryId.includes('AT89') || libraryId.includes('STC')) {
-            return ErcEngine.pins8051();
-        }
-        // Peripherals / instruments â€” å¯é€‰é€šé“ä¸å¼ºåˆ¶å…¨è¿
-        if (libraryId === 'UART_TERMINAL')
-            return ['TX', 'RX', 'GND'];
-        if (libraryId === 'VOLTMETER_DC')
-            return ['V+', 'COM'];
-        // è‡³å°‘ç”µå‹æ¡£ï¼›A/OHM å¯é€‰ï¼ˆæœªæ¥æ—¶ INFOï¼‰
-        if (libraryId === 'VIRTUAL_METER')
-            return ['V', 'COM'];
-        if (libraryId === 'AMMETER_DC')
-            return ['I+', 'I-'];
-        if (libraryId === 'FREQ_COUNTER')
-            return ['IN', 'GND'];
-        // é€»è¾‘åˆ†æä»ª / ç¤ºæ³¢å™¨ï¼šè‡³å°‘ 1 é€šé“ + GNDï¼›å…¶ä½™é€šé“å¯é€‰
-        if (libraryId === 'LOGIC_ANALYZER')
-            return ['CH1', 'GND'];
-        if (libraryId === 'POWER_METER')
-            return ['V+', 'V-', 'I+', 'I-'];
-        if (libraryId === 'LCD1602') {
-            return ['VSS', 'VDD', 'V0', 'RS', 'RW', 'E', 'D4', 'D5', 'D6', 'D7', 'A', 'K'];
-        }
-        if (libraryId === 'OLED_12864') {
-            return ['VCC', 'GND', 'SCL', 'SDA'];
-        }
-        if (libraryId === '24C02') {
-            return ['VCC', 'VSS', 'SDA', 'SCL'];
-        }
-        if (libraryId === 'W25Q64') {
-            return ['VCC', 'GND', 'CS', 'CLK', 'DI', 'DO'];
-        }
-        if (libraryId === '2764' || libraryId === '62256') {
-            return ['VCC', 'GND', 'CE', 'OE'];
-        }
-        if (libraryId === 'CD4017') {
-            return ['VDD', 'VSS', 'CLK', 'RST', 'Q0'];
-        }
-        if (libraryId === 'LM2596') {
-            return ['VIN', 'OUT', 'GND', 'FB', 'ON'];
-        }
-        // ä¸‰æç®¡ / MOS
-        if (libraryId.includes('2N3904') || libraryId.includes('2N3906') ||
-            libraryId.includes('BC547') || libraryId.includes('BC557') ||
-            libraryId.includes('NPN') || libraryId.includes('PNP')) {
-            return ['B', 'C', 'E'];
-        }
-        if (libraryId.includes('2N7000') || libraryId.includes('IRF') ||
-            libraryId.includes('NMOS') || libraryId.includes('PMOS') || libraryId.includes('MOSFET')) {
-            return ['G', 'D', 'S'];
-        }
-        // äºŒæç®¡ï¼ˆé LEDï¼‰
-        if (libraryId === '1N4148' || libraryId === '1N4007' || libraryId === '1N5819') {
-            return ['A', 'K'];
-        }
-        // ä¼ æ„Ÿå™¨
-        if (libraryId.includes('LDR') || libraryId.includes('NTC') || libraryId.includes('PTC')) {
-            return ['1', '2'];
-        }
-        if (libraryId.includes('DHT11') || libraryId.includes('DS18B20')) {
-            return ['VDD', 'DQ', 'GND'];
-        }
-        if (libraryId.includes('HALL')) {
-            return ['VCC', 'OUT', 'GND'];
-        }
-        // 74HC gates only expose functional pins (A, B, Y, GND, VCC), not all 14 package pins
-        if (libraryId.includes('74HC04')) {
-            return ['1', '2', '7', '14'];
-        }
-        if (libraryId.includes('74HC')) {
-            return ['1', '2', '3', '7', '14'];
-        }
-        // ç¤ºæ³¢å™¨ï¼šè‡³å°‘ CH1 + GND
-        if (libraryId.includes('OSCILLOSCOPE'))
-            return ['CH1', 'GND'];
-        // æœªçŸ¥åº“ IDï¼šç¦æ­¢é»˜è®¤å‡è„š 1/2ï¼ˆä¼šè®©å¤šè„š IC ERC å‡é€šè¿‡ï¼‰
-        return [];
-    }
-    static buildPinArray(count, prefix) {
-        const result = [];
-        for (let i = 0; i < count; i++) {
-            result.push(`${prefix}${i + 1}`);
-        }
-        return result;
-    }
-    static gpioBank(letter, n) {
-        const out = [];
-        for (let i = 0; i < n; i++) {
-            out.push(`P${letter}${i}`);
-        }
-        return out;
-    }
-    static stm32Pins48() {
-        return ['VDD', 'VSS', 'VDDA', 'VSSA', 'BOOT0', 'NRST', 'OSC_IN', 'OSC_OUT']
-            .concat(ErcEngine.gpioBank('A', 16))
-            .concat(ErcEngine.gpioBank('B', 16))
-            .concat(ErcEngine.gpioBank('C', 8));
-    }
-    static stm32Pins32() {
-        return ['VDD', 'VSS', 'NRST', 'BOOT0', 'OSC_IN', 'OSC_OUT']
-            .concat(ErcEngine.gpioBank('A', 16))
-            .concat(ErcEngine.gpioBank('B', 10));
-    }
-    static stm32Pins100() {
-        return ErcEngine.stm32Pins48()
-            .concat(ErcEngine.gpioBank('D', 16))
-            .concat(ErcEngine.gpioBank('E', 16))
-            .concat(['PC8', 'PC9', 'PC10', 'PC11', 'PC12', 'PC13', 'PC14', 'PC15'])
-            .concat(ErcEngine.gpioBank('F', 12));
-    }
-    static pins8051() {
-        const out = [];
-        for (let i = 0; i < 8; i++) {
-            out.push(`P1.${i}`);
-        }
-        out.push('RST');
-        for (let i = 0; i < 8; i++) {
-            out.push(`P3.${i}`);
-        }
-        out.push('XTAL2', 'XTAL1', 'GND');
-        for (let i = 0; i < 8; i++) {
-            out.push(`P2.${i}`);
-        }
-        out.push('PSEN', 'ALE', 'EA');
-        for (let i = 7; i >= 0; i--) {
-            out.push(`P0.${i}`);
-        }
-        out.push('VCC');
-        return out;
-    }
-    static estimatePinCount(libraryId) {
-        if (libraryId.startsWith('R_') || libraryId.startsWith('C_') || libraryId.startsWith('L_')) {
-            return 2;
-        }
-        if (libraryId.includes('LED')) {
-            return 2;
-        }
-        if (libraryId.includes('74HC')) {
-            return 14;
-        }
-        if (libraryId.includes('DS18B20') || libraryId.includes('HALL')) {
-            return 3;
-        }
-        if (libraryId.includes('STM32F030')) {
-            return 32;
-        }
-        if (libraryId.includes('STM32F407')) {
-            return 100;
-        }
-        if (libraryId.includes('STM32')) {
-            return 48;
-        }
-        if (libraryId.includes('AT89') || libraryId.includes('STC')) {
-            return 40;
-        }
-        if (libraryId.includes('OSCILLOSCOPE')) {
-            return 5;
-        }
-        return 2;
-    }
-    static makeViolation(severity, ruleType, message, netId, componentId, pinId, fix) {
-        return {
-            id: IdUtil.generate('erc'),
-            severity: severity,
-            ruleType: ruleType,
-            message: message,
-            netId: netId,
-            componentId: componentId,
-            pinId: pinId,
-            fixSuggestion: fix
-        };
-    }
-}
-//# sourceMappingURL=ErcEngine.js.mapÂ”ÙFC:\Projects\ElecDraw_Harmony\common\src\main\ets\types\CommonTypes.etsÙAC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\IdUtil.etsÙEC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\MapHelpers.etsÙLC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\DeviceHitGeometry.etsÙDC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\ErcEngine.etsÔrB›ªmoduleName±isLocalDependency¯isNodeEntryFile§pkgPath±belongProjectPath§pkgNameªpkgVersion±dependencyPkgInfo°belongModulePath¬shouldEmitJs¯hostModulesInfo¦commonÃÂÙ#C:\Projects\ElecDraw_Harmony\common¼C:\Projects\ElecDraw_Harmony¦common¥1.0.0Ô  Ù#C:\Projects\ElecDraw_Harmony\commonÃ’ÔrC’²hostDependencyName®hostModuleName«./ErcEngine¦commonC¾./src/main/ets/utils/ErcEngine¦commonÃÚd9/**
- * ERC ç”µæ°”è§„åˆ™æ£€æŸ¥å¼•æ“ - å¯¹é½ Proteus è§„åˆ™é›†
- */
-import {
-  SchematicDocument, ErcViolation, ErcSeverity, ErcRuleType,
-  NetType, Pin, Net, PinType
-} from '../types/CommonTypes';
-import { IdUtil } from './IdUtil';
-import { appendArray } from './MapHelpers';
-import { DeviceHitGeometry, WIRE_OBSTACLE_PAD } from './DeviceHitGeometry';
-import { DeviceInst } from '../types/TopologyTypes';
-
-export type PinResolverFn = (libraryId: string) => Pin[] | null;
-
-export class ErcEngine {
-
-  static run(doc: SchematicDocument, mcuLibraryIds: Set<string>,
-    pinResolver?: PinResolverFn): ErcViolation[] {
-    const violations: ErcViolation[] = [];
-    appendArray(violations, ErcEngine.checkFloatingNets(doc));
-    appendArray(violations, ErcEngine.checkDuplicateNetNames(doc));
-    appendArray(violations, ErcEngine.checkUnconnectedPins(doc, pinResolver));
-    appendArray(violations, ErcEngine.checkPinTypeConflicts(doc, pinResolver));
-    appendArray(violations, ErcEngine.checkLabelOverDevice(doc, pinResolver));
-    appendArray(violations, ErcEngine.checkMcuRequirements(doc, mcuLibraryIds));
-    appendArray(violations, ErcEngine.checkPowerPins(doc));
-    appendArray(violations, ErcEngine.checkSubcircuitPorts(doc));
-    return violations;
-  }
-
-  private static checkFloatingNets(doc: SchematicDocument): ErcViolation[] {
-    const result: ErcViolation[] = [];
-    for (let i = 0; i < doc.nets.length; i++) {
-      const net = doc.nets[i];
-      if (ErcEngine.isPowerOrGroundNet(net)) {
-        // æ‹“æ‰‘æ¯æ¬¡ ensureNet(VCC/GND/VEE)ï¼šæ— è„šä¸”ç”»å¸ƒæ— å¯¹åº”ç”µæºç¬¦å· â†’ é¢„ç½®ç©ºè½¨ï¼Œä¸æŠ¥å™ª
-        if (net.pinIds.length === 0 && !ErcEngine.docHasMatchingPowerSymbol(doc, net)) {
-          continue;
-        }
-        // å·²æœ‰ç¬¦å·å…¥ç½‘ä½†å‡ ä¹æ— è´Ÿè½½ï¼šINFOï¼Œä¸æŒ¡é—¨ç¦
-        if (net.pinIds.length <= 1) {
-          result.push(ErcEngine.makeViolation(
-            ErcSeverity.INFO, ErcRuleType.FLOATING_NET,
-            `ç”µæº/åœ°ç½‘ç»œ "${net.name}" ä»…ç¬¦å·å…¥ç½‘ï¼ˆå¾…æ¥è´Ÿè½½ï¼‰`,
-            net.id, undefined, undefined,
-            'å°† GND/VCC/VEE ç¬¦å·ç”¨å¯¼çº¿è¿æ¥åˆ°å™¨ä»¶ç”µæºè„š'
-          ));
-        }
-        continue;
-      }
-      if (net.pinIds.length === 0) {
-        continue;
-      }
-      if (net.pinIds.length <= 1 && net.type === NetType.SIGNAL) {
-        const nm = (net.name ?? '').trim();
-        const isAuto = nm.length === 0 || /^NET_\d+$/i.test(nm) || /^net_topo/i.test(nm);
-        if (!isAuto) {
-          // æœ‰æ„ä¹‰ç½‘åä»… 1 è„šï¼šå¤šä¸ºæ ‡å·æœªå¹¶ç½‘ / æ··åˆ mode åˆ†è£‚ â†’ æŒ¡ AI é—¨ç¦
-          result.push(ErcEngine.makeViolation(
-            ErcSeverity.WARNING, ErcRuleType.FLOATING_NET,
-            `ä¿¡å·ç½‘ç»œ "${nm}" æœªå®Œå…¨è¿æ¥ï¼ˆä»… 1 è„šï¼Œæ ‡å·å¯èƒ½æœªå¹¶ç½‘ï¼‰`,
-            net.id, undefined, undefined,
-            'æ£€æŸ¥åŒåç½‘ç»œæ ‡å·æ˜¯å¦è½åœ¨åŒä¸€å‡ ä½•ç½‘ï¼Œæˆ–æ”¹ä¸ºå¯¼çº¿ç›´è¿'
-          ));
-        } else {
-          result.push(ErcEngine.makeViolation(
-            ErcSeverity.INFO, ErcRuleType.FLOATING_NET,
-            `ç½‘ç»œ "${net.name}" ä»…æœ‰ä¸€å¤„è¿æ¥ï¼ˆå¾…å¹¶ç½‘/æ ‡å·ï¼‰`,
-            net.id, undefined, undefined,
-            'æ·»åŠ ç½‘ç»œæ ‡å·æˆ–è¿æ¥åˆ°å™¨ä»¶å¼•è„š'
-          ));
-        }
-      }
-    }
-    return result;
-  }
-
-  /** ç”µæº/åœ°ç½‘ç»œï¼ˆä¸åº”æŒ‰æ™®é€šä¿¡å·ç½‘ç»œåšæ‚¬ç©ºåˆ¤å®šï¼‰ */
-  private static isPowerOrGroundNet(net: Net): boolean {
-    if (net.type === NetType.POWER || net.type === NetType.GROUND) {
-      return true;
-    }
-    const upper = (net.name ?? '').toUpperCase();
-    return upper === 'GND' || upper === 'VSS' || upper === 'VEE' ||
-      upper === 'VCC' || upper === 'VDD' || upper === '0' ||
-      upper === '-12V' || upper === '-5V';
-  }
-
-  /** ç”»å¸ƒæ˜¯å¦å·²æ”¾ç½®ä¸è¯¥è½¨å¯¹åº”çš„ç”µæº/åœ°ç¬¦å·ï¼ˆVCC/GND/VEEï¼‰ */
-  private static docHasMatchingPowerSymbol(doc: SchematicDocument, net: Net): boolean {
-    const want = ErcEngine.powerSymbolLibForNet(net);
-    if (want.length === 0) {
-      return false;
-    }
-    for (let i = 0; i < doc.components.length; i++) {
-      const lib = (doc.components[i].libraryId ?? '').toUpperCase();
-      if (lib === want || lib.endsWith(`/${want}`)) {
-        return true;
-      }
-    }
-    return false;
-  }
-
-  /** è½¨ç½‘å â†’ å¯¹åº”ç”µæºç¬¦å· libraryIdï¼›éæ ‡å‡†åè¿”å›ç©º */
-  private static powerSymbolLibForNet(net: Net): string {
-    const upper = (net.name ?? '').toUpperCase();
-    if (upper === 'VCC' || upper === 'VDD') {
-      return 'VCC';
-    }
-    if (upper === 'GND' || upper === 'VSS' || upper === '0') {
-      return 'GND';
-    }
-    if (upper === 'VEE' || upper === '-12V' || upper === '-5V') {
-      return 'VEE';
-    }
-    if (net.type === NetType.GROUND) {
-      return 'GND';
-    }
-    return '';
-  }
-
-  private static checkDuplicateNetNames(doc: SchematicDocument): ErcViolation[] {
-    const result: ErcViolation[] = [];
-    const names = new Map<string, string>();
-    for (let i = 0; i < doc.nets.length; i++) {
-      const net = doc.nets[i];
-      if (!net.name || net.name.startsWith('NET_')) {
-        continue;
-      }
-      if (names.has(net.name)) {
-        result.push(ErcEngine.makeViolation(
-          ErcSeverity.WARNING, ErcRuleType.DUPLICATE_NET,
-          `é‡å¤ç½‘ç»œæ ‡å· "${net.name}"ï¼ˆåŒåå°†å¹¶ç½‘ï¼›è‹¥éæœ‰æ„è¯·æ”¹åï¼‰`,
-          net.id, undefined, undefined,
-          'ä¸ºæ¯ä¸ªç‹¬ç«‹ç½‘ç»œä½¿ç”¨å”¯ä¸€æ ‡å·ï¼Œæˆ–ç¡®è®¤åŒåå¹¶ç½‘æ„å›¾'
-        ));
-      } else {
-        names.set(net.name, net.id);
-      }
-    }
-    return result;
-  }
-
-  private static checkUnconnectedPins(doc: SchematicDocument,
-    pinResolver?: PinResolverFn): ErcViolation[] {
-    const result: ErcViolation[] = [];
-    // Build connected pins map: compId -> Set<pinDefId>
-    // Net.pinIds format: "${compId}:${pinDefId}:${pinDefName}"
-    const connectedPins = new Map<string, Set<string>>();
-    for (let i = 0; i < doc.nets.length; i++) {
-      const net = doc.nets[i];
-      for (let j = 0; j < net.pinIds.length; j++) {
-        const parts = net.pinIds[j].split(':');
-        if (parts.length >= 2) {
-          const compId = parts[0];
-          const pinDefId = parts[1];
-          if (!connectedPins.has(compId)) {
-            connectedPins.set(compId, new Set<string>());
-          }
-          connectedPins.get(compId)!.add(pinDefId);
-        }
-      }
-    }
-    for (let i = 0; i < doc.components.length; i++) {
-      const comp = doc.components[i];
-      const pinDefs = ErcEngine.resolvePinIds(comp.libraryId, pinResolver);
-      const compConnected = connectedPins.get(comp.id);
-      for (let p = 0; p < pinDefs.length; p++) {
-        const pinDefId = pinDefs[p];
-        if (!compConnected || !compConnected.has(pinDefId)) {
-          result.push(ErcEngine.makeViolation(
-            ErcSeverity.INFO, ErcRuleType.UNCONNECTED_PIN,
-            `å™¨ä»¶ ${comp.refDes} å¼•è„š ${pinDefId} æœªè¿æ¥`,
-            undefined, comp.id, pinDefId,
-            'è¿æ¥å¼•è„šæˆ–æ·»åŠ  No ERC æ ‡è®°'
-          ));
-        }
-      }
-    }
-    return result;
-  }
-
-  /**
-   * KiCad-like å¼•è„šç”µæ°”ç±»å‹å†²çªçŸ©é˜µï¼ˆåŒç½‘ï¼‰ï¼š
-   * Out+Out â†’ ERRORï¼›Out/BiDi+Power â†’ ERRORï¼›BiDi+Out/BiDi â†’ WARNINGï¼›
-   * Passive/Input/OC å¯å…±ç½‘ï¼›Power+Ground åŒç½‘ â†’ ERRORã€‚
-   */
-  private static checkPinTypeConflicts(doc: SchematicDocument,
-    pinResolver?: PinResolverFn): ErcViolation[] {
-    const result: ErcViolation[] = [];
-    if (pinResolver == null) {
-      return result;
-    }
-    for (let ni = 0; ni < doc.nets.length; ni++) {
-      const net = doc.nets[ni];
-      if (net.pinIds.length < 2) {
-        continue;
-      }
-      let outN = 0;
-      let bidN = 0;
-      let pwrN = 0;
-      let gndN = 0;
-      let ocN = 0;
-      let passiveN = 0;
-      const drivers: string[] = [];
-      for (let pi = 0; pi < net.pinIds.length; pi++) {
-        const parts = net.pinIds[pi].split(':');
-        if (parts.length < 2) {
-          continue;
-        }
-        const comp = doc.components.find(c => c.id === parts[0]);
-        if (comp === undefined) {
-          continue;
-        }
-        const pins = pinResolver(comp.libraryId);
-        if (pins == null) {
-          continue;
-        }
-        let pin: Pin | null = null;
-        for (let j = 0; j < pins.length; j++) {
-          if (pins[j].id === parts[1] || pins[j].name === parts[1] ||
-            (parts.length >= 3 && pins[j].name === parts[2])) {
-            pin = pins[j];
-            break;
-          }
-        }
-        if (pin === null) {
-          continue;
-        }
-        const tag = `${comp.refDes}.${pin.name || pin.id}`;
-        if (pin.type === PinType.OUTPUT) {
-          outN++;
-          drivers.push(tag);
-        } else if (pin.type === PinType.BIDIRECTIONAL) {
-          bidN++;
-          drivers.push(tag);
-        } else if (pin.type === PinType.POWER) {
-          pwrN++;
-          drivers.push(tag);
-        } else if (pin.type === PinType.GROUND) {
-          gndN++;
-          drivers.push(tag);
-        } else if (pin.type === PinType.OPEN_COLLECTOR) {
-          ocN++;
-        } else if (pin.type === PinType.PASSIVE || pin.type === PinType.ANALOG ||
-          pin.type === PinType.INPUT) {
-          passiveN++;
-        }
-      }
-      if (pwrN > 0 && gndN > 0) {
-        result.push(ErcEngine.makeViolation(
-          ErcSeverity.ERROR, ErcRuleType.PIN_CONFLICT,
-          `ç½‘ç»œ "${net.name}" ç”µæºè„šä¸åœ°è„šåŒç½‘ï¼ˆçŸ­è·¯ï¼‰`,
-          net.id, undefined, undefined,
-          'æ£€æŸ¥ç”µæº/åœ°å¸ƒçº¿ï¼Œé¿å… VCC ä¸ GND å¹¶ç½‘'
-        ));
-      }
-      if (outN >= 2) {
-        result.push(ErcEngine.makeViolation(
-          ErcSeverity.ERROR, ErcRuleType.PIN_CONFLICT,
-          `ç½‘ç»œ "${net.name}" å¤šè¾“å‡ºé©±åŠ¨å†²çªï¼ˆ${drivers.slice(0, 4).join(', ')}ï¼‰`,
-          net.id, undefined, undefined,
-          'å‹¿å°†ä¸¤ä¸ª OUTPUT ç›´è¿ï¼›åŠ ç¼“å†²æˆ–æ”¹çº¿'
-        ));
-      } else if (outN >= 1 && bidN >= 1) {
-        result.push(ErcEngine.makeViolation(
-          ErcSeverity.WARNING, ErcRuleType.PIN_CONFLICT,
-          `ç½‘ç»œ "${net.name}" OUTPUT ä¸ BIDI å…±ç½‘ï¼ˆ${drivers.slice(0, 4).join(', ')}ï¼‰`,
-          net.id, undefined, undefined,
-          'ç¡®è®¤æ€»çº¿äº‰ç”¨å¯æ¥å—ï¼Œå¦åˆ™éš”ç¦»é©±åŠ¨'
-        ));
-      } else if (bidN >= 2) {
-        result.push(ErcEngine.makeViolation(
-          ErcSeverity.INFO, ErcRuleType.PIN_CONFLICT,
-          `ç½‘ç»œ "${net.name}" å¤šä¸ª BIDI å…±ç½‘ï¼ˆå¯èƒ½æ€»çº¿äº‰ç”¨ï¼‰`,
-          net.id, undefined, undefined,
-          'ç¡®è®¤åˆ†æ—¶é©±åŠ¨æˆ–åŠ æ–¹å‘æ§åˆ¶'
-        ));
-      }
-      // Out/BiDi ç›´è¿ç”µæºï¼šæ— é˜»å®¹ç­‰åŒç½‘ PASSIVE æ—¶ ERRORï¼›æœ‰ PASSIVE é™ä¸º WARNINGï¼ˆå°‘è¯¯æ€ï¼‰
-      if ((outN > 0 || bidN > 0) && pwrN > 0) {
-        result.push(ErcEngine.makeViolation(
-          passiveN > 0 ? ErcSeverity.WARNING : ErcSeverity.ERROR,
-          ErcRuleType.PIN_CONFLICT,
-          `ç½‘ç»œ "${net.name}" ä¿¡å·é©±åŠ¨è„šä¸ç”µæºè„šåŒç½‘`,
-          net.id, undefined, undefined,
-          'ä¿¡å·ç½‘å‹¿ç›´æ¥æŒ‚åˆ° VCC/ç”µæºè„š'
-        ));
-      }
-      // OC å¹¶è”å…è®¸ï¼›OC+å¼º OUTPUT è­¦å‘Š
-      if (ocN > 0 && outN > 0) {
-        result.push(ErcEngine.makeViolation(
-          ErcSeverity.WARNING, ErcRuleType.PIN_CONFLICT,
-          `ç½‘ç»œ "${net.name}" å¼€æ¼ä¸æ¨æŒ½è¾“å‡ºå…±ç½‘`,
-          net.id, undefined, undefined,
-          'å¼€æ¼ç½‘åº”ä»…æ¥ OC/è¾“å…¥/ä¸Šæ‹‰ï¼Œå‹¿æ¥æ¨æŒ½ OUTPUT'
-        ));
-      }
-    }
-    return result;
-  }
-
-  /** H4ï¼šä¿¡å·æ ‡å·é”šç‚¹è½å…¥å™¨ä»¶é€‰ä¸­åŒºï¼ˆå‹ä½ç¬¦å·ï¼‰ */
-  private static checkLabelOverDevice(doc: SchematicDocument,
-    pinResolver?: PinResolverFn): ErcViolation[] {
-    const result: ErcViolation[] = [];
-    const labels = doc.netLabels;
-    if (labels === undefined || labels.length === 0 || pinResolver == null) {
-      return result;
-    }
-    for (let li = 0; li < labels.length; li++) {
-      const lb = labels[li];
-      const upper = (lb.text ?? '').toUpperCase();
-      // ç”µæº/åœ°æ ‡å·å¸¸è´´åœ¨ç”µæºç¬¦ä¸Šï¼Œä¸ç®— H4
-      if (upper === 'VCC' || upper === 'VDD' || upper === 'V+' || upper === 'VEE' ||
-        upper === 'GND' || upper === 'VSS' || upper === '0') {
-        continue;
-      }
-      for (let ci = 0; ci < doc.components.length; ci++) {
-        const comp = doc.components[ci];
-        const resolvedPins = pinResolver(comp.libraryId);
-        const pins = resolvedPins !== null ? resolvedPins : [];
-        const di: DeviceInst = {
-          instUuid: comp.id,
-          libDevId: comp.libraryId,
-          refName: comp.refDes,
-          x: comp.position.x,
-          y: comp.position.y,
-          rotate: comp.rotation,
-          mirrorH: comp.mirrored,
-          mirrorV: false,
-          params: new Map<string, string>(),
-          pinVoltage: new Map<string, number>(),
-          hidden: false,
-          subCircuitRef: '',
-          ercErrorMsg: ''
-        };
-        const hit = DeviceHitGeometry.hitRectFromDeviceInst(di, pins, WIRE_OBSTACLE_PAD);
-        if (!DeviceHitGeometry.pointInRect(lb.position.x, lb.position.y, hit)) {
-          continue;
-        }
-        result.push(ErcEngine.makeViolation(
-          ErcSeverity.WARNING, ErcRuleType.LABEL_OVER_DEVICE,
-          `ç½‘ç»œæ ‡å· "${lb.text}" å‹åœ¨å™¨ä»¶ ${comp.refDes} ä¸Š`,
-          lb.netId, comp.id, undefined,
-          'å°†æ ‡å·ç§»åˆ°å¼•è„šå¤–ä¾§ï¼Œé¿å…è¦†ç›–ç¬¦å·'
-        ));
-        break;
-      }
-    }
-    return result;
-  }
-
-  /** Resolve pin IDs: use dynamic resolver when available, fall back to static map */
-  private static resolvePinIds(libraryId: string,
-    pinResolver?: PinResolverFn): string[] {
-    if (pinResolver != null) {
-      const pins = pinResolver(libraryId);
-      if (pins != null && pins.length > 0) {
-        const ids: string[] = [];
-        for (let i = 0; i < pins.length; i++) {
-          ids.push(pins[i].id);
-        }
-        return ids;
-      }
-    }
-    return ErcEngine.getPinDefs(libraryId);
-  }
-
-  private static checkMcuRequirements(doc: SchematicDocument, mcuIds: Set<string>): ErcViolation[] {
-    const result: ErcViolation[] = [];
-    const mcus = doc.components.filter(c => mcuIds.has(c.libraryId) ||
-      c.libraryId.includes('AT89') || c.libraryId.includes('STC') || c.libraryId.includes('STM32'));
-
-    for (let i = 0; i < mcus.length; i++) {
-      const mcu = mcus[i];
-      const hasCrystal = doc.components.some(c =>
-        c.libraryId.includes('CRYSTAL') || c.libraryId.includes('XTAL'));
-      const hasCap = doc.components.filter(c => c.libraryId.startsWith('C_')).length >= 2;
-      const hasResistor = doc.components.some(c => c.libraryId.startsWith('R_'));
-
-      if (!hasCrystal) {
-        result.push(ErcEngine.makeViolation(
-          ErcSeverity.WARNING, ErcRuleType.MISSING_CRYSTAL,
-          `MCU ${mcu.refDes} ç¼ºå°‘æ™¶æŒ¯ç”µè·¯`,
-          undefined, mcu.id, undefined,
-          'å¤–ç½®æ™¶æŒ¯æˆ–ç¡®è®¤ä½¿ç”¨å†…éƒ¨æ—¶é’Ÿï¼ˆSTC/éƒ¨åˆ† STM32ï¼‰'
-        ));
-      }
-      if (!hasCap) {
-        result.push(ErcEngine.makeViolation(
-          ErcSeverity.WARNING, ErcRuleType.MISSING_RESET,
-          `MCU ${mcu.refDes} å¯èƒ½ç¼ºå°‘å»è€¦/å¤ä½ç”µå®¹`,
-          undefined, mcu.id, undefined,
-          'æ·»åŠ  100nF å»è€¦ç”µå®¹å’Œ 10kÎ© ä¸Šæ‹‰ç”µé˜»'
-        ));
-      }
-      if (!hasResistor && !hasCap) {
-        result.push(ErcEngine.makeViolation(
-          ErcSeverity.WARNING, ErcRuleType.MISSING_RESET,
-          `MCU ${mcu.refDes} å¤ä½ç”µè·¯å¯èƒ½ä¸å®Œæ•´`,
-          undefined, mcu.id, undefined,
-          'æ·»åŠ  RST å¼•è„š 10kÎ© ä¸Šæ‹‰å’Œ 100nF ç”µå®¹'
-        ));
-      }
-    }
-    return result;
-  }
-
-  private static checkPowerPins(doc: SchematicDocument): ErcViolation[] {
-    const result: ErcViolation[] = [];
-    let hasVcc = false;
-    let hasGnd = false;
-    let hasAltSource = false;
-    let hasMcuOrDigital = false;
-    for (let i = 0; i < doc.nets.length; i++) {
-      const net = doc.nets[i];
-      if (net.type === NetType.POWER || net.name === 'VCC' || net.name === 'VDD') {
-        hasVcc = true;
-      }
-      if (net.type === NetType.GROUND || net.name === 'GND' || net.name === 'VSS') {
-        hasGnd = true;
-      }
-    }
-    for (let ci = 0; ci < doc.components.length; ci++) {
-      const lib = doc.components[ci].libraryId;
-      if (lib === 'VCC') {
-        hasVcc = true;
-      }
-      if (lib === 'GND') {
-        hasGnd = true;
-      }
-      if (lib === 'VAC' || lib === 'SIGNAL_GEN' || lib === 'VEE') {
-        hasAltSource = true;
-      }
-      if (lib.includes('AT89') || lib.includes('STC') || lib.includes('STM32') ||
-        lib.includes('74HC') || lib.includes('GATE_')) {
-        hasMcuOrDigital = true;
-      }
-    }
-    // çº¯äº¤æµ/ä¿¡å·æºå®éªŒå¯ä¸å¼ºåˆ¶ VCCï¼›æœ‰ MCU/æ•°å­—åˆ™ä»è¦æ±‚æ­£ç”µæº
-    if (!hasVcc && (hasMcuOrDigital || !hasAltSource)) {
-      result.push(ErcEngine.makeViolation(
-        ErcSeverity.ERROR, ErcRuleType.POWER_REVERSED,
-        'åŸç†å›¾ç¼ºå°‘ç”µæºç½‘ç»œ (VCC/VDD)',
-        undefined, undefined, undefined,
-        'æ·»åŠ ç”µæºç¬¦å·å¹¶è¿æ¥åˆ°å™¨ä»¶ç”µæºè„š'
-      ));
-    }
-    if (!hasGnd) {
-      result.push(ErcEngine.makeViolation(
-        ErcSeverity.ERROR, ErcRuleType.POWER_REVERSED,
-        'åŸç†å›¾ç¼ºå°‘åœ°ç½‘ç»œ (GND/VSS)',
-        undefined, undefined, undefined,
-        'æ·»åŠ åœ°ç¬¦å·å¹¶è¿æ¥åˆ°ç”µè·¯ GND'
-      ));
-    }
-    return result;
-  }
-
-  private static checkSubcircuitPorts(doc: SchematicDocument): ErcViolation[] {
-    const result: ErcViolation[] = [];
-    for (let i = 0; i < doc.subcircuits.length; i++) {
-      const sub = doc.subcircuits[i];
-      if (!sub.ports || sub.ports.length === 0) {
-        result.push(ErcEngine.makeViolation(
-          ErcSeverity.WARNING, ErcRuleType.PORT_MISMATCH,
-          `å­ç”µè·¯ "${sub.name}" æœªå®šä¹‰ç«¯å£`,
-          undefined, sub.id, undefined,
-          'ä¸ºå­ç”µè·¯æ·»åŠ è¾“å…¥/è¾“å‡ºç«¯å£å®šä¹‰'
-        ));
-      }
-    }
-    return result;
-  }
-
-  /** Returns actual pin definition IDs for a given library component type */
-  private static getPinDefs(libraryId: string): string[] {
-    // Two-pin passives (R, C, L, XTAL, FUSE)
-    if (libraryId.startsWith('R_') || libraryId.startsWith('C_') ||
-      libraryId.startsWith('L_') || libraryId.startsWith('XTAL_') ||
-      libraryId.startsWith('FUSE_')) {
-      return ['1', '2'];
-    }
-    if (libraryId.startsWith('POT_')) {
-      return ['1', '2', 'W'];
-    }
-    // LEDs and diodes
-    if (libraryId.startsWith('LED_') || libraryId === '1N4148' ||
-      libraryId === '1N4007' || libraryId === '1N5819') {
-      return ['A', 'K'];
-    }
-    // Switch / relay coil (+ optional contact pins when present)
-    if (libraryId === 'SW_PUSH') {
-      return ['1', '2'];
-    }
-    if (libraryId === 'RELAY_SPDT') {
-      return ['1', '2', 'COM', 'NO', 'NC'];
-    }
-    if (libraryId === 'BUZZER') {
-      return ['1', '2'];
-    }
-    // Power symbols (pin.id is '1' from makePin('1', 'VCC', ...) / makePin('1', 'GND', ...))
-    if (libraryId === 'VCC') return ['1'];
-    if (libraryId === 'GND') return ['1'];
-    if (libraryId === 'VEE') return ['1'];
-    if (libraryId === 'VAC') return ['1', '2'];
-    if (libraryId === 'SIGNAL_GEN') return ['OUT', 'GND'];
-    // Op-amps
-    if (libraryId === 'UA741') return ['IN+', 'IN-', 'OUT', 'VCC', 'VEE'];
-    if (libraryId === 'LM358' || libraryId === 'TL082') {
-      return ['IN+1', 'IN-1', 'OUT1', 'IN+2', 'IN-2', 'OUT2', 'V+', 'V-'];
-    }
-    if (libraryId === 'LM555' || libraryId === 'NE555') {
-      return ['GND', 'TRIG', 'OUT', 'RESET', 'CTRL', 'THRES', 'DISCH', 'VCC'];
-    }
-    // Voltage regulators (3-terminal, genPins 3)
-    if (libraryId === 'LM7805' || libraryId === 'LM7812' || libraryId === 'AMS1117_3V3') {
-      return ['1', '2', '3'];
-    }
-    // MCUs â€” å…·åè„šï¼ˆä¸ NamedDevicePins / BuiltinComponents å¯¹é½ï¼‰
-    if (libraryId.includes('STM32F407')) {
-      return ErcEngine.stm32Pins100();
-    }
-    if (libraryId.includes('STM32F030')) {
-      return ErcEngine.stm32Pins32();
-    }
-    if (libraryId.includes('STM32')) {
-      return ErcEngine.stm32Pins48();
-    }
-    if (libraryId.includes('AT89') || libraryId.includes('STC')) {
-      return ErcEngine.pins8051();
-    }
-    // Peripherals / instruments â€” å¯é€‰é€šé“ä¸å¼ºåˆ¶å…¨è¿
-    if (libraryId === 'UART_TERMINAL') return ['TX', 'RX', 'GND'];
-    if (libraryId === 'VOLTMETER_DC') return ['V+', 'COM'];
-    // è‡³å°‘ç”µå‹æ¡£ï¼›A/OHM å¯é€‰ï¼ˆæœªæ¥æ—¶ INFOï¼‰
-    if (libraryId === 'VIRTUAL_METER') return ['V', 'COM'];
-    if (libraryId === 'AMMETER_DC') return ['I+', 'I-'];
-    if (libraryId === 'FREQ_COUNTER') return ['IN', 'GND'];
-    // é€»è¾‘åˆ†æä»ª / ç¤ºæ³¢å™¨ï¼šè‡³å°‘ 1 é€šé“ + GNDï¼›å…¶ä½™é€šé“å¯é€‰
-    if (libraryId === 'LOGIC_ANALYZER') return ['CH1', 'GND'];
-    if (libraryId === 'POWER_METER') return ['V+', 'V-', 'I+', 'I-'];
-    if (libraryId === 'LCD1602') {
-      return ['VSS', 'VDD', 'V0', 'RS', 'RW', 'E', 'D4', 'D5', 'D6', 'D7', 'A', 'K'];
-    }
-    if (libraryId === 'OLED_12864') {
-      return ['VCC', 'GND', 'SCL', 'SDA'];
-    }
-    if (libraryId === '24C02') {
-      return ['VCC', 'VSS', 'SDA', 'SCL'];
-    }
-    if (libraryId === 'W25Q64') {
-      return ['VCC', 'GND', 'CS', 'CLK', 'DI', 'DO'];
-    }
-    if (libraryId === '2764' || libraryId === '62256') {
-      return ['VCC', 'GND', 'CE', 'OE'];
-    }
-    if (libraryId === 'CD4017') {
-      return ['VDD', 'VSS', 'CLK', 'RST', 'Q0'];
-    }
-    if (libraryId === 'LM2596') {
-      return ['VIN', 'OUT', 'GND', 'FB', 'ON'];
-    }
-    // ä¸‰æç®¡ / MOS
-    if (libraryId.includes('2N3904') || libraryId.includes('2N3906') ||
-      libraryId.includes('BC547') || libraryId.includes('BC557') ||
-      libraryId.includes('NPN') || libraryId.includes('PNP')) {
-      return ['B', 'C', 'E'];
-    }
-    if (libraryId.includes('2N7000') || libraryId.includes('IRF') ||
-      libraryId.includes('NMOS') || libraryId.includes('PMOS') || libraryId.includes('MOSFET')) {
-      return ['G', 'D', 'S'];
-    }
-    // äºŒæç®¡ï¼ˆé LEDï¼‰
-    if (libraryId === '1N4148' || libraryId === '1N4007' || libraryId === '1N5819') {
-      return ['A', 'K'];
-    }
-    // ä¼ æ„Ÿå™¨
-    if (libraryId.includes('LDR') || libraryId.includes('NTC') || libraryId.includes('PTC')) {
-      return ['1', '2'];
-    }
-    if (libraryId.includes('DHT11') || libraryId.includes('DS18B20')) {
-      return ['VDD', 'DQ', 'GND'];
-    }
-    if (libraryId.includes('HALL')) {
-      return ['VCC', 'OUT', 'GND'];
-    }
-    // 74HC gates only expose functional pins (A, B, Y, GND, VCC), not all 14 package pins
-    if (libraryId.includes('74HC04')) {
-      return ['1', '2', '7', '14'];
-    }
-    if (libraryId.includes('74HC')) {
-      return ['1', '2', '3', '7', '14'];
-    }
-    // ç¤ºæ³¢å™¨ï¼šè‡³å°‘ CH1 + GND
-    if (libraryId.includes('OSCILLOSCOPE')) return ['CH1', 'GND'];
-    // æœªçŸ¥åº“ IDï¼šç¦æ­¢é»˜è®¤å‡è„š 1/2ï¼ˆä¼šè®©å¤šè„š IC ERC å‡é€šè¿‡ï¼‰
-    return [];
-  }
-
-  private static buildPinArray(count: number, prefix: string): string[] {
-    const result: string[] = [];
-    for (let i = 0; i < count; i++) {
-      result.push(`${prefix}${i + 1}`);
-    }
-    return result;
-  }
-
-  private static gpioBank(letter: string, n: number): string[] {
-    const out: string[] = [];
-    for (let i = 0; i < n; i++) {
-      out.push(`P${letter}${i}`);
-    }
-    return out;
-  }
-
-  private static stm32Pins48(): string[] {
-    return ['VDD', 'VSS', 'VDDA', 'VSSA', 'BOOT0', 'NRST', 'OSC_IN', 'OSC_OUT']
-      .concat(ErcEngine.gpioBank('A', 16))
-      .concat(ErcEngine.gpioBank('B', 16))
-      .concat(ErcEngine.gpioBank('C', 8));
-  }
-
-  private static stm32Pins32(): string[] {
-    return ['VDD', 'VSS', 'NRST', 'BOOT0', 'OSC_IN', 'OSC_OUT']
-      .concat(ErcEngine.gpioBank('A', 16))
-      .concat(ErcEngine.gpioBank('B', 10));
-  }
-
-  private static stm32Pins100(): string[] {
-    return ErcEngine.stm32Pins48()
-      .concat(ErcEngine.gpioBank('D', 16))
-      .concat(ErcEngine.gpioBank('E', 16))
-      .concat(['PC8', 'PC9', 'PC10', 'PC11', 'PC12', 'PC13', 'PC14', 'PC15'])
-      .concat(ErcEngine.gpioBank('F', 12));
-  }
-
-  private static pins8051(): string[] {
-    const out: string[] = [];
-    for (let i = 0; i < 8; i++) {
-      out.push(`P1.${i}`);
-    }
-    out.push('RST');
-    for (let i = 0; i < 8; i++) {
-      out.push(`P3.${i}`);
-    }
-    out.push('XTAL2', 'XTAL1', 'GND');
-    for (let i = 0; i < 8; i++) {
-      out.push(`P2.${i}`);
-    }
-    out.push('PSEN', 'ALE', 'EA');
-    for (let i = 7; i >= 0; i--) {
-      out.push(`P0.${i}`);
-    }
-    out.push('VCC');
-    return out;
-  }
-
-  private static estimatePinCount(libraryId: string): number {
-    if (libraryId.startsWith('R_') || libraryId.startsWith('C_') || libraryId.startsWith('L_')) {
-      return 2;
-    }
-    if (libraryId.includes('LED')) {
-      return 2;
-    }
-    if (libraryId.includes('74HC')) {
-      return 14;
-    }
-    if (libraryId.includes('DS18B20') || libraryId.includes('HALL')) {
-      return 3;
-    }
-    if (libraryId.includes('STM32F030')) {
-      return 32;
-    }
-    if (libraryId.includes('STM32F407')) {
-      return 100;
-    }
-    if (libraryId.includes('STM32')) {
-      return 48;
-    }
-    if (libraryId.includes('AT89') || libraryId.includes('STC')) {
-      return 40;
-    }
-    if (libraryId.includes('OSCILLOSCOPE')) {
-      return 5;
-    }
-    return 2;
-  }
-
-  private static makeViolation(
-    severity: ErcSeverity, ruleType: ErcRuleType, message: string,
-    netId?: string, componentId?: string, pinId?: string, fix?: string
-  ): ErcViolation {
-    return {
-      id: IdUtil.generate('erc'),
-      severity: severity,
-      ruleType: ruleType,
-      message: message,
-      netId: netId,
-      componentId: componentId,
-      pinId: pinId,
-      fixSuggestion: fix
-    };
-  }
-}
-ÔrD•§version¨mappings¥names§sources®sourcesContentÜW‘”    ‘”  ‘”   ‘”   ‘”   ‘”  	 ‘”   ‘”  ‘”  ‘”  ‘”  ‘”  ‘”  ‘”   ‘”  "‘”  $‘”  &	‘”  (‘”  )
-‘”  /	‘”  1‘”  2‘”  4‘”  5‘”  6‘”  :
-‘”  Ì@	‘”  Ì@‘”  ÌA
-‘”  ÌG	‘”  ÌH‘”  ÌI‘”  ÌJ‘”  ÌO‘”  ÌP‘”  ÌQ‘”  ÌR‘”  ÌU‘”  ÌY
-‘”  Ì[‘”  Ì\‘”  Ì]‘”  Ì^‘”  Ì_‘”  Ì`‘”  Ìa‘”  Ìb‘”  Ìc‘”  Ìd‘”  Ìi‘”  Ìj‘”  Ìk‘”  Ìl‘”  Ìn‘”  Ìo‘”  Ìq‘”  Ìr‘”  Ìs‘”  Ìt‘”  Ìu‘”  Ìv‘”  Ì{‘”  Ì|‘”  Ì~‘”  Ì€‘”  Ì‚‘”  Ìˆ‘”  Ìˆ‘”  ÌŠ‘”  Ì‹‘”  ÌŒ‘”  Ì
-‘”  Ì”‘”  Ì•‘”  Ì—‘”  Ì˜‘”  Ì™‘”  Ìš
-‘”  Ì›
-‘”  Ìœ
-‘”  Ì‘”  Ì 	‘”  Ì¡‘”  Ì¢‘”  Ì£‘”  Ì¥‘”  Ì§‘”  Ì¨‘”  Ìª
-‘”  Ì°	‘”  Ì±‘”  Ì²‘”  Ì³‘”  Ì¶‘”  Ìº‘”  Ì»
-‘”  Ì¿‘”  ÌÀ‘”  ÌÁ‘”  ÌÃ‘”  ÌÅ‘”  ÌÍ‘”  ÌÎ‘”  ÌÏ‘”  ÌÑ	‘”  ÌÕ	‘”  ÌÙ	‘”  ÌÛ‘”  Ìİ‘”  ÌŞ‘”  Ìà‘”  Ìá	‘”  Ìä	‘”  Ìå‘”  Ìæ‘”  Ìç
-‘”  Ìè
-‘”  Ìé	‘”  Ìé‘”  Ìê
-‘”  Ìë
-‘”  Ìì	‘”  Ìì‘”  Ìí
-‘”  Ìî
-‘”  Ìï	‘”  Ìï‘”  Ìğ
-‘”  Ìñ
-‘”  Ìò	‘”  Ìò‘”  Ìó
-‘”  Ìô	‘”  Ìô‘”  Ìõ
-‘”  Ìö
-‘”  Ì÷	‘”  Ìø‘”  Ìù‘”  Ìú‘”  Í ‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í ‘”  Í"‘”  Í#‘”  Í)‘”  Í*‘”  Í+‘”  Í/
-‘”  Í2‘”  Í3‘”  Í4‘”  Í5‘”  Í6‘”  Í7‘”  Í8‘”  Í:‘”  Í=‘”  Í>‘”  ÍA‘”  ÍB‘”  ÍF
-‘”  ÍG
-‘”  ÍJ
-‘”  ÍM
-‘”  ÍN
-‘”  ÍO
-‘”  ÍQ‘”  ÍR‘”  ÍT	‘”  ÍU‘”  Í\‘”  Í]‘”  Í^‘”  Íb
-‘”  Íe‘”  Íh‘”  Íj	‘”  Ík‘”  Íl‘”  Ím‘”  Ín‘”  Íq
-‘”  Ís‘”  Ív‘”  Íw‘”  Íx‘”  Í~‘”  Í„‘”  Í†‘”  ÍŒ‘”  Í‘”  Í‘”  Í”‘”  Í•‘”  Í–‘”  ÍŸ‘”  Í¡‘”  Í£‘”  Í¤‘”  Í¦‘”  Í§‘”  Í¨‘”  Í¬‘”  Í¯‘”  Í²‘”  Í³‘”  Í´‘”  Í¶‘”  Í·‘”  ÍÀ‘”  ÍÈ‘”  ÍÉ‘”  ÍÎ‘”  ÍĞ‘”  ÍÑ‘”  Í×‘”  ÍØ‘”  ÍÙ‘”  Íß‘”  Íá‘”  Íâ‘”  Íã‘”  Íä‘”  Íå‘”  Íæ‘”  Íé‘”  Íê‘”  Íë‘”  Íî‘”  Íï‘”  Íò‘”  Íô‘”  Íõ‘”  Íú‘”  Íû$‘”  Íş‘”  Íÿ‘”  Í ‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í	‘”  Í
-‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í'‘”  Í&‘”  Í'‘”  Í$‘”  Í&‘”  Í(‘”  Í!‘”  Í$‘”  Í'‘”  Í)‘”  Í*‘”  Í+‘”  Í-‘”  Í0‘”  Í3‘”  Í5‘”  Í7‘”  Í8‘”  Í9‘”  Í:‘”  Í;‘”  Í<‘”  Í=‘”  Í@‘”  ÍA‘”  ÍD‘”  ÍE‘”  ÍF‘”  ÍG‘”  ÍH‘”  ÍI‘”  ÍJ‘”  ÍK‘”  ÍM‘”  ÍO‘”  ÍP‘”  ÍR‘”  ÍT‘”  ÍT,‘”  ÍV‘”  ÍY
-‘”  Í]‘”  Í^‘”  Ía
-‘”  Íe‘”  Íf‘”  Íi
-‘”  Íj‘”  Íp
-‘”  Íq‘”  Ív
-‘”  Íz‘”  Í~
-‘”  Í‘”  Í‚‘”  Íƒ‘”  Í…‘”  Í†‘”  Í‰‘”  ÍŠ‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í•‘”  Í–‘”  Í—‘”  Í˜‘”  Í™‘”  Íš‘”  Í›‘”  Íœ‘”  Í‘”  Í‘”  ÍŸ‘”  Í ‘”  Í¡‘”  Í¢‘”  Í£‘”  Í¤‘”  Í¥‘”  Í¦‘”  Í§‘”  Í¨‘”  Í©‘”  Íª‘”  Í«‘”  Í¬‘”  Í­‘”  Í®‘”  Í¯‘”  Í²
-‘”  Í·‘”  Í¸‘”  Í¹‘”  Íº‘”  Í»‘”  Í¼‘”  Í½‘”  Í¾‘”  ÍÁ‘ÙDC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\ErcEngine.ets‘Úd9/**
- * ERC ç”µæ°”è§„åˆ™æ£€æŸ¥å¼•æ“ - å¯¹é½ Proteus è§„åˆ™é›†
- */
-import {
-  SchematicDocument, ErcViolation, ErcSeverity, ErcRuleType,
-  NetType, Pin, Net, PinType
-} from '../types/CommonTypes';
-import { IdUtil } from './IdUtil';
-import { appendArray } from './MapHelpers';
-import { DeviceHitGeometry, WIRE_OBSTACLE_PAD } from './DeviceHitGeometry';
-import { DeviceInst } from '../types/TopologyTypes';
-
-export type PinResolverFn = (libraryId: string) => Pin[] | null;
-
-export class ErcEngine {
-
-  static run(doc: SchematicDocument, mcuLibraryIds: Set<string>,
-    pinResolver?: PinResolverFn): ErcViolation[] {
-    const violations: ErcViolation[] = [];
-    appendArray(violations, ErcEngine.checkFloatingNets(doc));
-    appendArray(violations, ErcEngine.checkDuplicateNetNames(doc));
-    appendArray(violations, ErcEngine.checkUnconnectedPins(doc, pinResolver));
-    appendArray(violations, ErcEngine.checkPinTypeConflicts(doc, pinResolver));
-    appendArray(violations, ErcEngine.checkLabelOverDevice(doc, pinResolver));
-    appendArray(violations, ErcEngine.checkMcuRequirements(doc, mcuLibraryIds));
-    appendArray(violations, ErcEngine.checkPowerPins(doc));
-    appendArray(violations, ErcEngine.checkSubcircuitPorts(doc));
-    return violations;
-  }
-
-  private static checkFloatingNets(doc: SchematicDocument): ErcViolation[] {
-    const result: ErcViolation[] = [];
-    for (let i = 0; i < doc.nets.length; i++) {
-      const net = doc.nets[i];
-      if (ErcEngine.isPowerOrGroundNet(net)) {
-        // æ‹“æ‰‘æ¯æ¬¡ ensureNet(VCC/GND/VEE)ï¼šæ— è„šä¸”ç”»å¸ƒæ— å¯¹åº”ç”µæºç¬¦å· â†’ é¢„ç½®ç©ºè½¨ï¼Œä¸æŠ¥å™ª
-        if (net.pinIds.length === 0 && !ErcEngine.docHasMatchingPowerSymbol(doc, net)) {
-          continue;
-        }
-        // å·²æœ‰ç¬¦å·å…¥ç½‘ä½†å‡ ä¹æ— è´Ÿè½½ï¼šINFOï¼Œä¸æŒ¡é—¨ç¦
-        if (net.pinIds.length <= 1) {
-          result.push(ErcEngine.makeViolation(
-            ErcSeverity.INFO, ErcRuleType.FLOATING_NET,
-            `ç”µæº/åœ°ç½‘ç»œ "${net.name}" ä»…ç¬¦å·å…¥ç½‘ï¼ˆå¾…æ¥è´Ÿè½½ï¼‰`,
-            net.id, undefined, undefined,
-            'å°† GND/VCC/VEE ç¬¦å·ç”¨å¯¼çº¿è¿æ¥åˆ°å™¨ä»¶ç”µæºè„š'
-          ));
-        }
-        continue;
-      }
-      if (net.pinIds.length === 0) {
-        continue;
-      }
-      if (net.pinIds.length <= 1 && net.type === NetType.SIGNAL) {
-        const nm = (net.name ?? '').trim();
-        const isAuto = nm.length === 0 || /^NET_\d+$/i.test(nm) || /^net_topo/i.test(nm);
-        if (!isAuto) {
-          // æœ‰æ„ä¹‰ç½‘åä»… 1 è„šï¼šå¤šä¸ºæ ‡å·æœªå¹¶ç½‘ / æ··åˆ mode åˆ†è£‚ â†’ æŒ¡ AI é—¨ç¦
-          result.push(ErcEngine.makeViolation(
-            ErcSeverity.WARNING, ErcRuleType.FLOATING_NET,
-            `ä¿¡å·ç½‘ç»œ "${nm}" æœªå®Œå…¨è¿æ¥ï¼ˆä»… 1 è„šï¼Œæ ‡å·å¯èƒ½æœªå¹¶ç½‘ï¼‰`,
-            net.id, undefined, undefined,
-            'æ£€æŸ¥åŒåç½‘ç»œæ ‡å·æ˜¯å¦è½åœ¨åŒä¸€å‡ ä½•ç½‘ï¼Œæˆ–æ”¹ä¸ºå¯¼çº¿ç›´è¿'
-          ));
-        } else {
-          result.push(ErcEngine.makeViolation(
-            ErcSeverity.INFO, ErcRuleType.FLOATING_NET,
-            `ç½‘ç»œ "${net.name}" ä»…æœ‰ä¸€å¤„è¿æ¥ï¼ˆå¾…å¹¶ç½‘/æ ‡å·ï¼‰`,
-            net.id, undefined, undefined,
-            'æ·»åŠ ç½‘ç»œæ ‡å·æˆ–è¿æ¥åˆ°å™¨ä»¶å¼•è„š'
-          ));
-        }
-      }
-    }
-    return result;
-  }
-
-  /** ç”µæº/åœ°ç½‘ç»œï¼ˆä¸åº”æŒ‰æ™®é€šä¿¡å·ç½‘ç»œåšæ‚¬ç©ºåˆ¤å®šï¼‰ */
-  private static isPowerOrGroundNet(net: Net): boolean {
-    if (net.type === NetType.POWER || net.type === NetType.GROUND) {
-      return true;
-    }
-    const upper = (net.name ?? '').toUpperCase();
-    return upper === 'GND' || upper === 'VSS' || upper === 'VEE' ||
-      upper === 'VCC' || upper === 'VDD' || upper === '0' ||
-      upper === '-12V' || upper === '-5V';
-  }
-
-  /** ç”»å¸ƒæ˜¯å¦å·²æ”¾ç½®ä¸è¯¥è½¨å¯¹åº”çš„ç”µæº/åœ°ç¬¦å·ï¼ˆVCC/GND/VEEï¼‰ */
-  private static docHasMatchingPowerSymbol(doc: SchematicDocument, net: Net): boolean {
-    const want = ErcEngine.powerSymbolLibForNet(net);
-    if (want.length === 0) {
-      return false;
-    }
-    for (let i = 0; i < doc.components.length; i++) {
-      const lib = (doc.components[i].libraryId ?? '').toUpperCase();
-      if (lib === want || lib.endsWith(`/${want}`)) {
-        return true;
-      }
-    }
-    return false;
-  }
-
-  /** è½¨ç½‘å â†’ å¯¹åº”ç”µæºç¬¦å· libraryIdï¼›éæ ‡å‡†åè¿”å›ç©º */
-  private static powerSymbolLibForNet(net: Net): string {
-    const upper = (net.name ?? '').toUpperCase();
-    if (upper === 'VCC' || upper === 'VDD') {
-      return 'VCC';
-    }
-    if (upper === 'GND' || upper === 'VSS' || upper === '0') {
-      return 'GND';
-    }
-    if (upper === 'VEE' || upper === '-12V' || upper === '-5V') {
-      return 'VEE';
-    }
-    if (net.type === NetType.GROUND) {
-      return 'GND';
-    }
-    return '';
-  }
-
-  private static checkDuplicateNetNames(doc: SchematicDocument): ErcViolation[] {
-    const result: ErcViolation[] = [];
-    const names = new Map<string, string>();
-    for (let i = 0; i < doc.nets.length; i++) {
-      const net = doc.nets[i];
-      if (!net.name || net.name.startsWith('NET_')) {
-        continue;
-      }
-      if (names.has(net.name)) {
-        result.push(ErcEngine.makeViolation(
-          ErcSeverity.WARNING, ErcRuleType.DUPLICATE_NET,
-          `é‡å¤ç½‘ç»œæ ‡å· "${net.name}"ï¼ˆåŒåå°†å¹¶ç½‘ï¼›è‹¥éæœ‰æ„è¯·æ”¹åï¼‰`,
-          net.id, undefined, undefined,
-          'ä¸ºæ¯ä¸ªç‹¬ç«‹ç½‘ç»œä½¿ç”¨å”¯ä¸€æ ‡å·ï¼Œæˆ–ç¡®è®¤åŒåå¹¶ç½‘æ„å›¾'
-        ));
-      } else {
-        names.set(net.name, net.id);
-      }
-    }
-    return result;
-  }
-
-  private static checkUnconnectedPins(doc: SchematicDocument,
-    pinResolver?: PinResolverFn): ErcViolation[] {
-    const result: ErcViolation[] = [];
-    // Build connected pins map: compId -> Set<pinDefId>
-    // Net.pinIds format: "${compId}:${pinDefId}:${pinDefName}"
-    const connectedPins = new Map<string, Set<string>>();
-    for (let i = 0; i < doc.nets.length; i++) {
-      const net = doc.nets[i];
-      for (let j = 0; j < net.pinIds.length; j++) {
-        const parts = net.pinIds[j].split(':');
-        if (parts.length >= 2) {
-          const compId = parts[0];
-          const pinDefId = parts[1];
-          if (!connectedPins.has(compId)) {
-            connectedPins.set(compId, new Set<string>());
-          }
-          connectedPins.get(compId)!.add(pinDefId);
-        }
-      }
-    }
-    for (let i = 0; i < doc.components.length; i++) {
-      const comp = doc.components[i];
-      const pinDefs = ErcEngine.resolvePinIds(comp.libraryId, pinResolver);
-      const compConnected = connectedPins.get(comp.id);
-      for (let p = 0; p < pinDefs.length; p++) {
-        const pinDefId = pinDefs[p];
-        if (!compConnected || !compConnected.has(pinDefId)) {
-          result.push(ErcEngine.makeViolation(
-            ErcSeverity.INFO, ErcRuleType.UNCONNECTED_PIN,
-            `å™¨ä»¶ ${comp.refDes} å¼•è„š ${pinDefId} æœªè¿æ¥`,
-            undefined, comp.id, pinDefId,
-            'è¿æ¥å¼•è„šæˆ–æ·»åŠ  No ERC æ ‡è®°'
-          ));
-        }
-      }
-    }
-    return result;
-  }
-
-  /**
-   * KiCad-like å¼•è„šç”µæ°”ç±»å‹å†²çªçŸ©é˜µï¼ˆåŒç½‘ï¼‰ï¼š
-   * Out+Out â†’ ERRORï¼›Out/BiDi+Power â†’ ERRORï¼›BiDi+Out/BiDi â†’ WARNINGï¼›
-   * Passive/Input/OC å¯å…±ç½‘ï¼›Power+Ground åŒç½‘ â†’ ERRORã€‚
-   */
-  private static checkPinTypeConflicts(doc: SchematicDocument,
-    pinResolver?: PinResolverFn): ErcViolation[] {
-    const result: ErcViolation[] = [];
-    if (pinResolver == null) {
-      return result;
-    }
-    for (let ni = 0; ni < doc.nets.length; ni++) {
-      const net = doc.nets[ni];
-      if (net.pinIds.length < 2) {
-        continue;
-      }
-      let outN = 0;
-      let bidN = 0;
-      let pwrN = 0;
-      let gndN = 0;
-      let ocN = 0;
-      let passiveN = 0;
-      const drivers: string[] = [];
-      for (let pi = 0; pi < net.pinIds.length; pi++) {
-        const parts = net.pinIds[pi].split(':');
-        if (parts.length < 2) {
-          continue;
-        }
-        const comp = doc.components.find(c => c.id === parts[0]);
-        if (comp === undefined) {
-          continue;
-        }
-        const pins = pinResolver(comp.libraryId);
-        if (pins == null) {
-          continue;
-        }
-        let pin: Pin | null = null;
-        for (let j = 0; j < pins.length; j++) {
-          if (pins[j].id === parts[1] || pins[j].name === parts[1] ||
-            (parts.length >= 3 && pins[j].name === parts[2])) {
-            pin = pins[j];
-            break;
-          }
-        }
-        if (pin === null) {
-          continue;
-        }
-        const tag = `${comp.refDes}.${pin.name || pin.id}`;
-        if (pin.type === PinType.OUTPUT) {
-          outN++;
-          drivers.push(tag);
-        } else if (pin.type === PinType.BIDIRECTIONAL) {
-          bidN++;
-          drivers.push(tag);
-        } else if (pin.type === PinType.POWER) {
-          pwrN++;
-          drivers.push(tag);
-        } else if (pin.type === PinType.GROUND) {
-          gndN++;
-          drivers.push(tag);
-        } else if (pin.type === PinType.OPEN_COLLECTOR) {
-          ocN++;
-        } else if (pin.type === PinType.PASSIVE || pin.type === PinType.ANALOG ||
-          pin.type === PinType.INPUT) {
-          passiveN++;
-        }
-      }
-      if (pwrN > 0 && gndN > 0) {
-        result.push(ErcEngine.makeViolation(
-          ErcSeverity.ERROR, ErcRuleType.PIN_CONFLICT,
-          `ç½‘ç»œ "${net.name}" ç”µæºè„šä¸åœ°è„šåŒç½‘ï¼ˆçŸ­è·¯ï¼‰`,
-          net.id, undefined, undefined,
-          'æ£€æŸ¥ç”µæº/åœ°å¸ƒçº¿ï¼Œé¿å… VCC ä¸ GND å¹¶ç½‘'
-        ));
-      }
-      if (outN >= 2) {
-        result.push(ErcEngine.makeViolation(
-          ErcSeverity.ERROR, ErcRuleType.PIN_CONFLICT,
-          `ç½‘ç»œ "${net.name}" å¤šè¾“å‡ºé©±åŠ¨å†²çªï¼ˆ${drivers.slice(0, 4).join(', ')}ï¼‰`,
-          net.id, undefined, undefined,
-          'å‹¿å°†ä¸¤ä¸ª OUTPUT ç›´è¿ï¼›åŠ ç¼“å†²æˆ–æ”¹çº¿'
-        ));
-      } else if (outN >= 1 && bidN >= 1) {
-        result.push(ErcEngine.makeViolation(
-          ErcSeverity.WARNING, ErcRuleType.PIN_CONFLICT,
-          `ç½‘ç»œ "${net.name}" OUTPUT ä¸ BIDI å…±ç½‘ï¼ˆ${drivers.slice(0, 4).join(', ')}ï¼‰`,
-          net.id, undefined, undefined,
-          'ç¡®è®¤æ€»çº¿äº‰ç”¨å¯æ¥å—ï¼Œå¦åˆ™éš”ç¦»é©±åŠ¨'
-        ));
-      } else if (bidN >= 2) {
-        result.push(ErcEngine.makeViolation(
-          ErcSeverity.INFO, ErcRuleType.PIN_CONFLICT,
-          `ç½‘ç»œ "${net.name}" å¤šä¸ª BIDI å…±ç½‘ï¼ˆå¯èƒ½æ€»çº¿äº‰ç”¨ï¼‰`,
-          net.id, undefined, undefined,
-          'ç¡®è®¤åˆ†æ—¶é©±åŠ¨æˆ–åŠ æ–¹å‘æ§åˆ¶'
-        ));
-      }
-      // Out/BiDi ç›´è¿ç”µæºï¼šæ— é˜»å®¹ç­‰åŒç½‘ PASSIVE æ—¶ ERRORï¼›æœ‰ PASSIVE é™ä¸º WARNINGï¼ˆå°‘è¯¯æ€ï¼‰
-      if ((outN > 0 || bidN > 0) && pwrN > 0) {
-        result.push(ErcEngine.makeViolation(
-          passiveN > 0 ? ErcSeverity.WARNING : ErcSeverity.ERROR,
-          ErcRuleType.PIN_CONFLICT,
-          `ç½‘ç»œ "${net.name}" ä¿¡å·é©±åŠ¨è„šä¸ç”µæºè„šåŒç½‘`,
-          net.id, undefined, undefined,
-          'ä¿¡å·ç½‘å‹¿ç›´æ¥æŒ‚åˆ° VCC/ç”µæºè„š'
-        ));
-      }
-      // OC å¹¶è”å…è®¸ï¼›OC+å¼º OUTPUT è­¦å‘Š
-      if (ocN > 0 && outN > 0) {
-        result.push(ErcEngine.makeViolation(
-          ErcSeverity.WARNING, ErcRuleType.PIN_CONFLICT,
-          `ç½‘ç»œ "${net.name}" å¼€æ¼ä¸æ¨æŒ½è¾“å‡ºå…±ç½‘`,
-          net.id, undefined, undefined,
-          'å¼€æ¼ç½‘åº”ä»…æ¥ OC/è¾“å…¥/ä¸Šæ‹‰ï¼Œå‹¿æ¥æ¨æŒ½ OUTPUT'
-        ));
-      }
-    }
-    return result;
-  }
-
-  /** H4ï¼šä¿¡å·æ ‡å·é”šç‚¹è½å…¥å™¨ä»¶é€‰ä¸­åŒºï¼ˆå‹ä½ç¬¦å·ï¼‰ */
-  private static checkLabelOverDevice(doc: SchematicDocument,
-    pinResolver?: PinResolverFn): ErcViolation[] {
-    const result: ErcViolation[] = [];
-    const labels = doc.netLabels;
-    if (labels === undefined || labels.length === 0 || pinResolver == null) {
-      return result;
-    }
-    for (let li = 0; li < labels.length; li++) {
-      const lb = labels[li];
-      const upper = (lb.text ?? '').toUpperCase();
-      // ç”µæº/åœ°æ ‡å·å¸¸è´´åœ¨ç”µæºç¬¦ä¸Šï¼Œä¸ç®— H4
-      if (upper === 'VCC' || upper === 'VDD' || upper === 'V+' || upper === 'VEE' ||
-        upper === 'GND' || upper === 'VSS' || upper === '0') {
-        continue;
-      }
-      for (let ci = 0; ci < doc.components.length; ci++) {
-        const comp = doc.components[ci];
-        const resolvedPins = pinResolver(comp.libraryId);
-        const pins = resolvedPins !== null ? resolvedPins : [];
-        const di: DeviceInst = {
-          instUuid: comp.id,
-          libDevId: comp.libraryId,
-          refName: comp.refDes,
-          x: comp.position.x,
-          y: comp.position.y,
-          rotate: comp.rotation,
-          mirrorH: comp.mirrored,
-          mirrorV: false,
-          params: new Map<string, string>(),
-          pinVoltage: new Map<string, number>(),
-          hidden: false,
-          subCircuitRef: '',
-          ercErrorMsg: ''
-        };
-        const hit = DeviceHitGeometry.hitRectFromDeviceInst(di, pins, WIRE_OBSTACLE_PAD);
-        if (!DeviceHitGeometry.pointInRect(lb.position.x, lb.position.y, hit)) {
-          continue;
-        }
-        result.push(ErcEngine.makeViolation(
-          ErcSeverity.WARNING, ErcRuleType.LABEL_OVER_DEVICE,
-          `ç½‘ç»œæ ‡å· "${lb.text}" å‹åœ¨å™¨ä»¶ ${comp.refDes} ä¸Š`,
-          lb.netId, comp.id, undefined,
-          'å°†æ ‡å·ç§»åˆ°å¼•è„šå¤–ä¾§ï¼Œé¿å…è¦†ç›–ç¬¦å·'
-        ));
-        break;
-      }
-    }
-    return result;
-  }
-
-  /** Resolve pin IDs: use dynamic resolver when available, fall back to static map */
-  private static resolvePinIds(libraryId: string,
-    pinResolver?: PinResolverFn): string[] {
-    if (pinResolver != null) {
-      const pins = pinResolver(libraryId);
-      if (pins != null && pins.length > 0) {
-        const ids: string[] = [];
-        for (let i = 0; i < pins.length; i++) {
-          ids.push(pins[i].id);
-        }
-        return ids;
-      }
-    }
-    return ErcEngine.getPinDefs(libraryId);
-  }
-
-  private static checkMcuRequirements(doc: SchematicDocument, mcuIds: Set<string>): ErcViolation[] {
-    const result: ErcViolation[] = [];
-    const mcus = doc.components.filter(c => mcuIds.has(c.libraryId) ||
-      c.libraryId.includes('AT89') || c.libraryId.includes('STC') || c.libraryId.includes('STM32'));
-
-    for (let i = 0; i < mcus.length; i++) {
-      const mcu = mcus[i];
-      const hasCrystal = doc.components.some(c =>
-        c.libraryId.includes('CRYSTAL') || c.libraryId.includes('XTAL'));
-      const hasCap = doc.components.filter(c => c.libraryId.startsWith('C_')).length >= 2;
-      const hasResistor = doc.components.some(c => c.libraryId.startsWith('R_'));
-
-      if (!hasCrystal) {
-        result.push(ErcEngine.makeViolation(
-          ErcSeverity.WARNING, ErcRuleType.MISSING_CRYSTAL,
-          `MCU ${mcu.refDes} ç¼ºå°‘æ™¶æŒ¯ç”µè·¯`,
-          undefined, mcu.id, undefined,
-          'å¤–ç½®æ™¶æŒ¯æˆ–ç¡®è®¤ä½¿ç”¨å†…éƒ¨æ—¶é’Ÿï¼ˆSTC/éƒ¨åˆ† STM32ï¼‰'
-        ));
-      }
-      if (!hasCap) {
-        result.push(ErcEngine.makeViolation(
-          ErcSeverity.WARNING, ErcRuleType.MISSING_RESET,
-          `MCU ${mcu.refDes} å¯èƒ½ç¼ºå°‘å»è€¦/å¤ä½ç”µå®¹`,
-          undefined, mcu.id, undefined,
-          'æ·»åŠ  100nF å»è€¦ç”µå®¹å’Œ 10kÎ© ä¸Šæ‹‰ç”µé˜»'
-        ));
-      }
-      if (!hasResistor && !hasCap) {
-        result.push(ErcEngine.makeViolation(
-          ErcSeverity.WARNING, ErcRuleType.MISSING_RESET,
-          `MCU ${mcu.refDes} å¤ä½ç”µè·¯å¯èƒ½ä¸å®Œæ•´`,
-          undefined, mcu.id, undefined,
-          'æ·»åŠ  RST å¼•è„š 10kÎ© ä¸Šæ‹‰å’Œ 100nF ç”µå®¹'
-        ));
-      }
-    }
-    return result;
-  }
-
-  private static checkPowerPins(doc: SchematicDocument): ErcViolation[] {
-    const result: ErcViolation[] = [];
-    let hasVcc = false;
-    let hasGnd = false;
-    let hasAltSource = false;
-    let hasMcuOrDigital = false;
-    for (let i = 0; i < doc.nets.length; i++) {
-      const net = doc.nets[i];
-      if (net.type === NetType.POWER || net.name === 'VCC' || net.name === 'VDD') {
-        hasVcc = true;
-      }
-      if (net.type === NetType.GROUND || net.name === 'GND' || net.name === 'VSS') {
-        hasGnd = true;
-      }
-    }
-    for (let ci = 0; ci < doc.components.length; ci++) {
-      const lib = doc.components[ci].libraryId;
-      if (lib === 'VCC') {
-        hasVcc = true;
-      }
-      if (lib === 'GND') {
-        hasGnd = true;
-      }
-      if (lib === 'VAC' || lib === 'SIGNAL_GEN' || lib === 'VEE') {
-        hasAltSource = true;
-      }
-      if (lib.includes('AT89') || lib.includes('STC') || lib.includes('STM32') ||
-        lib.includes('74HC') || lib.includes('GATE_')) {
-        hasMcuOrDigital = true;
-      }
-    }
-    // çº¯äº¤æµ/ä¿¡å·æºå®éªŒå¯ä¸å¼ºåˆ¶ VCCï¼›æœ‰ MCU/æ•°å­—åˆ™ä»è¦æ±‚æ­£ç”µæº
-    if (!hasVcc && (hasMcuOrDigital || !hasAltSource)) {
-      result.push(ErcEngine.makeViolation(
-        ErcSeverity.ERROR, ErcRuleType.POWER_REVERSED,
-        'åŸç†å›¾ç¼ºå°‘ç”µæºç½‘ç»œ (VCC/VDD)',
-        undefined, undefined, undefined,
-        'æ·»åŠ ç”µæºç¬¦å·å¹¶è¿æ¥åˆ°å™¨ä»¶ç”µæºè„š'
-      ));
-    }
-    if (!hasGnd) {
-      result.push(ErcEngine.makeViolation(
-        ErcSeverity.ERROR, ErcRuleType.POWER_REVERSED,
-        'åŸç†å›¾ç¼ºå°‘åœ°ç½‘ç»œ (GND/VSS)',
-        undefined, undefined, undefined,
-        'æ·»åŠ åœ°ç¬¦å·å¹¶è¿æ¥åˆ°ç”µè·¯ GND'
-      ));
-    }
-    return result;
-  }
-
-  private static checkSubcircuitPorts(doc: SchematicDocument): ErcViolation[] {
-    const result: ErcViolation[] = [];
-    for (let i = 0; i < doc.subcircuits.length; i++) {
-      const sub = doc.subcircuits[i];
-      if (!sub.ports || sub.ports.length === 0) {
-        result.push(ErcEngine.makeViolation(
-          ErcSeverity.WARNING, ErcRuleType.PORT_MISMATCH,
-          `å­ç”µè·¯ "${sub.name}" æœªå®šä¹‰ç«¯å£`,
-          undefined, sub.id, undefined,
-          'ä¸ºå­ç”µè·¯æ·»åŠ è¾“å…¥/è¾“å‡ºç«¯å£å®šä¹‰'
-        ));
-      }
-    }
-    return result;
-  }
-
-  /** Returns actual pin definition IDs for a given library component type */
-  private static getPinDefs(libraryId: string): string[] {
-    // Two-pin passives (R, C, L, XTAL, FUSE)
-    if (libraryId.startsWith('R_') || libraryId.startsWith('C_') ||
-      libraryId.startsWith('L_') || libraryId.startsWith('XTAL_') ||
-      libraryId.startsWith('FUSE_')) {
-      return ['1', '2'];
-    }
-    if (libraryId.startsWith('POT_')) {
-      return ['1', '2', 'W'];
-    }
-    // LEDs and diodes
-    if (libraryId.startsWith('LED_') || libraryId === '1N4148' ||
-      libraryId === '1N4007' || libraryId === '1N5819') {
-      return ['A', 'K'];
-    }
-    // Switch / relay coil (+ optional contact pins when present)
-    if (libraryId === 'SW_PUSH') {
-      return ['1', '2'];
-    }
-    if (libraryId === 'RELAY_SPDT') {
-      return ['1', '2', 'COM', 'NO', 'NC'];
-    }
-    if (libraryId === 'BUZZER') {
-      return ['1', '2'];
-    }
-    // Power symbols (pin.id is '1' from makePin('1', 'VCC', ...) / makePin('1', 'GND', ...))
-    if (libraryId === 'VCC') return ['1'];
-    if (libraryId === 'GND') return ['1'];
-    if (libraryId === 'VEE') return ['1'];
-    if (libraryId === 'VAC') return ['1', '2'];
-    if (libraryId === 'SIGNAL_GEN') return ['OUT', 'GND'];
-    // Op-amps
-    if (libraryId === 'UA741') return ['IN+', 'IN-', 'OUT', 'VCC', 'VEE'];
-    if (libraryId === 'LM358' || libraryId === 'TL082') {
-      return ['IN+1', 'IN-1', 'OUT1', 'IN+2', 'IN-2', 'OUT2', 'V+', 'V-'];
-    }
-    if (libraryId === 'LM555' || libraryId === 'NE555') {
-      return ['GND', 'TRIG', 'OUT', 'RESET', 'CTRL', 'THRES', 'DISCH', 'VCC'];
-    }
-    // Voltage regulators (3-terminal, genPins 3)
-    if (libraryId === 'LM7805' || libraryId === 'LM7812' || libraryId === 'AMS1117_3V3') {
-      return ['1', '2', '3'];
-    }
-    // MCUs â€” å…·åè„šï¼ˆä¸ NamedDevicePins / BuiltinComponents å¯¹é½ï¼‰
-    if (libraryId.includes('STM32F407')) {
-      return ErcEngine.stm32Pins100();
-    }
-    if (libraryId.includes('STM32F030')) {
-      return ErcEngine.stm32Pins32();
-    }
-    if (libraryId.includes('STM32')) {
-      return ErcEngine.stm32Pins48();
-    }
-    if (libraryId.includes('AT89') || libraryId.includes('STC')) {
-      return ErcEngine.pins8051();
-    }
-    // Peripherals / instruments â€” å¯é€‰é€šé“ä¸å¼ºåˆ¶å…¨è¿
-    if (libraryId === 'UART_TERMINAL') return ['TX', 'RX', 'GND'];
-    if (libraryId === 'VOLTMETER_DC') return ['V+', 'COM'];
-    // è‡³å°‘ç”µå‹æ¡£ï¼›A/OHM å¯é€‰ï¼ˆæœªæ¥æ—¶ INFOï¼‰
-    if (libraryId === 'VIRTUAL_METER') return ['V', 'COM'];
-    if (libraryId === 'AMMETER_DC') return ['I+', 'I-'];
-    if (libraryId === 'FREQ_COUNTER') return ['IN', 'GND'];
-    // é€»è¾‘åˆ†æä»ª / ç¤ºæ³¢å™¨ï¼šè‡³å°‘ 1 é€šé“ + GNDï¼›å…¶ä½™é€šé“å¯é€‰
-    if (libraryId === 'LOGIC_ANALYZER') return ['CH1', 'GND'];
-    if (libraryId === 'POWER_METER') return ['V+', 'V-', 'I+', 'I-'];
-    if (libraryId === 'LCD1602') {
-      return ['VSS', 'VDD', 'V0', 'RS', 'RW', 'E', 'D4', 'D5', 'D6', 'D7', 'A', 'K'];
-    }
-    if (libraryId === 'OLED_12864') {
-      return ['VCC', 'GND', 'SCL', 'SDA'];
-    }
-    if (libraryId === '24C02') {
-      return ['VCC', 'VSS', 'SDA', 'SCL'];
-    }
-    if (libraryId === 'W25Q64') {
-      return ['VCC', 'GND', 'CS', 'CLK', 'DI', 'DO'];
-    }
-    if (libraryId === '2764' || libraryId === '62256') {
-      return ['VCC', 'GND', 'CE', 'OE'];
-    }
-    if (libraryId === 'CD4017') {
-      return ['VDD', 'VSS', 'CLK', 'RST', 'Q0'];
-    }
-    if (libraryId === 'LM2596') {
-      return ['VIN', 'OUT', 'GND', 'FB', 'ON'];
-    }
-    // ä¸‰æç®¡ / MOS
-    if (libraryId.includes('2N3904') || libraryId.includes('2N3906') ||
-      libraryId.includes('BC547') || libraryId.includes('BC557') ||
-      libraryId.includes('NPN') || libraryId.includes('PNP')) {
-      return ['B', 'C', 'E'];
-    }
-    if (libraryId.includes('2N7000') || libraryId.includes('IRF') ||
-      libraryId.includes('NMOS') || libraryId.includes('PMOS') || libraryId.includes('MOSFET')) {
-      return ['G', 'D', 'S'];
-    }
-    // äºŒæç®¡ï¼ˆé LEDï¼‰
-    if (libraryId === '1N4148' || libraryId === '1N4007' || libraryId === '1N5819') {
-      return ['A', 'K'];
-    }
-    // ä¼ æ„Ÿå™¨
-    if (libraryId.includes('LDR') || libraryId.includes('NTC') || libraryId.includes('PTC')) {
-      return ['1', '2'];
-    }
-    if (libraryId.includes('DHT11') || libraryId.includes('DS18B20')) {
-      return ['VDD', 'DQ', 'GND'];
-    }
-    if (libraryId.includes('HALL')) {
-      return ['VCC', 'OUT', 'GND'];
-    }
-    // 74HC gates only expose functional pins (A, B, Y, GND, VCC), not all 14 package pins
-    if (libraryId.includes('74HC04')) {
-      return ['1', '2', '7', '14'];
-    }
-    if (libraryId.includes('74HC')) {
-      return ['1', '2', '3', '7', '14'];
-    }
-    // ç¤ºæ³¢å™¨ï¼šè‡³å°‘ CH1 + GND
-    if (libraryId.includes('OSCILLOSCOPE')) return ['CH1', 'GND'];
-    // æœªçŸ¥åº“ IDï¼šç¦æ­¢é»˜è®¤å‡è„š 1/2ï¼ˆä¼šè®©å¤šè„š IC ERC å‡é€šè¿‡ï¼‰
-    return [];
-  }
-
-  private static buildPinArray(count: number, prefix: string): string[] {
-    const result: string[] = [];
-    for (let i = 0; i < count; i++) {
-      result.push(`${prefix}${i + 1}`);
-    }
-    return result;
-  }
-
-  private static gpioBank(letter: string, n: number): string[] {
-    const out: string[] = [];
-    for (let i = 0; i < n; i++) {
-      out.push(`P${letter}${i}`);
-    }
-    return out;
-  }
-
-  private static stm32Pins48(): string[] {
-    return ['VDD', 'VSS', 'VDDA', 'VSSA', 'BOOT0', 'NRST', 'OSC_IN', 'OSC_OUT']
-      .concat(ErcEngine.gpioBank('A', 16))
-      .concat(ErcEngine.gpioBank('B', 16))
-      .concat(ErcEngine.gpioBank('C', 8));
-  }
-
-  private static stm32Pins32(): string[] {
-    return ['VDD', 'VSS', 'NRST', 'BOOT0', 'OSC_IN', 'OSC_OUT']
-      .concat(ErcEngine.gpioBank('A', 16))
-      .concat(ErcEngine.gpioBank('B', 10));
-  }
-
-  private static stm32Pins100(): string[] {
-    return ErcEngine.stm32Pins48()
-      .concat(ErcEngine.gpioBank('D', 16))
-      .concat(ErcEngine.gpioBank('E', 16))
-      .concat(['PC8', 'PC9', 'PC10', 'PC11', 'PC12', 'PC13', 'PC14', 'PC15'])
-      .concat(ErcEngine.gpioBank('F', 12));
-  }
-
-  private static pins8051(): string[] {
-    const out: string[] = [];
-    for (let i = 0; i < 8; i++) {
-      out.push(`P1.${i}`);
-    }
-    out.push('RST');
-    for (let i = 0; i < 8; i++) {
-      out.push(`P3.${i}`);
-    }
-    out.push('XTAL2', 'XTAL1', 'GND');
-    for (let i = 0; i < 8; i++) {
-      out.push(`P2.${i}`);
-    }
-    out.push('PSEN', 'ALE', 'EA');
-    for (let i = 7; i >= 0; i--) {
-      out.push(`P0.${i}`);
-    }
-    out.push('VCC');
-    return out;
-  }
-
-  private static estimatePinCount(libraryId: string): number {
-    if (libraryId.startsWith('R_') || libraryId.startsWith('C_') || libraryId.startsWith('L_')) {
-      return 2;
-    }
-    if (libraryId.includes('LED')) {
-      return 2;
-    }
-    if (libraryId.includes('74HC')) {
-      return 14;
-    }
-    if (libraryId.includes('DS18B20') || libraryId.includes('HALL')) {
-      return 3;
-    }
-    if (libraryId.includes('STM32F030')) {
-      return 32;
-    }
-    if (libraryId.includes('STM32F407')) {
-      return 100;
-    }
-    if (libraryId.includes('STM32')) {
-      return 48;
-    }
-    if (libraryId.includes('AT89') || libraryId.includes('STC')) {
-      return 40;
-    }
-    if (libraryId.includes('OSCILLOSCOPE')) {
-      return 5;
-    }
-    return 2;
-  }
-
-  private static makeViolation(
-    severity: ErcSeverity, ruleType: ErcRuleType, message: string,
-    netId?: string, componentId?: string, pinId?: string, fix?: string
-  ): ErcViolation {
-    return {
-      id: IdUtil.generate('erc'),
-      severity: severity,
-      ruleType: ruleType,
-      message: message,
-      netId: netId,
-      componentId: componentId,
-      pinId: pinId,
-      fixSuggestion: fix
-    };
-  }
-}
-ÔrE”´../types/CommonTypes¨./IdUtil¬./MapHelpers³./DeviceHitGeometryÔrF—ªassertions¨external¢id¤meta±moduleSideEffectsªresolvedByµsyntheticNamedExportsAÂÙFC:\Projects\ElecDraw_Harmony\common\src\main\ets\types\CommonTypes.etsAÃªoh-resolveÂFAÂÙAC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\IdUtil.etsAÃªoh-resolveÂFAÂÙEC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\MapHelpers.etsAÃªoh-resolveÂFAÂÙLC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\DeviceHitGeometry.etsAÃªoh-resolveÂ‘ÔrG’§missing¦pluginÃ¦genAbcÂÔ  ÔrH”²dynamicImportCache¹exportAllDeclarationCache»exportNamedDeclarationCache«importCache‘ÔrI–¤type¥start£end«declarationªspecifiers¦source¶ExportNamedDeclarationÍÍdSÔrJ–¤type¥start£end¢idªsuperClass¤body°ClassDeclarationÍ%ÍdSÔrK”¤type¥start£end¤nameªIdentifierÍ+Í4©ErcEngineÀÔrL”¤type¥start£end¤body©ClassBodyÍ5ÍdSÜ ÔrM˜¤type¥start£end¦static¨computed£key¤kind¥value°MethodDefinitionÍ<ÍÃÂKªIdentifierÍCÍF£run¦methodÔrN™¤type¥start£end¢idªexpression©generator¥async¦params¤body²FunctionExpressionÍFÍÀÂÂÂ“KªIdentifierÍGÍJ£docKªIdentifierÍLÍY­mcuLibraryIdsKªIdentifierÍ[Íf«pinResolverL®BlockStatementÍhÍšÔrO•¤type¥start£end¬declarations¤kind³VariableDeclarationÍsÍ‰‘ÔrP•¤type¥start£end¢id¤init²VariableDeclaratorÍyÍˆKªIdentifierÍyÍƒªviolationsÔrQ”¤type¥start£end¨elements¯ArrayExpressionÍ†Íˆ¥constÔrR”¤type¥start£endªexpression³ExpressionStatementÍ“ÍÍÔrS–¤type¥start£end¦callee©arguments¨optional®CallExpressionÍ“ÍÌKªIdentifierÍ“Í«appendArray’KªIdentifierÍŸÍ©ªviolationsS®CallExpressionÍ«ÍËÔrT—¤type¥start£end¦object¨property¨computed¨optional°MemberExpressionÍ«ÍÆKªIdentifierÍ«Í´©ErcEngineKªIdentifierÍµÍÆ±checkFloatingNetsÂÂ‘KªIdentifierÍÇÍÊ£docÂÂR³ExpressionStatementÍ×ÍS®CallExpressionÍ×ÍKªIdentifierÍ×Íâ«appendArray’KªIdentifierÍãÍíªviolationsS®CallExpressionÍïÍT°MemberExpressionÍïÍKªIdentifierÍïÍø©ErcEngineKªIdentifierÍùÍ¶checkDuplicateNetNamesÂÂ‘KªIdentifierÍÍ£docÂÂR³ExpressionStatementÍ ÍjS®CallExpressionÍ ÍiKªIdentifierÍ Í+«appendArray’KªIdentifierÍ,Í6ªviolationsS®CallExpressionÍ8ÍhT°MemberExpressionÍ8ÍVKªIdentifierÍ8ÍA©ErcEngineKªIdentifierÍBÍV´checkUnconnectedPinsÂÂ’KªIdentifierÍWÍZ£docKªIdentifierÍ\Íg«pinResolverÂÂR³ExpressionStatementÍtÍ¿S®CallExpressionÍtÍ¾KªIdentifierÍtÍ«appendArray’KªIdentifierÍ€ÍŠªviolationsS®CallExpressionÍŒÍ½T°MemberExpressionÍŒÍ«KªIdentifierÍŒÍ•©ErcEngineKªIdentifierÍ–Í«µcheckPinTypeConflictsÂÂ’KªIdentifierÍ¬Í¯£docKªIdentifierÍ±Í¼«pinResolverÂÂR³ExpressionStatementÍÉÍS®CallExpressionÍÉÍKªIdentifierÍÉÍÔ«appendArray’KªIdentifierÍÕÍßªviolationsS®CallExpressionÍáÍT°MemberExpressionÍáÍÿKªIdentifierÍáÍê©ErcEngineKªIdentifierÍëÍÿ´checkLabelOverDeviceÂÂ’KªIdentifierÍ Í£docKªIdentifierÍÍ«pinResolverÂÂR³ExpressionStatementÍÍiS®CallExpressionÍÍhKªIdentifierÍÍ(«appendArray’KªIdentifierÍ)Í3ªviolationsS®CallExpressionÍ5ÍgT°MemberExpressionÍ5ÍSKªIdentifierÍ5Í>©ErcEngineKªIdentifierÍ?ÍS´checkMcuRequirementsÂÂ’KªIdentifierÍTÍW£docKªIdentifierÍYÍf­mcuLibraryIdsÂÂR³ExpressionStatementÍsÍªS®CallExpressionÍsÍ©KªIdentifierÍsÍ~«appendArray’KªIdentifierÍÍ‰ªviolationsS®CallExpressionÍ‹Í¨T°MemberExpressionÍ‹Í£KªIdentifierÍ‹Í”©ErcEngineKªIdentifierÍ•Í£®checkPowerPinsÂÂ‘KªIdentifierÍ¤Í§£docÂÂR³ExpressionStatementÍ´ÍñS®CallExpressionÍ´ÍğKªIdentifierÍ´Í¿«appendArray’KªIdentifierÍÀÍÊªviolationsS®CallExpressionÍÌÍïT°MemberExpressionÍÌÍêKªIdentifierÍÌÍÕ©ErcEngineKªIdentifierÍÖÍê´checkSubcircuitPortsÂÂ‘KªIdentifierÍëÍî£docÂÂÔrU”¤type¥start£end¨argument¯ReturnStatementÍûÍKªIdentifierÍÍªviolationsM°MethodDefinitionÍÍ
-¶ÃÂKªIdentifierÍ!Í2±checkFloatingNets¦methodN²FunctionExpressionÍ2Í
-¶ÀÂÂÂ‘KªIdentifierÍ3Í6£docL®BlockStatementÍ8Í
-¶“O³VariableDeclarationÍCÍU‘P²VariableDeclaratorÍIÍTKªIdentifierÍIÍO¦resultQ¯ArrayExpressionÍRÍT¥constÔrV—¤type¥start£end¤init¤test¦update¤body¬ForStatementÍ_Í
-—O³VariableDeclarationÍdÍm‘P²VariableDeclaratorÍhÍmKªIdentifierÍhÍi¡iÔrW•¤type¥start£end¥value£raw§LiteralÍlÍm ¡0£letÔrX–¤type¥start£end¤left¨operator¥right°BinaryExpressionÍoÍ‚KªIdentifierÍoÍp¡i¡<T°MemberExpressionÍsÍ‚T°MemberExpressionÍsÍ{KªIdentifierÍsÍv£docKªIdentifierÍwÍ{¤netsÂÂKªIdentifierÍ|Í‚¦lengthÂÂÔrY–¤type¥start£end¨operator¦prefix¨argument°UpdateExpressionÍ„Í‡¢++ÂKªIdentifierÍ„Í…¡iL®BlockStatementÍ‰Í
-—”O³VariableDeclarationÍ˜Í°‘P²VariableDeclaratorÍÍ¯KªIdentifierÍÍ¡£netT°MemberExpressionÍ¤Í¯T°MemberExpressionÍ¤Í¬KªIdentifierÍ¤Í§£docKªIdentifierÍ¨Í¬¤netsÂÂKªIdentifierÍ­Í®¡iÃÂ¥constÔrZ–¤type¥start£end¤testªconsequent©alternate«IfStatementÍ¾Í!S®CallExpressionÍÂÍãT°MemberExpressionÍÂÍŞKªIdentifierÍÂÍË©ErcEngineKªIdentifierÍÌÍŞ²isPowerOrGroundNetÂÂ‘KªIdentifierÍßÍâ£netÂL®BlockStatementÍåÍ!“Z«IfStatementÍ@ÍÂX±LogicalExpressionÍDÍX°BinaryExpressionÍDÍ[T°MemberExpressionÍDÍUT°MemberExpressionÍDÍNKªIdentifierÍDÍG£netKªIdentifierÍHÍN¦pinIdsÂÂKªIdentifierÍOÍU¦lengthÂÂ£===W§LiteralÍZÍ[ ¡0¢&&Y¯UnaryExpressionÍ_Í¡!ÃS®CallExpressionÍ`ÍT°MemberExpressionÍ`ÍƒKªIdentifierÍ`Íi©ErcEngineKªIdentifierÍjÍƒ¹docHasMatchingPowerSymbolÂÂ’KªIdentifierÍ„Í‡£docKªIdentifierÍ‰ÍŒ£netÂL®BlockStatementÍÍÂ‘Ôr[”¤type¥start£end¥label±ContinueStatementÍ¦Í¯ÀÀZ«IfStatementÍÿÍ÷X°BinaryExpressionÍÍT°MemberExpressionÍÍT°MemberExpressionÍÍKªIdentifierÍÍ£netKªIdentifierÍÍ¦pinIdsÂÂKªIdentifierÍÍ¦lengthÂÂ¢<=W§LiteralÍÍ¡1L®BlockStatementÍÍ÷‘R³ExpressionStatementÍ2ÍäS®CallExpressionÍ2ÍãT°MemberExpressionÍ2Í=KªIdentifierÍ2Í8¦resultKªIdentifierÍ9Í=¤pushÂÂ‘S®CallExpressionÍ>ÍâT°MemberExpressionÍ>ÍUKªIdentifierÍ>ÍG©ErcEngineKªIdentifierÍHÍU­makeViolationÂÂ—T°MemberExpressionÍVÍfKªIdentifierÍVÍa«ErcSeverityKªIdentifierÍbÍf¤INFOÂÂT°MemberExpressionÍhÍ€KªIdentifierÍhÍs«ErcRuleTypeKªIdentifierÍtÍ€¬FLOATING_NETÂÂÔr\•¤type¥start£end«expressions¦quasis¯TemplateLiteralÍ‚Í¤‘T°MemberExpressionÍÍ•KªIdentifierÍÍ£netKªIdentifierÍ‘Í•¤nameÂÂ’Ôr]•¤type¥start£end¥value¤tail¯TemplateElementÍƒÍ‹Ôr^’£raw¦cooked²ç”µæº/åœ°ç½‘ç»œ "²ç”µæº/åœ°ç½‘ç»œ "Â]¯TemplateElementÍ–Í£^Ù#" ä»…ç¬¦å·å…¥ç½‘ï¼ˆå¾…æ¥è´Ÿè½½ï¼‰Ù#" ä»…ç¬¦å·å…¥ç½‘ï¼ˆå¾…æ¥è´Ÿè½½ï¼‰ÃT°MemberExpressionÍ¦Í¬KªIdentifierÍ¦Í©£netKªIdentifierÍªÍ¬¢idÂÂKªIdentifierÍ®Í·©undefinedKªIdentifierÍ¹ÍÂ©undefinedW§LiteralÍÄÍáÙ7å°† GND/VCC/VEE ç¬¦å·ç”¨å¯¼çº¿è¿æ¥åˆ°å™¨ä»¶ç”µæºè„šÙ9'å°† GND/VCC/VEE ç¬¦å·ç”¨å¯¼çº¿è¿æ¥åˆ°å™¨ä»¶ç”µæºè„š'ÂÂÀ[±ContinueStatementÍ	ÍÀÀZ«IfStatementÍ/ÍwX°BinaryExpressionÍ3ÍJT°MemberExpressionÍ3ÍDT°MemberExpressionÍ3Í=KªIdentifierÍ3Í6£netKªIdentifierÍ7Í=¦pinIdsÂÂKªIdentifierÍ>ÍD¦lengthÂÂ£===W§LiteralÍIÍJ ¡0L®BlockStatementÍLÍw‘[±ContinueStatementÍ_ÍhÀÀZ«IfStatementÍ…Í
-ŒX±LogicalExpressionÍ‰Í¾X°BinaryExpressionÍ‰ÍŸT°MemberExpressionÍ‰ÍšT°MemberExpressionÍ‰Í“KªIdentifierÍ‰ÍŒ£netKªIdentifierÍÍ“¦pinIdsÂÂKªIdentifierÍ”Íš¦lengthÂÂ¢<=W§LiteralÍÍŸ¡1¢&&X°BinaryExpressionÍ£Í¾T°MemberExpressionÍ£Í«KªIdentifierÍ£Í¦£netKªIdentifierÍ§Í«¤typeÂÂ£===T°MemberExpressionÍ°Í¾KªIdentifierÍ°Í·§NetTypeKªIdentifierÍ¸Í¾¦SIGNALÂÂL®BlockStatementÍÀÍ
-Œ“O³VariableDeclarationÍÓÍö‘P²VariableDeclaratorÍÙÍõKªIdentifierÍÙÍÛ¢nmS®CallExpressionÍŞÍõT°MemberExpressionÍŞÍóX±LogicalExpressionÍßÍíT°MemberExpressionÍßÍçKªIdentifierÍßÍâ£netKªIdentifierÍãÍç¤nameÂÂ¢??W§LiteralÍëÍí ¢''KªIdentifierÍïÍó¤trimÂÂÂ¥constO³VariableDeclarationÍÍY‘P²VariableDeclaratorÍÍXKªIdentifierÍÍ¦isAutoX±LogicalExpressionÍÍXX±LogicalExpressionÍÍ?X°BinaryExpressionÍÍ&T°MemberExpressionÍÍ KªIdentifierÍÍ¢nmKªIdentifierÍÍ ¦lengthÂÂ£===W§LiteralÍ%Í& ¡0¢||S®CallExpressionÍ*Í?T°MemberExpressionÍ*Í;Ôr_–¤type¥start£end¥value£raw¥regex§LiteralÍ*Í6’©^NET_\d+$¡i¬/^NET_\d+$/iÔr`’§pattern¥flags©^NET_\d+$¡iKªIdentifierÍ7Í;¤testÂÂ‘KªIdentifierÍ<Í>¢nmÂ¢||S®CallExpressionÍCÍXT°MemberExpressionÍCÍT_§LiteralÍCÍO’©^net_topo¡i¬/^net_topo/i`©^net_topo¡iKªIdentifierÍPÍT¤testÂÂ‘KªIdentifierÍUÍW¢nmÂ¥constZ«IfStatementÍkÍ
-}Y¯UnaryExpressionÍoÍv¡!ÃKªIdentifierÍpÍv¦isAutoL®BlockStatementÍxÍ	˜‘R³ExpressionStatementÍÑÍ	…S®CallExpressionÍÑÍ	„T°MemberExpressionÍÑÍÜKªIdentifierÍÑÍ×¦resultKªIdentifierÍØÍÜ¤pushÂÂ‘S®CallExpressionÍİÍ	ƒT°MemberExpressionÍİÍôKªIdentifierÍİÍæ©ErcEngineKªIdentifierÍçÍô­makeViolationÂÂ—T°MemberExpressionÍõÍ	KªIdentifierÍõÍ	 «ErcSeverityKªIdentifierÍ	Í	§WARNINGÂÂT°MemberExpressionÍ	
-Í	"KªIdentifierÍ	
-Í	«ErcRuleTypeKªIdentifierÍ	Í	"¬FLOATING_NETÂÂ\¯TemplateLiteralÍ	$Í	G‘KªIdentifierÍ	-Í	/¢nm’]¯TemplateElementÍ	%Í	+^®ä¿¡å·ç½‘ç»œ "®ä¿¡å·ç½‘ç»œ "Â]¯TemplateElementÍ	0Í	F^Ù8" æœªå®Œå…¨è¿æ¥ï¼ˆä»… 1 è„šï¼Œæ ‡å·å¯èƒ½æœªå¹¶ç½‘ï¼‰Ù8" æœªå®Œå…¨è¿æ¥ï¼ˆä»… 1 è„šï¼Œæ ‡å·å¯èƒ½æœªå¹¶ç½‘ï¼‰ÃT°MemberExpressionÍ	IÍ	OKªIdentifierÍ	IÍ	L£netKªIdentifierÍ	MÍ	O¢idÂÂKªIdentifierÍ	QÍ	Z©undefinedKªIdentifierÍ	\Í	e©undefinedW§LiteralÍ	gÍ	‚ÙKæ£€æŸ¥åŒåç½‘ç»œæ ‡å·æ˜¯å¦è½åœ¨åŒä¸€å‡ ä½•ç½‘ï¼Œæˆ–æ”¹ä¸ºå¯¼çº¿ç›´è¿ÙM'æ£€æŸ¥åŒåç½‘ç»œæ ‡å·æ˜¯å¦è½åœ¨åŒä¸€å‡ ä½•ç½‘ï¼Œæˆ–æ”¹ä¸ºå¯¼çº¿ç›´è¿'ÂÂL®BlockStatementÍ	¯Í
-}‘R³ExpressionStatementÍ	ÆÍ
-jS®CallExpressionÍ	ÆÍ
-iT°MemberExpressionÍ	ÆÍ	ÑKªIdentifierÍ	ÆÍ	Ì¦resultKªIdentifierÍ	ÍÍ	Ñ¤pushÂÂ‘S®CallExpressionÍ	ÒÍ
-hT°MemberExpressionÍ	ÒÍ	éKªIdentifierÍ	ÒÍ	Û©ErcEngineKªIdentifierÍ	ÜÍ	é­makeViolationÂÂ—T°MemberExpressionÍ	êÍ	úKªIdentifierÍ	êÍ	õ«ErcSeverityKªIdentifierÍ	öÍ	ú¤INFOÂÂT°MemberExpressionÍ	üÍ
-KªIdentifierÍ	üÍ
-«ErcRuleTypeKªIdentifierÍ
-Í
-¬FLOATING_NETÂÂ\¯TemplateLiteralÍ
-Í
-7‘T°MemberExpressionÍ
-Í
-%KªIdentifierÍ
-Í
- £netKªIdentifierÍ
-!Í
-%¤nameÂÂ’]¯TemplateElementÍ
-Í
-^¨ç½‘ç»œ "¨ç½‘ç»œ "Â]¯TemplateElementÍ
-&Í
-6^Ù*" ä»…æœ‰ä¸€å¤„è¿æ¥ï¼ˆå¾…å¹¶ç½‘/æ ‡å·ï¼‰Ù*" ä»…æœ‰ä¸€å¤„è¿æ¥ï¼ˆå¾…å¹¶ç½‘/æ ‡å·ï¼‰ÃT°MemberExpressionÍ
-9Í
-?KªIdentifierÍ
-9Í
-<£netKªIdentifierÍ
-=Í
-?¢idÂÂKªIdentifierÍ
-AÍ
-J©undefinedKªIdentifierÍ
-LÍ
-U©undefinedW§LiteralÍ
-WÍ
-gÙ*æ·»åŠ ç½‘ç»œæ ‡å·æˆ–è¿æ¥åˆ°å™¨ä»¶å¼•è„šÙ,'æ·»åŠ ç½‘ç»œæ ‡å·æˆ–è¿æ¥åˆ°å™¨ä»¶å¼•è„š'ÂÂÀU¯ReturnStatementÍ
-¡Í
-¯KªIdentifierÍ
-¨Í
-®¦resultM°MethodDefinitionÍ
-ßÍkÃÂKªIdentifierÍ
-æÍ
-ø²isPowerOrGroundNet¦methodN²FunctionExpressionÍ
-øÍkÀÂÂÂ‘KªIdentifierÍ
-ùÍ
-ü£netL®BlockStatementÍ
-şÍk“Z«IfStatementÍ	ÍnX±LogicalExpressionÍÍFX°BinaryExpressionÍÍ'T°MemberExpressionÍÍKªIdentifierÍÍ£netKªIdentifierÍÍ¤typeÂÂ£===T°MemberExpressionÍÍ'KªIdentifierÍÍ!§NetTypeKªIdentifierÍ"Í'¥POWERÂÂ¢||X°BinaryExpressionÍ+ÍFT°MemberExpressionÍ+Í3KªIdentifierÍ+Í.£netKªIdentifierÍ/Í3¤typeÂÂ£===T°MemberExpressionÍ8ÍFKªIdentifierÍ8Í?§NetTypeKªIdentifierÍ@ÍF¦GROUNDÂÂL®BlockStatementÍHÍn‘U¯ReturnStatementÍWÍcW§LiteralÍ^ÍbÃ¤trueÀO³VariableDeclarationÍxÍ¥‘P²VariableDeclaratorÍ~Í¤KªIdentifierÍ~Íƒ¥upperS®CallExpressionÍ†Í¤T°MemberExpressionÍ†Í¢X±LogicalExpressionÍ‡Í•T°MemberExpressionÍ‡ÍKªIdentifierÍ‡ÍŠ£netKªIdentifierÍ‹Í¤nameÂÂ¢??W§LiteralÍ“Í• ¢''KªIdentifierÍ—Í¢«toUpperCaseÂÂÂ¥constU¯ReturnStatementÍ¯ÍdX±LogicalExpressionÍ¶ÍcX±LogicalExpressionÍ¶ÍPX±LogicalExpressionÍ¶Í/X±LogicalExpressionÍ¶ÍX±LogicalExpressionÍ¶ÍX±LogicalExpressionÍ¶ÍëX±LogicalExpressionÍ¶ÍØX°BinaryExpressionÍ¶ÍÅKªIdentifierÍ¶Í»¥upper£===W§LiteralÍÀÍÅ£GND¥'GND'¢||X°BinaryExpressionÍÉÍØKªIdentifierÍÉÍÎ¥upper£===W§LiteralÍÓÍØ£VSS¥'VSS'¢||X°BinaryExpressionÍÜÍëKªIdentifierÍÜÍá¥upper£===W§LiteralÍæÍë£VEE¥'VEE'¢||X°BinaryExpressionÍüÍKªIdentifierÍüÍ¥upper£===W§LiteralÍÍ£VCC¥'VCC'¢||X°BinaryExpressionÍÍKªIdentifierÍÍ¥upper£===W§LiteralÍÍ£VDD¥'VDD'¢||X°BinaryExpressionÍ"Í/KªIdentifierÍ"Í'¥upper£===W§LiteralÍ,Í/¡0£'0'¢||X°BinaryExpressionÍ@ÍPKªIdentifierÍ@ÍE¥upper£===W§LiteralÍJÍP¤-12V¦'-12V'¢||X°BinaryExpressionÍTÍcKªIdentifierÍTÍY¥upper£===W§LiteralÍ^Íc£-5V¥'-5V'M°MethodDefinitionÍÍgÃÂKªIdentifierÍ¥Í¾¹docHasMatchingPowerSymbol¦methodN²FunctionExpressionÍ¾ÍgÀÂÂÂ’KªIdentifierÍ¿ÍÂ£docKªIdentifierÍÄÍÇ£netL®BlockStatementÍÉÍg”O³VariableDeclarationÍÔÍ‘P²VariableDeclaratorÍÚÍKªIdentifierÍÚÍŞ¤wantS®CallExpressionÍáÍT°MemberExpressionÍáÍÿKªIdentifierÍáÍê©ErcEngineKªIdentifierÍëÍÿ´powerSymbolLibForNetÂÂ‘KªIdentifierÍ Í£netÂ¥constZ«IfStatementÍÍMX°BinaryExpressionÍÍ$T°MemberExpressionÍÍKªIdentifierÍÍ¤wantKªIdentifierÍÍ¦lengthÂÂ£===W§LiteralÍ#Í$ ¡0L®BlockStatementÍ&ÍM‘U¯ReturnStatementÍ5ÍBW§LiteralÍ<ÍAÂ¥falseÀV¬ForStatementÍWÍIO³VariableDeclarationÍ\Íe‘P²VariableDeclaratorÍ`ÍeKªIdentifierÍ`Ía¡iW§LiteralÍdÍe ¡0£letX°BinaryExpressionÍgÍ€KªIdentifierÍgÍh¡i¡<T°MemberExpressionÍkÍ€T°MemberExpressionÍkÍyKªIdentifierÍkÍn£docKªIdentifierÍoÍyªcomponentsÂÂKªIdentifierÍzÍ€¦lengthÂÂY°UpdateExpressionÍ‚Í…¢++ÂKªIdentifierÍ‚Íƒ¡iL®BlockStatementÍ‡ÍI’O³VariableDeclarationÍ–ÍÔ‘P²VariableDeclaratorÍœÍÓKªIdentifierÍœÍŸ£libS®CallExpressionÍ¢ÍÓT°MemberExpressionÍ¢ÍÑX±LogicalExpressionÍ£ÍÄT°MemberExpressionÍ£Í¾T°MemberExpressionÍ£Í´T°MemberExpressionÍ£Í±KªIdentifierÍ£Í¦£docKªIdentifierÍ§Í±ªcomponentsÂÂKªIdentifierÍ²Í³¡iÃÂKªIdentifierÍµÍ¾©libraryIdÂÂ¢??W§LiteralÍÂÍÄ ¢''KªIdentifierÍÆÍÑ«toUpperCaseÂÂÂ¥constZ«IfStatementÍâÍ>X±LogicalExpressionÍæÍX°BinaryExpressionÍæÍòKªIdentifierÍæÍé£lib£===KªIdentifierÍîÍò¤want¢||S®CallExpressionÍöÍT°MemberExpressionÍöÍKªIdentifierÍöÍù£libKªIdentifierÍúÍ¨endsWithÂÂ‘\¯TemplateLiteralÍÍ‘KªIdentifierÍÍ¤want’]¯TemplateElementÍÍ^¡/¡/Â]¯TemplateElementÍÍ^  ÃÂL®BlockStatementÍÍ>‘U¯ReturnStatementÍ#Í/W§LiteralÍ*Í.Ã¤trueÀU¯ReturnStatementÍSÍ`W§LiteralÍZÍ_Â¥falseM°MethodDefinitionÍ˜ÍÃÂKªIdentifierÍŸÍ³´powerSymbolLibForNet¦methodN²FunctionExpressionÍ³ÍÀÂÂÂ‘KªIdentifierÍ´Í·£netL®BlockStatementÍ¹Í–O³VariableDeclarationÍÄÍñ‘P²VariableDeclaratorÍÊÍğKªIdentifierÍÊÍÏ¥upperS®CallExpressionÍÒÍğT°MemberExpressionÍÒÍîX±LogicalExpressionÍÓÍáT°MemberExpressionÍÓÍÛKªIdentifierÍÓÍÖ£netKªIdentifierÍ×ÍÛ¤nameÂÂ¢??W§LiteralÍßÍá ¢''KªIdentifierÍãÍî«toUpperCaseÂÂÂ¥constZ«IfStatementÍûÍJX±LogicalExpressionÍÿÍ!X°BinaryExpressionÍÿÍKªIdentifierÍÿÍ¥upper£===W§LiteralÍ	Í£VCC¥'VCC'¢||X°BinaryExpressionÍÍ!KªIdentifierÍÍ¥upper£===W§LiteralÍÍ!£VDD¥'VDD'L®BlockStatementÍ#ÍJ‘U¯ReturnStatementÍ2Í?W§LiteralÍ9Í>£VCC¥'VCC'ÀZ«IfStatementÍTÍ´X±LogicalExpressionÍXÍ‹X±LogicalExpressionÍXÍzX°BinaryExpressionÍXÍgKªIdentifierÍXÍ]¥upper£===W§LiteralÍbÍg£GND¥'GND'¢||X°BinaryExpressionÍkÍzKªIdentifierÍkÍp¥upper£===W§LiteralÍuÍz£VSS¥'VSS'¢||X°BinaryExpressionÍ~Í‹KªIdentifierÍ~Íƒ¥upper£===W§LiteralÍˆÍ‹¡0£'0'L®BlockStatementÍÍ´‘U¯ReturnStatementÍœÍ©W§LiteralÍ£Í¨£GND¥'GND'ÀZ«IfStatementÍ¾Í!X±LogicalExpressionÍÂÍøX±LogicalExpressionÍÂÍåX°BinaryExpressionÍÂÍÑKªIdentifierÍÂÍÇ¥upper£===W§LiteralÍÌÍÑ£VEE¥'VEE'¢||X°BinaryExpressionÍÕÍåKªIdentifierÍÕÍÚ¥upper£===W§LiteralÍßÍå¤-12V¦'-12V'¢||X°BinaryExpressionÍéÍøKªIdentifierÍéÍî¥upper£===W§LiteralÍóÍø£-5V¥'-5V'L®BlockStatementÍúÍ!‘U¯ReturnStatementÍ	ÍW§LiteralÍÍ£VEE¥'VEE'ÀZ«IfStatementÍ+ÍsX°BinaryExpressionÍ/ÍJT°MemberExpressionÍ/Í7KªIdentifierÍ/Í2£netKªIdentifierÍ3Í7¤typeÂÂ£===T°MemberExpressionÍ<ÍJKªIdentifierÍ<ÍC§NetTypeKªIdentifierÍDÍJ¦GROUNDÂÂL®BlockStatementÍLÍs‘U¯ReturnStatementÍ[ÍhW§LiteralÍbÍg£GND¥'GND'ÀU¯ReturnStatementÍ}Í‡W§LiteralÍ„Í† ¢''M°MethodDefinitionÍ”Í1ÃÂKªIdentifierÍ›Í±¶checkDuplicateNetNames¦methodN²FunctionExpressionÍ±Í1ÀÂÂÂ‘KªIdentifierÍ²Íµ£docL®BlockStatementÍ·Í1”O³VariableDeclarationÍÂÍÔ‘P²VariableDeclaratorÍÈÍÓKªIdentifierÍÈÍÎ¦resultQ¯ArrayExpressionÍÑÍÓ¥constO³VariableDeclarationÍŞÍö‘P²VariableDeclaratorÍäÍõKªIdentifierÍäÍé¥namesÔra•¤type¥start£end¦callee©arguments­NewExpressionÍìÍõKªIdentifierÍğÍó£Map¥constV¬ForStatementÍ ÍO³VariableDeclarationÍÍ‘P²VariableDeclaratorÍ	ÍKªIdentifierÍ	Í
-¡iW§LiteralÍÍ ¡0£letX°BinaryExpressionÍÍ#KªIdentifierÍÍ¡i¡<T°MemberExpressionÍÍ#T°MemberExpressionÍÍKªIdentifierÍÍ£docKªIdentifierÍÍ¤netsÂÂKªIdentifierÍÍ#¦lengthÂÂY°UpdateExpressionÍ%Í(¢++ÂKªIdentifierÍ%Í&¡iL®BlockStatementÍ*Í“O³VariableDeclarationÍ9ÍQ‘P²VariableDeclaratorÍ?ÍPKªIdentifierÍ?ÍB£netT°MemberExpressionÍEÍPT°MemberExpressionÍEÍMKªIdentifierÍEÍH£docKªIdentifierÍIÍM¤netsÂÂKªIdentifierÍNÍO¡iÃÂ¥constZ«IfStatementÍ_Í¸X±LogicalExpressionÍcÍ‹Y¯UnaryExpressionÍcÍl¡!ÃT°MemberExpressionÍdÍlKªIdentifierÍdÍg£netKªIdentifierÍhÍl¤nameÂÂ¢||S®CallExpressionÍpÍ‹T°MemberExpressionÍpÍƒT°MemberExpressionÍpÍxKªIdentifierÍpÍs£netKªIdentifierÍtÍx¤nameÂÂKªIdentifierÍyÍƒªstartsWithÂÂ‘W§LiteralÍ„ÍŠ¤NET_¦'NET_'ÂL®BlockStatementÍÍ¸‘[±ContinueStatementÍ Í©ÀÀZ«IfStatementÍÆÍS®CallExpressionÍÊÍİT°MemberExpressionÍÊÍÓKªIdentifierÍÊÍÏ¥namesKªIdentifierÍĞÍÓ£hasÂÂ‘T°MemberExpressionÍÔÍÜKªIdentifierÍÔÍ×£netKªIdentifierÍØÍÜ¤nameÂÂÂL®BlockStatementÍßÍ¶‘R³ExpressionStatementÍòÍ§S®CallExpressionÍòÍ¦T°MemberExpressionÍòÍıKªIdentifierÍòÍø¦resultKªIdentifierÍùÍı¤pushÂÂ‘S®CallExpressionÍşÍ¥T°MemberExpressionÍşÍKªIdentifierÍşÍ©ErcEngineKªIdentifierÍÍ­makeViolationÂÂ—T°MemberExpressionÍÍ)KªIdentifierÍÍ!«ErcSeverityKªIdentifierÍ"Í)§WARNINGÂÂT°MemberExpressionÍ+ÍDKªIdentifierÍ+Í6«ErcRuleTypeKªIdentifierÍ7ÍD­DUPLICATE_NETÂÂ\¯TemplateLiteralÍFÍk‘T°MemberExpressionÍQÍYKªIdentifierÍQÍT£netKªIdentifierÍUÍY¤nameÂÂ’]¯TemplateElementÍGÍO^´é‡å¤ç½‘ç»œæ ‡å· "´é‡å¤ç½‘ç»œæ ‡å· "Â]¯TemplateElementÍZÍj^Ù."ï¼ˆåŒåå°†å¹¶ç½‘ï¼›è‹¥éæœ‰æ„è¯·æ”¹åï¼‰Ù."ï¼ˆåŒåå°†å¹¶ç½‘ï¼›è‹¥éæœ‰æ„è¯·æ”¹åï¼‰ÃT°MemberExpressionÍmÍsKªIdentifierÍmÍp£netKªIdentifierÍqÍs¢idÂÂKªIdentifierÍuÍ~©undefinedKªIdentifierÍ€Í‰©undefinedW§LiteralÍ‹Í¤ÙEä¸ºæ¯ä¸ªç‹¬ç«‹ç½‘ç»œä½¿ç”¨å”¯ä¸€æ ‡å·ï¼Œæˆ–ç¡®è®¤åŒåå¹¶ç½‘æ„å›¾ÙG'ä¸ºæ¯ä¸ªç‹¬ç«‹ç½‘ç»œä½¿ç”¨å”¯ä¸€æ ‡å·ï¼Œæˆ–ç¡®è®¤åŒåå¹¶ç½‘æ„å›¾'ÂÂL®BlockStatementÍÉÍ‘R³ExpressionStatementÍÜÍøS®CallExpressionÍÜÍ÷T°MemberExpressionÍÜÍåKªIdentifierÍÜÍá¥namesKªIdentifierÍâÍå£setÂÂ’T°MemberExpressionÍæÍîKªIdentifierÍæÍé£netKªIdentifierÍêÍî¤nameÂÂT°MemberExpressionÍğÍöKªIdentifierÍğÍó£netKªIdentifierÍôÍö¢idÂÂÂU¯ReturnStatementÍÍ*KªIdentifierÍ#Í)¦resultM°MethodDefinitionÍ7Í6ÃÂKªIdentifierÍ>ÍR´checkUnconnectedPins¦methodN²FunctionExpressionÍRÍ6ÀÂÂÂ’KªIdentifierÍSÍV£docKªIdentifierÍXÍc«pinResolverL®BlockStatementÍeÍ6•O³VariableDeclarationÍpÍ‚‘P²VariableDeclaratorÍvÍKªIdentifierÍvÍ|¦resultQ¯ArrayExpressionÍÍ¥constO³VariableDeclarationÍÍ/‘P²VariableDeclaratorÍÍ.KªIdentifierÍÍ"­connectedPinsa­NewExpressionÍ%Í.KªIdentifierÍ)Í,£Map¥constV¬ForStatementÍ9Í~O³VariableDeclarationÍ>ÍG‘P²VariableDeclaratorÍBÍGKªIdentifierÍBÍC¡iW§LiteralÍFÍG ¡0£letX°BinaryExpressionÍIÍ\KªIdentifierÍIÍJ¡i¡<T°MemberExpressionÍMÍ\T°MemberExpressionÍMÍUKªIdentifierÍMÍP£docKªIdentifierÍQÍU¤netsÂÂKªIdentifierÍVÍ\¦lengthÂÂY°UpdateExpressionÍ^Ía¢++ÂKªIdentifierÍ^Í_¡iL®BlockStatementÍcÍ~’O³VariableDeclarationÍrÍŠ‘P²VariableDeclaratorÍxÍ‰KªIdentifierÍxÍ{£netT°MemberExpressionÍ~Í‰T°MemberExpressionÍ~Í†KªIdentifierÍ~Í£docKªIdentifierÍ‚Í†¤netsÂÂKªIdentifierÍ‡Íˆ¡iÃÂ¥constV¬ForStatementÍ˜ÍsO³VariableDeclarationÍÍ¦‘P²VariableDeclaratorÍ¡Í¦KªIdentifierÍ¡Í¢¡jW§LiteralÍ¥Í¦ ¡0£letX°BinaryExpressionÍ¨Í½KªIdentifierÍ¨Í©¡j¡<T°MemberExpressionÍ¬Í½T°MemberExpressionÍ¬Í¶KªIdentifierÍ¬Í¯£netKªIdentifierÍ°Í¶¦pinIdsÂÂKªIdentifierÍ·Í½¦lengthÂÂY°UpdateExpressionÍ¿ÍÂ¢++ÂKªIdentifierÍ¿ÍÀ¡jL®BlockStatementÍÄÍs’O³VariableDeclarationÍ×Íş‘P²VariableDeclaratorÍİÍıKªIdentifierÍİÍâ¥partsS®CallExpressionÍåÍıT°MemberExpressionÍåÍøT°MemberExpressionÍåÍòT°MemberExpressionÍåÍïKªIdentifierÍåÍè£netKªIdentifierÍéÍï¦pinIdsÂÂKªIdentifierÍğÍñ¡jÃÂKªIdentifierÍóÍø¥splitÂÂ‘W§LiteralÍùÍü¡:£':'Â¥constZ«IfStatementÍÍdX°BinaryExpressionÍÍ%T°MemberExpressionÍÍ KªIdentifierÍÍ¥partsKªIdentifierÍÍ ¦lengthÂÂ¢>=W§LiteralÍ$Í%¡2L®BlockStatementÍ'Íd”O³VariableDeclarationÍ>ÍV‘P²VariableDeclaratorÍDÍUKªIdentifierÍDÍJ¦compIdT°MemberExpressionÍMÍUKªIdentifierÍMÍR¥partsW§LiteralÍSÍT ¡0ÃÂ¥constO³VariableDeclarationÍlÍ†‘P²VariableDeclaratorÍrÍ…KªIdentifierÍrÍz¨pinDefIdT°MemberExpressionÍ}Í…KªIdentifierÍ}Í‚¥partsW§LiteralÍƒÍ„¡1ÃÂ¥constZ«IfStatementÍœÍY¯UnaryExpressionÍ Íº¡!ÃS®CallExpressionÍ¡ÍºT°MemberExpressionÍ¡Í²KªIdentifierÍ¡Í®­connectedPinsKªIdentifierÍ¯Í²£hasÂÂ‘KªIdentifierÍ³Í¹¦compIdÂL®BlockStatementÍ¼Í‘R³ExpressionStatementÍ×ÍüS®CallExpressionÍ×ÍûT°MemberExpressionÍ×ÍèKªIdentifierÍ×Íä­connectedPinsKªIdentifierÍåÍè£setÂÂ’KªIdentifierÍéÍï¦compIda­NewExpressionÍñÍúKªIdentifierÍõÍø£SetÂÀR³ExpressionStatementÍ)ÍQS®CallExpressionÍ)ÍPT°MemberExpressionÍ)ÍFS®CallExpressionÍ)ÍBT°MemberExpressionÍ)Í:KªIdentifierÍ)Í6­connectedPinsKªIdentifierÍ7Í:£getÂÂ‘KªIdentifierÍ;ÍA¦compIdÂKªIdentifierÍCÍF£addÂÂ‘KªIdentifierÍGÍO¨pinDefIdÂÀV¬ForStatementÍˆÍO³VariableDeclarationÍÍ–‘P²VariableDeclaratorÍ‘Í–KªIdentifierÍ‘Í’¡iW§LiteralÍ•Í– ¡0£letX°BinaryExpressionÍ˜Í±KªIdentifierÍ˜Í™¡i¡<T°MemberExpressionÍœÍ±T°MemberExpressionÍœÍªKªIdentifierÍœÍŸ£docKªIdentifierÍ ÍªªcomponentsÂÂKªIdentifierÍ«Í±¦lengthÂÂY°UpdateExpressionÍ³Í¶¢++ÂKªIdentifierÍ³Í´¡iL®BlockStatementÍ¸Í”O³VariableDeclarationÍÇÍæ‘P²VariableDeclaratorÍÍÍåKªIdentifierÍÍÍÑ¤compT°MemberExpressionÍÔÍåT°MemberExpressionÍÔÍâKªIdentifierÍÔÍ×£docKªIdentifierÍØÍâªcomponentsÂÂKªIdentifierÍãÍä¡iÃÂ¥constO³VariableDeclarationÍôÍ9‘P²VariableDeclaratorÍúÍ8KªIdentifierÍúÍ§pinDefsS®CallExpressionÍÍ8T°MemberExpressionÍÍKªIdentifierÍÍ©ErcEngineKªIdentifierÍÍ­resolvePinIdsÂÂ’T°MemberExpressionÍÍ*KªIdentifierÍÍ ¤compKªIdentifierÍ!Í*©libraryIdÂÂKªIdentifierÍ,Í7«pinResolverÂ¥constO³VariableDeclarationÍGÍx‘P²VariableDeclaratorÍMÍwKªIdentifierÍMÍZ­compConnectedS®CallExpressionÍ]ÍwT°MemberExpressionÍ]ÍnKªIdentifierÍ]Íj­connectedPinsKªIdentifierÍkÍn£getÂÂ‘T°MemberExpressionÍoÍvKªIdentifierÍoÍs¤compKªIdentifierÍtÍv¢idÂÂÂ¥constV¬ForStatementÍ†ÍO³VariableDeclarationÍ‹Í”‘P²VariableDeclaratorÍÍ”KªIdentifierÍÍ¡pW§LiteralÍ“Í” ¡0£letX°BinaryExpressionÍ–Í¨KªIdentifierÍ–Í—¡p¡<T°MemberExpressionÍšÍ¨KªIdentifierÍšÍ¡§pinDefsKªIdentifierÍ¢Í¨¦lengthÂÂY°UpdateExpressionÍªÍ­¢++ÂKªIdentifierÍªÍ«¡pL®BlockStatementÍ¯Í’O³VariableDeclarationÍÂÍŞ‘P²VariableDeclaratorÍÈÍİKªIdentifierÍÈÍĞ¨pinDefIdT°MemberExpressionÍÓÍİKªIdentifierÍÓÍÚ§pinDefsKªIdentifierÍÛÍÜ¡pÃÂ¥constZ«IfStatementÍğÍıX±LogicalExpressionÍôÍ"Y¯UnaryExpressionÍôÍ¡!ÃKªIdentifierÍõÍ­compConnected¢||Y¯UnaryExpressionÍÍ"¡!ÃS®CallExpressionÍÍ"T°MemberExpressionÍÍKªIdentifierÍÍ­compConnectedKªIdentifierÍÍ£hasÂÂ‘KªIdentifierÍÍ!¨pinDefIdÂL®BlockStatementÍ$Íı‘R³ExpressionStatementÍ;ÍêS®CallExpressionÍ;ÍéT°MemberExpressionÍ;ÍFKªIdentifierÍ;ÍA¦resultKªIdentifierÍBÍF¤pushÂÂ‘S®CallExpressionÍGÍèT°MemberExpressionÍGÍ^KªIdentifierÍGÍP©ErcEngineKªIdentifierÍQÍ^­makeViolationÂÂ—T°MemberExpressionÍ_ÍoKªIdentifierÍ_Íj«ErcSeverityKªIdentifierÍkÍo¤INFOÂÂT°MemberExpressionÍqÍŒKªIdentifierÍqÍ|«ErcRuleTypeKªIdentifierÍ}ÍŒ¯UNCONNECTED_PINÂÂ\¯TemplateLiteralÍÍ´’T°MemberExpressionÍ”ÍŸKªIdentifierÍ”Í˜¤compKªIdentifierÍ™ÍŸ¦refDesÂÂKªIdentifierÍ¦Í®¨pinDefId“]¯TemplateElementÍÍ’^§å™¨ä»¶ §å™¨ä»¶ Â]¯TemplateElementÍ Í¤^¨ å¼•è„š ¨ å¼•è„š Â]¯TemplateElementÍ¯Í³^ª æœªè¿æ¥ª æœªè¿æ¥ÃKªIdentifierÍ¶Í¿©undefinedT°MemberExpressionÍÁÍÈKªIdentifierÍÁÍÅ¤compKªIdentifierÍÆÍÈ¢idÂÂKªIdentifierÍÊÍÒ¨pinDefIdW§LiteralÍÔÍçÙ#è¿æ¥å¼•è„šæˆ–æ·»åŠ  No ERC æ ‡è®°Ù%'è¿æ¥å¼•è„šæˆ–æ·»åŠ  No ERC æ ‡è®°'ÂÂÀU¯ReturnStatementÍ!Í/KªIdentifierÍ(Í.¦resultM°MethodDefinitionÍïÍ*VÃÂKªIdentifierÍöÍµcheckPinTypeConflicts¦methodN²FunctionExpressionÍÍ*VÀÂÂÂ’KªIdentifierÍÍ£docKªIdentifierÍÍ«pinResolverL®BlockStatementÍÍ*V”O³VariableDeclarationÍ)Í;‘P²VariableDeclaratorÍ/Í:KªIdentifierÍ/Í5¦resultQ¯ArrayExpressionÍ8Í:¥constZ«IfStatementÍEÍ†X°BinaryExpressionÍIÍ\KªIdentifierÍIÍT«pinResolver¢==W§LiteralÍXÍ\À¤nullL®BlockStatementÍ^Í†‘U¯ReturnStatementÍmÍ{KªIdentifierÍtÍz¦resultÀV¬ForStatementÍÍ*7O³VariableDeclarationÍ•ÍŸ‘P²VariableDeclaratorÍ™ÍŸKªIdentifierÍ™Í›¢niW§LiteralÍÍŸ ¡0£letX°BinaryExpressionÍ¡ÍµKªIdentifierÍ¡Í£¢ni¡<T°MemberExpressionÍ¦ÍµT°MemberExpressionÍ¦Í®KªIdentifierÍ¦Í©£docKªIdentifierÍªÍ®¤netsÂÂKªIdentifierÍ¯Íµ¦lengthÂÂY°UpdateExpressionÍ·Í»¢++ÂKªIdentifierÍ·Í¹¢niL®BlockStatementÍ½Í*7O³VariableDeclarationÍÌÍå‘P²VariableDeclaratorÍÒÍäKªIdentifierÍÒÍÕ£netT°MemberExpressionÍØÍäT°MemberExpressionÍØÍàKªIdentifierÍØÍÛ£docKªIdentifierÍÜÍà¤netsÂÂKªIdentifierÍáÍã¢niÃÂ¥constZ«IfStatementÍóÍ9X°BinaryExpressionÍ÷ÍT°MemberExpressionÍ÷ÍT°MemberExpressionÍ÷ÍKªIdentifierÍ÷Íú£netKªIdentifierÍûÍ¦pinIdsÂÂKªIdentifierÍÍ¦lengthÂÂ¡<W§LiteralÍÍ¡2L®BlockStatementÍÍ9‘[±ContinueStatementÍ!Í*ÀÀO³VariableDeclarationÍGÍT‘P²VariableDeclaratorÍKÍSKªIdentifierÍKÍO¤outNW§LiteralÍRÍS ¡0£letO³VariableDeclarationÍbÍo‘P²VariableDeclaratorÍfÍnKªIdentifierÍfÍj¤bidNW§LiteralÍmÍn ¡0£letO³VariableDeclarationÍ}ÍŠ‘P²VariableDeclaratorÍÍ‰KªIdentifierÍÍ…¤pwrNW§LiteralÍˆÍ‰ ¡0£letO³VariableDeclarationÍ˜Í¥‘P²VariableDeclaratorÍœÍ¤KªIdentifierÍœÍ ¤gndNW§LiteralÍ£Í¤ ¡0£letO³VariableDeclarationÍ³Í¿‘P²VariableDeclaratorÍ·Í¾KªIdentifierÍ·Íº£ocNW§LiteralÍ½Í¾ ¡0£letO³VariableDeclarationÍÍÍŞ‘P²VariableDeclaratorÍÑÍİKªIdentifierÍÑÍÙ¨passiveNW§LiteralÍÜÍİ ¡0£letO³VariableDeclarationÍìÍÿ‘P²VariableDeclaratorÍòÍşKªIdentifierÍòÍù§driversQ¯ArrayExpressionÍüÍş¥constV¬ForStatementÍÍ#–O³VariableDeclarationÍÍ‘P²VariableDeclaratorÍÍKªIdentifierÍÍ¢piW§LiteralÍÍ ¡0£letX°BinaryExpressionÍÍ4KªIdentifierÍÍ ¢pi¡<T°MemberExpressionÍ#Í4T°MemberExpressionÍ#Í-KªIdentifierÍ#Í&£netKªIdentifierÍ'Í-¦pinIdsÂÂKªIdentifierÍ.Í4¦lengthÂÂY°UpdateExpressionÍ6Í:¢++ÂKªIdentifierÍ6Í8¢piL®BlockStatementÍ<Í#–›O³VariableDeclarationÍOÍw‘P²VariableDeclaratorÍUÍvKªIdentifierÍUÍZ¥partsS®CallExpressionÍ]ÍvT°MemberExpressionÍ]ÍqT°MemberExpressionÍ]ÍkT°MemberExpressionÍ]ÍgKªIdentifierÍ]Í`£netKªIdentifierÍaÍg¦pinIdsÂÂKªIdentifierÍhÍj¢piÃÂKªIdentifierÍlÍq¥splitÂÂ‘W§LiteralÍrÍu¡:£':'Â¥constZ«IfStatementÍ‰ÍÒX°BinaryExpressionÍÍT°MemberExpressionÍÍ™KªIdentifierÍÍ’¥partsKªIdentifierÍ“Í™¦lengthÂÂ¡<W§LiteralÍœÍ¡2L®BlockStatementÍŸÍÒ‘[±ContinueStatementÍ¶Í¿ÀÀO³VariableDeclarationÍäÍ‘P²VariableDeclaratorÍêÍKªIdentifierÍêÍî¤compS®CallExpressionÍñÍT°MemberExpressionÍñÍT°MemberExpressionÍñÍÿKªIdentifierÍñÍô£docKªIdentifierÍõÍÿªcomponentsÂÂKªIdentifierÍ Í¤findÂÂ‘N·ArrowFunctionExpressionÍÍÀÃÂÂ‘KªIdentifierÍÍ¡cX°BinaryExpressionÍ
-ÍT°MemberExpressionÍ
-ÍKªIdentifierÍ
-Í¡cKªIdentifierÍÍ¢idÂÂ£===T°MemberExpressionÍÍKªIdentifierÍÍ¥partsW§LiteralÍÍ ¡0ÃÂÂ¥constZ«IfStatementÍ/ÍzX°BinaryExpressionÍ3ÍEKªIdentifierÍ3Í7¤comp£===KªIdentifierÍ<ÍE©undefinedL®BlockStatementÍGÍz‘[±ContinueStatementÍ^ÍgÀÀO³VariableDeclarationÍŒÍµ‘P²VariableDeclaratorÍ’Í´KªIdentifierÍ’Í–¤pinsS®CallExpressionÍ™Í´KªIdentifierÍ™Í¤«pinResolver‘T°MemberExpressionÍ¥Í³KªIdentifierÍ¥Í©¤compKªIdentifierÍªÍ³©libraryIdÂÂÂ¥constZ«IfStatementÍÇÍX°BinaryExpressionÍËÍ×KªIdentifierÍËÍÏ¤pins¢==W§LiteralÍÓÍ×À¤nullL®BlockStatementÍÙÍ‘[±ContinueStatementÍğÍùÀÀO³VariableDeclarationÍÍ-‘P²VariableDeclaratorÍ"Í,KªIdentifierÍ"Í%£pinW§LiteralÍ(Í,À¤null£letV¬ForStatementÍ?ÍvO³VariableDeclarationÍDÍM‘P²VariableDeclaratorÍHÍMKªIdentifierÍHÍI¡jW§LiteralÍLÍM ¡0£letX°BinaryExpressionÍOÍ^KªIdentifierÍOÍP¡j¡<T°MemberExpressionÍSÍ^KªIdentifierÍSÍW¤pinsKªIdentifierÍXÍ^¦lengthÂÂY°UpdateExpressionÍ`Íc¢++ÂKªIdentifierÍ`Ía¡jL®BlockStatementÍeÍv‘Z«IfStatementÍ|ÍcX±LogicalExpressionÍ€ÍX±LogicalExpressionÍ€Í´X°BinaryExpressionÍ€Í—T°MemberExpressionÍ€ÍŠT°MemberExpressionÍ€Í‡KªIdentifierÍ€Í„¤pinsKªIdentifierÍ…Í†¡jÃÂKªIdentifierÍˆÍŠ¢idÂÂ£===T°MemberExpressionÍÍ—KªIdentifierÍÍ”¥partsW§LiteralÍ•Í–¡1ÃÂ¢||X°BinaryExpressionÍ›Í´T°MemberExpressionÍ›Í§T°MemberExpressionÍ›Í¢KªIdentifierÍ›ÍŸ¤pinsKªIdentifierÍ Í¡¡jÃÂKªIdentifierÍ£Í§¤nameÂÂ£===T°MemberExpressionÍ¬Í´KªIdentifierÍ¬Í±¥partsW§LiteralÍ²Í³¡1ÃÂ¢||X±LogicalExpressionÍÒÍ X°BinaryExpressionÍÒÍãT°MemberExpressionÍÒÍŞKªIdentifierÍÒÍ×¥partsKªIdentifierÍØÍŞ¦lengthÂÂ¢>=W§LiteralÍâÍã¡3¢&&X°BinaryExpressionÍçÍ T°MemberExpressionÍçÍóT°MemberExpressionÍçÍîKªIdentifierÍçÍë¤pinsKªIdentifierÍìÍí¡jÃÂKªIdentifierÍïÍó¤nameÂÂ£===T°MemberExpressionÍøÍ KªIdentifierÍøÍı¥partsW§LiteralÍşÍÿ¡2ÃÂL®BlockStatementÍÍc’R³ExpressionStatementÍÍ,Ôrb–¤type¥start£end¨operator¤left¥right´AssignmentExpressionÍÍ+¡=KªIdentifierÍÍ!£pinT°MemberExpressionÍ$Í+KªIdentifierÍ$Í(¤pinsKªIdentifierÍ)Í*¡jÃÂ[®BreakStatementÍFÍLÀÀZ«IfStatementÍˆÍÍX°BinaryExpressionÍŒÍ˜KªIdentifierÍŒÍ£pin£===W§LiteralÍ”Í˜À¤nullL®BlockStatementÍšÍÍ‘[±ContinueStatementÍ±ÍºÀÀO³VariableDeclarationÍßÍ ‘P²VariableDeclaratorÍåÍ KªIdentifierÍåÍè£tag\¯TemplateLiteralÍëÍ ’T°MemberExpressionÍîÍùKªIdentifierÍîÍò¤compKªIdentifierÍóÍù¦refDesÂÂX±LogicalExpressionÍıÍ T°MemberExpressionÍıÍ KªIdentifierÍıÍ  £pinKªIdentifierÍ Í ¤nameÂÂ¢||T°MemberExpressionÍ 	Í KªIdentifierÍ 	Í £pinKªIdentifierÍ Í ¢idÂÂ“]¯TemplateElementÍìÍì^  Â]¯TemplateElementÍúÍû^¡.¡.Â]¯TemplateElementÍ Í ^  Ã¥constZ«IfStatementÍ $Í#‡X°BinaryExpressionÍ (Í CT°MemberExpressionÍ (Í 0KªIdentifierÍ (Í +£pinKªIdentifierÍ ,Í 0¤typeÂÂ£===T°MemberExpressionÍ 5Í CKªIdentifierÍ 5Í <§PinTypeKªIdentifierÍ =Í C¦OUTPUTÂÂL®BlockStatementÍ EÍ ’R³ExpressionStatementÍ \Í cY°UpdateExpressionÍ \Í b¢++ÂKªIdentifierÍ \Í `¤outNR³ExpressionStatementÍ yÍ ‹S®CallExpressionÍ yÍ ŠT°MemberExpressionÍ yÍ …KªIdentifierÍ yÍ €§driversKªIdentifierÍ Í …¤pushÂÂ‘KªIdentifierÍ †Í ‰£tagÂZ«IfStatementÍ µÍ#‡X°BinaryExpressionÍ ¹Í ÛT°MemberExpressionÍ ¹Í ÁKªIdentifierÍ ¹Í ¼£pinKªIdentifierÍ ½Í Á¤typeÂÂ£===T°MemberExpressionÍ ÆÍ ÛKªIdentifierÍ ÆÍ Í§PinTypeKªIdentifierÍ ÎÍ Û­BIDIRECTIONALÂÂL®BlockStatementÍ İÍ!6’R³ExpressionStatementÍ ôÍ ûY°UpdateExpressionÍ ôÍ ú¢++ÂKªIdentifierÍ ôÍ ø¤bidNR³ExpressionStatementÍ!Í!#S®CallExpressionÍ!Í!"T°MemberExpressionÍ!Í!KªIdentifierÍ!Í!§driversKªIdentifierÍ!Í!¤pushÂÂ‘KªIdentifierÍ!Í!!£tagÂZ«IfStatementÍ!MÍ#‡X°BinaryExpressionÍ!QÍ!kT°MemberExpressionÍ!QÍ!YKªIdentifierÍ!QÍ!T£pinKªIdentifierÍ!UÍ!Y¤typeÂÂ£===T°MemberExpressionÍ!^Í!kKªIdentifierÍ!^Í!e§PinTypeKªIdentifierÍ!fÍ!k¥POWERÂÂL®BlockStatementÍ!mÍ!Æ’R³ExpressionStatementÍ!„Í!‹Y°UpdateExpressionÍ!„Í!Š¢++ÂKªIdentifierÍ!„Í!ˆ¤pwrNR³ExpressionStatementÍ!¡Í!³S®CallExpressionÍ!¡Í!²T°MemberExpressionÍ!¡Í!­KªIdentifierÍ!¡Í!¨§driversKªIdentifierÍ!©Í!­¤pushÂÂ‘KªIdentifierÍ!®Í!±£tagÂZ«IfStatementÍ!İÍ#‡X°BinaryExpressionÍ!áÍ!üT°MemberExpressionÍ!áÍ!éKªIdentifierÍ!áÍ!ä£pinKªIdentifierÍ!åÍ!é¤typeÂÂ£===T°MemberExpressionÍ!îÍ!üKªIdentifierÍ!îÍ!õ§PinTypeKªIdentifierÍ!öÍ!ü¦GROUNDÂÂL®BlockStatementÍ!şÍ"W’R³ExpressionStatementÍ"Í"Y°UpdateExpressionÍ"Í"¢++ÂKªIdentifierÍ"Í"¤gndNR³ExpressionStatementÍ"2Í"DS®CallExpressionÍ"2Í"CT°MemberExpressionÍ"2Í">KªIdentifierÍ"2Í"9§driversKªIdentifierÍ":Í">¤pushÂÂ‘KªIdentifierÍ"?Í"B£tagÂZ«IfStatementÍ"nÍ#‡X°BinaryExpressionÍ"rÍ"•T°MemberExpressionÍ"rÍ"zKªIdentifierÍ"rÍ"u£pinKªIdentifierÍ"vÍ"z¤typeÂÂ£===T°MemberExpressionÍ"Í"•KªIdentifierÍ"Í"†§PinTypeKªIdentifierÍ"‡Í"•®OPEN_COLLECTORÂÂL®BlockStatementÍ"—Í"Ç‘R³ExpressionStatementÍ"®Í"´Y°UpdateExpressionÍ"®Í"³¢++ÂKªIdentifierÍ"®Í"±£ocNZ«IfStatementÍ"ŞÍ#‡X±LogicalExpressionÍ"âÍ#PX±LogicalExpressionÍ"âÍ#X°BinaryExpressionÍ"âÍ"şT°MemberExpressionÍ"âÍ"êKªIdentifierÍ"âÍ"å£pinKªIdentifierÍ"æÍ"ê¤typeÂÂ£===T°MemberExpressionÍ"ïÍ"şKªIdentifierÍ"ïÍ"ö§PinTypeKªIdentifierÍ"÷Í"ş§PASSIVEÂÂ¢||X°BinaryExpressionÍ#Í#T°MemberExpressionÍ#Í#
-KªIdentifierÍ#Í#£pinKªIdentifierÍ#Í#
-¤typeÂÂ£===T°MemberExpressionÍ#Í#KªIdentifierÍ#Í#§PinTypeKªIdentifierÍ#Í#¦ANALOGÂÂ¢||X°BinaryExpressionÍ#6Í#PT°MemberExpressionÍ#6Í#>KªIdentifierÍ#6Í#9£pinKªIdentifierÍ#:Í#>¤typeÂÂ£===T°MemberExpressionÍ#CÍ#PKªIdentifierÍ#CÍ#J§PinTypeKªIdentifierÍ#KÍ#P¥INPUTÂÂL®BlockStatementÍ#RÍ#‡‘R³ExpressionStatementÍ#iÍ#tY°UpdateExpressionÍ#iÍ#s¢++ÂKªIdentifierÍ#iÍ#q¨passiveNÀZ«IfStatementÍ#¤Í$X±LogicalExpressionÍ#¨Í#¼X°BinaryExpressionÍ#¨Í#°KªIdentifierÍ#¨Í#¬¤pwrN¡>W§LiteralÍ#¯Í#° ¡0¢&&X°BinaryExpressionÍ#´Í#¼KªIdentifierÍ#´Í#¸¤gndN¡>W§LiteralÍ#»Í#¼ ¡0L®BlockStatementÍ#¾Í$‘R³ExpressionStatementÍ#ÑÍ$~S®CallExpressionÍ#ÑÍ$}T°MemberExpressionÍ#ÑÍ#ÜKªIdentifierÍ#ÑÍ#×¦resultKªIdentifierÍ#ØÍ#Ü¤pushÂÂ‘S®CallExpressionÍ#İÍ$|T°MemberExpressionÍ#İÍ#ôKªIdentifierÍ#İÍ#æ©ErcEngineKªIdentifierÍ#çÍ#ô­makeViolationÂÂ—T°MemberExpressionÍ#õÍ$KªIdentifierÍ#õÍ$ «ErcSeverityKªIdentifierÍ$Í$¥ERRORÂÂT°MemberExpressionÍ$Í$ KªIdentifierÍ$Í$«ErcRuleTypeKªIdentifierÍ$Í$ ¬PIN_CONFLICTÂÂ\¯TemplateLiteralÍ$"Í$A‘T°MemberExpressionÍ$)Í$1KªIdentifierÍ$)Í$,£netKªIdentifierÍ$-Í$1¤nameÂÂ’]¯TemplateElementÍ$#Í$'^¨ç½‘ç»œ "¨ç½‘ç»œ "Â]¯TemplateElementÍ$2Í$@^Ù&" ç”µæºè„šä¸åœ°è„šåŒç½‘ï¼ˆçŸ­è·¯ï¼‰Ù&" ç”µæºè„šä¸åœ°è„šåŒç½‘ï¼ˆçŸ­è·¯ï¼‰ÃT°MemberExpressionÍ$CÍ$IKªIdentifierÍ$CÍ$F£netKªIdentifierÍ$GÍ$I¢idÂÂKªIdentifierÍ$KÍ$T©undefinedKªIdentifierÍ$VÍ$_©undefinedW§LiteralÍ$aÍ${Ù2æ£€æŸ¥ç”µæº/åœ°å¸ƒçº¿ï¼Œé¿å… VCC ä¸ GND å¹¶ç½‘Ù4'æ£€æŸ¥ç”µæº/åœ°å¸ƒçº¿ï¼Œé¿å… VCC ä¸ GND å¹¶ç½‘'ÂÂÀZ«IfStatementÍ$›Í'X°BinaryExpressionÍ$ŸÍ$¨KªIdentifierÍ$ŸÍ$£¤outN¢>=W§LiteralÍ$§Í$¨¡2L®BlockStatementÍ$ªÍ%”‘R³ExpressionStatementÍ$½Í%…S®CallExpressionÍ$½Í%„T°MemberExpressionÍ$½Í$ÈKªIdentifierÍ$½Í$Ã¦resultKªIdentifierÍ$ÄÍ$È¤pushÂÂ‘S®CallExpressionÍ$ÉÍ%ƒT°MemberExpressionÍ$ÉÍ$àKªIdentifierÍ$ÉÍ$Ò©ErcEngineKªIdentifierÍ$ÓÍ$à­makeViolationÂÂ—T°MemberExpressionÍ$áÍ$òKªIdentifierÍ$áÍ$ì«ErcSeverityKªIdentifierÍ$íÍ$ò¥ERRORÂÂT°MemberExpressionÍ$ôÍ%KªIdentifierÍ$ôÍ$ÿ«ErcRuleTypeKªIdentifierÍ% Í%¬PIN_CONFLICTÂÂ\¯TemplateLiteralÍ%Í%K’T°MemberExpressionÍ%Í%KªIdentifierÍ%Í%£netKªIdentifierÍ%Í%¤nameÂÂS®CallExpressionÍ%*Í%HT°MemberExpressionÍ%*Í%BS®CallExpressionÍ%*Í%=T°MemberExpressionÍ%*Í%7KªIdentifierÍ%*Í%1§driversKªIdentifierÍ%2Í%7¥sliceÂÂ’W§LiteralÍ%8Í%9 ¡0W§LiteralÍ%;Í%<¡4ÂKªIdentifierÍ%>Í%B¤joinÂÂ‘W§LiteralÍ%CÍ%G¢, ¤', 'Â“]¯TemplateElementÍ%Í%^¨ç½‘ç»œ "¨ç½‘ç»œ "Â]¯TemplateElementÍ%Í%(^º" å¤šè¾“å‡ºé©±åŠ¨å†²çªï¼ˆº" å¤šè¾“å‡ºé©±åŠ¨å†²çªï¼ˆÂ]¯TemplateElementÍ%IÍ%J^£ï¼‰£ï¼‰ÃT°MemberExpressionÍ%MÍ%SKªIdentifierÍ%MÍ%P£netKªIdentifierÍ%QÍ%S¢idÂÂKªIdentifierÍ%UÍ%^©undefinedKªIdentifierÍ%`Í%i©undefinedW§LiteralÍ%kÍ%‚Ù/å‹¿å°†ä¸¤ä¸ª OUTPUT ç›´è¿ï¼›åŠ ç¼“å†²æˆ–æ”¹çº¿Ù1'å‹¿å°†ä¸¤ä¸ª OUTPUT ç›´è¿ï¼›åŠ ç¼“å†²æˆ–æ”¹çº¿'ÂÂZ«IfStatementÍ%§Í'X±LogicalExpressionÍ%«Í%ÁX°BinaryExpressionÍ%«Í%´KªIdentifierÍ%«Í%¯¤outN¢>=W§LiteralÍ%³Í%´¡1¢&&X°BinaryExpressionÍ%¸Í%ÁKªIdentifierÍ%¸Í%¼¤bidN¢>=W§LiteralÍ%ÀÍ%Á¡1L®BlockStatementÍ%ÃÍ&³‘R³ExpressionStatementÍ%ÖÍ&¤S®CallExpressionÍ%ÖÍ&£T°MemberExpressionÍ%ÖÍ%áKªIdentifierÍ%ÖÍ%Ü¦resultKªIdentifierÍ%İÍ%á¤pushÂÂ‘S®CallExpressionÍ%âÍ&¢T°MemberExpressionÍ%âÍ%ùKªIdentifierÍ%âÍ%ë©ErcEngineKªIdentifierÍ%ìÍ%ù­makeViolationÂÂ—T°MemberExpressionÍ%úÍ&KªIdentifierÍ%úÍ&«ErcSeverityKªIdentifierÍ&Í&§WARNINGÂÂT°MemberExpressionÍ&Í&'KªIdentifierÍ&Í&«ErcRuleTypeKªIdentifierÍ&Í&'¬PIN_CONFLICTÂÂ\¯TemplateLiteralÍ&)Í&o’T°MemberExpressionÍ&0Í&8KªIdentifierÍ&0Í&3£netKªIdentifierÍ&4Í&8¤nameÂÂS®CallExpressionÍ&NÍ&lT°MemberExpressionÍ&NÍ&fS®CallExpressionÍ&NÍ&aT°MemberExpressionÍ&NÍ&[KªIdentifierÍ&NÍ&U§driversKªIdentifierÍ&VÍ&[¥sliceÂÂ’W§LiteralÍ&\Í&] ¡0W§LiteralÍ&_Í&`¡4ÂKªIdentifierÍ&bÍ&f¤joinÂÂ‘W§LiteralÍ&gÍ&k¢, ¤', 'Â“]¯TemplateElementÍ&*Í&.^¨ç½‘ç»œ "¨ç½‘ç»œ "Â]¯TemplateElementÍ&9Í&L^»" OUTPUT ä¸ BIDI å…±ç½‘ï¼ˆ»" OUTPUT ä¸ BIDI å…±ç½‘ï¼ˆÂ]¯TemplateElementÍ&mÍ&n^£ï¼‰£ï¼‰ÃT°MemberExpressionÍ&qÍ&wKªIdentifierÍ&qÍ&t£netKªIdentifierÍ&uÍ&w¢idÂÂKªIdentifierÍ&yÍ&‚©undefinedKªIdentifierÍ&„Í&©undefinedW§LiteralÍ&Í&¡Ù0ç¡®è®¤æ€»çº¿äº‰ç”¨å¯æ¥å—ï¼Œå¦åˆ™éš”ç¦»é©±åŠ¨Ù2'ç¡®è®¤æ€»çº¿äº‰ç”¨å¯æ¥å—ï¼Œå¦åˆ™éš”ç¦»é©±åŠ¨'ÂÂZ«IfStatementÍ&ÆÍ'X°BinaryExpressionÍ&ÊÍ&ÓKªIdentifierÍ&ÊÍ&Î¤bidN¢>=W§LiteralÍ&ÒÍ&Ó¡2L®BlockStatementÍ&ÕÍ'‘R³ExpressionStatementÍ&èÍ'S®CallExpressionÍ&èÍ'T°MemberExpressionÍ&èÍ&óKªIdentifierÍ&èÍ&î¦resultKªIdentifierÍ&ïÍ&ó¤pushÂÂ‘S®CallExpressionÍ&ôÍ'ŒT°MemberExpressionÍ&ôÍ'KªIdentifierÍ&ôÍ&ı©ErcEngineKªIdentifierÍ&şÍ'­makeViolationÂÂ—T°MemberExpressionÍ'Í'KªIdentifierÍ'Í'«ErcSeverityKªIdentifierÍ'Í'¤INFOÂÂT°MemberExpressionÍ'Í'6KªIdentifierÍ'Í')«ErcRuleTypeKªIdentifierÍ'*Í'6¬PIN_CONFLICTÂÂ\¯TemplateLiteralÍ'8Í']‘T°MemberExpressionÍ'?Í'GKªIdentifierÍ'?Í'B£netKªIdentifierÍ'CÍ'G¤nameÂÂ’]¯TemplateElementÍ'9Í'=^¨ç½‘ç»œ "¨ç½‘ç»œ "Â]¯TemplateElementÍ'HÍ'\^Ù," å¤šä¸ª BIDI å…±ç½‘ï¼ˆå¯èƒ½æ€»çº¿äº‰ç”¨ï¼‰Ù," å¤šä¸ª BIDI å…±ç½‘ï¼ˆå¯èƒ½æ€»çº¿äº‰ç”¨ï¼‰ÃT°MemberExpressionÍ'_Í'eKªIdentifierÍ'_Í'b£netKªIdentifierÍ'cÍ'e¢idÂÂKªIdentifierÍ'gÍ'p©undefinedKªIdentifierÍ'rÍ'{©undefinedW§LiteralÍ'}Í'‹Ù$ç¡®è®¤åˆ†æ—¶é©±åŠ¨æˆ–åŠ æ–¹å‘æ§åˆ¶Ù&'ç¡®è®¤åˆ†æ—¶é©±åŠ¨æˆ–åŠ æ–¹å‘æ§åˆ¶'ÂÂÀZ«IfStatementÍ'úÍ)X±LogicalExpressionÍ'şÍ( X±LogicalExpressionÍ'ÿÍ(X°BinaryExpressionÍ'ÿÍ(KªIdentifierÍ'ÿÍ(¤outN¡>W§LiteralÍ(Í( ¡0¢||X°BinaryExpressionÍ(Í(KªIdentifierÍ(Í(¤bidN¡>W§LiteralÍ(Í( ¡0¢&&X°BinaryExpressionÍ(Í( KªIdentifierÍ(Í(¤pwrN¡>W§LiteralÍ(Í(  ¡0L®BlockStatementÍ("Í)‘R³ExpressionStatementÍ(5Í(şS®CallExpressionÍ(5Í(ıT°MemberExpressionÍ(5Í(@KªIdentifierÍ(5Í(;¦resultKªIdentifierÍ(<Í(@¤pushÂÂ‘S®CallExpressionÍ(AÍ(üT°MemberExpressionÍ(AÍ(XKªIdentifierÍ(AÍ(J©ErcEngineKªIdentifierÍ(KÍ(X­makeViolationÂÂ—ZµConditionalExpressionÍ(YÍ(X°BinaryExpressionÍ(YÍ(eKªIdentifierÍ(YÍ(a¨passiveN¡>W§LiteralÍ(dÍ(e ¡0T°MemberExpressionÍ(hÍ({KªIdentifierÍ(hÍ(s«ErcSeverityKªIdentifierÍ(tÍ({§WARNINGÂÂT°MemberExpressionÍ(~Í(KªIdentifierÍ(~Í(‰«ErcSeverityKªIdentifierÍ(ŠÍ(¥ERRORÂÂT°MemberExpressionÍ(‘Í(©KªIdentifierÍ(‘Í(œ«ErcRuleTypeKªIdentifierÍ(Í(©¬PIN_CONFLICTÂÂ\¯TemplateLiteralÍ(«Í(É‘T°MemberExpressionÍ(²Í(ºKªIdentifierÍ(²Í(µ£netKªIdentifierÍ(¶Í(º¤nameÂÂ’]¯TemplateElementÍ(¬Í(°^¨ç½‘ç»œ "¨ç½‘ç»œ "Â]¯TemplateElementÍ(»Í(È^Ù#" ä¿¡å·é©±åŠ¨è„šä¸ç”µæºè„šåŒç½‘Ù#" ä¿¡å·é©±åŠ¨è„šä¸ç”µæºè„šåŒç½‘ÃT°MemberExpressionÍ(ËÍ(ÑKªIdentifierÍ(ËÍ(Î£netKªIdentifierÍ(ÏÍ(Ñ¢idÂÂKªIdentifierÍ(ÓÍ(Ü©undefinedKªIdentifierÍ(ŞÍ(ç©undefinedW§LiteralÍ(éÍ(ûÙ&ä¿¡å·ç½‘å‹¿ç›´æ¥æŒ‚åˆ° VCC/ç”µæºè„šÙ('ä¿¡å·ç½‘å‹¿ç›´æ¥æŒ‚åˆ° VCC/ç”µæºè„š'ÂÂÀZ«IfStatementÍ)BÍ*,X±LogicalExpressionÍ)FÍ)YX°BinaryExpressionÍ)FÍ)MKªIdentifierÍ)FÍ)I£ocN¡>W§LiteralÍ)LÍ)M ¡0¢&&X°BinaryExpressionÍ)QÍ)YKªIdentifierÍ)QÍ)U¤outN¡>W§LiteralÍ)XÍ)Y ¡0L®BlockStatementÍ)[Í*,‘R³ExpressionStatementÍ)nÍ*S®CallExpressionÍ)nÍ*T°MemberExpressionÍ)nÍ)yKªIdentifierÍ)nÍ)t¦resultKªIdentifierÍ)uÍ)y¤pushÂÂ‘S®CallExpressionÍ)zÍ*T°MemberExpressionÍ)zÍ)‘KªIdentifierÍ)zÍ)ƒ©ErcEngineKªIdentifierÍ)„Í)‘­makeViolationÂÂ—T°MemberExpressionÍ)’Í)¥KªIdentifierÍ)’Í)«ErcSeverityKªIdentifierÍ)Í)¥§WARNINGÂÂT°MemberExpressionÍ)§Í)¿KªIdentifierÍ)§Í)²«ErcRuleTypeKªIdentifierÍ)³Í)¿¬PIN_CONFLICTÂÂ\¯TemplateLiteralÍ)ÁÍ)İ‘T°MemberExpressionÍ)ÈÍ)ĞKªIdentifierÍ)ÈÍ)Ë£netKªIdentifierÍ)ÌÍ)Ğ¤nameÂÂ’]¯TemplateElementÍ)ÂÍ)Æ^¨ç½‘ç»œ "¨ç½‘ç»œ "Â]¯TemplateElementÍ)ÑÍ)Ü^½" å¼€æ¼ä¸æ¨æŒ½è¾“å‡ºå…±ç½‘½" å¼€æ¼ä¸æ¨æŒ½è¾“å‡ºå…±ç½‘ÃT°MemberExpressionÍ)ßÍ)åKªIdentifierÍ)ßÍ)â£netKªIdentifierÍ)ãÍ)å¢idÂÂKªIdentifierÍ)çÍ)ğ©undefinedKªIdentifierÍ)òÍ)û©undefinedW§LiteralÍ)ıÍ*Ù9å¼€æ¼ç½‘åº”ä»…æ¥ OC/è¾“å…¥/ä¸Šæ‹‰ï¼Œå‹¿æ¥æ¨æŒ½ OUTPUTÙ;'å¼€æ¼ç½‘åº”ä»…æ¥ OC/è¾“å…¥/ä¸Šæ‹‰ï¼Œå‹¿æ¥æ¨æŒ½ OUTPUT'ÂÂÀU¯ReturnStatementÍ*AÍ*OKªIdentifierÍ*HÍ*N¦resultM°MethodDefinitionÍ*Í2BÃÂKªIdentifierÍ*†Í*š´checkLabelOverDevice¦methodN²FunctionExpressionÍ*šÍ2BÀÂÂÂ’KªIdentifierÍ*›Í*£docKªIdentifierÍ* Í*««pinResolverL®BlockStatementÍ*­Í2B•O³VariableDeclarationÍ*¸Í*Ê‘P²VariableDeclaratorÍ*¾Í*ÉKªIdentifierÍ*¾Í*Ä¦resultQ¯ArrayExpressionÍ*ÇÍ*É¥constO³VariableDeclarationÍ*ÔÍ*ñ‘P²VariableDeclaratorÍ*ÚÍ*ğKªIdentifierÍ*ÚÍ*à¦labelsT°MemberExpressionÍ*ãÍ*ğKªIdentifierÍ*ãÍ*æ£docKªIdentifierÍ*çÍ*ğ©netLabelsÂÂ¥constZ«IfStatementÍ*ûÍ+kX±LogicalExpressionÍ*ÿÍ+AX±LogicalExpressionÍ*ÿÍ+*X°BinaryExpressionÍ*ÿÍ+KªIdentifierÍ*ÿÍ+¦labels£===KªIdentifierÍ+
-Í+©undefined¢||X°BinaryExpressionÍ+Í+*T°MemberExpressionÍ+Í+$KªIdentifierÍ+Í+¦labelsKªIdentifierÍ+Í+$¦lengthÂÂ£===W§LiteralÍ+)Í+* ¡0¢||X°BinaryExpressionÍ+.Í+AKªIdentifierÍ+.Í+9«pinResolver¢==W§LiteralÍ+=Í+AÀ¤nullL®BlockStatementÍ+CÍ+k‘U¯ReturnStatementÍ+RÍ+`KªIdentifierÍ+YÍ+_¦resultÀV¬ForStatementÍ+uÍ2#O³VariableDeclarationÍ+zÍ+„‘P²VariableDeclaratorÍ+~Í+„KªIdentifierÍ+~Í+€¢liW§LiteralÍ+ƒÍ+„ ¡0£letX°BinaryExpressionÍ+†Í+˜KªIdentifierÍ+†Í+ˆ¢li¡<T°MemberExpressionÍ+‹Í+˜KªIdentifierÍ+‹Í+‘¦labelsKªIdentifierÍ+’Í+˜¦lengthÂÂY°UpdateExpressionÍ+šÍ+¢++ÂKªIdentifierÍ+šÍ+œ¢liL®BlockStatementÍ+ Í2#”O³VariableDeclarationÍ+¯Í+Å‘P²VariableDeclaratorÍ+µÍ+ÄKªIdentifierÍ+µÍ+·¢lbT°MemberExpressionÍ+ºÍ+ÄKªIdentifierÍ+ºÍ+À¦labelsKªIdentifierÍ+ÁÍ+Ã¢liÃÂ¥constO³VariableDeclarationÍ+ÓÍ+ÿ‘P²VariableDeclaratorÍ+ÙÍ+şKªIdentifierÍ+ÙÍ+Ş¥upperS®CallExpressionÍ+áÍ+şT°MemberExpressionÍ+áÍ+üX±LogicalExpressionÍ+âÍ+ïT°MemberExpressionÍ+âÍ+éKªIdentifierÍ+âÍ+ä¢lbKªIdentifierÍ+åÍ+é¤textÂÂ¢??W§LiteralÍ+íÍ+ï ¢''KªIdentifierÍ+ñÍ+ü«toUpperCaseÂÂÂ¥constZ«IfStatementÍ,1Í,ñX±LogicalExpressionÍ,5Í,ÄX±LogicalExpressionÍ,5Í,³X±LogicalExpressionÍ,5Í, X±LogicalExpressionÍ,5Í,|X±LogicalExpressionÍ,5Í,iX±LogicalExpressionÍ,5Í,WX°BinaryExpressionÍ,5Í,DKªIdentifierÍ,5Í,:¥upper£===W§LiteralÍ,?Í,D£VCC¥'VCC'¢||X°BinaryExpressionÍ,HÍ,WKªIdentifierÍ,HÍ,M¥upper£===W§LiteralÍ,RÍ,W£VDD¥'VDD'¢||X°BinaryExpressionÍ,[Í,iKªIdentifierÍ,[Í,`¥upper£===W§LiteralÍ,eÍ,i¢V+¤'V+'¢||X°BinaryExpressionÍ,mÍ,|KªIdentifierÍ,mÍ,r¥upper£===W§LiteralÍ,wÍ,|£VEE¥'VEE'¢||X°BinaryExpressionÍ,‘Í, KªIdentifierÍ,‘Í,–¥upper£===W§LiteralÍ,›Í, £GND¥'GND'¢||X°BinaryExpressionÍ,¤Í,³KªIdentifierÍ,¤Í,©¥upper£===W§LiteralÍ,®Í,³£VSS¥'VSS'¢||X°BinaryExpressionÍ,·Í,ÄKªIdentifierÍ,·Í,¼¥upper£===W§LiteralÍ,ÁÍ,Ä¡0£'0'L®BlockStatementÍ,ÆÍ,ñ‘[±ContinueStatementÍ,ÙÍ,âÀÀV¬ForStatementÍ,ÿÍ2O³VariableDeclarationÍ-Í-‘P²VariableDeclaratorÍ-Í-KªIdentifierÍ-Í-
-¢ciW§LiteralÍ-Í- ¡0£letX°BinaryExpressionÍ-Í-*KªIdentifierÍ-Í-¢ci¡<T°MemberExpressionÍ-Í-*T°MemberExpressionÍ-Í-#KªIdentifierÍ-Í-£docKªIdentifierÍ-Í-#ªcomponentsÂÂKªIdentifierÍ-$Í-*¦lengthÂÂY°UpdateExpressionÍ-,Í-0¢++ÂKªIdentifierÍ-,Í-.¢ciL®BlockStatementÍ-2Í2˜O³VariableDeclarationÍ-EÍ-e‘P²VariableDeclaratorÍ-KÍ-dKªIdentifierÍ-KÍ-O¤compT°MemberExpressionÍ-RÍ-dT°MemberExpressionÍ-RÍ-`KªIdentifierÍ-RÍ-U£docKªIdentifierÍ-VÍ-`ªcomponentsÂÂKªIdentifierÍ-aÍ-c¢ciÃÂ¥constO³VariableDeclarationÍ-wÍ-¨‘P²VariableDeclaratorÍ-}Í-§KªIdentifierÍ-}Í-‰¬resolvedPinsS®CallExpressionÍ-ŒÍ-§KªIdentifierÍ-ŒÍ-—«pinResolver‘T°MemberExpressionÍ-˜Í-¦KªIdentifierÍ-˜Í-œ¤compKªIdentifierÍ-Í-¦©libraryIdÂÂÂ¥constO³VariableDeclarationÍ-ºÍ-ñ‘P²VariableDeclaratorÍ-ÀÍ-ğKªIdentifierÍ-ÀÍ-Ä¤pinsZµConditionalExpressionÍ-ÇÍ-ğX°BinaryExpressionÍ-ÇÍ-ÜKªIdentifierÍ-ÇÍ-Ó¬resolvedPins£!==W§LiteralÍ-ØÍ-ÜÀ¤nullKªIdentifierÍ-ßÍ-ë¬resolvedPinsQ¯ArrayExpressionÍ-îÍ-ğ¥constO³VariableDeclarationÍ.Í0:‘P²VariableDeclaratorÍ.	Í09KªIdentifierÍ.	Í.¢diÔrc”¤type¥start£endªproperties°ObjectExpressionÍ.Í09Ôrd™¤type¥start£end¦method©shorthand¨computed£key¥value¤kind¨PropertyÍ.%Í.6ÂÂÂKªIdentifierÍ.%Í.-¨instUuidT°MemberExpressionÍ./Í.6KªIdentifierÍ./Í.3¤compKªIdentifierÍ.4Í.6¢idÂÂ¤initd¨PropertyÍ.MÍ.eÂÂÂKªIdentifierÍ.MÍ.U¨libDevIdT°MemberExpressionÍ.WÍ.eKªIdentifierÍ.WÍ.[¤compKªIdentifierÍ.\Í.e©libraryIdÂÂ¤initd¨PropertyÍ.|Í.ÂÂÂKªIdentifierÍ.|Í.ƒ§refNameT°MemberExpressionÍ.…Í.KªIdentifierÍ.…Í.‰¤compKªIdentifierÍ.ŠÍ.¦refDesÂÂ¤initd¨PropertyÍ.§Í.¹ÂÂÂKªIdentifierÍ.§Í.¨¡xT°MemberExpressionÍ.ªÍ.¹T°MemberExpressionÍ.ªÍ.·KªIdentifierÍ.ªÍ.®¤compKªIdentifierÍ.¯Í.·¨positionÂÂKªIdentifierÍ.¸Í.¹¡xÂÂ¤initd¨PropertyÍ.ĞÍ.âÂÂÂKªIdentifierÍ.ĞÍ.Ñ¡yT°MemberExpressionÍ.ÓÍ.âT°MemberExpressionÍ.ÓÍ.àKªIdentifierÍ.ÓÍ.×¤compKªIdentifierÍ.ØÍ.à¨positionÂÂKªIdentifierÍ.áÍ.â¡yÂÂ¤initd¨PropertyÍ.ùÍ/ÂÂÂKªIdentifierÍ.ùÍ.ÿ¦rotateT°MemberExpressionÍ/Í/KªIdentifierÍ/Í/¤compKªIdentifierÍ/Í/¨rotationÂÂ¤initd¨PropertyÍ/%Í/;ÂÂÂKªIdentifierÍ/%Í/,§mirrorHT°MemberExpressionÍ/.Í/;KªIdentifierÍ/.Í/2¤compKªIdentifierÍ/3Í/;¨mirroredÂÂ¤initd¨PropertyÍ/RÍ/`ÂÂÂKªIdentifierÍ/RÍ/Y§mirrorVW§LiteralÍ/[Í/`Â¥false¤initd¨PropertyÍ/wÍ/ˆÂÂÂKªIdentifierÍ/wÍ/}¦paramsa­NewExpressionÍ/Í/ˆKªIdentifierÍ/ƒÍ/†£Map¤initd¨PropertyÍ/ŸÍ/´ÂÂÂKªIdentifierÍ/ŸÍ/©ªpinVoltagea­NewExpressionÍ/«Í/´KªIdentifierÍ/¯Í/²£Map¤initd¨PropertyÍ/ËÍ/ØÂÂÂKªIdentifierÍ/ËÍ/Ñ¦hiddenW§LiteralÍ/ÓÍ/ØÂ¥false¤initd¨PropertyÍ/ïÍ0 ÂÂÂKªIdentifierÍ/ïÍ/ü­subCircuitRefW§LiteralÍ/şÍ0  ¢''¤initd¨PropertyÍ0Í0&ÂÂÂKªIdentifierÍ0Í0"«ercErrorMsgW§LiteralÍ0$Í0& ¢''¤init¥constO³VariableDeclarationÍ0LÍ0‘P²VariableDeclaratorÍ0RÍ0œKªIdentifierÍ0RÍ0U£hitS®CallExpressionÍ0XÍ0œT°MemberExpressionÍ0XÍ0KªIdentifierÍ0XÍ0i±DeviceHitGeometryKªIdentifierÍ0jÍ0µhitRectFromDeviceInstÂÂ“KªIdentifierÍ0€Í0‚¢diKªIdentifierÍ0„Í0ˆ¤pinsKªIdentifierÍ0ŠÍ0›±WIRE_OBSTACLE_PADÂ¥constZ«IfStatementÍ0¯Í1)Y¯UnaryExpressionÍ0³Í0ô¡!ÃS®CallExpressionÍ0´Í0ôT°MemberExpressionÍ0´Í0ÑKªIdentifierÍ0´Í0Å±DeviceHitGeometryKªIdentifierÍ0ÆÍ0Ñ«pointInRectÂÂ“T°MemberExpressionÍ0ÒÍ0ßT°MemberExpressionÍ0ÒÍ0İKªIdentifierÍ0ÒÍ0Ô¢lbKªIdentifierÍ0ÕÍ0İ¨positionÂÂKªIdentifierÍ0ŞÍ0ß¡xÂÂT°MemberExpressionÍ0áÍ0îT°MemberExpressionÍ0áÍ0ìKªIdentifierÍ0áÍ0ã¢lbKªIdentifierÍ0äÍ0ì¨positionÂÂKªIdentifierÍ0íÍ0î¡yÂÂKªIdentifierÍ0ğÍ0ó£hitÂL®BlockStatementÍ0öÍ1)‘[±ContinueStatementÍ1Í1ÀÀR³ExpressionStatementÍ1;Í1ñS®CallExpressionÍ1;Í1ğT°MemberExpressionÍ1;Í1FKªIdentifierÍ1;Í1A¦resultKªIdentifierÍ1BÍ1F¤pushÂÂ‘S®CallExpressionÍ1GÍ1ïT°MemberExpressionÍ1GÍ1^KªIdentifierÍ1GÍ1P©ErcEngineKªIdentifierÍ1QÍ1^­makeViolationÂÂ—T°MemberExpressionÍ1_Í1rKªIdentifierÍ1_Í1j«ErcSeverityKªIdentifierÍ1kÍ1r§WARNINGÂÂT°MemberExpressionÍ1tÍ1‘KªIdentifierÍ1tÍ1«ErcRuleTypeKªIdentifierÍ1€Í1‘±LABEL_OVER_DEVICEÂÂ\¯TemplateLiteralÍ1“Í1¼’T°MemberExpressionÍ1œÍ1£KªIdentifierÍ1œÍ1¢lbKªIdentifierÍ1ŸÍ1£¤textÂÂT°MemberExpressionÍ1­Í1¸KªIdentifierÍ1­Í1±¤compKªIdentifierÍ1²Í1¸¦refDesÂÂ“]¯TemplateElementÍ1”Í1š^®ç½‘ç»œæ ‡å· "®ç½‘ç»œæ ‡å· "Â]¯TemplateElementÍ1¤Í1«^¯" å‹åœ¨å™¨ä»¶ ¯" å‹åœ¨å™¨ä»¶ Â]¯TemplateElementÍ1¹Í1»^¤ ä¸Š¤ ä¸ŠÃT°MemberExpressionÍ1¾Í1ÆKªIdentifierÍ1¾Í1À¢lbKªIdentifierÍ1ÁÍ1Æ¥netIdÂÂT°MemberExpressionÍ1ÈÍ1ÏKªIdentifierÍ1ÈÍ1Ì¤compKªIdentifierÍ1ÍÍ1Ï¢idÂÂKªIdentifierÍ1ÑÍ1Ú©undefinedW§LiteralÍ1ÜÍ1îÙ0å°†æ ‡å·ç§»åˆ°å¼•è„šå¤–ä¾§ï¼Œé¿å…è¦†ç›–ç¬¦å·Ù2'å°†æ ‡å·ç§»åˆ°å¼•è„šå¤–ä¾§ï¼Œé¿å…è¦†ç›–ç¬¦å·'ÂÂ[®BreakStatementÍ2Í2	ÀU¯ReturnStatementÍ2-Í2;KªIdentifierÍ24Í2:¦resultM°MethodDefinitionÍ2¢Í4aÃÂKªIdentifierÍ2©Í2¶­resolvePinIds¦methodN²FunctionExpressionÍ2¶Í4aÀÂÂÂ’KªIdentifierÍ2·Í2À©libraryIdKªIdentifierÍ2ÂÍ2Í«pinResolverL®BlockStatementÍ2ÏÍ4a’Z«IfStatementÍ2ÚÍ4)X°BinaryExpressionÍ2ŞÍ2ñKªIdentifierÍ2ŞÍ2é«pinResolver¢!=W§LiteralÍ2íÍ2ñÀ¤nullL®BlockStatementÍ2óÍ4)’O³VariableDeclarationÍ3Í3&‘P²VariableDeclaratorÍ3Í3%KªIdentifierÍ3Í3¤pinsS®CallExpressionÍ3Í3%KªIdentifierÍ3Í3«pinResolver‘KªIdentifierÍ3Í3$©libraryIdÂ¥constZ«IfStatementÍ34Í4X±LogicalExpressionÍ38Í3WX°BinaryExpressionÍ38Í3DKªIdentifierÍ38Í3<¤pins¢!=W§LiteralÍ3@Í3DÀ¤null¢&&X°BinaryExpressionÍ3HÍ3WT°MemberExpressionÍ3HÍ3SKªIdentifierÍ3HÍ3L¤pinsKªIdentifierÍ3MÍ3S¦lengthÂÂ¡>W§LiteralÍ3VÍ3W ¡0L®BlockStatementÍ3YÍ4“O³VariableDeclarationÍ3lÍ3{‘P²VariableDeclaratorÍ3rÍ3zKªIdentifierÍ3rÍ3u£idsQ¯ArrayExpressionÍ3xÍ3z¥constV¬ForStatementÍ3Í3òO³VariableDeclarationÍ3’Í3›‘P²VariableDeclaratorÍ3–Í3›KªIdentifierÍ3–Í3—¡iW§LiteralÍ3šÍ3› ¡0£letX°BinaryExpressionÍ3Í3¬KªIdentifierÍ3Í3¡i¡<T°MemberExpressionÍ3¡Í3¬KªIdentifierÍ3¡Í3¥¤pinsKªIdentifierÍ3¦Í3¬¦lengthÂÂY°UpdateExpressionÍ3®Í3±¢++ÂKªIdentifierÍ3®Í3¯¡iL®BlockStatementÍ3³Í3ò‘R³ExpressionStatementÍ3ÊÍ3ßS®CallExpressionÍ3ÊÍ3ŞT°MemberExpressionÍ3ÊÍ3ÒKªIdentifierÍ3ÊÍ3Í£idsKªIdentifierÍ3ÎÍ3Ò¤pushÂÂ‘T°MemberExpressionÍ3ÓÍ3İT°MemberExpressionÍ3ÓÍ3ÚKªIdentifierÍ3ÓÍ3×¤pinsKªIdentifierÍ3ØÍ3Ù¡iÃÂKªIdentifierÍ3ÛÍ3İ¢idÂÂÂU¯ReturnStatementÍ4Í4KªIdentifierÍ4Í4£idsÀÀU¯ReturnStatementÍ43Í4ZS®CallExpressionÍ4:Í4YT°MemberExpressionÍ4:Í4NKªIdentifierÍ4:Í4C©ErcEngineKªIdentifierÍ4DÍ4NªgetPinDefsÂÂ‘KªIdentifierÍ4OÍ4X©libraryIdÂM°MethodDefinitionÍ4gÍ9ôÃÂKªIdentifierÍ4nÍ4‚´checkMcuRequirements¦methodN²FunctionExpressionÍ4‚Í9ôÀÂÂÂ’KªIdentifierÍ4ƒÍ4†£docKªIdentifierÍ4ˆÍ4¦mcuIdsL®BlockStatementÍ4Í9ô”O³VariableDeclarationÍ4›Í4­‘P²VariableDeclaratorÍ4¡Í4¬KªIdentifierÍ4¡Í4§¦resultQ¯ArrayExpressionÍ4ªÍ4¬¥constO³VariableDeclarationÍ4·Í5e‘P²VariableDeclaratorÍ4½Í5dKªIdentifierÍ4½Í4Á¤mcusS®CallExpressionÍ4ÄÍ5dT°MemberExpressionÍ4ÄÍ4ÙT°MemberExpressionÍ4ÄÍ4ÒKªIdentifierÍ4ÄÍ4Ç£docKªIdentifierÍ4ÈÍ4ÒªcomponentsÂÂKªIdentifierÍ4ÓÍ4Ù¦filterÂÂ‘N·ArrowFunctionExpressionÍ4ÚÍ5cÀÃÂÂ‘KªIdentifierÍ4ÚÍ4Û¡cX±LogicalExpressionÍ4ßÍ5cX±LogicalExpressionÍ4ßÍ5BX±LogicalExpressionÍ4ßÍ5#S®CallExpressionÍ4ßÍ4öT°MemberExpressionÍ4ßÍ4éKªIdentifierÍ4ßÍ4å¦mcuIdsKªIdentifierÍ4æÍ4é£hasÂÂ‘T°MemberExpressionÍ4êÍ4õKªIdentifierÍ4êÍ4ë¡cKªIdentifierÍ4ìÍ4õ©libraryIdÂÂÂ¢||S®CallExpressionÍ5Í5#T°MemberExpressionÍ5Í5T°MemberExpressionÍ5Í5KªIdentifierÍ5Í5¡cKªIdentifierÍ5	Í5©libraryIdÂÂKªIdentifierÍ5Í5¨includesÂÂ‘W§LiteralÍ5Í5"¤AT89¦'AT89'Â¢||S®CallExpressionÍ5'Í5BT°MemberExpressionÍ5'Í5;T°MemberExpressionÍ5'Í52KªIdentifierÍ5'Í5(¡cKªIdentifierÍ5)Í52©libraryIdÂÂKªIdentifierÍ53Í5;¨includesÂÂ‘W§LiteralÍ5<Í5A£STC¥'STC'Â¢||S®CallExpressionÍ5FÍ5cT°MemberExpressionÍ5FÍ5ZT°MemberExpressionÍ5FÍ5QKªIdentifierÍ5FÍ5G¡cKªIdentifierÍ5HÍ5Q©libraryIdÂÂKªIdentifierÍ5RÍ5Z¨includesÂÂ‘W§LiteralÍ5[Í5b¥STM32§'STM32'ÂÂ¥constV¬ForStatementÍ5oÍ9ÕO³VariableDeclarationÍ5tÍ5}‘P²VariableDeclaratorÍ5xÍ5}KªIdentifierÍ5xÍ5y¡iW§LiteralÍ5|Í5} ¡0£letX°BinaryExpressionÍ5Í5KªIdentifierÍ5Í5€¡i¡<T°MemberExpressionÍ5ƒÍ5KªIdentifierÍ5ƒÍ5‡¤mcusKªIdentifierÍ5ˆÍ5¦lengthÂÂY°UpdateExpressionÍ5Í5“¢++ÂKªIdentifierÍ5Í5‘¡iL®BlockStatementÍ5•Í9Õ—O³VariableDeclarationÍ5¤Í5¸‘P²VariableDeclaratorÍ5ªÍ5·KªIdentifierÍ5ªÍ5­£mcuT°MemberExpressionÍ5°Í5·KªIdentifierÍ5°Í5´¤mcusKªIdentifierÍ5µÍ5¶¡iÃÂ¥constO³VariableDeclarationÍ5ÆÍ63‘P²VariableDeclaratorÍ5ÌÍ62KªIdentifierÍ5ÌÍ5ÖªhasCrystalS®CallExpressionÍ5ÙÍ62T°MemberExpressionÍ5ÙÍ5ìT°MemberExpressionÍ5ÙÍ5çKªIdentifierÍ5ÙÍ5Ü£docKªIdentifierÍ5İÍ5çªcomponentsÂÂKªIdentifierÍ5èÍ5ì¤someÂÂ‘N·ArrowFunctionExpressionÍ5íÍ61ÀÃÂÂ‘KªIdentifierÍ5íÍ5î¡cX±LogicalExpressionÍ5òÍ61S®CallExpressionÍ5òÍ6T°MemberExpressionÍ5òÍ6T°MemberExpressionÍ5òÍ5ıKªIdentifierÍ5òÍ5ó¡cKªIdentifierÍ5ôÍ5ı©libraryIdÂÂKªIdentifierÍ5şÍ6¨includesÂÂ‘W§LiteralÍ6Í6§CRYSTAL©'CRYSTAL'Â¢||S®CallExpressionÍ6Í61T°MemberExpressionÍ6Í6)T°MemberExpressionÍ6Í6 KªIdentifierÍ6Í6¡cKªIdentifierÍ6Í6 ©libraryIdÂÂKªIdentifierÍ6!Í6)¨includesÂÂ‘W§LiteralÍ6*Í60¤XTAL¦'XTAL'ÂÂ¥constO³VariableDeclarationÍ6AÍ6•‘P²VariableDeclaratorÍ6GÍ6”KªIdentifierÍ6GÍ6M¦hasCapX°BinaryExpressionÍ6PÍ6”T°MemberExpressionÍ6PÍ6S®CallExpressionÍ6PÍ6ˆT°MemberExpressionÍ6PÍ6eT°MemberExpressionÍ6PÍ6^KªIdentifierÍ6PÍ6S£docKªIdentifierÍ6TÍ6^ªcomponentsÂÂKªIdentifierÍ6_Í6e¦filterÂÂ‘N·ArrowFunctionExpressionÍ6fÍ6‡ÀÃÂÂ‘KªIdentifierÍ6fÍ6g¡cS®CallExpressionÍ6kÍ6‡T°MemberExpressionÍ6kÍ6T°MemberExpressionÍ6kÍ6vKªIdentifierÍ6kÍ6l¡cKªIdentifierÍ6mÍ6v©libraryIdÂÂKªIdentifierÍ6wÍ6ªstartsWithÂÂ‘W§LiteralÍ6‚Í6†¢C_¤'C_'ÂÂKªIdentifierÍ6‰Í6¦lengthÂÂ¢>=W§LiteralÍ6“Í6”¡2¥constO³VariableDeclarationÍ6£Í6î‘P²VariableDeclaratorÍ6©Í6íKªIdentifierÍ6©Í6´«hasResistorS®CallExpressionÍ6·Í6íT°MemberExpressionÍ6·Í6ÊT°MemberExpressionÍ6·Í6ÅKªIdentifierÍ6·Í6º£docKªIdentifierÍ6»Í6ÅªcomponentsÂÂKªIdentifierÍ6ÆÍ6Ê¤someÂÂ‘N·ArrowFunctionExpressionÍ6ËÍ6ìÀÃÂÂ‘KªIdentifierÍ6ËÍ6Ì¡cS®CallExpressionÍ6ĞÍ6ìT°MemberExpressionÍ6ĞÍ6æT°MemberExpressionÍ6ĞÍ6ÛKªIdentifierÍ6ĞÍ6Ñ¡cKªIdentifierÍ6ÒÍ6Û©libraryIdÂÂKªIdentifierÍ6ÜÍ6æªstartsWithÂÂ‘W§LiteralÍ6çÍ6ë¢R_¤'R_'ÂÂ¥constZ«IfStatementÍ6üÍ7ßY¯UnaryExpressionÍ7 Í7¡!ÃKªIdentifierÍ7Í7ªhasCrystalL®BlockStatementÍ7Í7ß‘R³ExpressionStatementÍ7 Í7ĞS®CallExpressionÍ7 Í7ÏT°MemberExpressionÍ7 Í7+KªIdentifierÍ7 Í7&¦resultKªIdentifierÍ7'Í7+¤pushÂÂ‘S®CallExpressionÍ7,Í7ÎT°MemberExpressionÍ7,Í7CKªIdentifierÍ7,Í75©ErcEngineKªIdentifierÍ76Í7C­makeViolationÂÂ—T°MemberExpressionÍ7DÍ7WKªIdentifierÍ7DÍ7O«ErcSeverityKªIdentifierÍ7PÍ7W§WARNINGÂÂT°MemberExpressionÍ7YÍ7tKªIdentifierÍ7YÍ7d«ErcRuleTypeKªIdentifierÍ7eÍ7t¯MISSING_CRYSTALÂÂ\¯TemplateLiteralÍ7vÍ7‘T°MemberExpressionÍ7}Í7‡KªIdentifierÍ7}Í7€£mcuKªIdentifierÍ7Í7‡¦refDesÂÂ’]¯TemplateElementÍ7wÍ7{^¤MCU ¤MCU Â]¯TemplateElementÍ7ˆÍ7^³ ç¼ºå°‘æ™¶æŒ¯ç”µè·¯³ ç¼ºå°‘æ™¶æŒ¯ç”µè·¯ÃKªIdentifierÍ7’Í7›©undefinedT°MemberExpressionÍ7Í7£KªIdentifierÍ7Í7 £mcuKªIdentifierÍ7¡Í7£¢idÂÂKªIdentifierÍ7¥Í7®©undefinedW§LiteralÍ7°Í7ÍÙ=å¤–ç½®æ™¶æŒ¯æˆ–ç¡®è®¤ä½¿ç”¨å†…éƒ¨æ—¶é’Ÿï¼ˆSTC/éƒ¨åˆ† STM32ï¼‰Ù?'å¤–ç½®æ™¶æŒ¯æˆ–ç¡®è®¤ä½¿ç”¨å†…éƒ¨æ—¶é’Ÿï¼ˆSTC/éƒ¨åˆ† STM32ï¼‰'ÂÂÀZ«IfStatementÍ7íÍ8ÌY¯UnaryExpressionÍ7ñÍ7ø¡!ÃKªIdentifierÍ7òÍ7ø¦hasCapL®BlockStatementÍ7úÍ8Ì‘R³ExpressionStatementÍ8Í8½S®CallExpressionÍ8Í8¼T°MemberExpressionÍ8Í8KªIdentifierÍ8Í8¦resultKªIdentifierÍ8Í8¤pushÂÂ‘S®CallExpressionÍ8Í8»T°MemberExpressionÍ8Í80KªIdentifierÍ8Í8"©ErcEngineKªIdentifierÍ8#Í80­makeViolationÂÂ—T°MemberExpressionÍ81Í8DKªIdentifierÍ81Í8<«ErcSeverityKªIdentifierÍ8=Í8D§WARNINGÂÂT°MemberExpressionÍ8FÍ8_KªIdentifierÍ8FÍ8Q«ErcRuleTypeKªIdentifierÍ8RÍ8_­MISSING_RESETÂÂ\¯TemplateLiteralÍ8aÍ8€‘T°MemberExpressionÍ8hÍ8rKªIdentifierÍ8hÍ8k£mcuKªIdentifierÍ8lÍ8r¦refDesÂÂ’]¯TemplateElementÍ8bÍ8f^¤MCU ¤MCU Â]¯TemplateElementÍ8sÍ8^Ù  å¯èƒ½ç¼ºå°‘å»è€¦/å¤ä½ç”µå®¹Ù  å¯èƒ½ç¼ºå°‘å»è€¦/å¤ä½ç”µå®¹ÃKªIdentifierÍ8‚Í8‹©undefinedT°MemberExpressionÍ8Í8“KªIdentifierÍ8Í8£mcuKªIdentifierÍ8‘Í8“¢idÂÂKªIdentifierÍ8•Í8©undefinedW§LiteralÍ8 Í8ºÙ/æ·»åŠ  100nF å»è€¦ç”µå®¹å’Œ 10kÎ© ä¸Šæ‹‰ç”µé˜»Ù1'æ·»åŠ  100nF å»è€¦ç”µå®¹å’Œ 10kÎ© ä¸Šæ‹‰ç”µé˜»'ÂÂÀZ«IfStatementÍ8ÚÍ9ÊX±LogicalExpressionÍ8ŞÍ8õY¯UnaryExpressionÍ8ŞÍ8ê¡!ÃKªIdentifierÍ8ßÍ8ê«hasResistor¢&&Y¯UnaryExpressionÍ8îÍ8õ¡!ÃKªIdentifierÍ8ïÍ8õ¦hasCapL®BlockStatementÍ8÷Í9Ê‘R³ExpressionStatementÍ9
-Í9»S®CallExpressionÍ9
-Í9ºT°MemberExpressionÍ9
-Í9KªIdentifierÍ9
-Í9¦resultKªIdentifierÍ9Í9¤pushÂÂ‘S®CallExpressionÍ9Í9¹T°MemberExpressionÍ9Í9-KªIdentifierÍ9Í9©ErcEngineKªIdentifierÍ9 Í9-­makeViolationÂÂ—T°MemberExpressionÍ9.Í9AKªIdentifierÍ9.Í99«ErcSeverityKªIdentifierÍ9:Í9A§WARNINGÂÂT°MemberExpressionÍ9CÍ9\KªIdentifierÍ9CÍ9N«ErcRuleTypeKªIdentifierÍ9OÍ9\­MISSING_RESETÂÂ\¯TemplateLiteralÍ9^Í9{‘T°MemberExpressionÍ9eÍ9oKªIdentifierÍ9eÍ9h£mcuKªIdentifierÍ9iÍ9o¦refDesÂÂ’]¯TemplateElementÍ9_Í9c^¤MCU ¤MCU Â]¯TemplateElementÍ9pÍ9z^¼ å¤ä½ç”µè·¯å¯èƒ½ä¸å®Œæ•´¼ å¤ä½ç”µè·¯å¯èƒ½ä¸å®Œæ•´ÃKªIdentifierÍ9}Í9†©undefinedT°MemberExpressionÍ9ˆÍ9KªIdentifierÍ9ˆÍ9‹£mcuKªIdentifierÍ9ŒÍ9¢idÂÂKªIdentifierÍ9Í9™©undefinedW§LiteralÍ9›Í9¸Ù.æ·»åŠ  RST å¼•è„š 10kÎ© ä¸Šæ‹‰å’Œ 100nF ç”µå®¹Ù0'æ·»åŠ  RST å¼•è„š 10kÎ© ä¸Šæ‹‰å’Œ 100nF ç”µå®¹'ÂÂÀU¯ReturnStatementÍ9ßÍ9íKªIdentifierÍ9æÍ9ì¦resultM°MethodDefinitionÍ9úÍ@·ÃÂKªIdentifierÍ:Í:®checkPowerPins¦methodN²FunctionExpressionÍ:Í@·ÀÂÂÂ‘KªIdentifierÍ:Í:£docL®BlockStatementÍ:Í@·šO³VariableDeclarationÍ: Í:2‘P²VariableDeclaratorÍ:&Í:1KªIdentifierÍ:&Í:,¦resultQ¯ArrayExpressionÍ:/Í:1¥constO³VariableDeclarationÍ:<Í:O‘P²VariableDeclaratorÍ:@Í:NKªIdentifierÍ:@Í:F¦hasVccW§LiteralÍ:IÍ:NÂ¥false£letO³VariableDeclarationÍ:YÍ:l‘P²VariableDeclaratorÍ:]Í:kKªIdentifierÍ:]Í:c¦hasGndW§LiteralÍ:fÍ:kÂ¥false£letO³VariableDeclarationÍ:vÍ:‘P²VariableDeclaratorÍ:zÍ:KªIdentifierÍ:zÍ:†¬hasAltSourceW§LiteralÍ:‰Í:Â¥false£letO³VariableDeclarationÍ:™Í:µ‘P²VariableDeclaratorÍ:Í:´KªIdentifierÍ:Í:¬¯hasMcuOrDigitalW§LiteralÍ:¯Í:´Â¥false£letV¬ForStatementÍ:¿Í<0O³VariableDeclarationÍ:ÄÍ:Í‘P²VariableDeclaratorÍ:ÈÍ:ÍKªIdentifierÍ:ÈÍ:É¡iW§LiteralÍ:ÌÍ:Í ¡0£letX°BinaryExpressionÍ:ÏÍ:âKªIdentifierÍ:ÏÍ:Ğ¡i¡<T°MemberExpressionÍ:ÓÍ:âT°MemberExpressionÍ:ÓÍ:ÛKªIdentifierÍ:ÓÍ:Ö£docKªIdentifierÍ:×Í:Û¤netsÂÂKªIdentifierÍ:ÜÍ:â¦lengthÂÂY°UpdateExpressionÍ:äÍ:ç¢++ÂKªIdentifierÍ:äÍ:å¡iL®BlockStatementÍ:éÍ<0“O³VariableDeclarationÍ:øÍ;‘P²VariableDeclaratorÍ:şÍ;KªIdentifierÍ:şÍ;£netT°MemberExpressionÍ;Í;T°MemberExpressionÍ;Í;KªIdentifierÍ;Í;£docKªIdentifierÍ;Í;¤netsÂÂKªIdentifierÍ;Í;¡iÃÂ¥constZ«IfStatementÍ;Í;šX±LogicalExpressionÍ;"Í;hX±LogicalExpressionÍ;"Í;RX°BinaryExpressionÍ;"Í;<T°MemberExpressionÍ;"Í;*KªIdentifierÍ;"Í;%£netKªIdentifierÍ;&Í;*¤typeÂÂ£===T°MemberExpressionÍ;/Í;<KªIdentifierÍ;/Í;6§NetTypeKªIdentifierÍ;7Í;<¥POWERÂÂ¢||X°BinaryExpressionÍ;@Í;RT°MemberExpressionÍ;@Í;HKªIdentifierÍ;@Í;C£netKªIdentifierÍ;DÍ;H¤nameÂÂ£===W§LiteralÍ;MÍ;R£VCC¥'VCC'¢||X°BinaryExpressionÍ;VÍ;hT°MemberExpressionÍ;VÍ;^KªIdentifierÍ;VÍ;Y£netKªIdentifierÍ;ZÍ;^¤nameÂÂ£===W§LiteralÍ;cÍ;h£VDD¥'VDD'L®BlockStatementÍ;jÍ;š‘R³ExpressionStatementÍ;}Í;‹b´AssignmentExpressionÍ;}Í;Š¡=KªIdentifierÍ;}Í;ƒ¦hasVccW§LiteralÍ;†Í;ŠÃ¤trueÀZ«IfStatementÍ;¨Í<%X±LogicalExpressionÍ;¬Í;óX±LogicalExpressionÍ;¬Í;İX°BinaryExpressionÍ;¬Í;ÇT°MemberExpressionÍ;¬Í;´KªIdentifierÍ;¬Í;¯£netKªIdentifierÍ;°Í;´¤typeÂÂ£===T°MemberExpressionÍ;¹Í;ÇKªIdentifierÍ;¹Í;À§NetTypeKªIdentifierÍ;ÁÍ;Ç¦GROUNDÂÂ¢||X°BinaryExpressionÍ;ËÍ;İT°MemberExpressionÍ;ËÍ;ÓKªIdentifierÍ;ËÍ;Î£netKªIdentifierÍ;ÏÍ;Ó¤nameÂÂ£===W§LiteralÍ;ØÍ;İ£GND¥'GND'¢||X°BinaryExpressionÍ;áÍ;óT°MemberExpressionÍ;áÍ;éKªIdentifierÍ;áÍ;ä£netKªIdentifierÍ;åÍ;é¤nameÂÂ£===W§LiteralÍ;îÍ;ó£VSS¥'VSS'L®BlockStatementÍ;õÍ<%‘R³ExpressionStatementÍ<Í<b´AssignmentExpressionÍ<Í<¡=KªIdentifierÍ<Í<¦hasGndW§LiteralÍ<Í<Ã¤trueÀV¬ForStatementÍ<:Í>¥O³VariableDeclarationÍ<?Í<I‘P²VariableDeclaratorÍ<CÍ<IKªIdentifierÍ<CÍ<E¢ciW§LiteralÍ<HÍ<I ¡0£letX°BinaryExpressionÍ<KÍ<eKªIdentifierÍ<KÍ<M¢ci¡<T°MemberExpressionÍ<PÍ<eT°MemberExpressionÍ<PÍ<^KªIdentifierÍ<PÍ<S£docKªIdentifierÍ<TÍ<^ªcomponentsÂÂKªIdentifierÍ<_Í<e¦lengthÂÂY°UpdateExpressionÍ<gÍ<k¢++ÂKªIdentifierÍ<gÍ<i¢ciL®BlockStatementÍ<mÍ>¥•O³VariableDeclarationÍ<|Í<¥‘P²VariableDeclaratorÍ<‚Í<¤KªIdentifierÍ<‚Í<…£libT°MemberExpressionÍ<ˆÍ<¤T°MemberExpressionÍ<ˆÍ<šT°MemberExpressionÍ<ˆÍ<–KªIdentifierÍ<ˆÍ<‹£docKªIdentifierÍ<ŒÍ<–ªcomponentsÂÂKªIdentifierÍ<—Í<™¢ciÃÂKªIdentifierÍ<›Í<¤©libraryIdÂÂ¥constZ«IfStatementÍ<³Í<öX°BinaryExpressionÍ<·Í<ÄKªIdentifierÍ<·Í<º£lib£===W§LiteralÍ<¿Í<Ä£VCC¥'VCC'L®BlockStatementÍ<ÆÍ<ö‘R³ExpressionStatementÍ<ÙÍ<çb´AssignmentExpressionÍ<ÙÍ<æ¡=KªIdentifierÍ<ÙÍ<ß¦hasVccW§LiteralÍ<âÍ<æÃ¤trueÀZ«IfStatementÍ=Í=GX°BinaryExpressionÍ=Í=KªIdentifierÍ=Í=£lib£===W§LiteralÍ=Í=£GND¥'GND'L®BlockStatementÍ=Í=G‘R³ExpressionStatementÍ=*Í=8b´AssignmentExpressionÍ=*Í=7¡=KªIdentifierÍ=*Í=0¦hasGndW§LiteralÍ=3Í=7Ã¤trueÀZ«IfStatementÍ=UÍ=ÇX±LogicalExpressionÍ=YÍ=X±LogicalExpressionÍ=YÍ=~X°BinaryExpressionÍ=YÍ=fKªIdentifierÍ=YÍ=\£lib£===W§LiteralÍ=aÍ=f£VAC¥'VAC'¢||X°BinaryExpressionÍ=jÍ=~KªIdentifierÍ=jÍ=m£lib£===W§LiteralÍ=rÍ=~ªSIGNAL_GEN¬'SIGNAL_GEN'¢||X°BinaryExpressionÍ=‚Í=KªIdentifierÍ=‚Í=…£lib£===W§LiteralÍ=ŠÍ=£VEE¥'VEE'L®BlockStatementÍ=‘Í=Ç‘R³ExpressionStatementÍ=¤Í=¸b´AssignmentExpressionÍ=¤Í=·¡=KªIdentifierÍ=¤Í=°¬hasAltSourceW§LiteralÍ=³Í=·Ã¤trueÀZ«IfStatementÍ=ÕÍ>šX±LogicalExpressionÍ=ÙÍ>_X±LogicalExpressionÍ=ÙÍ>FX±LogicalExpressionÍ=ÙÍ>X±LogicalExpressionÍ=ÙÍ>S®CallExpressionÍ=ÙÍ=íT°MemberExpressionÍ=ÙÍ=åKªIdentifierÍ=ÙÍ=Ü£libKªIdentifierÍ=İÍ=å¨includesÂÂ‘W§LiteralÍ=æÍ=ì¤AT89¦'AT89'Â¢||S®CallExpressionÍ=ñÍ>T°MemberExpressionÍ=ñÍ=ıKªIdentifierÍ=ñÍ=ô£libKªIdentifierÍ=õÍ=ı¨includesÂÂ‘W§LiteralÍ=şÍ>£STC¥'STC'Â¢||S®CallExpressionÍ>Í>T°MemberExpressionÍ>Í>KªIdentifierÍ>Í>£libKªIdentifierÍ>Í>¨includesÂÂ‘W§LiteralÍ>Í>¥STM32§'STM32'Â¢||S®CallExpressionÍ>2Í>FT°MemberExpressionÍ>2Í>>KªIdentifierÍ>2Í>5£libKªIdentifierÍ>6Í>>¨includesÂÂ‘W§LiteralÍ>?Í>E¤74HC¦'74HC'Â¢||S®CallExpressionÍ>JÍ>_T°MemberExpressionÍ>JÍ>VKªIdentifierÍ>JÍ>M£libKªIdentifierÍ>NÍ>V¨includesÂÂ‘W§LiteralÍ>WÍ>^¥GATE_§'GATE_'ÂL®BlockStatementÍ>aÍ>š‘R³ExpressionStatementÍ>tÍ>‹b´AssignmentExpressionÍ>tÍ>Š¡=KªIdentifierÍ>tÍ>ƒ¯hasMcuOrDigitalW§LiteralÍ>†Í>ŠÃ¤trueÀZ«IfStatementÍ>İÍ?ÉX±LogicalExpressionÍ>áÍ?Y¯UnaryExpressionÍ>áÍ>è¡!ÃKªIdentifierÍ>âÍ>è¦hasVcc¢&&X±LogicalExpressionÍ>íÍ?KªIdentifierÍ>íÍ>ü¯hasMcuOrDigital¢||Y¯UnaryExpressionÍ? Í?¡!ÃKªIdentifierÍ?Í?¬hasAltSourceL®BlockStatementÍ?Í?É‘R³ExpressionStatementÍ?Í?¾S®CallExpressionÍ?Í?½T°MemberExpressionÍ?Í?*KªIdentifierÍ?Í?%¦resultKªIdentifierÍ?&Í?*¤pushÂÂ‘S®CallExpressionÍ?+Í?¼T°MemberExpressionÍ?+Í?BKªIdentifierÍ?+Í?4©ErcEngineKªIdentifierÍ?5Í?B­makeViolationÂÂ—T°MemberExpressionÍ?CÍ?TKªIdentifierÍ?CÍ?N«ErcSeverityKªIdentifierÍ?OÍ?T¥ERRORÂÂT°MemberExpressionÍ?VÍ?pKªIdentifierÍ?VÍ?a«ErcRuleTypeKªIdentifierÍ?bÍ?p®POWER_REVERSEDÂÂW§LiteralÍ?rÍ?‡Ù%åŸç†å›¾ç¼ºå°‘ç”µæºç½‘ç»œ (VCC/VDD)Ù''åŸç†å›¾ç¼ºå°‘ç”µæºç½‘ç»œ (VCC/VDD)'KªIdentifierÍ?‰Í?’©undefinedKªIdentifierÍ?”Í?©undefinedKªIdentifierÍ?ŸÍ?¨©undefinedW§LiteralÍ?ªÍ?»Ù-æ·»åŠ ç”µæºç¬¦å·å¹¶è¿æ¥åˆ°å™¨ä»¶ç”µæºè„šÙ/'æ·»åŠ ç”µæºç¬¦å·å¹¶è¿æ¥åˆ°å™¨ä»¶ç”µæºè„š'ÂÂÀZ«IfStatementÍ?ÓÍ@˜Y¯UnaryExpressionÍ?×Í?Ş¡!ÃKªIdentifierÍ?ØÍ?Ş¦hasGndL®BlockStatementÍ?àÍ@˜‘R³ExpressionStatementÍ?ïÍ@S®CallExpressionÍ?ïÍ@ŒT°MemberExpressionÍ?ïÍ?úKªIdentifierÍ?ïÍ?õ¦resultKªIdentifierÍ?öÍ?ú¤pushÂÂ‘S®CallExpressionÍ?ûÍ@‹T°MemberExpressionÍ?ûÍ@KªIdentifierÍ?ûÍ@©ErcEngineKªIdentifierÍ@Í@­makeViolationÂÂ—T°MemberExpressionÍ@Í@$KªIdentifierÍ@Í@«ErcSeverityKªIdentifierÍ@Í@$¥ERRORÂÂT°MemberExpressionÍ@&Í@@KªIdentifierÍ@&Í@1«ErcRuleTypeKªIdentifierÍ@2Í@@®POWER_REVERSEDÂÂW§LiteralÍ@BÍ@VÙ"åŸç†å›¾ç¼ºå°‘åœ°ç½‘ç»œ (GND/VSS)Ù$'åŸç†å›¾ç¼ºå°‘åœ°ç½‘ç»œ (GND/VSS)'KªIdentifierÍ@XÍ@a©undefinedKªIdentifierÍ@cÍ@l©undefinedKªIdentifierÍ@nÍ@w©undefinedW§LiteralÍ@yÍ@ŠÙ%æ·»åŠ åœ°ç¬¦å·å¹¶è¿æ¥åˆ°ç”µè·¯ GNDÙ''æ·»åŠ åœ°ç¬¦å·å¹¶è¿æ¥åˆ°ç”µè·¯ GND'ÂÂÀU¯ReturnStatementÍ@¢Í@°KªIdentifierÍ@©Í@¯¦resultM°MethodDefinitionÍ@½ÍB‰ÃÂKªIdentifierÍ@ÄÍ@Ø´checkSubcircuitPorts¦methodN²FunctionExpressionÍ@ØÍB‰ÀÂÂÂ‘KªIdentifierÍ@ÙÍ@Ü£docL®BlockStatementÍ@ŞÍB‰“O³VariableDeclarationÍ@éÍ@û‘P²VariableDeclaratorÍ@ïÍ@úKªIdentifierÍ@ïÍ@õ¦resultQ¯ArrayExpressionÍ@øÍ@ú¥constV¬ForStatementÍAÍBjO³VariableDeclarationÍA
-ÍA‘P²VariableDeclaratorÍAÍAKªIdentifierÍAÍA¡iW§LiteralÍAÍA ¡0£letX°BinaryExpressionÍAÍA/KªIdentifierÍAÍA¡i¡<T°MemberExpressionÍAÍA/T°MemberExpressionÍAÍA(KªIdentifierÍAÍA£docKªIdentifierÍAÍA(«subcircuitsÂÂKªIdentifierÍA)ÍA/¦lengthÂÂY°UpdateExpressionÍA1ÍA4¢++ÂKªIdentifierÍA1ÍA2¡iL®BlockStatementÍA6ÍBj’O³VariableDeclarationÍAEÍAd‘P²VariableDeclaratorÍAKÍAcKªIdentifierÍAKÍAN£subT°MemberExpressionÍAQÍAcT°MemberExpressionÍAQÍA`KªIdentifierÍAQÍAT£docKªIdentifierÍAUÍA`«subcircuitsÂÂKªIdentifierÍAaÍAb¡iÃÂ¥constZ«IfStatementÍArÍB_X±LogicalExpressionÍAvÍAšY¯UnaryExpressionÍAvÍA€¡!ÃT°MemberExpressionÍAwÍA€KªIdentifierÍAwÍAz£subKªIdentifierÍA{ÍA€¥portsÂÂ¢||X°BinaryExpressionÍA„ÍAšT°MemberExpressionÍA„ÍA”T°MemberExpressionÍA„ÍAKªIdentifierÍA„ÍA‡£subKªIdentifierÍAˆÍA¥portsÂÂKªIdentifierÍAÍA”¦lengthÂÂ£===W§LiteralÍA™ÍAš ¡0L®BlockStatementÍAœÍB_‘R³ExpressionStatementÍA¯ÍBPS®CallExpressionÍA¯ÍBOT°MemberExpressionÍA¯ÍAºKªIdentifierÍA¯ÍAµ¦resultKªIdentifierÍA¶ÍAº¤pushÂÂ‘S®CallExpressionÍA»ÍBNT°MemberExpressionÍA»ÍAÒKªIdentifierÍA»ÍAÄ©ErcEngineKªIdentifierÍAÅÍAÒ­makeViolationÂÂ—T°MemberExpressionÍAÓÍAæKªIdentifierÍAÓÍAŞ«ErcSeverityKªIdentifierÍAßÍAæ§WARNINGÂÂT°MemberExpressionÍAèÍBKªIdentifierÍAèÍAó«ErcRuleTypeKªIdentifierÍAôÍB­PORT_MISMATCHÂÂ\¯TemplateLiteralÍBÍB‘T°MemberExpressionÍBÍBKªIdentifierÍBÍB£subKªIdentifierÍBÍB¤nameÂÂ’]¯TemplateElementÍBÍB	^«å­ç”µè·¯ "«å­ç”µè·¯ "Â]¯TemplateElementÍBÍB^±" æœªå®šä¹‰ç«¯å£±" æœªå®šä¹‰ç«¯å£ÃKªIdentifierÍBÍB'©undefinedT°MemberExpressionÍB)ÍB/KªIdentifierÍB)ÍB,£subKªIdentifierÍB-ÍB/¢idÂÂKªIdentifierÍB1ÍB:©undefinedW§LiteralÍB<ÍBMÙ+ä¸ºå­ç”µè·¯æ·»åŠ è¾“å…¥/è¾“å‡ºç«¯å£å®šä¹‰Ù-'ä¸ºå­ç”µè·¯æ·»åŠ è¾“å…¥/è¾“å‡ºç«¯å£å®šä¹‰'ÂÂÀU¯ReturnStatementÍBtÍB‚KªIdentifierÍB{ÍB¦resultM°MethodDefinitionÍBàÍX‰ÃÂKªIdentifierÍBçÍBñªgetPinDefs¦methodN²FunctionExpressionÍBñÍX‰ÀÂÂÂ‘KªIdentifierÍBòÍBû©libraryIdL®BlockStatementÍBıÍX‰Ü +Z«IfStatementÍC;ÍDX±LogicalExpressionÍC?ÍCñX±LogicalExpressionÍC?ÍCÃX±LogicalExpressionÍC?ÍC¢X±LogicalExpressionÍC?ÍCwS®CallExpressionÍC?ÍCYT°MemberExpressionÍC?ÍCSKªIdentifierÍC?ÍCH©libraryIdKªIdentifierÍCIÍCSªstartsWithÂÂ‘W§LiteralÍCTÍCX¢R_¤'R_'Â¢||S®CallExpressionÍC]ÍCwT°MemberExpressionÍC]ÍCqKªIdentifierÍC]ÍCf©libraryIdKªIdentifierÍCgÍCqªstartsWithÂÂ‘W§LiteralÍCrÍCv¢C_¤'C_'Â¢||S®CallExpressionÍCˆÍC¢T°MemberExpressionÍCˆÍCœKªIdentifierÍCˆÍC‘©libraryIdKªIdentifierÍC’ÍCœªstartsWithÂÂ‘W§LiteralÍCÍC¡¢L_¤'L_'Â¢||S®CallExpressionÍC¦ÍCÃT°MemberExpressionÍC¦ÍCºKªIdentifierÍC¦ÍC¯©libraryIdKªIdentifierÍC°ÍCºªstartsWithÂÂ‘W§LiteralÍC»ÍCÂ¥XTAL_§'XTAL_'Â¢||S®CallExpressionÍCÔÍCñT°MemberExpressionÍCÔÍCèKªIdentifierÍCÔÍCİ©libraryIdKªIdentifierÍCŞÍCèªstartsWithÂÂ‘W§LiteralÍCéÍCğ¥FUSE_§'FUSE_'ÂL®BlockStatementÍCóÍD‘U¯ReturnStatementÍDÍDQ¯ArrayExpressionÍD	ÍD’W§LiteralÍD
-ÍD¡1£'1'W§LiteralÍDÍD¡2£'2'ÀZ«IfStatementÍD)ÍD|S®CallExpressionÍD-ÍDIT°MemberExpressionÍD-ÍDAKªIdentifierÍD-ÍD6©libraryIdKªIdentifierÍD7ÍDAªstartsWithÂÂ‘W§LiteralÍDBÍDH¤POT_¦'POT_'ÂL®BlockStatementÍDKÍD|‘U¯ReturnStatementÍDZÍDqQ¯ArrayExpressionÍDaÍDp“W§LiteralÍDbÍDe¡1£'1'W§LiteralÍDgÍDj¡2£'2'W§LiteralÍDlÍDo¡W£'W'ÀZ«IfStatementÍD¢ÍEKX±LogicalExpressionÍD¦ÍEX±LogicalExpressionÍD¦ÍEX±LogicalExpressionÍD¦ÍDÜS®CallExpressionÍD¦ÍDÂT°MemberExpressionÍD¦ÍDºKªIdentifierÍD¦ÍD¯©libraryIdKªIdentifierÍD°ÍDºªstartsWithÂÂ‘W§LiteralÍD»ÍDÁ¤LED_¦'LED_'Â¢||X°BinaryExpressionÍDÆÍDÜKªIdentifierÍDÆÍDÏ©libraryId£===W§LiteralÍDÔÍDÜ¦1N4148¨'1N4148'¢||X°BinaryExpressionÍDíÍEKªIdentifierÍDíÍDö©libraryId£===W§LiteralÍDûÍE¦1N4007¨'1N4007'¢||X°BinaryExpressionÍEÍEKªIdentifierÍEÍE©libraryId£===W§LiteralÍEÍE¦1N5819¨'1N5819'L®BlockStatementÍEÍEK‘U¯ReturnStatementÍE.ÍE@Q¯ArrayExpressionÍE5ÍE?’W§LiteralÍE6ÍE9¡A£'A'W§LiteralÍE;ÍE>¡K£'K'ÀZ«IfStatementÍEœÍEåX°BinaryExpressionÍE ÍE·KªIdentifierÍE ÍE©©libraryId£===W§LiteralÍE®ÍE·§SW_PUSH©'SW_PUSH'L®BlockStatementÍE¹ÍEå‘U¯ReturnStatementÍEÈÍEÚQ¯ArrayExpressionÍEÏÍEÙ’W§LiteralÍEĞÍEÓ¡1£'1'W§LiteralÍEÕÍEØ¡2£'2'ÀZ«IfStatementÍEïÍFNX°BinaryExpressionÍEóÍFKªIdentifierÍEóÍEü©libraryId£===W§LiteralÍFÍFªRELAY_SPDT¬'RELAY_SPDT'L®BlockStatementÍFÍFN‘U¯ReturnStatementÍFÍFCQ¯ArrayExpressionÍF%ÍFB•W§LiteralÍF&ÍF)¡1£'1'W§LiteralÍF+ÍF.¡2£'2'W§LiteralÍF0ÍF5£COM¥'COM'W§LiteralÍF7ÍF;¢NO¤'NO'W§LiteralÍF=ÍFA¢NC¤'NC'ÀZ«IfStatementÍFXÍF X°BinaryExpressionÍF\ÍFrKªIdentifierÍF\ÍFe©libraryId£===W§LiteralÍFjÍFr¦BUZZER¨'BUZZER'L®BlockStatementÍFtÍF ‘U¯ReturnStatementÍFƒÍF•Q¯ArrayExpressionÍFŠÍF”’W§LiteralÍF‹ÍF¡1£'1'W§LiteralÍFÍF“¡2£'2'ÀZ«IfStatementÍGÍG@X°BinaryExpressionÍGÍG$KªIdentifierÍGÍG©libraryId£===W§LiteralÍGÍG$£VCC¥'VCC'U¯ReturnStatementÍG3ÍG@Q¯ArrayExpressionÍG:ÍG?‘W§LiteralÍG;ÍG>¡1£'1'ÀZ«IfStatementÍGJÍG}X°BinaryExpressionÍGNÍGaKªIdentifierÍGNÍGW©libraryId£===W§LiteralÍG\ÍGa£GND¥'GND'U¯ReturnStatementÍGpÍG}Q¯ArrayExpressionÍGwÍG|‘W§LiteralÍGxÍG{¡1£'1'ÀZ«IfStatementÍG‡ÍGºX°BinaryExpressionÍG‹ÍGKªIdentifierÍG‹ÍG”©libraryId£===W§LiteralÍG™ÍG£VEE¥'VEE'U¯ReturnStatementÍG­ÍGºQ¯ArrayExpressionÍG´ÍG¹‘W§LiteralÍGµÍG¸¡1£'1'ÀZ«IfStatementÍGÄÍGüX°BinaryExpressionÍGÈÍGÛKªIdentifierÍGÈÍGÑ©libraryId£===W§LiteralÍGÖÍGÛ£VAC¥'VAC'U¯ReturnStatementÍGêÍGüQ¯ArrayExpressionÍGñÍGû’W§LiteralÍGòÍGõ¡1£'1'W§LiteralÍG÷ÍGú¡2£'2'ÀZ«IfStatementÍHÍHIX°BinaryExpressionÍH
-ÍH$KªIdentifierÍH
-ÍH©libraryId£===W§LiteralÍHÍH$ªSIGNAL_GEN¬'SIGNAL_GEN'U¯ReturnStatementÍH3ÍHIQ¯ArrayExpressionÍH:ÍHH’W§LiteralÍH;ÍH@£OUT¥'OUT'W§LiteralÍHBÍHG£GND¥'GND'ÀZ«IfStatementÍHgÍHºX°BinaryExpressionÍHkÍH€KªIdentifierÍHkÍHt©libraryId£===W§LiteralÍHyÍH€¥UA741§'UA741'U¯ReturnStatementÍHÍHºQ¯ArrayExpressionÍH–ÍH¹•W§LiteralÍH—ÍHœ£IN+¥'IN+'W§LiteralÍHÍH££IN-¥'IN-'W§LiteralÍH¥ÍHª£OUT¥'OUT'W§LiteralÍH¬ÍH±£VCC¥'VCC'W§LiteralÍH³ÍH¸£VEE¥'VEE'ÀZ«IfStatementÍHÄÍIVX±LogicalExpressionÍHÈÍHöX°BinaryExpressionÍHÈÍHİKªIdentifierÍHÈÍHÑ©libraryId£===W§LiteralÍHÖÍHİ¥LM358§'LM358'¢||X°BinaryExpressionÍHáÍHöKªIdentifierÍHáÍHê©libraryId£===W§LiteralÍHïÍHö¥TL082§'TL082'L®BlockStatementÍHøÍIV‘U¯ReturnStatementÍIÍIKQ¯ArrayExpressionÍIÍIJ˜W§LiteralÍIÍI¤IN+1¦'IN+1'W§LiteralÍIÍI¤IN-1¦'IN-1'W§LiteralÍIÍI%¤OUT1¦'OUT1'W§LiteralÍI'ÍI-¤IN+2¦'IN+2'W§LiteralÍI/ÍI5¤IN-2¦'IN-2'W§LiteralÍI7ÍI=¤OUT2¦'OUT2'W§LiteralÍI?ÍIC¢V+¤'V+'W§LiteralÍIEÍII¢V-¤'V-'ÀZ«IfStatementÍI`ÍIöX±LogicalExpressionÍIdÍI’X°BinaryExpressionÍIdÍIyKªIdentifierÍIdÍIm©libraryId£===W§LiteralÍIrÍIy¥LM555§'LM555'¢||X°BinaryExpressionÍI}ÍI’KªIdentifierÍI}ÍI†©libraryId£===W§LiteralÍI‹ÍI’¥NE555§'NE555'L®BlockStatementÍI”ÍIö‘U¯ReturnStatementÍI£ÍIëQ¯ArrayExpressionÍIªÍIê˜W§LiteralÍI«ÍI°£GND¥'GND'W§LiteralÍI²ÍI¸¤TRIG¦'TRIG'W§LiteralÍIºÍI¿£OUT¥'OUT'W§LiteralÍIÁÍIÈ¥RESET§'RESET'W§LiteralÍIÊÍIĞ¤CTRL¦'CTRL'W§LiteralÍIÒÍIÙ¥THRES§'THRES'W§LiteralÍIÛÍIâ¥DISCH§'DISCH'W§LiteralÍIäÍIé£VCC¥'VCC'ÀZ«IfStatementÍJ7ÍJ½X±LogicalExpressionÍJ;ÍJŠX±LogicalExpressionÍJ;ÍJkX°BinaryExpressionÍJ;ÍJQKªIdentifierÍJ;ÍJD©libraryId£===W§LiteralÍJIÍJQ¦LM7805¨'LM7805'¢||X°BinaryExpressionÍJUÍJkKªIdentifierÍJUÍJ^©libraryId£===W§LiteralÍJcÍJk¦LM7812¨'LM7812'¢||X°BinaryExpressionÍJoÍJŠKªIdentifierÍJoÍJx©libraryId£===W§LiteralÍJ}ÍJŠ«AMS1117_3V3­'AMS1117_3V3'L®BlockStatementÍJŒÍJ½‘U¯ReturnStatementÍJ›ÍJ²Q¯ArrayExpressionÍJ¢ÍJ±“W§LiteralÍJ£ÍJ¦¡1£'1'W§LiteralÍJ¨ÍJ«¡2£'2'W§LiteralÍJ­ÍJ°¡3£'3'ÀZ«IfStatementÍKÍKgS®CallExpressionÍKÍK+T°MemberExpressionÍKÍKKªIdentifierÍKÍK©libraryIdKªIdentifierÍKÍK¨includesÂÂ‘W§LiteralÍKÍK*©STM32F407«'STM32F407'ÂL®BlockStatementÍK-ÍKg‘U¯ReturnStatementÍK<ÍK\S®CallExpressionÍKCÍK[T°MemberExpressionÍKCÍKYKªIdentifierÍKCÍKL©ErcEngineKªIdentifierÍKMÍKY¬stm32Pins100ÂÂÂÀZ«IfStatementÍKqÍKÏS®CallExpressionÍKuÍK”T°MemberExpressionÍKuÍK‡KªIdentifierÍKuÍK~©libraryIdKªIdentifierÍKÍK‡¨includesÂÂ‘W§LiteralÍKˆÍK“©STM32F030«'STM32F030'ÂL®BlockStatementÍK–ÍKÏ‘U¯ReturnStatementÍK¥ÍKÄS®CallExpressionÍK¬ÍKÃT°MemberExpressionÍK¬ÍKÁKªIdentifierÍK¬ÍKµ©ErcEngineKªIdentifierÍK¶ÍKÁ«stm32Pins32ÂÂÂÀZ«IfStatementÍKÙÍL3S®CallExpressionÍKİÍKøT°MemberExpressionÍKİÍKïKªIdentifierÍKİÍKæ©libraryIdKªIdentifierÍKçÍKï¨includesÂÂ‘W§LiteralÍKğÍK÷¥STM32§'STM32'ÂL®BlockStatementÍKúÍL3‘U¯ReturnStatementÍL	ÍL(S®CallExpressionÍLÍL'T°MemberExpressionÍLÍL%KªIdentifierÍLÍL©ErcEngineKªIdentifierÍLÍL%«stm32Pins48ÂÂÂÀZ«IfStatementÍL=ÍL°X±LogicalExpressionÍLAÍLxS®CallExpressionÍLAÍL[T°MemberExpressionÍLAÍLSKªIdentifierÍLAÍLJ©libraryIdKªIdentifierÍLKÍLS¨includesÂÂ‘W§LiteralÍLTÍLZ¤AT89¦'AT89'Â¢||S®CallExpressionÍL_ÍLxT°MemberExpressionÍL_ÍLqKªIdentifierÍL_ÍLh©libraryIdKªIdentifierÍLiÍLq¨includesÂÂ‘W§LiteralÍLrÍLw£STC¥'STC'ÂL®BlockStatementÍLzÍL°‘U¯ReturnStatementÍL‰ÍL¥S®CallExpressionÍLÍL¤T°MemberExpressionÍLÍL¢KªIdentifierÍLÍL™©ErcEngineKªIdentifierÍLšÍL¢¨pins8051ÂÂÂÀZ«IfStatementÍLìÍM7X°BinaryExpressionÍLğÍMKªIdentifierÍLğÍLù©libraryId£===W§LiteralÍLşÍM­UART_TERMINAL¯'UART_TERMINAL'U¯ReturnStatementÍMÍM7Q¯ArrayExpressionÍM#ÍM6“W§LiteralÍM$ÍM(¢TX¤'TX'W§LiteralÍM*ÍM.¢RX¤'RX'W§LiteralÍM0ÍM5£GND¥'GND'ÀZ«IfStatementÍMAÍM…X°BinaryExpressionÍMEÍMaKªIdentifierÍMEÍMN©libraryId£===W§LiteralÍMSÍMa¬VOLTMETER_DC®'VOLTMETER_DC'U¯ReturnStatementÍMpÍM…Q¯ArrayExpressionÍMwÍM„’W§LiteralÍMxÍM|¢V+¤'V+'W§LiteralÍM~ÍMƒ£COM¥'COM'ÀZ«IfStatementÍM´ÍMøX°BinaryExpressionÍM¸ÍMÕKªIdentifierÍM¸ÍMÁ©libraryId£===W§LiteralÍMÆÍMÕ­VIRTUAL_METER¯'VIRTUAL_METER'U¯ReturnStatementÍMäÍMøQ¯ArrayExpressionÍMëÍM÷’W§LiteralÍMìÍMï¡V£'V'W§LiteralÍMñÍMö£COM¥'COM'ÀZ«IfStatementÍNÍNCX°BinaryExpressionÍNÍN KªIdentifierÍNÍN©libraryId£===W§LiteralÍNÍN ªAMMETER_DC¬'AMMETER_DC'U¯ReturnStatementÍN/ÍNCQ¯ArrayExpressionÍN6ÍNB’W§LiteralÍN7ÍN;¢I+¤'I+'W§LiteralÍN=ÍNA¢I-¤'I-'ÀZ«IfStatementÍNMÍN‘X°BinaryExpressionÍNQÍNmKªIdentifierÍNQÍNZ©libraryId£===W§LiteralÍN_ÍNm¬FREQ_COUNTER®'FREQ_COUNTER'U¯ReturnStatementÍN|ÍN‘Q¯ArrayExpressionÍNƒÍN’W§LiteralÍN„ÍNˆ¢IN¤'IN'W§LiteralÍNŠÍN£GND¥'GND'ÀZ«IfStatementÍNÈÍOX°BinaryExpressionÍNÌÍNêKªIdentifierÍNÌÍNÕ©libraryId£===W§LiteralÍNÚÍNê®LOGIC_ANALYZER°'LOGIC_ANALYZER'U¯ReturnStatementÍNùÍOQ¯ArrayExpressionÍO ÍO’W§LiteralÍOÍO£CH1¥'CH1'W§LiteralÍOÍO£GND¥'GND'ÀZ«IfStatementÍOÍOgX°BinaryExpressionÍOÍO8KªIdentifierÍOÍO&©libraryId£===W§LiteralÍO+ÍO8«POWER_METER­'POWER_METER'U¯ReturnStatementÍOGÍOgQ¯ArrayExpressionÍONÍOf”W§LiteralÍOOÍOS¢V+¤'V+'W§LiteralÍOUÍOY¢V-¤'V-'W§LiteralÍO[ÍO_¢I+¤'I+'W§LiteralÍOaÍOe¢I-¤'I-'ÀZ«IfStatementÍOqÍO÷X°BinaryExpressionÍOuÍOŒKªIdentifierÍOuÍO~©libraryId£===W§LiteralÍOƒÍOŒ§LCD1602©'LCD1602'L®BlockStatementÍOÍO÷‘U¯ReturnStatementÍOÍOìQ¯ArrayExpressionÍO¤ÍOëœW§LiteralÍO¥ÍOª£VSS¥'VSS'W§LiteralÍO¬ÍO±£VDD¥'VDD'W§LiteralÍO³ÍO·¢V0¤'V0'W§LiteralÍO¹ÍO½¢RS¤'RS'W§LiteralÍO¿ÍOÃ¢RW¤'RW'W§LiteralÍOÅÍOÈ¡E£'E'W§LiteralÍOÊÍOÎ¢D4¤'D4'W§LiteralÍOĞÍOÔ¢D5¤'D5'W§LiteralÍOÖÍOÚ¢D6¤'D6'W§LiteralÍOÜÍOà¢D7¤'D7'W§LiteralÍOâÍOå¡A£'A'W§LiteralÍOçÍOê¡K£'K'ÀZ«IfStatementÍPÍP_X°BinaryExpressionÍPÍPKªIdentifierÍPÍP©libraryId£===W§LiteralÍPÍPªOLED_12864¬'OLED_12864'L®BlockStatementÍP!ÍP_‘U¯ReturnStatementÍP0ÍPTQ¯ArrayExpressionÍP7ÍPS”W§LiteralÍP8ÍP=£VCC¥'VCC'W§LiteralÍP?ÍPD£GND¥'GND'W§LiteralÍPFÍPK£SCL¥'SCL'W§LiteralÍPMÍPR£SDA¥'SDA'ÀZ«IfStatementÍPiÍPÂX°BinaryExpressionÍPmÍP‚KªIdentifierÍPmÍPv©libraryId£===W§LiteralÍP{ÍP‚¥24C02§'24C02'L®BlockStatementÍP„ÍPÂ‘U¯ReturnStatementÍP“ÍP·Q¯ArrayExpressionÍPšÍP¶”W§LiteralÍP›ÍP £VCC¥'VCC'W§LiteralÍP¢ÍP§£VSS¥'VSS'W§LiteralÍP©ÍP®£SDA¥'SDA'W§LiteralÍP°ÍPµ£SCL¥'SCL'ÀZ«IfStatementÍPÌÍQ1X°BinaryExpressionÍPĞÍPæKªIdentifierÍPĞÍPÙ©libraryId£===W§LiteralÍPŞÍPæ¦W25Q64¨'W25Q64'L®BlockStatementÍPèÍQ1‘U¯ReturnStatementÍP÷ÍQ&Q¯ArrayExpressionÍPşÍQ%–W§LiteralÍPÿÍQ£VCC¥'VCC'W§LiteralÍQÍQ£GND¥'GND'W§LiteralÍQÍQ¢CS¤'CS'W§LiteralÍQÍQ£CLK¥'CLK'W§LiteralÍQÍQ¢DI¤'DI'W§LiteralÍQ ÍQ$¢DO¤'DO'ÀZ«IfStatementÍQ;ÍQªX±LogicalExpressionÍQ?ÍQlX°BinaryExpressionÍQ?ÍQSKªIdentifierÍQ?ÍQH©libraryId£===W§LiteralÍQMÍQS¤2764¦'2764'¢||X°BinaryExpressionÍQWÍQlKªIdentifierÍQWÍQ`©libraryId£===W§LiteralÍQeÍQl¥62256§'62256'L®BlockStatementÍQnÍQª‘U¯ReturnStatementÍQ}ÍQŸQ¯ArrayExpressionÍQ„ÍQ”W§LiteralÍQ…ÍQŠ£VCC¥'VCC'W§LiteralÍQŒÍQ‘£GND¥'GND'W§LiteralÍQ“ÍQ—¢CE¤'CE'W§LiteralÍQ™ÍQ¢OE¤'OE'ÀZ«IfStatementÍQ´ÍRX°BinaryExpressionÍQ¸ÍQÎKªIdentifierÍQ¸ÍQÁ©libraryId£===W§LiteralÍQÆÍQÎ¦CD4017¨'CD4017'L®BlockStatementÍQĞÍR‘U¯ReturnStatementÍQßÍR	Q¯ArrayExpressionÍQæÍR•W§LiteralÍQçÍQì£VDD¥'VDD'W§LiteralÍQîÍQó£VSS¥'VSS'W§LiteralÍQõÍQú£CLK¥'CLK'W§LiteralÍQüÍR£RST¥'RST'W§LiteralÍRÍR¢Q0¤'Q0'ÀZ«IfStatementÍRÍR}X°BinaryExpressionÍR"ÍR8KªIdentifierÍR"ÍR+©libraryId£===W§LiteralÍR0ÍR8¦LM2596¨'LM2596'L®BlockStatementÍR:ÍR}‘U¯ReturnStatementÍRIÍRrQ¯ArrayExpressionÍRPÍRq•W§LiteralÍRQÍRV£VIN¥'VIN'W§LiteralÍRXÍR]£OUT¥'OUT'W§LiteralÍR_ÍRd£GND¥'GND'W§LiteralÍRfÍRj¢FB¤'FB'W§LiteralÍRlÍRp¢ON¤'ON'ÀZ«IfStatementÍRÍS¢X±LogicalExpressionÍR¡ÍSoX±LogicalExpressionÍR¡ÍSRX±LogicalExpressionÍR¡ÍS(X±LogicalExpressionÍR¡ÍS	X±LogicalExpressionÍR¡ÍRİS®CallExpressionÍR¡ÍR½T°MemberExpressionÍR¡ÍR³KªIdentifierÍR¡ÍRª©libraryIdKªIdentifierÍR«ÍR³¨includesÂÂ‘W§LiteralÍR´ÍR¼¦2N3904¨'2N3904'Â¢||S®CallExpressionÍRÁÍRİT°MemberExpressionÍRÁÍRÓKªIdentifierÍRÁÍRÊ©libraryIdKªIdentifierÍRËÍRÓ¨includesÂÂ‘W§LiteralÍRÔÍRÜ¦2N3906¨'2N3906'Â¢||S®CallExpressionÍRîÍS	T°MemberExpressionÍRîÍS KªIdentifierÍRîÍR÷©libraryIdKªIdentifierÍRøÍS ¨includesÂÂ‘W§LiteralÍSÍS¥BC547§'BC547'Â¢||S®CallExpressionÍSÍS(T°MemberExpressionÍSÍSKªIdentifierÍSÍS©libraryIdKªIdentifierÍSÍS¨includesÂÂ‘W§LiteralÍS ÍS'¥BC557§'BC557'Â¢||S®CallExpressionÍS9ÍSRT°MemberExpressionÍS9ÍSKKªIdentifierÍS9ÍSB©libraryIdKªIdentifierÍSCÍSK¨includesÂÂ‘W§LiteralÍSLÍSQ£NPN¥'NPN'Â¢||S®CallExpressionÍSVÍSoT°MemberExpressionÍSVÍShKªIdentifierÍSVÍS_©libraryIdKªIdentifierÍS`ÍSh¨includesÂÂ‘W§LiteralÍSiÍSn£PNP¥'PNP'ÂL®BlockStatementÍSqÍS¢‘U¯ReturnStatementÍS€ÍS—Q¯ArrayExpressionÍS‡ÍS–“W§LiteralÍSˆÍS‹¡B£'B'W§LiteralÍSÍS¡C£'C'W§LiteralÍS’ÍS•¡E£'E'ÀZ«IfStatementÍS¬ÍT…X±LogicalExpressionÍS°ÍTRX±LogicalExpressionÍS°ÍT2X±LogicalExpressionÍS°ÍTX±LogicalExpressionÍS°ÍSéS®CallExpressionÍS°ÍSÌT°MemberExpressionÍS°ÍSÂKªIdentifierÍS°ÍS¹©libraryIdKªIdentifierÍSºÍSÂ¨includesÂÂ‘W§LiteralÍSÃÍSË¦2N7000¨'2N7000'Â¢||S®CallExpressionÍSĞÍSéT°MemberExpressionÍSĞÍSâKªIdentifierÍSĞÍSÙ©libraryIdKªIdentifierÍSÚÍSâ¨includesÂÂ‘W§LiteralÍSãÍSè£IRF¥'IRF'Â¢||S®CallExpressionÍSúÍTT°MemberExpressionÍSúÍTKªIdentifierÍSúÍT©libraryIdKªIdentifierÍTÍT¨includesÂÂ‘W§LiteralÍTÍT¤NMOS¦'NMOS'Â¢||S®CallExpressionÍTÍT2T°MemberExpressionÍTÍT*KªIdentifierÍTÍT!©libraryIdKªIdentifierÍT"ÍT*¨includesÂÂ‘W§LiteralÍT+ÍT1¤PMOS¦'PMOS'Â¢||S®CallExpressionÍT6ÍTRT°MemberExpressionÍT6ÍTHKªIdentifierÍT6ÍT?©libraryIdKªIdentifierÍT@ÍTH¨includesÂÂ‘W§LiteralÍTIÍTQ¦MOSFET¨'MOSFET'ÂL®BlockStatementÍTTÍT…‘U¯ReturnStatementÍTcÍTzQ¯ArrayExpressionÍTjÍTy“W§LiteralÍTkÍTn¡G£'G'W§LiteralÍTpÍTs¡D£'D'W§LiteralÍTuÍTx¡S£'S'ÀZ«IfStatementÍT¦ÍU"X±LogicalExpressionÍTªÍTôX±LogicalExpressionÍTªÍTÚX°BinaryExpressionÍTªÍTÀKªIdentifierÍTªÍT³©libraryId£===W§LiteralÍT¸ÍTÀ¦1N4148¨'1N4148'¢||X°BinaryExpressionÍTÄÍTÚKªIdentifierÍTÄÍTÍ©libraryId£===W§LiteralÍTÒÍTÚ¦1N4007¨'1N4007'¢||X°BinaryExpressionÍTŞÍTôKªIdentifierÍTŞÍTç©libraryId£===W§LiteralÍTìÍTô¦1N5819¨'1N5819'L®BlockStatementÍTöÍU"‘U¯ReturnStatementÍUÍUQ¯ArrayExpressionÍUÍU’W§LiteralÍUÍU¡A£'A'W§LiteralÍUÍU¡K£'K'ÀZ«IfStatementÍU<ÍUÁX±LogicalExpressionÍU@ÍU“X±LogicalExpressionÍU@ÍUvS®CallExpressionÍU@ÍUYT°MemberExpressionÍU@ÍURKªIdentifierÍU@ÍUI©libraryIdKªIdentifierÍUJÍUR¨includesÂÂ‘W§LiteralÍUSÍUX£LDR¥'LDR'Â¢||S®CallExpressionÍU]ÍUvT°MemberExpressionÍU]ÍUoKªIdentifierÍU]ÍUf©libraryIdKªIdentifierÍUgÍUo¨includesÂÂ‘W§LiteralÍUpÍUu£NTC¥'NTC'Â¢||S®CallExpressionÍUzÍU“T°MemberExpressionÍUzÍUŒKªIdentifierÍUzÍUƒ©libraryIdKªIdentifierÍU„ÍUŒ¨includesÂÂ‘W§LiteralÍUÍU’£PTC¥'PTC'ÂL®BlockStatementÍU•ÍUÁ‘U¯ReturnStatementÍU¤ÍU¶Q¯ArrayExpressionÍU«ÍUµ’W§LiteralÍU¬ÍU¯¡1£'1'W§LiteralÍU±ÍU´¡2£'2'ÀZ«IfStatementÍUËÍVCX±LogicalExpressionÍUÏÍVS®CallExpressionÍUÏÍUêT°MemberExpressionÍUÏÍUáKªIdentifierÍUÏÍUØ©libraryIdKªIdentifierÍUÙÍUá¨includesÂÂ‘W§LiteralÍUâÍUé¥DHT11§'DHT11'Â¢||S®CallExpressionÍUîÍVT°MemberExpressionÍUîÍV KªIdentifierÍUîÍU÷©libraryIdKªIdentifierÍUøÍV ¨includesÂÂ‘W§LiteralÍVÍV
-§DS18B20©'DS18B20'ÂL®BlockStatementÍVÍVC‘U¯ReturnStatementÍVÍV8Q¯ArrayExpressionÍV#ÍV7“W§LiteralÍV$ÍV)£VDD¥'VDD'W§LiteralÍV+ÍV/¢DQ¤'DQ'W§LiteralÍV1ÍV6£GND¥'GND'ÀZ«IfStatementÍVMÍV¤S®CallExpressionÍVQÍVkT°MemberExpressionÍVQÍVcKªIdentifierÍVQÍVZ©libraryIdKªIdentifierÍV[ÍVc¨includesÂÂ‘W§LiteralÍVdÍVj¤HALL¦'HALL'ÂL®BlockStatementÍVmÍV¤‘U¯ReturnStatementÍV|ÍV™Q¯ArrayExpressionÍVƒÍV˜“W§LiteralÍV„ÍV‰£VCC¥'VCC'W§LiteralÍV‹ÍV£OUT¥'OUT'W§LiteralÍV’ÍV—£GND¥'GND'ÀZ«IfStatementÍWÍWgS®CallExpressionÍWÍW.T°MemberExpressionÍWÍW$KªIdentifierÍWÍW©libraryIdKªIdentifierÍWÍW$¨includesÂÂ‘W§LiteralÍW%ÍW-¦74HC04¨'74HC04'ÂL®BlockStatementÍW0ÍWg‘U¯ReturnStatementÍW?ÍW\Q¯ArrayExpressionÍWFÍW[”W§LiteralÍWGÍWJ¡1£'1'W§LiteralÍWLÍWO¡2£'2'W§LiteralÍWQÍWT¡7£'7'W§LiteralÍWVÍWZ¢14¤'14'ÀZ«IfStatementÍWqÍWÍS®CallExpressionÍWuÍWT°MemberExpressionÍWuÍW‡KªIdentifierÍWuÍW~©libraryIdKªIdentifierÍWÍW‡¨includesÂÂ‘W§LiteralÍWˆÍW¤74HC¦'74HC'ÂL®BlockStatementÍW‘ÍWÍ‘U¯ReturnStatementÍW ÍWÂQ¯ArrayExpressionÍW§ÍWÁ•W§LiteralÍW¨ÍW«¡1£'1'W§LiteralÍW­ÍW°¡2£'2'W§LiteralÍW²ÍWµ¡3£'3'W§LiteralÍW·ÍWº¡7£'7'W§LiteralÍW¼ÍWÀ¢14¤'14'ÀZ«IfStatementÍWôÍX?S®CallExpressionÍWøÍXT°MemberExpressionÍWøÍX
-KªIdentifierÍWøÍX©libraryIdKªIdentifierÍXÍX
-¨includesÂÂ‘W§LiteralÍXÍX¬OSCILLOSCOPE®'OSCILLOSCOPE'ÂU¯ReturnStatementÍX)ÍX?Q¯ArrayExpressionÍX0ÍX>’W§LiteralÍX1ÍX6£CH1¥'CH1'W§LiteralÍX8ÍX=£GND¥'GND'ÀU¯ReturnStatementÍXxÍX‚Q¯ArrayExpressionÍXÍXM°MethodDefinitionÍXÍYTÃÂKªIdentifierÍX–ÍX£­buildPinArray¦methodN²FunctionExpressionÍX£ÍYTÀÂÂÂ’KªIdentifierÍX¤ÍX©¥countKªIdentifierÍX«ÍX±¦prefixL®BlockStatementÍX³ÍYT“O³VariableDeclarationÍX¾ÍXĞ‘P²VariableDeclaratorÍXÄÍXÏKªIdentifierÍXÄÍXÊ¦resultQ¯ArrayExpressionÍXÍÍXÏ¥constV¬ForStatementÍXÚÍY5O³VariableDeclarationÍXßÍXè‘P²VariableDeclaratorÍXãÍXèKªIdentifierÍXãÍXä¡iW§LiteralÍXçÍXè ¡0£letX°BinaryExpressionÍXêÍXóKªIdentifierÍXêÍXë¡i¡<KªIdentifierÍXîÍXó¥countY°UpdateExpressionÍXõÍXø¢++ÂKªIdentifierÍXõÍXö¡iL®BlockStatementÍXúÍY5‘R³ExpressionStatementÍY	ÍY*S®CallExpressionÍY	ÍY)T°MemberExpressionÍY	ÍYKªIdentifierÍY	ÍY¦resultKªIdentifierÍYÍY¤pushÂÂ‘\¯TemplateLiteralÍYÍY(’KªIdentifierÍYÍY¦prefixX°BinaryExpressionÍY!ÍY&KªIdentifierÍY!ÍY"¡i¡+W§LiteralÍY%ÍY&¡1“]¯TemplateElementÍYÍY^  Â]¯TemplateElementÍYÍY^  Â]¯TemplateElementÍY'ÍY'^  ÃÂU¯ReturnStatementÍY?ÍYMKªIdentifierÍYFÍYL¦resultM°MethodDefinitionÍYZÍZÃÂKªIdentifierÍYaÍYi¨gpioBank¦methodN²FunctionExpressionÍYiÍZÀÂÂÂ’KªIdentifierÍYjÍYp¦letterKªIdentifierÍYrÍYs¡nL®BlockStatementÍYuÍZ“O³VariableDeclarationÍY€ÍY‘P²VariableDeclaratorÍY†ÍYKªIdentifierÍY†ÍY‰£outQ¯ArrayExpressionÍYŒÍY¥constV¬ForStatementÍY™ÍYêO³VariableDeclarationÍYÍY§‘P²VariableDeclaratorÍY¢ÍY§KªIdentifierÍY¢ÍY£¡iW§LiteralÍY¦ÍY§ ¡0£letX°BinaryExpressionÍY©ÍY®KªIdentifierÍY©ÍYª¡i¡<KªIdentifierÍY­ÍY®¡nY°UpdateExpressionÍY°ÍY³¢++ÂKªIdentifierÍY°ÍY±¡iL®BlockStatementÍYµÍYê‘R³ExpressionStatementÍYÄÍYßS®CallExpressionÍYÄÍYŞT°MemberExpressionÍYÄÍYÌKªIdentifierÍYÄÍYÇ£outKªIdentifierÍYÈÍYÌ¤pushÂÂ‘\¯TemplateLiteralÍYÍÍYİ’KªIdentifierÍYÑÍY×¦letterKªIdentifierÍYÚÍYÛ¡i“]¯TemplateElementÍYÎÍYÏ^¡P¡PÂ]¯TemplateElementÍYØÍYØ^  Â]¯TemplateElementÍYÜÍYÜ^  ÃÂU¯ReturnStatementÍYôÍYÿKªIdentifierÍYûÍYş£outM°MethodDefinitionÍZÍ[ÃÂKªIdentifierÍZÍZ«stm32Pins48¦methodN²FunctionExpressionÍZÍ[ÀÂÂÂL®BlockStatementÍZ!Í[‘U¯ReturnStatementÍZ,Í[S®CallExpressionÍZ3Í[T°MemberExpressionÍZ3ÍZğS®CallExpressionÍZ3ÍZÛT°MemberExpressionÍZ3ÍZ¾S®CallExpressionÍZ3ÍZ©T°MemberExpressionÍZ3ÍZŒQ¯ArrayExpressionÍZ3ÍZw˜W§LiteralÍZ4ÍZ9£VDD¥'VDD'W§LiteralÍZ;ÍZ@£VSS¥'VSS'W§LiteralÍZBÍZH¤VDDA¦'VDDA'W§LiteralÍZJÍZP¤VSSA¦'VSSA'W§LiteralÍZRÍZY¥BOOT0§'BOOT0'W§LiteralÍZ[ÍZa¤NRST¦'NRST'W§LiteralÍZcÍZk¦OSC_IN¨'OSC_IN'W§LiteralÍZmÍZv§OSC_OUT©'OSC_OUT'KªIdentifierÍZ†ÍZŒ¦concatÂÂ‘S®CallExpressionÍZÍZ¨T°MemberExpressionÍZÍZŸKªIdentifierÍZÍZ–©ErcEngineKªIdentifierÍZ—ÍZŸ¨gpioBankÂÂ’W§LiteralÍZ ÍZ£¡A£'A'W§LiteralÍZ¥ÍZ§¢16ÂÂKªIdentifierÍZ¸ÍZ¾¦concatÂÂ‘S®CallExpressionÍZ¿ÍZÚT°MemberExpressionÍZ¿ÍZÑKªIdentifierÍZ¿ÍZÈ©ErcEngineKªIdentifierÍZÉÍZÑ¨gpioBankÂÂ’W§LiteralÍZÒÍZÕ¡B£'B'W§LiteralÍZ×ÍZÙ¢16ÂÂKªIdentifierÍZêÍZğ¦concatÂÂ‘S®CallExpressionÍZñÍ[T°MemberExpressionÍZñÍ[KªIdentifierÍZñÍZú©ErcEngineKªIdentifierÍZûÍ[¨gpioBankÂÂ’W§LiteralÍ[Í[¡C£'C'W§LiteralÍ[	Í[
-¡8ÂÂM°MethodDefinitionÍ[Í[áÃÂKªIdentifierÍ[!Í[,«stm32Pins32¦methodN²FunctionExpressionÍ[,Í[áÀÂÂÂL®BlockStatementÍ[/Í[á‘U¯ReturnStatementÍ[:Í[ÚS®CallExpressionÍ[AÍ[ÙT°MemberExpressionÍ[AÍ[¼S®CallExpressionÍ[AÍ[§T°MemberExpressionÍ[AÍ[ŠQ¯ArrayExpressionÍ[AÍ[u–W§LiteralÍ[BÍ[G£VDD¥'VDD'W§LiteralÍ[IÍ[N£VSS¥'VSS'W§LiteralÍ[PÍ[V¤NRST¦'NRST'W§LiteralÍ[XÍ[_¥BOOT0§'BOOT0'W§LiteralÍ[aÍ[i¦OSC_IN¨'OSC_IN'W§LiteralÍ[kÍ[t§OSC_OUT©'OSC_OUT'KªIdentifierÍ[„Í[Š¦concatÂÂ‘S®CallExpressionÍ[‹Í[¦T°MemberExpressionÍ[‹Í[KªIdentifierÍ[‹Í[”©ErcEngineKªIdentifierÍ[•Í[¨gpioBankÂÂ’W§LiteralÍ[Í[¡¡A£'A'W§LiteralÍ[£Í[¥¢16ÂÂKªIdentifierÍ[¶Í[¼¦concatÂÂ‘S®CallExpressionÍ[½Í[ØT°MemberExpressionÍ[½Í[ÏKªIdentifierÍ[½Í[Æ©ErcEngineKªIdentifierÍ[ÇÍ[Ï¨gpioBankÂÂ’W§LiteralÍ[ĞÍ[Ó¡B£'B'W§LiteralÍ[ÕÍ[×
-¢10ÂÂM°MethodDefinitionÍ[çÍ]ÃÂKªIdentifierÍ[îÍ[ú¬stm32Pins100¦methodN²FunctionExpressionÍ[úÍ]ÀÂÂÂL®BlockStatementÍ[ıÍ]‘U¯ReturnStatementÍ\Í]S®CallExpressionÍ\Í]T°MemberExpressionÍ\Í\ôS®CallExpressionÍ\Í\ßT°MemberExpressionÍ\Í\ŸS®CallExpressionÍ\Í\ŠT°MemberExpressionÍ\Í\mS®CallExpressionÍ\Í\XT°MemberExpressionÍ\Í\;S®CallExpressionÍ\Í\&T°MemberExpressionÍ\Í\$KªIdentifierÍ\Í\©ErcEngineKªIdentifierÍ\Í\$«stm32Pins48ÂÂÂKªIdentifierÍ\5Í\;¦concatÂÂ‘S®CallExpressionÍ\<Í\WT°MemberExpressionÍ\<Í\NKªIdentifierÍ\<Í\E©ErcEngineKªIdentifierÍ\FÍ\N¨gpioBankÂÂ’W§LiteralÍ\OÍ\R¡D£'D'W§LiteralÍ\TÍ\V¢16ÂÂKªIdentifierÍ\gÍ\m¦concatÂÂ‘S®CallExpressionÍ\nÍ\‰T°MemberExpressionÍ\nÍ\€KªIdentifierÍ\nÍ\w©ErcEngineKªIdentifierÍ\xÍ\€¨gpioBankÂÂ’W§LiteralÍ\Í\„¡E£'E'W§LiteralÍ\†Í\ˆ¢16ÂÂKªIdentifierÍ\™Í\Ÿ¦concatÂÂ‘Q¯ArrayExpressionÍ\ Í\Ş˜W§LiteralÍ\¡Í\¦£PC8¥'PC8'W§LiteralÍ\¨Í\­£PC9¥'PC9'W§LiteralÍ\¯Í\µ¤PC10¦'PC10'W§LiteralÍ\·Í\½¤PC11¦'PC11'W§LiteralÍ\¿Í\Å¤PC12¦'PC12'W§LiteralÍ\ÇÍ\Í¤PC13¦'PC13'W§LiteralÍ\ÏÍ\Õ¤PC14¦'PC14'W§LiteralÍ\×Í\İ¤PC15¦'PC15'ÂKªIdentifierÍ\îÍ\ô¦concatÂÂ‘S®CallExpressionÍ\õÍ]T°MemberExpressionÍ\õÍ]KªIdentifierÍ\õÍ\ş©ErcEngineKªIdentifierÍ\ÿÍ]¨gpioBankÂÂ’W§LiteralÍ]Í]¡F£'F'W§LiteralÍ]Í]¢12ÂÂM°MethodDefinitionÍ]Í_@ÃÂKªIdentifierÍ]&Í].¨pins8051¦methodN²FunctionExpressionÍ].Í_@ÀÂÂÂL®BlockStatementÍ]1Í_@šO³VariableDeclarationÍ]<Í]K‘P²VariableDeclaratorÍ]BÍ]JKªIdentifierÍ]BÍ]E£outQ¯ArrayExpressionÍ]HÍ]J¥constV¬ForStatementÍ]UÍ]ŸO³VariableDeclarationÍ]ZÍ]c‘P²VariableDeclaratorÍ]^Í]cKªIdentifierÍ]^Í]_¡iW§LiteralÍ]bÍ]c ¡0£letX°BinaryExpressionÍ]eÍ]jKªIdentifierÍ]eÍ]f¡i¡<W§LiteralÍ]iÍ]j¡8Y°UpdateExpressionÍ]lÍ]o¢++ÂKªIdentifierÍ]lÍ]m¡iL®BlockStatementÍ]qÍ]Ÿ‘R³ExpressionStatementÍ]€Í]”S®CallExpressionÍ]€Í]“T°MemberExpressionÍ]€Í]ˆKªIdentifierÍ]€Í]ƒ£outKªIdentifierÍ]„Í]ˆ¤pushÂÂ‘\¯TemplateLiteralÍ]‰Í]’‘KªIdentifierÍ]Í]¡i’]¯TemplateElementÍ]ŠÍ]^£P1.£P1.Â]¯TemplateElementÍ]‘Í]‘^  ÃÂR³ExpressionStatementÍ]©Í]¹S®CallExpressionÍ]©Í]¸T°MemberExpressionÍ]©Í]±KªIdentifierÍ]©Í]¬£outKªIdentifierÍ]­Í]±¤pushÂÂ‘W§LiteralÍ]²Í]·£RST¥'RST'ÂV¬ForStatementÍ]ÃÍ^O³VariableDeclarationÍ]ÈÍ]Ñ‘P²VariableDeclaratorÍ]ÌÍ]ÑKªIdentifierÍ]ÌÍ]Í¡iW§LiteralÍ]ĞÍ]Ñ ¡0£letX°BinaryExpressionÍ]ÓÍ]ØKªIdentifierÍ]ÓÍ]Ô¡i¡<W§LiteralÍ]×Í]Ø¡8Y°UpdateExpressionÍ]ÚÍ]İ¢++ÂKªIdentifierÍ]ÚÍ]Û¡iL®BlockStatementÍ]ßÍ^‘R³ExpressionStatementÍ]îÍ^S®CallExpressionÍ]îÍ^T°MemberExpressionÍ]îÍ]öKªIdentifierÍ]îÍ]ñ£outKªIdentifierÍ]òÍ]ö¤pushÂÂ‘\¯TemplateLiteralÍ]÷Í^ ‘KªIdentifierÍ]ıÍ]ş¡i’]¯TemplateElementÍ]øÍ]û^£P3.£P3.Â]¯TemplateElementÍ]ÿÍ]ÿ^  ÃÂR³ExpressionStatementÍ^Í^9S®CallExpressionÍ^Í^8T°MemberExpressionÍ^Í^KªIdentifierÍ^Í^£outKªIdentifierÍ^Í^¤pushÂÂ“W§LiteralÍ^ Í^'¥XTAL2§'XTAL2'W§LiteralÍ^)Í^0¥XTAL1§'XTAL1'W§LiteralÍ^2Í^7£GND¥'GND'ÂV¬ForStatementÍ^CÍ^O³VariableDeclarationÍ^HÍ^Q‘P²VariableDeclaratorÍ^LÍ^QKªIdentifierÍ^LÍ^M¡iW§LiteralÍ^PÍ^Q ¡0£letX°BinaryExpressionÍ^SÍ^XKªIdentifierÍ^SÍ^T¡i¡<W§LiteralÍ^WÍ^X¡8Y°UpdateExpressionÍ^ZÍ^]¢++ÂKªIdentifierÍ^ZÍ^[¡iL®BlockStatementÍ^_Í^‘R³ExpressionStatementÍ^nÍ^‚S®CallExpressionÍ^nÍ^T°MemberExpressionÍ^nÍ^vKªIdentifierÍ^nÍ^q£outKªIdentifierÍ^rÍ^v¤pushÂÂ‘\¯TemplateLiteralÍ^wÍ^€‘KªIdentifierÍ^}Í^~¡i’]¯TemplateElementÍ^xÍ^{^£P2.£P2.Â]¯TemplateElementÍ^Í^^  ÃÂR³ExpressionStatementÍ^—Í^µS®CallExpressionÍ^—Í^´T°MemberExpressionÍ^—Í^ŸKªIdentifierÍ^—Í^š£outKªIdentifierÍ^›Í^Ÿ¤pushÂÂ“W§LiteralÍ^ Í^¦¤PSEN¦'PSEN'W§LiteralÍ^¨Í^­£ALE¥'ALE'W§LiteralÍ^¯Í^³¢EA¤'EA'ÂV¬ForStatementÍ^¿Í_
-O³VariableDeclarationÍ^ÄÍ^Í‘P²VariableDeclaratorÍ^ÈÍ^ÍKªIdentifierÍ^ÈÍ^É¡iW§LiteralÍ^ÌÍ^Í¡7£letX°BinaryExpressionÍ^ÏÍ^ÕKªIdentifierÍ^ÏÍ^Ğ¡i¢>=W§LiteralÍ^ÔÍ^Õ ¡0Y°UpdateExpressionÍ^×Í^Ú¢--ÂKªIdentifierÍ^×Í^Ø¡iL®BlockStatementÍ^ÜÍ_
-‘R³ExpressionStatementÍ^ëÍ^ÿS®CallExpressionÍ^ëÍ^şT°MemberExpressionÍ^ëÍ^óKªIdentifierÍ^ëÍ^î£outKªIdentifierÍ^ïÍ^ó¤pushÂÂ‘\¯TemplateLiteralÍ^ôÍ^ı‘KªIdentifierÍ^úÍ^û¡i’]¯TemplateElementÍ^õÍ^ø^£P0.£P0.Â]¯TemplateElementÍ^üÍ^ü^  ÃÂR³ExpressionStatementÍ_Í_$S®CallExpressionÍ_Í_#T°MemberExpressionÍ_Í_KªIdentifierÍ_Í_£outKªIdentifierÍ_Í_¤pushÂÂ‘W§LiteralÍ_Í_"£VCC¥'VCC'ÂU¯ReturnStatementÍ_.Í_9KªIdentifierÍ_5Í_8£outM°MethodDefinitionÍ_FÍbËÃÂKªIdentifierÍ_MÍ_]°estimatePinCount¦methodN²FunctionExpressionÍ_]ÍbËÀÂÂÂ‘KªIdentifierÍ_^Í_g©libraryIdL®BlockStatementÍ_iÍbËšZ«IfStatementÍ_tÍ_óX±LogicalExpressionÍ_xÍ_ÎX±LogicalExpressionÍ_xÍ_°S®CallExpressionÍ_xÍ_’T°MemberExpressionÍ_xÍ_ŒKªIdentifierÍ_xÍ_©libraryIdKªIdentifierÍ_‚Í_ŒªstartsWithÂÂ‘W§LiteralÍ_Í_‘¢R_¤'R_'Â¢||S®CallExpressionÍ_–Í_°T°MemberExpressionÍ_–Í_ªKªIdentifierÍ_–Í_Ÿ©libraryIdKªIdentifierÍ_ Í_ªªstartsWithÂÂ‘W§LiteralÍ_«Í_¯¢C_¤'C_'Â¢||S®CallExpressionÍ_´Í_ÎT°MemberExpressionÍ_´Í_ÈKªIdentifierÍ_´Í_½©libraryIdKªIdentifierÍ_¾Í_ÈªstartsWithÂÂ‘W§LiteralÍ_ÉÍ_Í¢L_¤'L_'ÂL®BlockStatementÍ_ĞÍ_ó‘U¯ReturnStatementÍ_ßÍ_èW§LiteralÍ_æÍ_ç¡2ÀZ«IfStatementÍ_ıÍ`?S®CallExpressionÍ`Í`T°MemberExpressionÍ`Í`KªIdentifierÍ`Í`
-©libraryIdKªIdentifierÍ`Í`¨includesÂÂ‘W§LiteralÍ`Í`£LED¥'LED'ÂL®BlockStatementÍ`Í`?‘U¯ReturnStatementÍ`+Í`4W§LiteralÍ`2Í`3¡2ÀZ«IfStatementÍ`IÍ`S®CallExpressionÍ`MÍ`gT°MemberExpressionÍ`MÍ`_KªIdentifierÍ`MÍ`V©libraryIdKªIdentifierÍ`WÍ`_¨includesÂÂ‘W§LiteralÍ``Í`f¤74HC¦'74HC'ÂL®BlockStatementÍ`iÍ`‘U¯ReturnStatementÍ`xÍ`‚W§LiteralÍ`Í`¢14ÀZ«IfStatementÍ`—Í`ûX±LogicalExpressionÍ`›Í`ÖS®CallExpressionÍ`›Í`¸T°MemberExpressionÍ`›Í`­KªIdentifierÍ`›Í`¤©libraryIdKªIdentifierÍ`¥Í`­¨includesÂÂ‘W§LiteralÍ`®Í`·§DS18B20©'DS18B20'Â¢||S®CallExpressionÍ`¼Í`ÖT°MemberExpressionÍ`¼Í`ÎKªIdentifierÍ`¼Í`Å©libraryIdKªIdentifierÍ`ÆÍ`Î¨includesÂÂ‘W§LiteralÍ`ÏÍ`Õ¤HALL¦'HALL'ÂL®BlockStatementÍ`ØÍ`û‘U¯ReturnStatementÍ`çÍ`ğW§LiteralÍ`îÍ`ï¡3ÀZ«IfStatementÍaÍaNS®CallExpressionÍa	Ía(T°MemberExpressionÍa	ÍaKªIdentifierÍa	Ía©libraryIdKªIdentifierÍaÍa¨includesÂÂ‘W§LiteralÍaÍa'©STM32F030«'STM32F030'ÂL®BlockStatementÍa*ÍaN‘U¯ReturnStatementÍa9ÍaCW§LiteralÍa@ÍaB ¢32ÀZ«IfStatementÍaXÍa¢S®CallExpressionÍa\Ía{T°MemberExpressionÍa\ÍanKªIdentifierÍa\Íae©libraryIdKªIdentifierÍafÍan¨includesÂÂ‘W§LiteralÍaoÍaz©STM32F407«'STM32F407'ÂL®BlockStatementÍa}Ía¢‘U¯ReturnStatementÍaŒÍa—W§LiteralÍa“Ía–Ìd£100ÀZ«IfStatementÍa¬ÍañS®CallExpressionÍa°ÍaËT°MemberExpressionÍa°ÍaÂKªIdentifierÍa°Ía¹©libraryIdKªIdentifierÍaºÍaÂ¨includesÂÂ‘W§LiteralÍaÃÍaÊ¥STM32§'STM32'ÂL®BlockStatementÍaÍÍañ‘U¯ReturnStatementÍaÜÍaæW§LiteralÍaãÍaå0¢48ÀZ«IfStatementÍaûÍb\X±LogicalExpressionÍaÿÍb6S®CallExpressionÍaÿÍbT°MemberExpressionÍaÿÍbKªIdentifierÍaÿÍb©libraryIdKªIdentifierÍb	Íb¨includesÂÂ‘W§LiteralÍbÍb¤AT89¦'AT89'Â¢||S®CallExpressionÍbÍb6T°MemberExpressionÍbÍb/KªIdentifierÍbÍb&©libraryIdKªIdentifierÍb'Íb/¨includesÂÂ‘W§LiteralÍb0Íb5£STC¥'STC'ÂL®BlockStatementÍb8Íb\‘U¯ReturnStatementÍbGÍbQW§LiteralÍbNÍbP(¢40ÀZ«IfStatementÍbfÍb±S®CallExpressionÍbjÍbŒT°MemberExpressionÍbjÍb|KªIdentifierÍbjÍbs©libraryIdKªIdentifierÍbtÍb|¨includesÂÂ‘W§LiteralÍb}Íb‹¬OSCILLOSCOPE®'OSCILLOSCOPE'ÂL®BlockStatementÍbÍb±‘U¯ReturnStatementÍbÍb¦W§LiteralÍb¤Íb¥¡5ÀU¯ReturnStatementÍb»ÍbÄW§LiteralÍbÂÍbÃ¡2M°MethodDefinitionÍbÑÍdPÃÂKªIdentifierÍbØÍbå­makeViolation¦methodN²FunctionExpressionÍbåÍdPÀÂÂÂ—KªIdentifierÍbæÍbî¨severityKªIdentifierÍbğÍbø¨ruleTypeKªIdentifierÍbúÍc§messageKªIdentifierÍcÍc¥netIdKªIdentifierÍc
-Íc«componentIdKªIdentifierÍcÍc¥pinIdKªIdentifierÍcÍc!£fixL®BlockStatementÍc#ÍdP‘U¯ReturnStatementÍc.ÍdIc°ObjectExpressionÍc5ÍdH˜d¨PropertyÍcDÍc^ÂÂÂKªIdentifierÍcDÍcF¢idS®CallExpressionÍcHÍc^T°MemberExpressionÍcHÍcWKªIdentifierÍcHÍcN¦IdUtilKªIdentifierÍcOÍcW¨generateÂÂ‘W§LiteralÍcXÍc]£erc¥'erc'Â¤initd¨PropertyÍcmÍcÂÂÂKªIdentifierÍcmÍcu¨severityKªIdentifierÍcwÍc¨severity¤initd¨PropertyÍcÍc ÂÂÂKªIdentifierÍcÍc–¨ruleTypeKªIdentifierÍc˜Íc ¨ruleType¤initd¨PropertyÍc¯Íc¿ÂÂÂKªIdentifierÍc¯Íc¶§messageKªIdentifierÍc¸Íc¿§message¤initd¨PropertyÍcÎÍcÚÂÂÂKªIdentifierÍcÎÍcÓ¥netIdKªIdentifierÍcÕÍcÚ¥netId¤initd¨PropertyÍcéÍdÂÂÂKªIdentifierÍcéÍcô«componentIdKªIdentifierÍcöÍd«componentId¤initd¨PropertyÍdÍdÂÂÂKªIdentifierÍdÍd¥pinIdKªIdentifierÍdÍd¥pinId¤initd¨PropertyÍd+Íd=ÂÂÂKªIdentifierÍd+Íd8­fixSuggestionKªIdentifierÍd:Íd=£fix¤initÀ”Ôre•¤type¥start£endªspecifiers¦source±ImportDeclaration,Ì~”Ôrf•¤type¥start£end¨imported¥local¯ImportSpecifier5Ì@KªIdentifier5Ì@«ErcSeverityKªIdentifier5Ì@«ErcSeverityf¯ImportSpecifierÌBÌMKªIdentifierÌBÌM«ErcRuleTypeKªIdentifierÌBÌM«ErcRuleTypef¯ImportSpecifierÌOÌVKªIdentifierÌOÌV§NetTypeKªIdentifierÌOÌV§NetTypef¯ImportSpecifierÌXÌ_KªIdentifierÌXÌ_§PinTypeKªIdentifierÌXÌ_§PinTypeW§LiteralÌgÌ}´../types/CommonTypes¶'../types/CommonTypes'e±ImportDeclarationÌ€Ì¢‘f¯ImportSpecifierÌ‰ÌKªIdentifierÌ‰Ì¦IdUtilKªIdentifierÌ‰Ì¦IdUtilW§LiteralÌ—Ì¡¨./IdUtilª'./IdUtil'e±ImportDeclarationÌ¤ÌÏ‘f¯ImportSpecifierÌ­Ì¸KªIdentifierÌ­Ì¸«appendArrayKªIdentifierÌ­Ì¸«appendArrayW§LiteralÌÀÌÎ¬./MapHelpers®'./MapHelpers'e±ImportDeclarationÌÑÍ’f¯ImportSpecifierÌÚÌëKªIdentifierÌÚÌë±DeviceHitGeometryKªIdentifierÌÚÌë±DeviceHitGeometryf¯ImportSpecifierÌíÌşKªIdentifierÌíÌş±WIRE_OBSTACLE_PADKªIdentifierÌíÌş±WIRE_OBSTACLE_PADW§LiteralÍÍ³./DeviceHitGeometryµ'./DeviceHitGeometry'

@@ -1,926 +1,0 @@
-Ôr@Ÿªassertions¤code´customTransformCache¬dependencies¢id¤meta±moduleSideEffects¬originalCode±originalSourcemap«resolvedIds®sourcemapChainµsyntheticNamedExportsµtransformDependencies®transformFiles¨cacheAstÔrAÚ'/**
- * æˆæƒæ–‡ä»¶åŠ è½½ã€æ ¡éªŒä¸åˆ†çº§åŠŸèƒ½çŸ©é˜µ
- */
-import fs from '@ohos.file.fs';
-import { arrayBufferToString } from '../utils/MapHelpers';
-import { CryptoUtil } from '../utils/CryptoUtil';
-import { HardwareFingerprint } from './HardwareFingerprint';
-import { TrialManager } from './TrialManager';
-import { LicenseTier } from '../types/LicenseTypes';
-const LICENSE_SALT = 'AISchSim_License_v1';
-export class LicenseManager {
-    constructor() {
-        this.license = null;
-        this.licensePath = '';
-        this.tampered = false;
-        this.trialActive = false;
-        this.trialDaysRemaining = 0;
-        this.trialMessage = '';
-    }
-    static getInstance() {
-        if (!LicenseManager.instance) {
-            LicenseManager.instance = new LicenseManager();
-        }
-        return LicenseManager.instance;
-    }
-    getDefaultFeatures(tier) {
-        switch (tier) {
-            case LicenseTier.PERSONAL_PRO:
-            case LicenseTier.EDUCATION:
-                return {
-                    maxDevices: Number.MAX_SAFE_INTEGER,
-                    dailyAiCalls: Number.MAX_SAFE_INTEGER,
-                    maxAiApis: Number.MAX_SAFE_INTEGER,
-                    stm32AdvancedPeriph: true,
-                    monteCarlo: true,
-                    faultInjection: true,
-                    pluginSystem: true,
-                    projectEncryption: true,
-                    multiMonitorLayout: true,
-                    teamAnnotation: true,
-                    versionCompare: true,
-                    batchBomExport: true
-                };
-            case LicenseTier.ENTERPRISE:
-                return {
-                    maxDevices: Number.MAX_SAFE_INTEGER,
-                    dailyAiCalls: Number.MAX_SAFE_INTEGER,
-                    maxAiApis: Number.MAX_SAFE_INTEGER,
-                    stm32AdvancedPeriph: true,
-                    monteCarlo: true,
-                    faultInjection: true,
-                    pluginSystem: true,
-                    projectEncryption: true,
-                    multiMonitorLayout: true,
-                    teamAnnotation: true,
-                    versionCompare: true,
-                    batchBomExport: true
-                };
-            default:
-                return {
-                    maxDevices: 200,
-                    dailyAiCalls: 50,
-                    maxAiApis: 8,
-                    stm32AdvancedPeriph: false,
-                    monteCarlo: false,
-                    faultInjection: false,
-                    pluginSystem: false,
-                    projectEncryption: false,
-                    multiMonitorLayout: false,
-                    teamAnnotation: false,
-                    versionCompare: false,
-                    batchBomExport: false
-                };
-        }
-    }
-    loadFromPath(path) {
-        this.licensePath = path;
-        this.tampered = false;
-        try {
-            fs.accessSync(path);
-            const json = LicenseManager.readText(path);
-            const lic = JSON.parse(json);
-            return this.applyLicense(lic);
-        }
-        catch (_e) {
-            this.license = null;
-            return this.buildStatus(false, LicenseTier.FREE, 'æœªæ‰¾åˆ°æˆæƒæ–‡ä»¶ï¼Œè¿è¡Œå…è´¹ç‰ˆ');
-        }
-    }
-    applyLicenseContent(json) {
-        try {
-            const lic = JSON.parse(json);
-            return this.applyLicense(lic);
-        }
-        catch (e) {
-            return this.buildStatus(false, LicenseTier.FREE, `æˆæƒè§£æå¤±è´¥: ${e}`);
-        }
-    }
-    importAndSave(path, json) {
-        const status = this.applyLicenseContent(json);
-        if (status.valid) {
-            try {
-                const fileHandle = fs.openSync(path, fs.OpenMode.CREATE | fs.OpenMode.WRITE_ONLY | fs.OpenMode.TRUNC);
-                fs.writeSync(fileHandle.fd, json);
-                fs.closeSync(fileHandle);
-                this.licensePath = path;
-            }
-            catch (e) {
-                return this.buildStatus(false, LicenseTier.FREE, `æˆæƒä¿å­˜å¤±è´¥: ${e}`);
-            }
-        }
-        return status;
-    }
-    getStatus() {
-        if (!this.license) {
-            if (this.trialActive) {
-                return this.buildStatus(true, LicenseTier.PERSONAL_PRO, this.trialMessage || `è¯•ç”¨æœŸå‰©ä½™ ${this.trialDaysRemaining} å¤©`, this.trialDaysRemaining);
-            }
-            return this.buildStatus(false, LicenseTier.FREE, 'å…è´¹ç‰ˆ');
-        }
-        return this.validateCurrent();
-    }
-    async applyTrialStatus(context) {
-        await TrialManager.init(context);
-        const trial = await TrialManager.getStatus();
-        this.trialActive = trial.active && !this.license;
-        this.trialDaysRemaining = trial.daysRemaining;
-        this.trialMessage = trial.active ? `è¯•ç”¨æœŸå‰©ä½™ ${trial.daysRemaining} å¤©` : 'è¯•ç”¨æœŸå·²ç»“æŸ';
-    }
-    getTier() {
-        if (this.trialActive && !this.license)
-            return LicenseTier.PERSONAL_PRO;
-        return this.license?.tier ?? LicenseTier.FREE;
-    }
-    getFeatures() {
-        if (this.trialActive && !this.license) {
-            return this.getDefaultFeatures(LicenseTier.PERSONAL_PRO);
-        }
-        if (!this.license || !this.validateCurrent().valid) {
-            return this.getDefaultFeatures(LicenseTier.FREE);
-        }
-        return this.license.features;
-    }
-    isTampered() {
-        return this.tampered;
-    }
-    getDeviceCode() {
-        return HardwareFingerprint.getDeviceCode();
-    }
-    getLicenseeName() {
-        if (this.license !== null && this.license.licensee.length > 0) {
-            return this.license.licensee;
-        }
-        return '';
-    }
-    /** Proteus é£æ ¼ DD/MM/YYYY */
-    getLicenseExpiryLabel() {
-        if (this.license !== null && this.license.expiresAt.length > 0) {
-            return LicenseManager.formatDisplayDate(this.license.expiresAt);
-        }
-        if (this.trialActive && this.trialDaysRemaining > 0) {
-            const endMs = Date.now() + this.trialDaysRemaining * 86400000;
-            return LicenseManager.formatDisplayDate(new Date(endMs).toISOString());
-        }
-        return '01/01/2130';
-    }
-    isEvaluationMode() {
-        return this.license === null;
-    }
-    static formatDisplayDate(iso) {
-        const d = new Date(iso);
-        if (isNaN(d.getTime())) {
-            return iso;
-        }
-        const dd = String(d.getDate()).padStart(2, '0');
-        const mm = String(d.getMonth() + 1).padStart(2, '0');
-        return `${dd}/${mm}/${d.getFullYear()}`;
-    }
-    /** å¼€å‘/æµ‹è¯•ï¼šæ ¹æ®è®¾å¤‡ç ç”Ÿæˆç­¾åæˆæƒ JSON */
-    static buildSignedLicense(tier, deviceCode, licensee, daysValid = 365) {
-        const now = new Date();
-        const expires = new Date(now.getTime() + daysValid * 86400000);
-        const mgr = LicenseManager.getInstance();
-        const payload = {
-            tier,
-            licensee,
-            deviceCode: deviceCode.toUpperCase(),
-            issuedAt: now.toISOString(),
-            expiresAt: expires.toISOString(),
-            offlineDays: 365,
-            features: mgr.getDefaultFeatures(tier),
-            signature: ''
-        };
-        const signBody = JSON.stringify({
-            tier: payload.tier,
-            deviceCode: payload.deviceCode,
-            expiresAt: payload.expiresAt,
-            licensee: payload.licensee
-        });
-        payload.signature = CryptoUtil.signLicensePayload(signBody);
-        return JSON.stringify(payload, null, 2);
-    }
-    applyLicense(lic) {
-        const expectedSig = LicenseManager.computeSignature(lic);
-        if (lic.signature !== expectedSig) {
-            this.tampered = true;
-            this.license = null;
-            return this.buildStatus(false, LicenseTier.FREE, 'æˆæƒç­¾åæ ¡éªŒå¤±è´¥ï¼Œå·²é™çº§å…è´¹ç‰ˆ');
-        }
-        const localCode = HardwareFingerprint.getDeviceCode();
-        if (lic.deviceCode.toUpperCase() !== localCode) {
-            this.license = null;
-            return this.buildStatus(false, LicenseTier.FREE, 'è®¾å¤‡ç ä¸åŒ¹é…');
-        }
-        this.license = lic;
-        return this.validateCurrent();
-    }
-    validateCurrent() {
-        if (!this.license) {
-            return this.buildStatus(false, LicenseTier.FREE, 'å…è´¹ç‰ˆ');
-        }
-        const expires = new Date(this.license.expiresAt).getTime();
-        const now = Date.now();
-        const daysRemaining = Math.max(0, Math.ceil((expires - now) / 86400000));
-        if (now > expires) {
-            this.license = null;
-            return this.buildStatus(false, LicenseTier.FREE, 'æˆæƒå·²è¿‡æœŸï¼Œå·²é™çº§å…è´¹ç‰ˆ');
-        }
-        return this.buildStatus(true, this.license.tier, `æˆæƒæœ‰æ•ˆï¼Œå‰©ä½™ ${daysRemaining} å¤©`, daysRemaining);
-    }
-    buildStatus(valid, tier, message, daysRemaining = 0) {
-        return {
-            valid,
-            tier: valid ? tier : LicenseTier.FREE,
-            deviceMatched: valid,
-            expired: !valid && message.includes('è¿‡æœŸ'),
-            daysRemaining,
-            message
-        };
-    }
-    static computeSignature(lic) {
-        const signBody = JSON.stringify({
-            tier: lic.tier,
-            deviceCode: lic.deviceCode,
-            expiresAt: lic.expiresAt,
-            licensee: lic.licensee
-        });
-        return CryptoUtil.signLicensePayload(signBody);
-    }
-    static readText(path) {
-        try {
-            const fileHandle = fs.openSync(path, fs.OpenMode.READ_ONLY);
-            const stat = fs.statSync(path);
-            const buffer = new ArrayBuffer(stat.size);
-            fs.readSync(fileHandle.fd, buffer);
-            fs.closeSync(fileHandle);
-            return arrayBufferToString(buffer);
-        }
-        catch (e) {
-            throw new Error(`Failed to read file: ${path}`);
-        }
-    }
-}
-//# sourceMappingURL=LicenseManager.js.mapÂ–Ùg hvigor_ignore_C:_Program Files_Huawei_DevEco Studio_sdk_default_openharmony_ets_api_@ohos.file.fs.d.tsÙEC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\MapHelpers.etsÙEC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\CryptoUtil.etsÙQC:\Projects\ElecDraw_Harmony\common\src\main\ets\security\HardwareFingerprint.etsÙJC:\Projects\ElecDraw_Harmony\common\src\main\ets\security\TrialManager.etsÙGC:\Projects\ElecDraw_Harmony\common\src\main\ets\types\LicenseTypes.etsÙLC:\Projects\ElecDraw_Harmony\common\src\main\ets\security\LicenseManager.etsÔrB›ªmoduleName±isLocalDependency¯isNodeEntryFile§pkgPath±belongProjectPath§pkgNameªpkgVersion±dependencyPkgInfo°belongModulePath¬shouldEmitJs¯hostModulesInfo¦commonÃÂÙ#C:\Projects\ElecDraw_Harmony\common¼C:\Projects\ElecDraw_Harmony¦common¥1.0.0Ô  Ù#C:\Projects\ElecDraw_Harmony\commonÃ’ÔrC’²hostDependencyName®hostModuleName°./LicenseManager¦commonCÙ&./src/main/ets/security/LicenseManager¦commonÃÚ%/**
- * æˆæƒæ–‡ä»¶åŠ è½½ã€æ ¡éªŒä¸åˆ†çº§åŠŸèƒ½çŸ©é˜µ
- */
-import fs from '@ohos.file.fs';
-import { arrayBufferToString } from '../utils/MapHelpers';
-import { CryptoUtil } from '../utils/CryptoUtil';
-import { HardwareFingerprint } from './HardwareFingerprint';
-import { TrialManager } from './TrialManager';
-import {
-  LicenseTier, LicenseFile, LicenseFeatures, LicenseStatus
-} from '../types/LicenseTypes';
-
-const LICENSE_SALT = 'AISchSim_License_v1';
-
-export class LicenseManager {
-  private static instance: LicenseManager;
-  private license: LicenseFile | null = null;
-  private licensePath: string = '';
-  private tampered: boolean = false;
-  private trialActive: boolean = false;
-  private trialDaysRemaining: number = 0;
-  private trialMessage: string = '';
-
-  static getInstance(): LicenseManager {
-    if (!LicenseManager.instance) {
-      LicenseManager.instance = new LicenseManager();
-    }
-    return LicenseManager.instance;
-  }
-
-  getDefaultFeatures(tier: LicenseTier): LicenseFeatures {
-    switch (tier) {
-      case LicenseTier.PERSONAL_PRO:
-      case LicenseTier.EDUCATION:
-        return {
-          maxDevices: Number.MAX_SAFE_INTEGER,
-          dailyAiCalls: Number.MAX_SAFE_INTEGER,
-          maxAiApis: Number.MAX_SAFE_INTEGER,
-          stm32AdvancedPeriph: true,
-          monteCarlo: true,
-          faultInjection: true,
-          pluginSystem: true,
-          projectEncryption: true,
-          multiMonitorLayout: true,
-          teamAnnotation: true,
-          versionCompare: true,
-          batchBomExport: true
-        };
-      case LicenseTier.ENTERPRISE:
-        return {
-          maxDevices: Number.MAX_SAFE_INTEGER,
-          dailyAiCalls: Number.MAX_SAFE_INTEGER,
-          maxAiApis: Number.MAX_SAFE_INTEGER,
-          stm32AdvancedPeriph: true,
-          monteCarlo: true,
-          faultInjection: true,
-          pluginSystem: true,
-          projectEncryption: true,
-          multiMonitorLayout: true,
-          teamAnnotation: true,
-          versionCompare: true,
-          batchBomExport: true
-        };
-      default:
-        return {
-          maxDevices: 200,
-          dailyAiCalls: 50,
-          maxAiApis: 8,
-          stm32AdvancedPeriph: false,
-          monteCarlo: false,
-          faultInjection: false,
-          pluginSystem: false,
-          projectEncryption: false,
-          multiMonitorLayout: false,
-          teamAnnotation: false,
-          versionCompare: false,
-          batchBomExport: false
-        };
-    }
-  }
-
-  loadFromPath(path: string): LicenseStatus {
-    this.licensePath = path;
-    this.tampered = false;
-    try {
-      fs.accessSync(path);
-      const json = LicenseManager.readText(path);
-      const lic = JSON.parse(json) as LicenseFile;
-      return this.applyLicense(lic);
-    } catch (_e) {
-      this.license = null;
-      return this.buildStatus(false, LicenseTier.FREE, 'æœªæ‰¾åˆ°æˆæƒæ–‡ä»¶ï¼Œè¿è¡Œå…è´¹ç‰ˆ');
-    }
-  }
-
-  applyLicenseContent(json: string): LicenseStatus {
-    try {
-      const lic = JSON.parse(json) as LicenseFile;
-      return this.applyLicense(lic);
-    } catch (e) {
-      return this.buildStatus(false, LicenseTier.FREE, `æˆæƒè§£æå¤±è´¥: ${e}`);
-    }
-  }
-
-  importAndSave(path: string, json: string): LicenseStatus {
-    const status = this.applyLicenseContent(json);
-    if (status.valid) {
-      try {
-        const fileHandle = fs.openSync(path, fs.OpenMode.CREATE | fs.OpenMode.WRITE_ONLY | fs.OpenMode.TRUNC);
-        fs.writeSync(fileHandle.fd, json);
-        fs.closeSync(fileHandle);
-        this.licensePath = path;
-      } catch (e) {
-        return this.buildStatus(false, LicenseTier.FREE, `æˆæƒä¿å­˜å¤±è´¥: ${e}`);
-      }
-    }
-    return status;
-  }
-
-  getStatus(): LicenseStatus {
-    if (!this.license) {
-      if (this.trialActive) {
-        return this.buildStatus(true, LicenseTier.PERSONAL_PRO,
-          this.trialMessage || `è¯•ç”¨æœŸå‰©ä½™ ${this.trialDaysRemaining} å¤©`, this.trialDaysRemaining);
-      }
-      return this.buildStatus(false, LicenseTier.FREE, 'å…è´¹ç‰ˆ');
-    }
-    return this.validateCurrent();
-  }
-
-  async applyTrialStatus(context: Context): Promise<void> {
-    await TrialManager.init(context);
-    const trial = await TrialManager.getStatus();
-    this.trialActive = trial.active && !this.license;
-    this.trialDaysRemaining = trial.daysRemaining;
-    this.trialMessage = trial.active ? `è¯•ç”¨æœŸå‰©ä½™ ${trial.daysRemaining} å¤©` : 'è¯•ç”¨æœŸå·²ç»“æŸ';
-  }
-
-  getTier(): LicenseTier {
-    if (this.trialActive && !this.license) return LicenseTier.PERSONAL_PRO;
-    return this.license?.tier ?? LicenseTier.FREE;
-  }
-
-  getFeatures(): LicenseFeatures {
-    if (this.trialActive && !this.license) {
-      return this.getDefaultFeatures(LicenseTier.PERSONAL_PRO);
-    }
-    if (!this.license || !this.validateCurrent().valid) {
-      return this.getDefaultFeatures(LicenseTier.FREE);
-    }
-    return this.license.features;
-  }
-
-  isTampered(): boolean {
-    return this.tampered;
-  }
-
-  getDeviceCode(): string {
-    return HardwareFingerprint.getDeviceCode();
-  }
-
-  getLicenseeName(): string {
-    if (this.license !== null && this.license.licensee.length > 0) {
-      return this.license.licensee;
-    }
-    return '';
-  }
-
-  /** Proteus é£æ ¼ DD/MM/YYYY */
-  getLicenseExpiryLabel(): string {
-    if (this.license !== null && this.license.expiresAt.length > 0) {
-      return LicenseManager.formatDisplayDate(this.license.expiresAt);
-    }
-    if (this.trialActive && this.trialDaysRemaining > 0) {
-      const endMs = Date.now() + this.trialDaysRemaining * 86400000;
-      return LicenseManager.formatDisplayDate(new Date(endMs).toISOString());
-    }
-    return '01/01/2130';
-  }
-
-  isEvaluationMode(): boolean {
-    return this.license === null;
-  }
-
-  private static formatDisplayDate(iso: string): string {
-    const d = new Date(iso);
-    if (isNaN(d.getTime())) {
-      return iso;
-    }
-    const dd = String(d.getDate()).padStart(2, '0');
-    const mm = String(d.getMonth() + 1).padStart(2, '0');
-    return `${dd}/${mm}/${d.getFullYear()}`;
-  }
-
-  /** å¼€å‘/æµ‹è¯•ï¼šæ ¹æ®è®¾å¤‡ç ç”Ÿæˆç­¾åæˆæƒ JSON */
-  static buildSignedLicense(
-    tier: LicenseTier,
-    deviceCode: string,
-    licensee: string,
-    daysValid: number = 365
-  ): string {
-    const now = new Date();
-    const expires = new Date(now.getTime() + daysValid * 86400000);
-    const mgr = LicenseManager.getInstance();
-    const payload: LicenseFile = {
-      tier,
-      licensee,
-      deviceCode: deviceCode.toUpperCase(),
-      issuedAt: now.toISOString(),
-      expiresAt: expires.toISOString(),
-      offlineDays: 365,
-      features: mgr.getDefaultFeatures(tier),
-      signature: ''
-    };
-    const signBody = JSON.stringify({
-      tier: payload.tier,
-      deviceCode: payload.deviceCode,
-      expiresAt: payload.expiresAt,
-      licensee: payload.licensee
-    });
-    payload.signature = CryptoUtil.signLicensePayload(signBody);
-    return JSON.stringify(payload, null, 2);
-  }
-
-  private applyLicense(lic: LicenseFile): LicenseStatus {
-    const expectedSig = LicenseManager.computeSignature(lic);
-    if (lic.signature !== expectedSig) {
-      this.tampered = true;
-      this.license = null;
-      return this.buildStatus(false, LicenseTier.FREE, 'æˆæƒç­¾åæ ¡éªŒå¤±è´¥ï¼Œå·²é™çº§å…è´¹ç‰ˆ');
-    }
-    const localCode = HardwareFingerprint.getDeviceCode();
-    if (lic.deviceCode.toUpperCase() !== localCode) {
-      this.license = null;
-      return this.buildStatus(false, LicenseTier.FREE, 'è®¾å¤‡ç ä¸åŒ¹é…');
-    }
-    this.license = lic;
-    return this.validateCurrent();
-  }
-
-  private validateCurrent(): LicenseStatus {
-    if (!this.license) {
-      return this.buildStatus(false, LicenseTier.FREE, 'å…è´¹ç‰ˆ');
-    }
-    const expires = new Date(this.license.expiresAt).getTime();
-    const now = Date.now();
-    const daysRemaining = Math.max(0, Math.ceil((expires - now) / 86400000));
-    if (now > expires) {
-      this.license = null;
-      return this.buildStatus(false, LicenseTier.FREE, 'æˆæƒå·²è¿‡æœŸï¼Œå·²é™çº§å…è´¹ç‰ˆ');
-    }
-    return this.buildStatus(true, this.license.tier, `æˆæƒæœ‰æ•ˆï¼Œå‰©ä½™ ${daysRemaining} å¤©`, daysRemaining);
-  }
-
-  private buildStatus(
-    valid: boolean,
-    tier: LicenseTier,
-    message: string,
-    daysRemaining: number = 0
-  ): LicenseStatus {
-    return {
-      valid,
-      tier: valid ? tier : LicenseTier.FREE,
-      deviceMatched: valid,
-      expired: !valid && message.includes('è¿‡æœŸ'),
-      daysRemaining,
-      message
-    };
-  }
-
-  private static computeSignature(lic: LicenseFile): string {
-    const signBody = JSON.stringify({
-      tier: lic.tier,
-      deviceCode: lic.deviceCode,
-      expiresAt: lic.expiresAt,
-      licensee: lic.licensee
-    });
-    return CryptoUtil.signLicensePayload(signBody);
-  }
-
-  private static readText(path: string): string {
-    try {
-      const fileHandle = fs.openSync(path, fs.OpenMode.READ_ONLY);
-      const stat = fs.statSync(path);
-      const buffer = new ArrayBuffer(stat.size);
-      fs.readSync(fileHandle.fd, buffer);
-      fs.closeSync(fileHandle);
-      return arrayBufferToString(buffer);
-    } catch (e) {
-      throw new Error(`Failed to read file: ${path}`);
-    }
-  }
-}
-ÔrD•§version¨mappings¥names§sources®sourcesContentÜ‘”    ‘”  ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”  ‘”  ‘”  ‘”  ‘”  ‘”  ‘”  &
-‘”  '
-‘”  (
-‘”  )
-‘”  *
-‘”  +
-‘”  ,
-‘”  -
-‘”  .
-‘”  5
-‘”  6
-‘”  7
-‘”  8
-‘”  9
-‘”  :
-‘”  ;
-‘”  <
-‘”  =
-‘”  ?‘”  ÌA
-‘”  ÌB
-‘”  ÌC
-‘”  ÌD
-‘”  ÌE
-‘”  ÌF
-‘”  ÌG
-‘”  ÌH
-‘”  ÌI
-‘”  ÌJ
-‘”  ÌK
-‘”  ÌL
-‘”  ÌN‘”  ÌQ‘”  ÌR‘”  ÌS‘”  ÌU‘”  ÌX‘”  ÌY‘”  ÌY‘”  ÌZ‘”  Ì[‘”  Ì\‘”  Ì_‘”  Ìb‘”  Ìc‘”  Ìc‘”  Ìd‘”  Ìe‘”  Ìn‘”  Ìo‘”  Ìp‘”  Ìp‘”  Ìq‘”  Ìr‘”  Ìs‘”  Ìt‘”  Ìx‘”  Ì|‘”  Ì}‘”  Ì~‘”  Ì‘”  Ìƒ‘”  Ì„‘”  Ì†‘”  Ì‡‘”  Ì‹‘”  Ì’‘”  Ì“‘”  Ì•‘”  Ì–‘”  Ì‘”  Ì¢‘”  Ì£‘”  Ì¤‘”  Ì¥‘”  Ìª‘”  Ì¬‘”  Ì®‘”  Ì¯‘”  Ì°‘”  Ì±‘”  Ìµ‘”  Ì¹‘”  Ìº‘”  Ì»‘”  Ì¼‘”  Ì½‘”  Ì¾‘”  ÌÉ‘”  ÌÊ‘”  ÌË‘”  ÌÌ‘”  ÌÏ‘”  ÌĞ‘”  ÌÑ‘”  ÌÒ‘”  ÌÓ‘”  ÌÔ‘”  ÌÖ‘”  ÌÛ‘”  Ìà
-‘”  Ìâ‘”  Ìã‘”  Ìä‘”  Ìå‘”  Ìæ‘”  Ìç‘”  Ìé‘”  Ìê‘”  Ìë‘”  Ìì‘”  Ìí‘”  Ìñ‘”  Ìò‘”  Ìó‘”  Ìô‘”  Ìõ‘”  Ìø‘”  Ìù‘”  Ìú‘”  Ìû‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í‘”  Í ‘”  Í ‘”  Í!‘”  Í"‘”  Í$‘ÙLC:\Projects\ElecDraw_Harmony\common\src\main\ets\security\LicenseManager.ets‘Ú%/**
- * æˆæƒæ–‡ä»¶åŠ è½½ã€æ ¡éªŒä¸åˆ†çº§åŠŸèƒ½çŸ©é˜µ
- */
-import fs from '@ohos.file.fs';
-import { arrayBufferToString } from '../utils/MapHelpers';
-import { CryptoUtil } from '../utils/CryptoUtil';
-import { HardwareFingerprint } from './HardwareFingerprint';
-import { TrialManager } from './TrialManager';
-import {
-  LicenseTier, LicenseFile, LicenseFeatures, LicenseStatus
-} from '../types/LicenseTypes';
-
-const LICENSE_SALT = 'AISchSim_License_v1';
-
-export class LicenseManager {
-  private static instance: LicenseManager;
-  private license: LicenseFile | null = null;
-  private licensePath: string = '';
-  private tampered: boolean = false;
-  private trialActive: boolean = false;
-  private trialDaysRemaining: number = 0;
-  private trialMessage: string = '';
-
-  static getInstance(): LicenseManager {
-    if (!LicenseManager.instance) {
-      LicenseManager.instance = new LicenseManager();
-    }
-    return LicenseManager.instance;
-  }
-
-  getDefaultFeatures(tier: LicenseTier): LicenseFeatures {
-    switch (tier) {
-      case LicenseTier.PERSONAL_PRO:
-      case LicenseTier.EDUCATION:
-        return {
-          maxDevices: Number.MAX_SAFE_INTEGER,
-          dailyAiCalls: Number.MAX_SAFE_INTEGER,
-          maxAiApis: Number.MAX_SAFE_INTEGER,
-          stm32AdvancedPeriph: true,
-          monteCarlo: true,
-          faultInjection: true,
-          pluginSystem: true,
-          projectEncryption: true,
-          multiMonitorLayout: true,
-          teamAnnotation: true,
-          versionCompare: true,
-          batchBomExport: true
-        };
-      case LicenseTier.ENTERPRISE:
-        return {
-          maxDevices: Number.MAX_SAFE_INTEGER,
-          dailyAiCalls: Number.MAX_SAFE_INTEGER,
-          maxAiApis: Number.MAX_SAFE_INTEGER,
-          stm32AdvancedPeriph: true,
-          monteCarlo: true,
-          faultInjection: true,
-          pluginSystem: true,
-          projectEncryption: true,
-          multiMonitorLayout: true,
-          teamAnnotation: true,
-          versionCompare: true,
-          batchBomExport: true
-        };
-      default:
-        return {
-          maxDevices: 200,
-          dailyAiCalls: 50,
-          maxAiApis: 8,
-          stm32AdvancedPeriph: false,
-          monteCarlo: false,
-          faultInjection: false,
-          pluginSystem: false,
-          projectEncryption: false,
-          multiMonitorLayout: false,
-          teamAnnotation: false,
-          versionCompare: false,
-          batchBomExport: false
-        };
-    }
-  }
-
-  loadFromPath(path: string): LicenseStatus {
-    this.licensePath = path;
-    this.tampered = false;
-    try {
-      fs.accessSync(path);
-      const json = LicenseManager.readText(path);
-      const lic = JSON.parse(json) as LicenseFile;
-      return this.applyLicense(lic);
-    } catch (_e) {
-      this.license = null;
-      return this.buildStatus(false, LicenseTier.FREE, 'æœªæ‰¾åˆ°æˆæƒæ–‡ä»¶ï¼Œè¿è¡Œå…è´¹ç‰ˆ');
-    }
-  }
-
-  applyLicenseContent(json: string): LicenseStatus {
-    try {
-      const lic = JSON.parse(json) as LicenseFile;
-      return this.applyLicense(lic);
-    } catch (e) {
-      return this.buildStatus(false, LicenseTier.FREE, `æˆæƒè§£æå¤±è´¥: ${e}`);
-    }
-  }
-
-  importAndSave(path: string, json: string): LicenseStatus {
-    const status = this.applyLicenseContent(json);
-    if (status.valid) {
-      try {
-        const fileHandle = fs.openSync(path, fs.OpenMode.CREATE | fs.OpenMode.WRITE_ONLY | fs.OpenMode.TRUNC);
-        fs.writeSync(fileHandle.fd, json);
-        fs.closeSync(fileHandle);
-        this.licensePath = path;
-      } catch (e) {
-        return this.buildStatus(false, LicenseTier.FREE, `æˆæƒä¿å­˜å¤±è´¥: ${e}`);
-      }
-    }
-    return status;
-  }
-
-  getStatus(): LicenseStatus {
-    if (!this.license) {
-      if (this.trialActive) {
-        return this.buildStatus(true, LicenseTier.PERSONAL_PRO,
-          this.trialMessage || `è¯•ç”¨æœŸå‰©ä½™ ${this.trialDaysRemaining} å¤©`, this.trialDaysRemaining);
-      }
-      return this.buildStatus(false, LicenseTier.FREE, 'å…è´¹ç‰ˆ');
-    }
-    return this.validateCurrent();
-  }
-
-  async applyTrialStatus(context: Context): Promise<void> {
-    await TrialManager.init(context);
-    const trial = await TrialManager.getStatus();
-    this.trialActive = trial.active && !this.license;
-    this.trialDaysRemaining = trial.daysRemaining;
-    this.trialMessage = trial.active ? `è¯•ç”¨æœŸå‰©ä½™ ${trial.daysRemaining} å¤©` : 'è¯•ç”¨æœŸå·²ç»“æŸ';
-  }
-
-  getTier(): LicenseTier {
-    if (this.trialActive && !this.license) return LicenseTier.PERSONAL_PRO;
-    return this.license?.tier ?? LicenseTier.FREE;
-  }
-
-  getFeatures(): LicenseFeatures {
-    if (this.trialActive && !this.license) {
-      return this.getDefaultFeatures(LicenseTier.PERSONAL_PRO);
-    }
-    if (!this.license || !this.validateCurrent().valid) {
-      return this.getDefaultFeatures(LicenseTier.FREE);
-    }
-    return this.license.features;
-  }
-
-  isTampered(): boolean {
-    return this.tampered;
-  }
-
-  getDeviceCode(): string {
-    return HardwareFingerprint.getDeviceCode();
-  }
-
-  getLicenseeName(): string {
-    if (this.license !== null && this.license.licensee.length > 0) {
-      return this.license.licensee;
-    }
-    return '';
-  }
-
-  /** Proteus é£æ ¼ DD/MM/YYYY */
-  getLicenseExpiryLabel(): string {
-    if (this.license !== null && this.license.expiresAt.length > 0) {
-      return LicenseManager.formatDisplayDate(this.license.expiresAt);
-    }
-    if (this.trialActive && this.trialDaysRemaining > 0) {
-      const endMs = Date.now() + this.trialDaysRemaining * 86400000;
-      return LicenseManager.formatDisplayDate(new Date(endMs).toISOString());
-    }
-    return '01/01/2130';
-  }
-
-  isEvaluationMode(): boolean {
-    return this.license === null;
-  }
-
-  private static formatDisplayDate(iso: string): string {
-    const d = new Date(iso);
-    if (isNaN(d.getTime())) {
-      return iso;
-    }
-    const dd = String(d.getDate()).padStart(2, '0');
-    const mm = String(d.getMonth() + 1).padStart(2, '0');
-    return `${dd}/${mm}/${d.getFullYear()}`;
-  }
-
-  /** å¼€å‘/æµ‹è¯•ï¼šæ ¹æ®è®¾å¤‡ç ç”Ÿæˆç­¾åæˆæƒ JSON */
-  static buildSignedLicense(
-    tier: LicenseTier,
-    deviceCode: string,
-    licensee: string,
-    daysValid: number = 365
-  ): string {
-    const now = new Date();
-    const expires = new Date(now.getTime() + daysValid * 86400000);
-    const mgr = LicenseManager.getInstance();
-    const payload: LicenseFile = {
-      tier,
-      licensee,
-      deviceCode: deviceCode.toUpperCase(),
-      issuedAt: now.toISOString(),
-      expiresAt: expires.toISOString(),
-      offlineDays: 365,
-      features: mgr.getDefaultFeatures(tier),
-      signature: ''
-    };
-    const signBody = JSON.stringify({
-      tier: payload.tier,
-      deviceCode: payload.deviceCode,
-      expiresAt: payload.expiresAt,
-      licensee: payload.licensee
-    });
-    payload.signature = CryptoUtil.signLicensePayload(signBody);
-    return JSON.stringify(payload, null, 2);
-  }
-
-  private applyLicense(lic: LicenseFile): LicenseStatus {
-    const expectedSig = LicenseManager.computeSignature(lic);
-    if (lic.signature !== expectedSig) {
-      this.tampered = true;
-      this.license = null;
-      return this.buildStatus(false, LicenseTier.FREE, 'æˆæƒç­¾åæ ¡éªŒå¤±è´¥ï¼Œå·²é™çº§å…è´¹ç‰ˆ');
-    }
-    const localCode = HardwareFingerprint.getDeviceCode();
-    if (lic.deviceCode.toUpperCase() !== localCode) {
-      this.license = null;
-      return this.buildStatus(false, LicenseTier.FREE, 'è®¾å¤‡ç ä¸åŒ¹é…');
-    }
-    this.license = lic;
-    return this.validateCurrent();
-  }
-
-  private validateCurrent(): LicenseStatus {
-    if (!this.license) {
-      return this.buildStatus(false, LicenseTier.FREE, 'å…è´¹ç‰ˆ');
-    }
-    const expires = new Date(this.license.expiresAt).getTime();
-    const now = Date.now();
-    const daysRemaining = Math.max(0, Math.ceil((expires - now) / 86400000));
-    if (now > expires) {
-      this.license = null;
-      return this.buildStatus(false, LicenseTier.FREE, 'æˆæƒå·²è¿‡æœŸï¼Œå·²é™çº§å…è´¹ç‰ˆ');
-    }
-    return this.buildStatus(true, this.license.tier, `æˆæƒæœ‰æ•ˆï¼Œå‰©ä½™ ${daysRemaining} å¤©`, daysRemaining);
-  }
-
-  private buildStatus(
-    valid: boolean,
-    tier: LicenseTier,
-    message: string,
-    daysRemaining: number = 0
-  ): LicenseStatus {
-    return {
-      valid,
-      tier: valid ? tier : LicenseTier.FREE,
-      deviceMatched: valid,
-      expired: !valid && message.includes('è¿‡æœŸ'),
-      daysRemaining,
-      message
-    };
-  }
-
-  private static computeSignature(lic: LicenseFile): string {
-    const signBody = JSON.stringify({
-      tier: lic.tier,
-      deviceCode: lic.deviceCode,
-      expiresAt: lic.expiresAt,
-      licensee: lic.licensee
-    });
-    return CryptoUtil.signLicensePayload(signBody);
-  }
-
-  private static readText(path: string): string {
-    try {
-      const fileHandle = fs.openSync(path, fs.OpenMode.READ_ONLY);
-      const stat = fs.statSync(path);
-      const buffer = new ArrayBuffer(stat.size);
-      fs.readSync(fileHandle.fd, buffer);
-      fs.closeSync(fileHandle);
-      return arrayBufferToString(buffer);
-    } catch (e) {
-      throw new Error(`Failed to read file: ${path}`);
-    }
-  }
-}
-ÔrE–­@ohos.file.fs³../utils/CryptoUtilµ./HardwareFingerprint®./TrialManagerµ../types/LicenseTypes³../utils/MapHelpersÔrF—ªassertions¨external¢id¤meta±moduleSideEffectsªresolvedByµsyntheticNamedExportsAÃÙg hvigor_ignore_C:_Program Files_Huawei_DevEco Studio_sdk_default_openharmony_ets_api_@ohos.file.fs.d.tsÔrG‘¯hostModulesInfo‘C­@ohos.file.fs¦commonÃªoh-resolveÂFAÂÙEC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\CryptoUtil.etsAÃªoh-resolveÂFAÂÙQC:\Projects\ElecDraw_Harmony\common\src\main\ets\security\HardwareFingerprint.etsAÃªoh-resolveÂFAÂÙJC:\Projects\ElecDraw_Harmony\common\src\main\ets\security\TrialManager.etsAÃªoh-resolveÂFAÂÙGC:\Projects\ElecDraw_Harmony\common\src\main\ets\types\LicenseTypes.etsAÃªoh-resolveÂFAÂÙEC:\Projects\ElecDraw_Harmony\common\src\main\ets\utils\MapHelpers.etsAÃªoh-resolveÂ‘ÔrH’§missing¦pluginÃ¦genAbcÂÔ  ÔrI”²dynamicImportCache¹exportAllDeclarationCache»exportNamedDeclarationCache«importCache‘ÔrJ–¤type¥start£end«declarationªspecifiers¦source¶ExportNamedDeclarationÍ€Í&YÔrK–¤type¥start£end¢idªsuperClass¤body°ClassDeclarationÍ‡Í&YÔrL”¤type¥start£end¤nameªIdentifierÍÍ›®LicenseManagerÀÔrM”¤type¥start£end¤body©ClassBodyÍœÍ&YÜ ÔrN˜¤type¥start£end¦static¨computed£key¤kind¥value°MethodDefinitionÍ£ÍÂÂLªIdentifierÍ£Í®«constructor«constructorÔrO™¤type¥start£end¢idªexpression©generator¥async¦params¤body²FunctionExpressionÍ®ÍÀÂÂÂM®BlockStatementÍ±Í–ÔrP”¤type¥start£endªexpression³ExpressionStatementÍ¼ÍĞÔrQ–¤type¥start£end¨operator¤left¥right´AssignmentExpressionÍ¼ÍÏ¡=ÔrR—¤type¥start£end¦object¨property¨computed¨optional°MemberExpressionÍ¼ÍÈÔrS“¤type¥start£end®ThisExpressionÍ¼ÍÀLªIdentifierÍÁÍÈ§licenseÂÂÔrT•¤type¥start£end¥value£raw§LiteralÍËÍÏÀ¤nullP³ExpressionStatementÍÚÍğQ´AssignmentExpressionÍÚÍï¡=R°MemberExpressionÍÚÍêS®ThisExpressionÍÚÍŞLªIdentifierÍßÍê«licensePathÂÂT§LiteralÍíÍï ¢''P³ExpressionStatementÍúÍQ´AssignmentExpressionÍúÍ¡=R°MemberExpressionÍúÍS®ThisExpressionÍúÍşLªIdentifierÍÿÍ¨tamperedÂÂT§LiteralÍ
-ÍÂ¥falseP³ExpressionStatementÍÍ3Q´AssignmentExpressionÍÍ2¡=R°MemberExpressionÍÍ*S®ThisExpressionÍÍLªIdentifierÍÍ*«trialActiveÂÂT§LiteralÍ-Í2Â¥falseP³ExpressionStatementÍ=ÍYQ´AssignmentExpressionÍ=ÍX¡=R°MemberExpressionÍ=ÍTS®ThisExpressionÍ=ÍALªIdentifierÍBÍT²trialDaysRemainingÂÂT§LiteralÍWÍX ¡0P³ExpressionStatementÍcÍzQ´AssignmentExpressionÍcÍy¡=R°MemberExpressionÍcÍtS®ThisExpressionÍcÍgLªIdentifierÍhÍt¬trialMessageÂÂT§LiteralÍwÍy ¢''N°MethodDefinitionÍ‡Í>ÃÂLªIdentifierÍÍ™«getInstance¦methodO²FunctionExpressionÍ™Í>ÀÂÂÂM®BlockStatementÍœÍ>’ÔrU–¤type¥start£end¤testªconsequent©alternate«IfStatementÍ§ÍÔrV–¤type¥start£end¨operator¦prefix¨argument¯UnaryExpressionÍ«ÍÃ¡!ÃR°MemberExpressionÍ¬ÍÃLªIdentifierÍ¬Íº®LicenseManagerLªIdentifierÍ»ÍÃ¨instanceÂÂM®BlockStatementÍÅÍ‘P³ExpressionStatementÍÔÍQ´AssignmentExpressionÍÔÍ¡=R°MemberExpressionÍÔÍëLªIdentifierÍÔÍâ®LicenseManagerLªIdentifierÍãÍë¨instanceÂÂÔrW•¤type¥start£end¦callee©arguments­NewExpressionÍîÍLªIdentifierÍòÍ ®LicenseManagerÀÔrX”¤type¥start£end¨argument¯ReturnStatementÍÍ7R°MemberExpressionÍÍ6LªIdentifierÍÍ-®LicenseManagerLªIdentifierÍ.Í6¨instanceÂÂN°MethodDefinitionÍDÍÂÂLªIdentifierÍDÍV²getDefaultFeatures¦methodO²FunctionExpressionÍVÍÀÂÂÂ‘LªIdentifierÍWÍ[¤tierM®BlockStatementÍ]Í‘ÔrY•¤type¥start£end¬discriminant¥cases¯SwitchStatementÍhÍLªIdentifierÍpÍt¤tier”ÔrZ•¤type¥start£endªconsequent¤testªSwitchCaseÍ…Í£R°MemberExpressionÍŠÍ¢LªIdentifierÍŠÍ•«LicenseTierLªIdentifierÍ–Í¢¬PERSONAL_PROÂÂZªSwitchCaseÍ±Í1‘X¯ReturnStatementÍŞÍ1Ôr[”¤type¥start£endªproperties°ObjectExpressionÍåÍ0œÔr\™¤type¥start£end¦method©shorthand¨computed£key¥value¤kind¨PropertyÍüÍÂÂÂLªIdentifierÍüÍªmaxDevicesR°MemberExpressionÍÍLªIdentifierÍÍ¦NumberLªIdentifierÍÍ°MAX_SAFE_INTEGERÂÂ¤init\¨PropertyÍ6Í[ÂÂÂLªIdentifierÍ6ÍB¬dailyAiCallsR°MemberExpressionÍDÍ[LªIdentifierÍDÍJ¦NumberLªIdentifierÍKÍ[°MAX_SAFE_INTEGERÂÂ¤init\¨PropertyÍrÍ”ÂÂÂLªIdentifierÍrÍ{©maxAiApisR°MemberExpressionÍ}Í”LªIdentifierÍ}Íƒ¦NumberLªIdentifierÍ„Í”°MAX_SAFE_INTEGERÂÂ¤init\¨PropertyÍ«ÍÄÂÂÂLªIdentifierÍ«Í¾³stm32AdvancedPeriphT§LiteralÍÀÍÄÃ¤true¤init\¨PropertyÍÛÍëÂÂÂLªIdentifierÍÛÍåªmonteCarloT§LiteralÍçÍëÃ¤true¤init\¨PropertyÍÍÂÂÂLªIdentifierÍÍ®faultInjectionT§LiteralÍÍÃ¤true¤init\¨PropertyÍ-Í?ÂÂÂLªIdentifierÍ-Í9¬pluginSystemT§LiteralÍ;Í?Ã¤true¤init\¨PropertyÍVÍmÂÂÂLªIdentifierÍVÍg±projectEncryptionT§LiteralÍiÍmÃ¤true¤init\¨PropertyÍ„ÍœÂÂÂLªIdentifierÍ„Í–²multiMonitorLayoutT§LiteralÍ˜ÍœÃ¤true¤init\¨PropertyÍ³ÍÇÂÂÂLªIdentifierÍ³ÍÁ®teamAnnotationT§LiteralÍÃÍÇÃ¤true¤init\¨PropertyÍŞÍòÂÂÂLªIdentifierÍŞÍì®versionCompareT§LiteralÍîÍòÃ¤true¤init\¨PropertyÍ	ÍÂÂÂLªIdentifierÍ	Í®batchBomExportT§LiteralÍÍÃ¤true¤initR°MemberExpressionÍ¶ÍËLªIdentifierÍ¶ÍÁ«LicenseTierLªIdentifierÍÂÍË©EDUCATIONÂÂZªSwitchCaseÍ?ÍÀ‘X¯ReturnStatementÍmÍÀ[°ObjectExpressionÍtÍ¿œ\¨PropertyÍ‹Í®ÂÂÂLªIdentifierÍ‹Í•ªmaxDevicesR°MemberExpressionÍ—Í®LªIdentifierÍ—Í¦NumberLªIdentifierÍÍ®°MAX_SAFE_INTEGERÂÂ¤init\¨PropertyÍÅÍêÂÂÂLªIdentifierÍÅÍÑ¬dailyAiCallsR°MemberExpressionÍÓÍêLªIdentifierÍÓÍÙ¦NumberLªIdentifierÍÚÍê°MAX_SAFE_INTEGERÂÂ¤init\¨PropertyÍÍ#ÂÂÂLªIdentifierÍÍ
-©maxAiApisR°MemberExpressionÍÍ#LªIdentifierÍÍ¦NumberLªIdentifierÍÍ#°MAX_SAFE_INTEGERÂÂ¤init\¨PropertyÍ:ÍSÂÂÂLªIdentifierÍ:ÍM³stm32AdvancedPeriphT§LiteralÍOÍSÃ¤true¤init\¨PropertyÍjÍzÂÂÂLªIdentifierÍjÍtªmonteCarloT§LiteralÍvÍzÃ¤true¤init\¨PropertyÍ‘Í¥ÂÂÂLªIdentifierÍ‘ÍŸ®faultInjectionT§LiteralÍ¡Í¥Ã¤true¤init\¨PropertyÍ¼ÍÎÂÂÂLªIdentifierÍ¼ÍÈ¬pluginSystemT§LiteralÍÊÍÎÃ¤true¤init\¨PropertyÍåÍüÂÂÂLªIdentifierÍåÍö±projectEncryptionT§LiteralÍøÍüÃ¤true¤init\¨PropertyÍÍ+ÂÂÂLªIdentifierÍÍ%²multiMonitorLayoutT§LiteralÍ'Í+Ã¤true¤init\¨PropertyÍBÍVÂÂÂLªIdentifierÍBÍP®teamAnnotationT§LiteralÍRÍVÃ¤true¤init\¨PropertyÍmÍÂÂÂLªIdentifierÍmÍ{®versionCompareT§LiteralÍ}ÍÃ¤true¤init\¨PropertyÍ˜Í¬ÂÂÂLªIdentifierÍ˜Í¦®batchBomExportT§LiteralÍ¨Í¬Ã¤true¤initR°MemberExpressionÍDÍZLªIdentifierÍDÍO«LicenseTierLªIdentifierÍPÍZªENTERPRISEÂÂZªSwitchCaseÍÎÍ‘X¯ReturnStatementÍèÍ[°ObjectExpressionÍïÍœ\¨PropertyÍ	Í	ÂÂÂLªIdentifierÍ	Í	ªmaxDevicesT§LiteralÍ	Í	ÌÈ£200¤init\¨PropertyÍ	,Í	<ÂÂÂLªIdentifierÍ	,Í	8¬dailyAiCallsT§LiteralÍ	:Í	<2¢50¤init\¨PropertyÍ	SÍ	_ÂÂÂLªIdentifierÍ	SÍ	\©maxAiApisT§LiteralÍ	^Í	_¡8¤init\¨PropertyÍ	vÍ	ÂÂÂLªIdentifierÍ	vÍ	‰³stm32AdvancedPeriphT§LiteralÍ	‹Í	Â¥false¤init\¨PropertyÍ	§Í	¸ÂÂÂLªIdentifierÍ	§Í	±ªmonteCarloT§LiteralÍ	³Í	¸Â¥false¤init\¨PropertyÍ	ÏÍ	äÂÂÂLªIdentifierÍ	ÏÍ	İ®faultInjectionT§LiteralÍ	ßÍ	äÂ¥false¤init\¨PropertyÍ	ûÍ
-ÂÂÂLªIdentifierÍ	ûÍ
-¬pluginSystemT§LiteralÍ
-	Í
-Â¥false¤init\¨PropertyÍ
-%Í
-=ÂÂÂLªIdentifierÍ
-%Í
-6±projectEncryptionT§LiteralÍ
-8Í
-=Â¥false¤init\¨PropertyÍ
-TÍ
-mÂÂÂLªIdentifierÍ
-TÍ
-f²multiMonitorLayoutT§LiteralÍ
-hÍ
-mÂ¥false¤init\¨PropertyÍ
-„Í
-™ÂÂÂLªIdentifierÍ
-„Í
-’®teamAnnotationT§LiteralÍ
-”Í
-™Â¥false¤init\¨PropertyÍ
-°Í
-ÅÂÂÂLªIdentifierÍ
-°Í
-¾®versionCompareT§LiteralÍ
-ÀÍ
-ÅÂ¥false¤init\¨PropertyÍ
-ÜÍ
-ñÂÂÂLªIdentifierÍ
-ÜÍ
-ê®batchBomExportT§LiteralÍ
-ìÍ
-ñÂ¥false¤initÀN°MethodDefinitionÍÍÙÂÂLªIdentifierÍÍ)¬loadFromPath¦methodO²FunctionExpressionÍ)ÍÙÀÂÂÂ‘LªIdentifierÍ*Í.¤pathM®BlockStatementÍ0ÍÙ“P³ExpressionStatementÍ;ÍSQ´AssignmentExpressionÍ;ÍR¡=R°MemberExpressionÍ;ÍKS®ThisExpressionÍ;Í?LªIdentifierÍ@ÍK«licensePathÂÂLªIdentifierÍNÍR¤pathP³ExpressionStatementÍ]ÍsQ´AssignmentExpressionÍ]Ír¡=R°MemberExpressionÍ]ÍjS®ThisExpressionÍ]ÍaLªIdentifierÍbÍj¨tamperedÂÂT§LiteralÍmÍrÂ¥falseÔr]–¤type¥start£end¥block§handler©finalizer¬TryStatementÍ}ÍÒM®BlockStatementÍÍ?”P³ExpressionStatementÍÍ¤Ôr^–¤type¥start£end¦callee©arguments¨optional®CallExpressionÍÍ£R°MemberExpressionÍÍLªIdentifierÍÍ’¢fsLªIdentifierÍ“ÍªaccessSyncÂÂ‘LªIdentifierÍÍ¢¤pathÂÔr_•¤type¥start£end¬declarations¤kind³VariableDeclarationÍ²Íİ‘Ôr`•¤type¥start£end¢id¤init²VariableDeclaratorÍ¸ÍÜLªIdentifierÍ¸Í¼¤json^®CallExpressionÍ¿ÍÜR°MemberExpressionÍ¿ÍÖLªIdentifierÍ¿ÍÍ®LicenseManagerLªIdentifierÍÎÍÖ¨readTextÂÂ‘LªIdentifierÍ×ÍÛ¤pathÂ¥const_³VariableDeclarationÍëÍ‘`²VariableDeclaratorÍñÍLªIdentifierÍñÍô£lic^®CallExpressionÍ÷ÍR°MemberExpressionÍ÷ÍLªIdentifierÍ÷Íû¤JSONLªIdentifierÍüÍ¥parseÂÂ‘LªIdentifierÍÍ¤jsonÂ¥constX¯ReturnStatementÍÍ4^®CallExpressionÍÍ3R°MemberExpressionÍÍ.S®ThisExpressionÍÍ!LªIdentifierÍ"Í.¬applyLicenseÂÂ‘LªIdentifierÍ/Í2£licÂÔra•¤type¥start£end¥param¤body«CatchClauseÍIÍÒLªIdentifierÍPÍR¢_eM®BlockStatementÍTÍÒ’P³ExpressionStatementÍcÍwQ´AssignmentExpressionÍcÍv¡=R°MemberExpressionÍcÍoS®ThisExpressionÍcÍgLªIdentifierÍhÍo§licenseÂÂT§LiteralÍrÍvÀ¤nullX¯ReturnStatementÍ…ÍÇ^®CallExpressionÍŒÍÆR°MemberExpressionÍŒÍœS®ThisExpressionÍŒÍLªIdentifierÍ‘Íœ«buildStatusÂÂ“T§LiteralÍÍ¢Â¥falseR°MemberExpressionÍ¤Í´LªIdentifierÍ¤Í¯«LicenseTierLªIdentifierÍ°Í´¤FREEÂÂT§LiteralÍ¶ÍÅÙ'æœªæ‰¾åˆ°æˆæƒæ–‡ä»¶ï¼Œè¿è¡Œå…è´¹ç‰ˆÙ)'æœªæ‰¾åˆ°æˆæƒæ–‡ä»¶ï¼Œè¿è¡Œå…è´¹ç‰ˆ'ÂÀN°MethodDefinitionÍßÍáÂÂLªIdentifierÍßÍò³applyLicenseContent¦methodO²FunctionExpressionÍòÍáÀÂÂÂ‘LªIdentifierÍóÍ÷¤jsonM®BlockStatementÍùÍá‘]¬TryStatementÍÍÚM®BlockStatementÍÍk’_³VariableDeclarationÍÍ4‘`²VariableDeclaratorÍÍ3LªIdentifierÍÍ £lic^®CallExpressionÍ#Í3R°MemberExpressionÍ#Í-LªIdentifierÍ#Í'¤JSONLªIdentifierÍ(Í-¥parseÂÂ‘LªIdentifierÍ.Í2¤jsonÂ¥constX¯ReturnStatementÍBÍ`^®CallExpressionÍIÍ_R°MemberExpressionÍIÍZS®ThisExpressionÍIÍMLªIdentifierÍNÍZ¬applyLicenseÂÂ‘LªIdentifierÍ[Í^£licÂa«CatchClauseÍuÍÚLªIdentifierÍ|Í}¡eM®BlockStatementÍÍÚ‘X¯ReturnStatementÍÍÏ^®CallExpressionÍ•ÍÎR°MemberExpressionÍ•Í¥S®ThisExpressionÍ•Í™LªIdentifierÍšÍ¥«buildStatusÂÂ“T§LiteralÍ¦Í«Â¥falseR°MemberExpressionÍ­Í½LªIdentifierÍ­Í¸«LicenseTierLªIdentifierÍ¹Í½¤FREEÂÂÔrb•¤type¥start£end«expressions¦quasis¯TemplateLiteralÍ¿ÍÍ‘LªIdentifierÍÊÍË¡e’Ôrc•¤type¥start£end¥value¤tail¯TemplateElementÍÀÍÈÔrd’£raw¦cooked´æˆæƒè§£æå¤±è´¥: ´æˆæƒè§£æå¤±è´¥: Âc¯TemplateElementÍÌÍÌd  ÃÂÀN°MethodDefinitionÍçÍÂÂLªIdentifierÍçÍô­importAndSave¦methodO²FunctionExpressionÍôÍÀÂÂÂ’LªIdentifierÍõÍù¤pathLªIdentifierÍûÍÿ¤jsonM®BlockStatementÍÍ“_³VariableDeclarationÍÍ:‘`²VariableDeclaratorÍÍ9LªIdentifierÍÍ¦status^®CallExpressionÍÍ9R°MemberExpressionÍÍ3S®ThisExpressionÍÍLªIdentifierÍ Í3³applyLicenseContentÂÂ‘LªIdentifierÍ4Í8¤jsonÂ¥constU«IfStatementÍDÍ R°MemberExpressionÍHÍTLªIdentifierÍHÍN¦statusLªIdentifierÍOÍT¥validÂÂM®BlockStatementÍVÍ ‘]¬TryStatementÍeÍõM®BlockStatementÍiÍz”_³VariableDeclarationÍ|Íâ‘`²VariableDeclaratorÍ‚ÍáLªIdentifierÍ‚ÍŒªfileHandle^®CallExpressionÍÍáR°MemberExpressionÍÍšLªIdentifierÍÍ‘¢fsLªIdentifierÍ’Íš¨openSyncÂÂ’LªIdentifierÍ›ÍŸ¤pathÔre–¤type¥start£end¤left¨operator¥right°BinaryExpressionÍ¡Íàe°BinaryExpressionÍ¡ÍÌR°MemberExpressionÍ¡Í³R°MemberExpressionÍ¡Í¬LªIdentifierÍ¡Í£¢fsLªIdentifierÍ¤Í¬¨OpenModeÂÂLªIdentifierÍ­Í³¦CREATEÂÂ¡|R°MemberExpressionÍ¶ÍÌR°MemberExpressionÍ¶ÍÁLªIdentifierÍ¶Í¸¢fsLªIdentifierÍ¹ÍÁ¨OpenModeÂÂLªIdentifierÍÂÍÌªWRITE_ONLYÂÂ¡|R°MemberExpressionÍÏÍàR°MemberExpressionÍÏÍÚLªIdentifierÍÏÍÑ¢fsLªIdentifierÍÒÍÚ¨OpenModeÂÂLªIdentifierÍÛÍà¥TRUNCÂÂÂ¥constP³ExpressionStatementÍôÍ^®CallExpressionÍôÍR°MemberExpressionÍôÍ LªIdentifierÍôÍö¢fsLªIdentifierÍ÷Í ©writeSyncÂÂ’R°MemberExpressionÍÍLªIdentifierÍÍªfileHandleLªIdentifierÍÍ¢fdÂÂLªIdentifierÍÍ¤jsonÂP³ExpressionStatementÍ(ÍA^®CallExpressionÍ(Í@R°MemberExpressionÍ(Í4LªIdentifierÍ(Í*¢fsLªIdentifierÍ+Í4©closeSyncÂÂ‘LªIdentifierÍ5Í?ªfileHandleÂP³ExpressionStatementÍSÍkQ´AssignmentExpressionÍSÍj¡=R°MemberExpressionÍSÍcS®ThisExpressionÍSÍWLªIdentifierÍXÍc«licensePathÂÂLªIdentifierÍfÍj¤patha«CatchClauseÍˆÍõLªIdentifierÍÍ¡eM®BlockStatementÍ’Íõ‘X¯ReturnStatementÍ¥Íæ^®CallExpressionÍ¬ÍåR°MemberExpressionÍ¬Í¼S®ThisExpressionÍ¬Í°LªIdentifierÍ±Í¼«buildStatusÂÂ“T§LiteralÍ½ÍÂÂ¥falseR°MemberExpressionÍÄÍÔLªIdentifierÍÄÍÏ«LicenseTierLªIdentifierÍĞÍÔ¤FREEÂÂb¯TemplateLiteralÍÖÍä‘LªIdentifierÍáÍâ¡e’c¯TemplateElementÍ×Íßd´æˆæƒä¿å­˜å¤±è´¥: ´æˆæƒä¿å­˜å¤±è´¥: Âc¯TemplateElementÍãÍãd  ÃÂÀÀX¯ReturnStatementÍ
-ÍLªIdentifierÍÍ¦statusN°MethodDefinitionÍ%Í¢ÂÂLªIdentifierÍ%Í.©getStatus¦methodO²FunctionExpressionÍ.Í¢ÀÂÂÂM®BlockStatementÍ1Í¢’U«IfStatementÍ<ÍsV¯UnaryExpressionÍ@ÍM¡!ÃR°MemberExpressionÍAÍMS®ThisExpressionÍAÍELªIdentifierÍFÍM§licenseÂÂM®BlockStatementÍOÍs’U«IfStatementÍ^Í"R°MemberExpressionÍbÍrS®ThisExpressionÍbÍfLªIdentifierÍgÍr«trialActiveÂÂM®BlockStatementÍtÍ"‘X¯ReturnStatementÍ‡Í^®CallExpressionÍÍR°MemberExpressionÍÍS®ThisExpressionÍÍ’LªIdentifierÍ“Í«buildStatusÂÂ”T§LiteralÍŸÍ£Ã¤trueR°MemberExpressionÍ¥Í½LªIdentifierÍ¥Í°«LicenseTierLªIdentifierÍ±Í½¬PERSONAL_PROÂÂe±LogicalExpressionÍ¿ÍøR°MemberExpressionÍ¿ÍĞS®ThisExpressionÍ¿ÍÃLªIdentifierÍÄÍĞ¬trialMessageÂÂ¢||b¯TemplateLiteralÍÔÍø‘R°MemberExpressionÍİÍôS®ThisExpressionÍİÍáLªIdentifierÍâÍô²trialDaysRemainingÂÂ’c¯TemplateElementÍÕÍÛd°è¯•ç”¨æœŸå‰©ä½™ °è¯•ç”¨æœŸå‰©ä½™ Âc¯TemplateElementÍõÍ÷d¤ å¤©¤ å¤©ÃR°MemberExpressionÍúÍS®ThisExpressionÍúÍşLªIdentifierÍÿÍ²trialDaysRemainingÂÂÂÀX¯ReturnStatementÍ0Íh^®CallExpressionÍ7ÍgR°MemberExpressionÍ7ÍGS®ThisExpressionÍ7Í;LªIdentifierÍ<ÍG«buildStatusÂÂ“T§LiteralÍHÍMÂ¥falseR°MemberExpressionÍOÍ_LªIdentifierÍOÍZ«LicenseTierLªIdentifierÍ[Í_¤FREEÂÂT§LiteralÍaÍf©å…è´¹ç‰ˆ«'å…è´¹ç‰ˆ'ÂÀX¯ReturnStatementÍ}Í›^®CallExpressionÍ„ÍšR°MemberExpressionÍ„Í˜S®ThisExpressionÍ„ÍˆLªIdentifierÍ‰Í˜¯validateCurrentÂÂÂN°MethodDefinitionÍ¨ÍşÂÂLªIdentifierÍ®Í¾°applyTrialStatus¦methodO²FunctionExpressionÍ¾ÍşÀÂÂÃ‘LªIdentifierÍ¿ÍÆ§contextM®BlockStatementÍÈÍş•P³ExpressionStatementÍÓÍôX¯AwaitExpressionÍÓÍó^®CallExpressionÍÙÍóR°MemberExpressionÍÙÍêLªIdentifierÍÙÍå¬TrialManagerLªIdentifierÍæÍê¤initÂÂ‘LªIdentifierÍëÍò§contextÂ_³VariableDeclarationÍşÍ+‘`²VariableDeclaratorÍÍ*LªIdentifierÍÍ	¥trialX¯AwaitExpressionÍÍ*^®CallExpressionÍÍ*R°MemberExpressionÍÍ(LªIdentifierÍÍ¬TrialManagerLªIdentifierÍÍ(©getStatusÂÂÂ¥constP³ExpressionStatementÍ5ÍfQ´AssignmentExpressionÍ5Íe¡=R°MemberExpressionÍ5ÍES®ThisExpressionÍ5Í9LªIdentifierÍ:ÍE«trialActiveÂÂe±LogicalExpressionÍHÍeR°MemberExpressionÍHÍTLªIdentifierÍHÍM¥trialLªIdentifierÍNÍT¦activeÂÂ¢&&V¯UnaryExpressionÍXÍe¡!ÃR°MemberExpressionÍYÍeS®ThisExpressionÍYÍ]LªIdentifierÍ^Íe§licenseÂÂP³ExpressionStatementÍpÍQ´AssignmentExpressionÍpÍ¡=R°MemberExpressionÍpÍ‡S®ThisExpressionÍpÍtLªIdentifierÍuÍ‡²trialDaysRemainingÂÂR°MemberExpressionÍŠÍLªIdentifierÍŠÍ¥trialLªIdentifierÍÍ­daysRemainingÂÂP³ExpressionStatementÍ¨Í÷Q´AssignmentExpressionÍ¨Íö¡=R°MemberExpressionÍ¨Í¹S®ThisExpressionÍ¨Í¬LªIdentifierÍ­Í¹¬trialMessageÂÂUµConditionalExpressionÍ¼ÍöR°MemberExpressionÍ¼ÍÈLªIdentifierÍ¼ÍÁ¥trialLªIdentifierÍÂÍÈ¦activeÂÂb¯TemplateLiteralÍËÍë‘R°MemberExpressionÍÔÍçLªIdentifierÍÔÍÙ¥trialLªIdentifierÍÚÍç­daysRemainingÂÂ’c¯TemplateElementÍÌÍÒd°è¯•ç”¨æœŸå‰©ä½™ °è¯•ç”¨æœŸå‰©ä½™ Âc¯TemplateElementÍèÍêd¤ å¤©¤ å¤©ÃT§LiteralÍîÍö²è¯•ç”¨æœŸå·²ç»“æŸ´'è¯•ç”¨æœŸå·²ç»“æŸ'N°MethodDefinitionÍÍ¬ÂÂLªIdentifierÍÍ§getTier¦methodO²FunctionExpressionÍÍ¬ÀÂÂÂM®BlockStatementÍÍ¬’U«IfStatementÍÍme±LogicalExpressionÍÍ>R°MemberExpressionÍÍ-S®ThisExpressionÍÍ!LªIdentifierÍ"Í-«trialActiveÂÂ¢&&V¯UnaryExpressionÍ1Í>¡!ÃR°MemberExpressionÍ2Í>S®ThisExpressionÍ2Í6LªIdentifierÍ7Í>§licenseÂÂX¯ReturnStatementÍMÍmR°MemberExpressionÍTÍlLªIdentifierÍTÍ_«LicenseTierLªIdentifierÍ`Íl¬PERSONAL_PROÂÂÀX¯ReturnStatementÍwÍ¥e±LogicalExpressionÍ~Í¤P¯ChainExpressionÍ~ÍR°MemberExpressionÍ~ÍR°MemberExpressionÍ~ÍŠS®ThisExpressionÍ~Í‚LªIdentifierÍƒÍŠ§licenseÂÂLªIdentifierÍŒÍ¤tierÂÃ¢??R°MemberExpressionÍ”Í¤LªIdentifierÍ”ÍŸ«LicenseTierLªIdentifierÍ Í¤¤FREEÂÂN°MethodDefinitionÍ²ÍüÂÂLªIdentifierÍ²Í½«getFeatures¦methodO²FunctionExpressionÍ½ÍüÀÂÂÂM®BlockStatementÍÀÍü“U«IfStatementÍËÍEe±LogicalExpressionÍÏÍğR°MemberExpressionÍÏÍßS®ThisExpressionÍÏÍÓLªIdentifierÍÔÍß«trialActiveÂÂ¢&&V¯UnaryExpressionÍãÍğ¡!ÃR°MemberExpressionÍäÍğS®ThisExpressionÍäÍèLªIdentifierÍéÍğ§licenseÂÂM®BlockStatementÍòÍE‘X¯ReturnStatementÍÍ:^®CallExpressionÍÍ9R°MemberExpressionÍÍS®ThisExpressionÍÍLªIdentifierÍÍ²getDefaultFeaturesÂÂ‘R°MemberExpressionÍ Í8LªIdentifierÍ Í+«LicenseTierLªIdentifierÍ,Í8¬PERSONAL_PROÂÂÂÀU«IfStatementÍOÍÎe±LogicalExpressionÍSÍV¯UnaryExpressionÍSÍ`¡!ÃR°MemberExpressionÍTÍ`S®ThisExpressionÍTÍXLªIdentifierÍYÍ`§licenseÂÂ¢||V¯UnaryExpressionÍdÍ¡!ÃR°MemberExpressionÍeÍ^®CallExpressionÍeÍ{R°MemberExpressionÍeÍyS®ThisExpressionÍeÍiLªIdentifierÍjÍy¯validateCurrentÂÂÂLªIdentifierÍ|Í¥validÂÂM®BlockStatementÍƒÍÎ‘X¯ReturnStatementÍ’ÍÃ^®CallExpressionÍ™ÍÂR°MemberExpressionÍ™Í°S®ThisExpressionÍ™ÍLªIdentifierÍÍ°²getDefaultFeaturesÂÂ‘R°MemberExpressionÍ±ÍÁLªIdentifierÍ±Í¼«LicenseTierLªIdentifierÍ½ÍÁ¤FREEÂÂÂÀX¯ReturnStatementÍØÍõR°MemberExpressionÍßÍôR°MemberExpressionÍßÍëS®ThisExpressionÍßÍãLªIdentifierÍäÍë§licenseÂÂLªIdentifierÍìÍô¨featuresÂÂN°MethodDefinitionÍÍ6ÂÂLªIdentifierÍÍªisTampered¦methodO²FunctionExpressionÍÍ6ÀÂÂÂM®BlockStatementÍÍ6‘X¯ReturnStatementÍÍ/R°MemberExpressionÍ!Í.S®ThisExpressionÍ!Í%LªIdentifierÍ&Í.¨tamperedÂÂN°MethodDefinitionÍ<Í‰ÂÂLªIdentifierÍ<ÍI­getDeviceCode¦methodO²FunctionExpressionÍIÍ‰ÀÂÂÂM®BlockStatementÍLÍ‰‘X¯ReturnStatementÍWÍ‚^®CallExpressionÍ^ÍR°MemberExpressionÍ^ÍLªIdentifierÍ^Íq³HardwareFingerprintLªIdentifierÍrÍ­getDeviceCodeÂÂÂN°MethodDefinitionÍÍ=ÂÂLªIdentifierÍÍ¯getLicenseeName¦methodO²FunctionExpressionÍÍ=ÀÂÂÂM®BlockStatementÍ¡Í=’U«IfStatementÍ¬Í"e±LogicalExpressionÍ°Íée°BinaryExpressionÍ°ÍÅR°MemberExpressionÍ°Í¼S®ThisExpressionÍ°Í´LªIdentifierÍµÍ¼§licenseÂÂ£!==T§LiteralÍÁÍÅÀ¤null¢&&e°BinaryExpressionÍÉÍéR°MemberExpressionÍÉÍåR°MemberExpressionÍÉÍŞR°MemberExpressionÍÉÍÕS®ThisExpressionÍÉÍÍLªIdentifierÍÎÍÕ§licenseÂÂLªIdentifierÍÖÍŞ¨licenseeÂÂLªIdentifierÍßÍå¦lengthÂÂ¡>T§LiteralÍèÍé ¡0M®BlockStatementÍëÍ"‘X¯ReturnStatementÍúÍR°MemberExpressionÍÍR°MemberExpressionÍÍS®ThisExpressionÍÍLªIdentifierÍÍ§licenseÂÂLªIdentifierÍÍ¨licenseeÂÂÀX¯ReturnStatementÍ,Í6T§LiteralÍ3Í5 ¢''N°MethodDefinitionÍeÍ3ÂÂLªIdentifierÍeÍzµgetLicenseExpiryLabel¦methodO²FunctionExpressionÍzÍ3ÀÂÂÂM®BlockStatementÍ}Í3“U«IfStatementÍˆÍ"e±LogicalExpressionÍŒÍÆe°BinaryExpressionÍŒÍ¡R°MemberExpressionÍŒÍ˜S®ThisExpressionÍŒÍLªIdentifierÍ‘Í˜§licenseÂÂ£!==T§LiteralÍÍ¡À¤null¢&&e°BinaryExpressionÍ¥ÍÆR°MemberExpressionÍ¥ÍÂR°MemberExpressionÍ¥Í»R°MemberExpressionÍ¥Í±S®ThisExpressionÍ¥Í©LªIdentifierÍªÍ±§licenseÂÂLªIdentifierÍ²Í»©expiresAtÂÂLªIdentifierÍ¼ÍÂ¦lengthÂÂ¡>T§LiteralÍÅÍÆ ¡0M®BlockStatementÍÈÍ"‘X¯ReturnStatementÍ×Í^®CallExpressionÍŞÍR°MemberExpressionÍŞÍşLªIdentifierÍŞÍì®LicenseManagerLªIdentifierÍíÍş±formatDisplayDateÂÂ‘R°MemberExpressionÍÿÍR°MemberExpressionÍÿÍS®ThisExpressionÍÿÍLªIdentifierÍÍ§licenseÂÂLªIdentifierÍÍ©expiresAtÂÂÂÀU«IfStatementÍ,Íe±LogicalExpressionÍ0Í_R°MemberExpressionÍ0Í@S®ThisExpressionÍ0Í4LªIdentifierÍ5Í@«trialActiveÂÂ¢&&e°BinaryExpressionÍDÍ_R°MemberExpressionÍDÍ[S®ThisExpressionÍDÍHLªIdentifierÍIÍ[²trialDaysRemainingÂÂ¡>T§LiteralÍ^Í_ ¡0M®BlockStatementÍaÍ’_³VariableDeclarationÍpÍ®‘`²VariableDeclaratorÍvÍ­LªIdentifierÍvÍ{¥endMse°BinaryExpressionÍ~Í­^®CallExpressionÍ~ÍˆR°MemberExpressionÍ~Í†LªIdentifierÍ~Í‚¤DateLªIdentifierÍƒÍ†£nowÂÂÂ¡+e°BinaryExpressionÍ‹Í­R°MemberExpressionÍ‹Í¢S®ThisExpressionÍ‹ÍLªIdentifierÍÍ¢²trialDaysRemainingÂÂ¡*T§LiteralÍ¥Í­Î&\ ¨86400000¥constX¯ReturnStatementÍ¼Í^®CallExpressionÍÃÍR°MemberExpressionÍÃÍãLªIdentifierÍÃÍÑ®LicenseManagerLªIdentifierÍÒÍã±formatDisplayDateÂÂ‘^®CallExpressionÍäÍR°MemberExpressionÍäÍÿW­NewExpressionÍäÍóLªIdentifierÍèÍì¤Date‘LªIdentifierÍíÍò¥endMsLªIdentifierÍôÍÿ«toISOStringÂÂÂÂÀX¯ReturnStatementÍÍ,T§LiteralÍÍ+ª01/01/2130¬'01/01/2130'N°MethodDefinitionÍ9Í{ÂÂLªIdentifierÍ9ÍI°isEvaluationMode¦methodO²FunctionExpressionÍIÍ{ÀÂÂÂM®BlockStatementÍLÍ{‘X¯ReturnStatementÍWÍte°BinaryExpressionÍ^ÍsR°MemberExpressionÍ^ÍjS®ThisExpressionÍ^ÍbLªIdentifierÍcÍj§licenseÂÂ£===T§LiteralÍoÍsÀ¤nullN°MethodDefinitionÍÍ»ÃÂLªIdentifierÍˆÍ™±formatDisplayDate¦methodO²FunctionExpressionÍ™Í»ÀÂÂÂ‘LªIdentifierÍšÍ£isoM®BlockStatementÍŸÍ»•_³VariableDeclarationÍªÍÂ‘`²VariableDeclaratorÍ°ÍÁLªIdentifierÍ°Í±¡dW­NewExpressionÍ´ÍÁLªIdentifierÍ¸Í¼¤Date‘LªIdentifierÍ½ÍÀ£iso¥constU«IfStatementÍÌÍ	^®CallExpressionÍĞÍâLªIdentifierÍĞÍÕ¥isNaN‘^®CallExpressionÍÖÍáR°MemberExpressionÍÖÍßLªIdentifierÍÖÍ×¡dLªIdentifierÍØÍß§getTimeÂÂÂÂM®BlockStatementÍäÍ	‘X¯ReturnStatementÍóÍşLªIdentifierÍúÍı£isoÀ_³VariableDeclarationÍÍC‘`²VariableDeclaratorÍÍBLªIdentifierÍÍ¢dd^®CallExpressionÍÍBR°MemberExpressionÍÍ:^®CallExpressionÍÍ1LªIdentifierÍÍ$¦String‘^®CallExpressionÍ%Í0R°MemberExpressionÍ%Í.LªIdentifierÍ%Í&¡dLªIdentifierÍ'Í.§getDateÂÂÂÂLªIdentifierÍ2Í:¨padStartÂÂ’T§LiteralÍ;Í<¡2T§LiteralÍ>ÍA¡0£'0'Â¥const_³VariableDeclarationÍMÍ‚‘`²VariableDeclaratorÍSÍLªIdentifierÍSÍU¢mm^®CallExpressionÍXÍR°MemberExpressionÍXÍy^®CallExpressionÍXÍpLªIdentifierÍXÍ^¦String‘e°BinaryExpressionÍ_Ío^®CallExpressionÍ_ÍkR°MemberExpressionÍ_ÍiLªIdentifierÍ_Í`¡dLªIdentifierÍaÍi¨getMonthÂÂÂ¡+T§LiteralÍnÍo¡1ÂLªIdentifierÍqÍy¨padStartÂÂ’T§LiteralÍzÍ{¡2T§LiteralÍ}Í€¡0£'0'Â¥constX¯ReturnStatementÍŒÍ´b¯TemplateLiteralÍ“Í³“LªIdentifierÍ–Í˜¢ddLªIdentifierÍœÍ¢mm^®CallExpressionÍ¢Í±R°MemberExpressionÍ¢Í¯LªIdentifierÍ¢Í£¡dLªIdentifierÍ¤Í¯«getFullYearÂÂÂ”c¯TemplateElementÍ”Í”d  Âc¯TemplateElementÍ™Íšd¡/¡/Âc¯TemplateElementÍŸÍ d¡/¡/Âc¯TemplateElementÍ²Í²d  ÃN°MethodDefinitionÍäÍmÃÂLªIdentifierÍëÍı²buildSignedLicense¦methodO²FunctionExpressionÍıÍmÀÂÂÂ”LªIdentifierÍşÍ¤tierLªIdentifierÍÍªdeviceCodeLªIdentifierÍÍ¨licenseeÔrf•¤type¥start£end¤left¥right±AssignmentPatternÍÍ)LªIdentifierÍÍ#©daysValidT§LiteralÍ&Í)Ím£365M®BlockStatementÍ+Ím—_³VariableDeclarationÍ6ÍM‘`²VariableDeclaratorÍ<ÍLLªIdentifierÍ<Í?£nowW­NewExpressionÍBÍLLªIdentifierÍFÍJ¤Date¥const_³VariableDeclarationÍWÍ–‘`²VariableDeclaratorÍ]Í•LªIdentifierÍ]Íd§expiresW­NewExpressionÍgÍ•LªIdentifierÍkÍo¤Date‘e°BinaryExpressionÍpÍ”^®CallExpressionÍpÍ}R°MemberExpressionÍpÍ{LªIdentifierÍpÍs£nowLªIdentifierÍtÍ{§getTimeÂÂÂ¡+e°BinaryExpressionÍ€Í”LªIdentifierÍ€Í‰©daysValid¡*T§LiteralÍŒÍ”Î&\ ¨86400000¥const_³VariableDeclarationÍ ÍÉ‘`²VariableDeclaratorÍ¦ÍÈLªIdentifierÍ¦Í©£mgr^®CallExpressionÍ¬ÍÈR°MemberExpressionÍ¬ÍÆLªIdentifierÍ¬Íº®LicenseManagerLªIdentifierÍ»ÍÆ«getInstanceÂÂÂ¥const_³VariableDeclarationÍÓÍ‘`²VariableDeclaratorÍÙÍLªIdentifierÍÙÍà§payload[°ObjectExpressionÍãÍ˜Ôrg™¤type¥start£end¦method©shorthand¨computed£key¤kind¥value¨PropertyÍòÍöÂÃÂLªIdentifierÍòÍö¤tier¤initLªIdentifierÍòÍö¤tierg¨PropertyÍÍÂÃÂLªIdentifierÍÍ¨licensee¤initLªIdentifierÍÍ¨licensee\¨PropertyÍÍ@ÂÂÂLªIdentifierÍÍ&ªdeviceCode^®CallExpressionÍ(Í@R°MemberExpressionÍ(Í>LªIdentifierÍ(Í2ªdeviceCodeLªIdentifierÍ3Í>«toUpperCaseÂÂÂ¤init\¨PropertyÍOÍjÂÂÂLªIdentifierÍOÍW¨issuedAt^®CallExpressionÍYÍjR°MemberExpressionÍYÍhLªIdentifierÍYÍ\£nowLªIdentifierÍ]Íh«toISOStringÂÂÂ¤init\¨PropertyÍyÍ™ÂÂÂLªIdentifierÍyÍ‚©expiresAt^®CallExpressionÍ„Í™R°MemberExpressionÍ„Í—LªIdentifierÍ„Í‹§expiresLªIdentifierÍŒÍ—«toISOStringÂÂÂ¤init\¨PropertyÍ¨Í¸ÂÂÂLªIdentifierÍ¨Í³«offlineDaysT§LiteralÍµÍ¸Ím£365¤init\¨PropertyÍÇÍíÂÂÂLªIdentifierÍÇÍÏ¨features^®CallExpressionÍÑÍíR°MemberExpressionÍÑÍçLªIdentifierÍÑÍÔ£mgrLªIdentifierÍÕÍç²getDefaultFeaturesÂÂ‘LªIdentifierÍèÍì¤tierÂ¤init\¨PropertyÍüÍ	ÂÂÂLªIdentifierÍüÍ©signatureT§LiteralÍÍ	 ¢''¤init¥const_³VariableDeclarationÍÍî‘`²VariableDeclaratorÍ%ÍíLªIdentifierÍ%Í-¨signBody^®CallExpressionÍ0ÍíR°MemberExpressionÍ0Í>LªIdentifierÍ0Í4¤JSONLªIdentifierÍ5Í>©stringifyÂÂ‘[°ObjectExpressionÍ?Íì”\¨PropertyÍNÍ`ÂÂÂLªIdentifierÍNÍR¤tierR°MemberExpressionÍTÍ`LªIdentifierÍTÍ[§payloadLªIdentifierÍ\Í`¤tierÂÂ¤init\¨PropertyÍoÍÂÂÂLªIdentifierÍoÍyªdeviceCodeR°MemberExpressionÍ{ÍLªIdentifierÍ{Í‚§payloadLªIdentifierÍƒÍªdeviceCodeÂÂ¤init\¨PropertyÍœÍ¸ÂÂÂLªIdentifierÍœÍ¥©expiresAtR°MemberExpressionÍ§Í¸LªIdentifierÍ§Í®§payloadLªIdentifierÍ¯Í¸©expiresAtÂÂ¤init\¨PropertyÍÇÍáÂÂÂLªIdentifierÍÇÍÏ¨licenseeR°MemberExpressionÍÑÍáLªIdentifierÍÑÍØ§payloadLªIdentifierÍÙÍá¨licenseeÂÂ¤initÂ¥constP³ExpressionStatementÍøÍ4Q´AssignmentExpressionÍøÍ3¡=R°MemberExpressionÍøÍ	LªIdentifierÍøÍÿ§payloadLªIdentifierÍ Í	©signatureÂÂ^®CallExpressionÍÍ3R°MemberExpressionÍÍ)LªIdentifierÍÍªCryptoUtilLªIdentifierÍÍ)²signLicensePayloadÂÂ‘LªIdentifierÍ*Í2¨signBodyÂX¯ReturnStatementÍ>Íf^®CallExpressionÍEÍeR°MemberExpressionÍEÍSLªIdentifierÍEÍI¤JSONLªIdentifierÍJÍS©stringifyÂÂ“LªIdentifierÍTÍ[§payloadT§LiteralÍ]ÍaÀ¤nullT§LiteralÍcÍd¡2ÂN°MethodDefinitionÍsÍÖÂÂLªIdentifierÍsÍ¬applyLicense¦methodO²FunctionExpressionÍÍÖÀÂÂÂ‘LªIdentifierÍ€Íƒ£licM®BlockStatementÍ…ÍÖ–_³VariableDeclarationÍÍÉ‘`²VariableDeclaratorÍ–ÍÈLªIdentifierÍ–Í¡«expectedSig^®CallExpressionÍ¤ÍÈR°MemberExpressionÍ¤ÍÃLªIdentifierÍ¤Í²®LicenseManagerLªIdentifierÍ³ÍÃ°computeSignatureÂÂ‘LªIdentifierÍÄÍÇ£licÂ¥constU«IfStatementÍÓÍ™e°BinaryExpressionÍ×ÍôR°MemberExpressionÍ×ÍäLªIdentifierÍ×ÍÚ£licLªIdentifierÍÛÍä©signatureÂÂ£!==LªIdentifierÍéÍô«expectedSigM®BlockStatementÍöÍ™“P³ExpressionStatementÍÍQ´AssignmentExpressionÍÍ¡=R°MemberExpressionÍÍS®ThisExpressionÍÍ	LªIdentifierÍ
-Í¨tamperedÂÂT§LiteralÍÍÃ¤trueP³ExpressionStatementÍ(Í<Q´AssignmentExpressionÍ(Í;¡=R°MemberExpressionÍ(Í4S®ThisExpressionÍ(Í,LªIdentifierÍ-Í4§licenseÂÂT§LiteralÍ7Í;À¤nullX¯ReturnStatementÍJÍ^®CallExpressionÍQÍR°MemberExpressionÍQÍaS®ThisExpressionÍQÍULªIdentifierÍVÍa«buildStatusÂÂ“T§LiteralÍbÍgÂ¥falseR°MemberExpressionÍiÍyLªIdentifierÍiÍt«LicenseTierLªIdentifierÍuÍy¤FREEÂÂT§LiteralÍ{ÍŒÙ-æˆæƒç­¾åæ ¡éªŒå¤±è´¥ï¼Œå·²é™çº§å…è´¹ç‰ˆÙ/'æˆæƒç­¾åæ ¡éªŒå¤±è´¥ï¼Œå·²é™çº§å…è´¹ç‰ˆ'ÂÀ_³VariableDeclarationÍ£ÍÙ‘`²VariableDeclaratorÍ©ÍØLªIdentifierÍ©Í²©localCode^®CallExpressionÍµÍØR°MemberExpressionÍµÍÖLªIdentifierÍµÍÈ³HardwareFingerprintLªIdentifierÍÉÍÖ­getDeviceCodeÂÂÂ¥constU«IfStatementÍãÍŠe°BinaryExpressionÍçÍ^®CallExpressionÍçÍR°MemberExpressionÍçÍR°MemberExpressionÍçÍõLªIdentifierÍçÍê£licLªIdentifierÍëÍõªdeviceCodeÂÂLªIdentifierÍöÍ«toUpperCaseÂÂÂ£!==LªIdentifierÍÍ©localCodeM®BlockStatementÍÍŠ’P³ExpressionStatementÍ"Í6Q´AssignmentExpressionÍ"Í5¡=R°MemberExpressionÍ"Í.S®ThisExpressionÍ"Í&LªIdentifierÍ'Í.§licenseÂÂT§LiteralÍ1Í5À¤nullX¯ReturnStatementÍDÍ^®CallExpressionÍKÍ~R°MemberExpressionÍKÍ[S®ThisExpressionÍKÍOLªIdentifierÍPÍ[«buildStatusÂÂ“T§LiteralÍ\ÍaÂ¥falseR°MemberExpressionÍcÍsLªIdentifierÍcÍn«LicenseTierLªIdentifierÍoÍs¤FREEÂÂT§LiteralÍuÍ}²è®¾å¤‡ç ä¸åŒ¹é…´'è®¾å¤‡ç ä¸åŒ¹é…'ÂÀP³ExpressionStatementÍ”Í§Q´AssignmentExpressionÍ”Í¦¡=R°MemberExpressionÍ”Í S®ThisExpressionÍ”Í˜LªIdentifierÍ™Í §licenseÂÂLªIdentifierÍ£Í¦£licX¯ReturnStatementÍ±ÍÏ^®CallExpressionÍ¸ÍÎR°MemberExpressionÍ¸ÍÌS®ThisExpressionÍ¸Í¼LªIdentifierÍ½ÍÌ¯validateCurrentÂÂÂN°MethodDefinitionÍÜÍ" ÂÂLªIdentifierÍÜÍë¯validateCurrent¦methodO²FunctionExpressionÍëÍ" ÀÂÂÂM®BlockStatementÍîÍ" –U«IfStatementÍùÍ ^V¯UnaryExpressionÍıÍ 
-¡!ÃR°MemberExpressionÍşÍ 
-S®ThisExpressionÍşÍ LªIdentifierÍ Í 
-§licenseÂÂM®BlockStatementÍ Í ^‘X¯ReturnStatementÍ Í S^®CallExpressionÍ "Í RR°MemberExpressionÍ "Í 2S®ThisExpressionÍ "Í &LªIdentifierÍ 'Í 2«buildStatusÂÂ“T§LiteralÍ 3Í 8Â¥falseR°MemberExpressionÍ :Í JLªIdentifierÍ :Í E«LicenseTierLªIdentifierÍ FÍ J¤FREEÂÂT§LiteralÍ LÍ Q©å…è´¹ç‰ˆ«'å…è´¹ç‰ˆ'ÂÀ_³VariableDeclarationÍ hÍ £‘`²VariableDeclaratorÍ nÍ ¢LªIdentifierÍ nÍ u§expires^®CallExpressionÍ xÍ ¢R°MemberExpressionÍ xÍ  W­NewExpressionÍ xÍ ˜LªIdentifierÍ |Í €¤Date‘R°MemberExpressionÍ Í —R°MemberExpressionÍ Í S®ThisExpressionÍ Í …LªIdentifierÍ †Í §licenseÂÂLªIdentifierÍ Í —©expiresAtÂÂLªIdentifierÍ ™Í  §getTimeÂÂÂ¥const_³VariableDeclarationÍ ­Í Ä‘`²VariableDeclaratorÍ ³Í ÃLªIdentifierÍ ³Í ¶£now^®CallExpressionÍ ¹Í ÃR°MemberExpressionÍ ¹Í ÁLªIdentifierÍ ¹Í ½¤DateLªIdentifierÍ ¾Í Á£nowÂÂÂ¥const_³VariableDeclarationÍ ÎÍ!‘`²VariableDeclaratorÍ ÔÍ!LªIdentifierÍ ÔÍ á­daysRemaining^®CallExpressionÍ äÍ!R°MemberExpressionÍ äÍ ìLªIdentifierÍ äÍ è¤MathLªIdentifierÍ éÍ ì£maxÂÂ’T§LiteralÍ íÍ î ¡0^®CallExpressionÍ ğÍ!R°MemberExpressionÍ ğÍ ùLªIdentifierÍ ğÍ ô¤MathLªIdentifierÍ õÍ ù¤ceilÂÂ‘e°BinaryExpressionÍ úÍ!e°BinaryExpressionÍ ûÍ!LªIdentifierÍ ûÍ!§expires¡-LªIdentifierÍ!Í!£now¡/T§LiteralÍ!Í!Î&\ ¨86400000ÂÂ¥constU«IfStatementÍ!!Í!±e°BinaryExpressionÍ!%Í!2LªIdentifierÍ!%Í!(£now¡>LªIdentifierÍ!+Í!2§expiresM®BlockStatementÍ!4Í!±’P³ExpressionStatementÍ!CÍ!WQ´AssignmentExpressionÍ!CÍ!V¡=R°MemberExpressionÍ!CÍ!OS®ThisExpressionÍ!CÍ!GLªIdentifierÍ!HÍ!O§licenseÂÂT§LiteralÍ!RÍ!VÀ¤nullX¯ReturnStatementÍ!eÍ!¦^®CallExpressionÍ!lÍ!¥R°MemberExpressionÍ!lÍ!|S®ThisExpressionÍ!lÍ!pLªIdentifierÍ!qÍ!|«buildStatusÂÂ“T§LiteralÍ!}Í!‚Â¥falseR°MemberExpressionÍ!„Í!”LªIdentifierÍ!„Í!«LicenseTierLªIdentifierÍ!Í!”¤FREEÂÂT§LiteralÍ!–Í!¤Ù$æˆæƒå·²è¿‡æœŸï¼Œå·²é™çº§å…è´¹ç‰ˆÙ&'æˆæƒå·²è¿‡æœŸï¼Œå·²é™çº§å…è´¹ç‰ˆ'ÂÀX¯ReturnStatementÍ!»Í"^®CallExpressionÍ!ÂÍ"R°MemberExpressionÍ!ÂÍ!ÒS®ThisExpressionÍ!ÂÍ!ÆLªIdentifierÍ!ÇÍ!Ò«buildStatusÂÂ”T§LiteralÍ!ÓÍ!×Ã¤trueR°MemberExpressionÍ!ÙÍ!êR°MemberExpressionÍ!ÙÍ!åS®ThisExpressionÍ!ÙÍ!İLªIdentifierÍ!ŞÍ!å§licenseÂÂLªIdentifierÍ!æÍ!ê¤tierÂÂb¯TemplateLiteralÍ!ìÍ"‘LªIdentifierÍ!÷Í"­daysRemaining’c¯TemplateElementÍ!íÍ!õd¶æˆæƒæœ‰æ•ˆï¼Œå‰©ä½™ ¶æˆæƒæœ‰æ•ˆï¼Œå‰©ä½™ Âc¯TemplateElementÍ"Í"d¤ å¤©¤ å¤©ÃLªIdentifierÍ"
-Í"­daysRemainingÂN°MethodDefinitionÍ"&Í#UÂÂLªIdentifierÍ"&Í"1«buildStatus¦methodO²FunctionExpressionÍ"1Í#UÀÂÂÂ”LªIdentifierÍ"2Í"7¥validLªIdentifierÍ"9Í"=¤tierLªIdentifierÍ"?Í"F§messagef±AssignmentPatternÍ"HÍ"YLªIdentifierÍ"HÍ"U­daysRemainingT§LiteralÍ"XÍ"Y ¡0M®BlockStatementÍ"[Í#U‘X¯ReturnStatementÍ"fÍ#N[°ObjectExpressionÍ"mÍ#M–g¨PropertyÍ"|Í"ÂÃÂLªIdentifierÍ"|Í"¥valid¤initLªIdentifierÍ"|Í"¥valid\¨PropertyÍ"Í"µÂÂÂLªIdentifierÍ"Í"”¤tierUµConditionalExpressionÍ"–Í"µLªIdentifierÍ"–Í"›¥validLªIdentifierÍ"Í"¢¤tierR°MemberExpressionÍ"¥Í"µLªIdentifierÍ"¥Í"°«LicenseTierLªIdentifierÍ"±Í"µ¤FREEÂÂ¤init\¨PropertyÍ"ÄÍ"ØÂÂÂLªIdentifierÍ"ÄÍ"Ñ­deviceMatchedLªIdentifierÍ"ÓÍ"Ø¥valid¤init\¨PropertyÍ"çÍ#ÂÂÂLªIdentifierÍ"çÍ"î§expirede±LogicalExpressionÍ"ğÍ#V¯UnaryExpressionÍ"ğÍ"ö¡!ÃLªIdentifierÍ"ñÍ"ö¥valid¢&&^®CallExpressionÍ"úÍ#R°MemberExpressionÍ"úÍ#
-LªIdentifierÍ"úÍ#§messageLªIdentifierÍ#Í#
-¨includesÂÂ‘T§LiteralÍ#Í#¦è¿‡æœŸ¨'è¿‡æœŸ'Â¤initg¨PropertyÍ#Í#,ÂÃÂLªIdentifierÍ#Í#,­daysRemaining¤initLªIdentifierÍ#Í#,­daysRemainingg¨PropertyÍ#;Í#BÂÃÂLªIdentifierÍ#;Í#B§message¤initLªIdentifierÍ#;Í#B§messageN°MethodDefinitionÍ#[Í$‚ÃÂLªIdentifierÍ#bÍ#r°computeSignature¦methodO²FunctionExpressionÍ#rÍ$‚ÀÂÂÂ‘LªIdentifierÍ#sÍ#v£licM®BlockStatementÍ#xÍ$‚’_³VariableDeclarationÍ#ƒÍ$B‘`²VariableDeclaratorÍ#‰Í$ALªIdentifierÍ#‰Í#‘¨signBody^®CallExpressionÍ#”Í$AR°MemberExpressionÍ#”Í#¢LªIdentifierÍ#”Í#˜¤JSONLªIdentifierÍ#™Í#¢©stringifyÂÂ‘[°ObjectExpressionÍ#£Í$@”\¨PropertyÍ#²Í#ÀÂÂÂLªIdentifierÍ#²Í#¶¤tierR°MemberExpressionÍ#¸Í#ÀLªIdentifierÍ#¸Í#»£licLªIdentifierÍ#¼Í#À¤tierÂÂ¤init\¨PropertyÍ#ÏÍ#éÂÂÂLªIdentifierÍ#ÏÍ#ÙªdeviceCodeR°MemberExpressionÍ#ÛÍ#éLªIdentifierÍ#ÛÍ#Ş£licLªIdentifierÍ#ßÍ#éªdeviceCodeÂÂ¤init\¨PropertyÍ#øÍ$ÂÂÂLªIdentifierÍ#øÍ$©expiresAtR°MemberExpressionÍ$Í$LªIdentifierÍ$Í$£licLªIdentifierÍ$Í$©expiresAtÂÂ¤init\¨PropertyÍ$Í$5ÂÂÂLªIdentifierÍ$Í$'¨licenseeR°MemberExpressionÍ$)Í$5LªIdentifierÍ$)Í$,£licLªIdentifierÍ$-Í$5¨licenseeÂÂ¤initÂ¥constX¯ReturnStatementÍ$LÍ${^®CallExpressionÍ$SÍ$zR°MemberExpressionÍ$SÍ$pLªIdentifierÍ$SÍ$]ªCryptoUtilLªIdentifierÍ$^Í$p²signLicensePayloadÂÂ‘LªIdentifierÍ$qÍ$y¨signBodyÂN°MethodDefinitionÍ$ˆÍ&VÃÂLªIdentifierÍ$Í$—¨readText¦methodO²FunctionExpressionÍ$—Í&VÀÂÂÂ‘LªIdentifierÍ$˜Í$œ¤pathM®BlockStatementÍ$Í&V‘]¬TryStatementÍ$©Í&OM®BlockStatementÍ$­Í%ñ–_³VariableDeclarationÍ$¼Í$ø‘`²VariableDeclaratorÍ$ÂÍ$÷LªIdentifierÍ$ÂÍ$ÌªfileHandle^®CallExpressionÍ$ÏÍ$÷R°MemberExpressionÍ$ÏÍ$ÚLªIdentifierÍ$ÏÍ$Ñ¢fsLªIdentifierÍ$ÒÍ$Ú¨openSyncÂÂ’LªIdentifierÍ$ÛÍ$ß¤pathR°MemberExpressionÍ$áÍ$öR°MemberExpressionÍ$áÍ$ìLªIdentifierÍ$áÍ$ã¢fsLªIdentifierÍ$äÍ$ì¨OpenModeÂÂLªIdentifierÍ$íÍ$ö©READ_ONLYÂÂÂ¥const_³VariableDeclarationÍ%Í%%‘`²VariableDeclaratorÍ%Í%$LªIdentifierÍ%Í%¤stat^®CallExpressionÍ%Í%$R°MemberExpressionÍ%Í%LªIdentifierÍ%Í%¢fsLªIdentifierÍ%Í%¨statSyncÂÂ‘LªIdentifierÍ%Í%#¤pathÂ¥const_³VariableDeclarationÍ%3Í%]‘`²VariableDeclaratorÍ%9Í%\LªIdentifierÍ%9Í%?¦bufferW­NewExpressionÍ%BÍ%\LªIdentifierÍ%FÍ%Q«ArrayBuffer‘R°MemberExpressionÍ%RÍ%[LªIdentifierÍ%RÍ%V¤statLªIdentifierÍ%WÍ%[¤sizeÂÂ¥constP³ExpressionStatementÍ%kÍ%^®CallExpressionÍ%kÍ%R°MemberExpressionÍ%kÍ%vLªIdentifierÍ%kÍ%m¢fsLªIdentifierÍ%nÍ%v¨readSyncÂÂ’R°MemberExpressionÍ%wÍ%„LªIdentifierÍ%wÍ%ªfileHandleLªIdentifierÍ%‚Í%„¢fdÂÂLªIdentifierÍ%†Í%Œ¦bufferÂP³ExpressionStatementÍ%œÍ%µ^®CallExpressionÍ%œÍ%´R°MemberExpressionÍ%œÍ%¨LªIdentifierÍ%œÍ%¢fsLªIdentifierÍ%ŸÍ%¨©closeSyncÂÂ‘LªIdentifierÍ%©Í%³ªfileHandleÂX¯ReturnStatementÍ%ÃÍ%æ^®CallExpressionÍ%ÊÍ%åLªIdentifierÍ%ÊÍ%İ³arrayBufferToString‘LªIdentifierÍ%ŞÍ%ä¦bufferÂa«CatchClauseÍ%ûÍ&OLªIdentifierÍ&Í&¡eM®BlockStatementÍ&Í&O‘X®ThrowStatementÍ&Í&DW­NewExpressionÍ&Í&CLªIdentifierÍ&Í&#¥Error‘b¯TemplateLiteralÍ&$Í&B‘LªIdentifierÍ&<Í&@¤path’c¯TemplateElementÍ&%Í&:dµFailed to read file: µFailed to read file: Âc¯TemplateElementÍ&AÍ&Ad  ÃÀÀ–Ôrh•¤type¥start£endªspecifiers¦source±ImportDeclaration>‘Ôri”¤type¥start£end¥local¶ImportDefaultSpecifier&(LªIdentifier&(¢fsT§Literal.=­@ohos.file.fs¯'@ohos.file.fs'h±ImportDeclarationÌ@Ìz‘Ôrj•¤type¥start£end¨imported¥local¯ImportSpecifierÌIÌ\LªIdentifierÌIÌ\³arrayBufferToStringLªIdentifierÌIÌ\³arrayBufferToStringT§LiteralÌdÌy³../utils/MapHelpersµ'../utils/MapHelpers'h±ImportDeclarationÌ|Ì­‘j¯ImportSpecifierÌ…ÌLªIdentifierÌ…ÌªCryptoUtilLªIdentifierÌ…ÌªCryptoUtilT§LiteralÌ—Ì¬³../utils/CryptoUtilµ'../utils/CryptoUtil'h±ImportDeclarationÌ¯Ìë‘j¯ImportSpecifierÌ¸ÌËLªIdentifierÌ¸ÌË³HardwareFingerprintLªIdentifierÌ¸ÌË³HardwareFingerprintT§LiteralÌÓÌêµ./HardwareFingerprint·'./HardwareFingerprint'h±ImportDeclarationÌíÍ‘j¯ImportSpecifierÌöÍLªIdentifierÌöÍ¬TrialManagerLªIdentifierÌöÍ¬TrialManagerT§LiteralÍ
-Í®./TrialManager°'./TrialManager'h±ImportDeclarationÍÍQ‘j¯ImportSpecifierÍ&Í1LªIdentifierÍ&Í1«LicenseTierLªIdentifierÍ&Í1«LicenseTierT§LiteralÍ9ÍPµ../types/LicenseTypes·'../types/LicenseTypes'

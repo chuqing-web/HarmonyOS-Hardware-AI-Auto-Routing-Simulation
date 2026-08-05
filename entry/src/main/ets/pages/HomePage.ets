@@ -6,12 +6,15 @@ import { BusinessError } from '@kit.BasicServicesKit';
 import { Want, common } from '@kit.AbilityKit';
 import { picker, fileUri } from '@kit.CoreFileKit';
 import fs from '@ohos.file.fs';
-import { APP_VERSION_CODE, APP_VERSION_NAME, appVersionLabel, Logger,
+import { APP_VERSION_NAME, appVersionLabel, Logger,
   GitHubDeviceAuth, GitHubOAuthConfig, GitHubStarVerifier, StarCheckKind,
   LicenseManager, FeatureGate, EventBus, ModuleEvent
 } from 'common';
 import { AppService } from '../services/AppService';
 import { HomeAnnouncement, HomeAnnouncementService } from '../services/HomeAnnouncementService';
+import {
+  GitHubReleaseDto, HomeReleaseFetchResult, HomeReleaseService
+} from '../services/HomeReleaseService';
 import { PROTEUS_THEME_REV_KEY } from '../theme/ThemeManager';
 import {
   ProteusHomeColors, ProteusHomeDownloadBtn, ProteusHomeIconLink, ProteusHomeInlineLink,
@@ -142,10 +145,6 @@ const HELP_HOME_TEXT: string =
   '· Announcement panel on the right can show server-pushed image + text notices\n' +
   '· 更多教程：Start → Open Sample 或右侧教学面板\n';
 
-const UPDATES_INFO_TEXT: string =
-  '版本更新通过应用分发渠道发布。\n\n' +
-  '当前运行版本已在 News 列表中标记为 In Use。如需教程工程，请使用 Start → Open Sample。';
-
 interface HomeProjectEntry {
   path: string;
   name: string;
@@ -167,10 +166,14 @@ struct HomePage {
   @State wizardStep: number = 0;
   @State wizardProjectName: string = '';
   @State showSamples: boolean = false;
-  @State ignoreBeta: boolean = false;
+  @State ignoreBeta: boolean = true;
   @State newsItems: ProteusHomeNewsItem[] = [];
   @State aboutInfo: HomeAboutSnapshot = defaultHomeAboutSnapshot();
   @State newsHighlight: boolean = false;
+  @State newsLoading: boolean = false;
+  @State newsStatusMessage: string = '';
+  @State hasNewsUpdate: boolean = false;
+  @State newsBusyTag: string = '';
   @State showMigrationGuide: boolean = false;
   @State showHelpDialog: boolean = false;
   @State helpDialogTitle: string = '';
@@ -185,6 +188,8 @@ struct HomePage {
   @State githubBoundLogin: string = '';
   /** true=正在走 Device Flow（显示设备码区） */
   @State githubShowDeviceCode: boolean = false;
+  /** 仅新授权成功时可自动关窗；管理账户时保持打开 */
+  private githubAllowAutoClose: boolean = false;
   @State announcement: HomeAnnouncement = HomeAnnouncementService.defaultAnnouncement();
   @State announcementLoading: boolean = false;
   @State wizardModulesHint: string = 'Schematic · Simulation';
@@ -198,6 +203,8 @@ struct HomePage {
   private launchGuard: boolean = false;
   /** New Project 向导完成后的目标：default | pcb | simulation */
   private wizardLaunchTarget: string = 'default';
+  private cachedReleases: GitHubReleaseDto[] = [];
+  private releasesLoaded: boolean = false;
 
   onPageShow(): void {
     this.launchGuard = false;
@@ -236,7 +243,7 @@ struct HomePage {
     await this.appService.waitLicenseBootstrap();
     this.userProjectDir = this.appService.getUserProjectDir();
     this.recoveryFiles = await this.appService.checkRecoveryFiles();
-    this.initNewsItems();
+    this.newsItems = [HomeReleaseService.sampleNewsItem()];
     this.refreshLists();
     this.refreshAboutInfo();
     if (this.recentEntries.length > 0) {
@@ -245,16 +252,55 @@ struct HomePage {
     this.ready = true;
     Logger.info('HomePage', `ready ver=${appVersionLabel()} recent=${this.recentEntries.length}`);
     void this.loadAnnouncement();
+    void this.loadNewsReleases();
   }
 
-  private initNewsItems(): void {
-    this.newsItems = [
-      { description: `AI-SCH Professional 1.2 [1.2.0]`, releaseDate: '17/06/2026', uscValid: 'Yes', actionLabel: 'Download' },
-      { description: `AI-SCH Professional ${APP_VERSION_NAME} [${APP_VERSION_CODE}]`, releaseDate: '24/02/2026', uscValid: 'Yes', actionLabel: 'In Use' },
-      { description: 'AI-SCH Professional 1.0 SP2 [1.0.2]', releaseDate: '21/08/2025', uscValid: 'Yes', actionLabel: 'Download' },
-      { description: 'AI-SCH Professional 1.0 SP1 [1.0.1]', releaseDate: '22/10/2024', uscValid: 'Yes', actionLabel: 'Download' },
-      { description: 'Sample tutorials (Test_Template)', releaseDate: '—', uscValid: '—', actionLabel: 'Open' }
-    ];
+  private async loadNewsReleases(): Promise<void> {
+    this.newsLoading = true;
+    this.newsStatusMessage = '正在获取 Release…';
+    try {
+      const result = await HomeReleaseService.fetchReleases();
+      this.cachedReleases = result.releases;
+      this.releasesLoaded = result.ok || result.releases.length > 0;
+      this.applyNewsResult(HomeReleaseService.buildResult(result.releases, this.ignoreBeta),
+        result.networkError, result.statusMessage);
+    } finally {
+      this.newsLoading = false;
+    }
+  }
+
+  private applyNewsResult(
+    result: HomeReleaseFetchResult,
+    networkError: boolean,
+    fallbackStatus: string
+  ): void {
+    const items: ProteusHomeNewsItem[] = [];
+    for (let i = 0; i < result.items.length; i++) {
+      items.push(result.items[i]);
+    }
+    items.push(HomeReleaseService.sampleNewsItem());
+    this.newsItems = items;
+    this.hasNewsUpdate = result.hasUpdate;
+    if (networkError) {
+      this.newsStatusMessage = fallbackStatus.length > 0 ? fallbackStatus : '网络不稳定';
+      this.newsItems = [HomeReleaseService.sampleNewsItem()];
+      this.hasNewsUpdate = false;
+    } else if (result.empty) {
+      this.newsStatusMessage = result.statusMessage.length > 0 ? result.statusMessage : '暂无 Release';
+    } else {
+      this.newsStatusMessage = '';
+    }
+    if (this.hasNewsUpdate) {
+      this.newsHighlight = true;
+    }
+  }
+
+  private rebuildNewsFromCache(): void {
+    if (!this.releasesLoaded && this.cachedReleases.length === 0) {
+      return;
+    }
+    const result = HomeReleaseService.buildResult(this.cachedReleases, this.ignoreBeta);
+    this.applyNewsResult(result, false, '');
   }
 
   private async loadAnnouncement(): Promise<void> {
@@ -299,10 +345,11 @@ struct HomePage {
     this.githubUserCode = '';
     this.githubUnlockBusy = false;
     this.githubShowDeviceCode = false;
+    this.githubAllowAutoClose = false;
     void this.prepareGitHubUnlockDialog();
   }
 
-  /** 打开对话框：若已记住账户则直接检测 Star，跳过重新登录 */
+  /** 打开对话框：有账户则同步 Star，窗口保持打开以便删除/切换账号 */
   private async prepareGitHubUnlockDialog(): Promise<void> {
     try {
       const ctx = getContext(this) as common.UIAbilityContext;
@@ -316,12 +363,19 @@ struct HomePage {
         return;
       }
       this.githubUnlockStatus = login.length > 0
-        ? `已记住账户 @${login}，正在检测 Star…`
-        : '已记住账户，正在检测 Star…';
-      await this.recheckGitHubStar();
-      // 检测后刷新绑定显示
+        ? `已登录 @${login}，正在同步 Star 状态…`
+        : '已记住账户，正在同步 Star 状态…';
+      await this.recheckGitHubStar(false);
       this.githubBoundLogin = await GitHubDeviceAuth.getStoredLogin();
       this.githubHasToken = (await GitHubDeviceAuth.getStoredToken()).length > 0;
+      if (this.githubHasToken) {
+        const pro = LicenseManager.getInstance().isStarUnlocked();
+        this.githubUnlockStatus = this.githubBoundLogin.length > 0
+          ? (pro
+            ? `已登录 @${this.githubBoundLogin} · 专业版 · 可删除或切换账号`
+            : `已登录 @${this.githubBoundLogin} · 未 Star · 可删除或切换账号`)
+          : (pro ? '已登录 · 专业版 · 可删除或切换账号' : '已登录 · 可删除或切换账号');
+      }
     } catch (e) {
       this.githubUnlockStatus = `读取账户失败: ${e}`;
       Logger.warn('HomePage', `prepareGitHubUnlock: ${e}`);
@@ -333,6 +387,7 @@ struct HomePage {
     this.showGitHubUnlock = false;
     this.githubUnlockBusy = false;
     this.githubShowDeviceCode = false;
+    this.githubAllowAutoClose = false;
   }
 
   private async startGitHubDeviceFlow(): Promise<void> {
@@ -341,6 +396,7 @@ struct HomePage {
     }
     this.githubUnlockBusy = true;
     this.githubShowDeviceCode = true;
+    this.githubAllowAutoClose = true;
     this.githubUnlockStatus = '正在申请设备码…';
     try {
       const ctx = getContext(this) as common.UIAbilityContext;
@@ -383,9 +439,11 @@ struct HomePage {
       this.refreshAboutInfo();
 
       if (star.kind === StarCheckKind.STARRED) {
-        this.githubUnlockStatus = star.message + '（账户已记住，下次启动自动检测）';
+        this.githubUnlockStatus = star.message + '（账户已记住）';
         this.githubUnlockBusy = false;
-        this.showGitHubUnlock = false;
+        if (this.githubAllowAutoClose) {
+          this.showGitHubUnlock = false;
+        }
         return;
       }
       if (star.kind === StarCheckKind.NOT_STARRED) {
@@ -400,13 +458,16 @@ struct HomePage {
     this.githubUnlockBusy = false;
   }
 
-  private async recheckGitHubStar(): Promise<void> {
+  /**
+   * @param autoCloseOnPro 管理账户时传 false，避免窗口立刻关掉看不到删除/切换
+   */
+  private async recheckGitHubStar(autoCloseOnPro: boolean = true): Promise<void> {
     if (this.githubUnlockBusy) {
       return;
     }
     this.githubUnlockBusy = true;
     this.githubUnlockStatus = this.githubBoundLogin.length > 0
-      ? `使用已记住账户 @${this.githubBoundLogin} 检测中…`
+      ? `使用账户 @${this.githubBoundLogin} 检测中…`
       : '正在检测 Star…';
     try {
       const ctx = getContext(this) as common.UIAbilityContext;
@@ -416,10 +477,14 @@ struct HomePage {
       this.refreshAboutInfo();
       this.githubUnlockStatus = msg;
       if (LicenseManager.getInstance().isStarUnlocked()) {
-        this.githubUnlockStatus = msg + '（账户已记住）';
-        this.showGitHubUnlock = false;
+        this.githubUnlockStatus = msg + (this.githubBoundLogin.length > 0
+          ? ` · @${this.githubBoundLogin}`
+          : '');
+        if (autoCloseOnPro && this.githubAllowAutoClose) {
+          this.showGitHubUnlock = false;
+        }
       } else if (!this.githubHasToken) {
-        this.githubUnlockStatus = '授权已失效，请重新授权一次';
+        this.githubUnlockStatus = '授权已失效，请重新授权或切换账号';
       }
     } catch (e) {
       this.githubUnlockStatus = `检测失败: ${e}`;
@@ -427,25 +492,69 @@ struct HomePage {
     this.githubUnlockBusy = false;
   }
 
+  /** 删除本地 GitHub 登录（降回免费版） */
   private async clearRememberedGitHubAccount(): Promise<void> {
     if (this.githubUnlockBusy) {
       return;
     }
+    this.githubUnlockBusy = true;
     try {
       const ctx = getContext(this) as common.UIAbilityContext;
       await GitHubDeviceAuth.init(ctx);
       await GitHubDeviceAuth.clearToken();
       LicenseManager.getInstance().setStarUnlock(false, '');
       FeatureGate.refresh();
+      EventBus.getInstance().publish({
+        event: ModuleEvent.LICENSE_CHANGED,
+        source: 'entry',
+        timestamp: Date.now(),
+        data: LicenseManager.getInstance().getStatus()
+      });
       this.githubHasToken = false;
       this.githubBoundLogin = '';
       this.githubUserCode = '';
       this.githubShowDeviceCode = false;
+      this.githubAllowAutoClose = false;
       this.refreshAboutInfo();
-      this.githubUnlockStatus = '已清除记住的账户，请重新授权';
+      this.githubUnlockStatus = '已删除本地 GitHub 登录，当前为免费版。可重新授权。';
+      this.appService.onStatusMessage('已退出 GitHub 登录 · 免费版');
     } catch (e) {
-      this.githubUnlockStatus = `清除失败: ${e}`;
+      this.githubUnlockStatus = `删除账号失败: ${e}`;
     }
+    this.githubUnlockBusy = false;
+  }
+
+  /** 切换账号：先删除当前登录，再走 Device Flow */
+  private async switchGitHubAccount(): Promise<void> {
+    if (this.githubUnlockBusy) {
+      return;
+    }
+    this.githubUnlockBusy = true;
+    this.githubUnlockStatus = '正在退出当前账号…';
+    try {
+      const ctx = getContext(this) as common.UIAbilityContext;
+      await GitHubDeviceAuth.init(ctx);
+      await GitHubDeviceAuth.clearToken();
+      LicenseManager.getInstance().setStarUnlock(false, '');
+      FeatureGate.refresh();
+      EventBus.getInstance().publish({
+        event: ModuleEvent.LICENSE_CHANGED,
+        source: 'entry',
+        timestamp: Date.now(),
+        data: LicenseManager.getInstance().getStatus()
+      });
+      this.githubHasToken = false;
+      this.githubBoundLogin = '';
+      this.githubUserCode = '';
+      this.refreshAboutInfo();
+    } catch (e) {
+      this.githubUnlockStatus = `切换账号准备失败: ${e}`;
+      this.githubUnlockBusy = false;
+      return;
+    }
+    this.githubUnlockBusy = false;
+    this.githubUnlockStatus = '请用新 GitHub 账号完成授权';
+    await this.startGitHubDeviceFlow();
   }
 
   private refreshLists(): void {
@@ -730,6 +839,14 @@ struct HomePage {
     this.selectedPath = this.recentEntries.length > 0 ? this.recentEntries[0].path : '';
   }
 
+  private newsRowLabel(item: ProteusHomeNewsItem): string {
+    const tag = item.tagName ?? '';
+    if (this.newsBusyTag.length > 0 && tag.length > 0 && this.newsBusyTag === tag) {
+      return 'Downloading…';
+    }
+    return item.actionLabel;
+  }
+
   private handleNewsAction(item: ProteusHomeNewsItem): void {
     if (item.actionLabel === 'In Use') {
       return;
@@ -738,8 +855,59 @@ struct HomePage {
       this.openSampleList();
       return;
     }
-    if (item.actionLabel === 'Download') {
-      this.openHelpDialog('Software Updates', UPDATES_INFO_TEXT);
+    if (item.actionLabel === 'Unavailable') {
+      this.openHelpDialog(
+        'Software Updates',
+        '该版本需恰好包含 1 个 .hap 资源才可下载。\n请检查 GitHub Release Assets。'
+      );
+      return;
+    }
+    if (item.actionLabel === 'Download' || item.actionLabel === 'Update') {
+      void this.downloadAndInstallRelease(item);
+    }
+  }
+
+  private async downloadAndInstallRelease(item: ProteusHomeNewsItem): Promise<void> {
+    const url = (item.downloadUrl ?? '').trim();
+    const fileName = (item.hapFileName ?? 'update.hap').trim();
+    if (url.length === 0) {
+      this.openHelpDialog('Software Updates', '缺少下载地址。');
+      return;
+    }
+    if (this.newsBusyTag.length > 0) {
+      return;
+    }
+    this.newsBusyTag = item.tagName ?? fileName;
+    try {
+      const ctx = this.getUIContext().getHostContext() as common.UIAbilityContext;
+      this.newsStatusMessage = `正在下载 ${fileName}…`;
+      const dl = await HomeReleaseService.downloadHap(ctx, url, fileName);
+      if (!dl.ok) {
+        this.openHelpDialog('Software Updates', dl.message);
+        this.newsStatusMessage = dl.message;
+        return;
+      }
+      this.newsStatusMessage = '正在调起系统安装…';
+      const started = await HomeReleaseService.trySystemInstall(ctx, dl.localPath);
+      if (started) {
+        this.newsStatusMessage = '已调起安装器，请按系统提示完成安装';
+        this.openHelpDialog(
+          'Software Updates',
+          `已下载并尝试调起系统安装。\n\n本地路径：\n${dl.localPath}`
+        );
+      } else {
+        this.newsStatusMessage = '已保存，请手动安装';
+        this.openHelpDialog(
+          'Software Updates',
+          `已保存 HAP，但无法自动调起安装器（可能缺少系统权限）。\n\n请用文件管理器打开：\n${dl.localPath}`
+        );
+      }
+    } catch (e) {
+      Logger.warn('HomePage', `downloadAndInstall: ${e}`);
+      this.openHelpDialog('Software Updates', `更新失败: ${e}`);
+      this.newsStatusMessage = '更新失败';
+    } finally {
+      this.newsBusyTag = '';
     }
   }
 
@@ -756,7 +924,8 @@ struct HomePage {
         Column() {
           ProteusHomeTopBar({
             titleLine: 'Schematic & Simulation Suite',
-            versionLabel: `Version ${APP_VERSION_NAME}`
+            versionLabel: `Version ${APP_VERSION_NAME}`,
+            showUpdateBadge: this.hasNewsUpdate
           })
 
           Row() {
@@ -857,9 +1026,9 @@ struct HomePage {
 
         Column() {
           // 已记住账户
-          if (this.githubHasToken) {
+          if (this.githubHasToken && !this.githubShowDeviceCode) {
             Column() {
-              Text('已记住账户')
+              Text('当前 GitHub 账户')
                 .fontSize(9)
                 .fontColor(ProteusHomeColors.TEXT_DIM)
                 .width('100%')
@@ -871,10 +1040,26 @@ struct HomePage {
                 .fontColor(ProteusHomeColors.LINK)
                 .width('100%')
                 .margin({ top: 2, bottom: 4 })
-              Text('下次启动将自动用此账户检测 Star，无需再次登录')
+              Text('启动时将用此账户静默检测 Star。可删除登录或切换到其他账号。')
                 .fontSize(9)
                 .fontColor(ProteusHomeColors.TEXT_DIM)
                 .width('100%')
+                .margin({ bottom: 8 })
+              Row({ space: 8 }) {
+                ProteusHomeDownloadBtn({
+                  label: '切换账号',
+                  primary: true,
+                  btnEnabled: !this.githubUnlockBusy,
+                  onAction: () => { void this.switchGitHubAccount(); }
+                })
+                ProteusHomeDownloadBtn({
+                  label: '删除账号',
+                  primary: false,
+                  btnEnabled: !this.githubUnlockBusy,
+                  onAction: () => { void this.clearRememberedGitHubAccount(); }
+                })
+              }
+              .width('100%')
             }
             .width('100%')
             .padding(10)
@@ -882,7 +1067,7 @@ struct HomePage {
             .backgroundColor(ProteusHomeColors.PANEL_BG)
             .border({ width: 1, color: ProteusHomeColors.PANEL_BORDER })
             .alignItems(HorizontalAlign.Start)
-          } else {
+          } else if (!this.githubHasToken && !this.githubShowDeviceCode) {
             Text('首次解锁（仅需一次）')
               .fontSize(10)
               .fontWeight(FontWeight.Bold)
@@ -893,6 +1078,12 @@ struct HomePage {
             this.GitHubUnlockStepRow('2', '输入设备码完成授权（账户将被记住）')
             this.GitHubUnlockStepRow('3', 'Star 仓库后自动成为专业版')
             this.GitHubUnlockStepRow('4', '之后每次启动联网自动复验，无需再登录')
+          } else if (this.githubShowDeviceCode) {
+            Text('请在浏览器用目标 GitHub 账号登录，并输入下方设备码')
+              .fontSize(10)
+              .fontColor(ProteusHomeColors.TEXT)
+              .width('100%')
+              .margin({ bottom: 6 })
           }
 
           // 仅在重新授权流程中显示设备码
@@ -961,7 +1152,7 @@ struct HomePage {
               label: this.githubUnlockBusy ? '检测中…' : '检测 Star',
               primary: true,
               btnEnabled: !this.githubUnlockBusy,
-              onAction: () => { void this.recheckGitHubStar(); }
+              onAction: () => { void this.recheckGitHubStar(false); }
             })
             ProteusHomeDownloadBtn({
               label: '打开仓库',
@@ -995,20 +1186,6 @@ struct HomePage {
         .backgroundColor(ProteusHomeColors.PANEL_INSET)
 
         Row({ space: 8 }) {
-          if (this.githubHasToken && !this.githubShowDeviceCode) {
-            ProteusHomeDownloadBtn({
-              label: '换账号重新授权',
-              primary: false,
-              btnEnabled: !this.githubUnlockBusy,
-              onAction: () => { void this.startGitHubDeviceFlow(); }
-            })
-            ProteusHomeDownloadBtn({
-              label: '清除账户',
-              primary: false,
-              btnEnabled: !this.githubUnlockBusy,
-              onAction: () => { void this.clearRememberedGitHubAccount(); }
-            })
-          }
           Blank()
           ProteusHomeDownloadBtn({
             label: '关闭',
@@ -1235,9 +1412,11 @@ struct HomePage {
         .border({ width: 1, color: ProteusHomeColors.ROW_BORDER })
         .margin({ left: 6, right: 6, bottom: 2 })
 
-        Text(this.aboutInfo.isStarPro || !this.aboutInfo.isEvaluation
-          ? '专业版已激活'
-          : 'GitHub Star 解锁专业版…')
+        Text(this.aboutInfo.isStarPro
+          ? '专业版 · 管理 GitHub 账户…'
+          : (this.aboutInfo.isEvaluation
+            ? 'GitHub Star 解锁专业版…'
+            : '管理 GitHub 账户…'))
           .fontSize(8)
           .fontColor(ProteusHomeColors.LINK)
           .decoration({ type: TextDecorationType.Underline, color: ProteusHomeColors.LINK })
@@ -1291,8 +1470,20 @@ struct HomePage {
         panelWeight: 2.6
       })
 
-      ProteusHomePanel({ title: 'News', panelWeight: 1, highlighted: this.newsHighlight }) {
+      ProteusHomePanel({
+        title: 'News',
+        panelWeight: 1,
+        highlighted: this.newsHighlight || this.hasNewsUpdate,
+        showBadge: this.hasNewsUpdate
+      }) {
         Column() {
+          if (this.newsStatusMessage.length > 0) {
+            Text(this.newsStatusMessage)
+              .fontSize(9)
+              .fontColor(ProteusHomeColors.TEXT_DIM)
+              .width('100%')
+              .padding({ left: 8, right: 8, top: 4, bottom: 2 })
+          }
           Row() {
             Text('Description')
               .fontSize(9)
@@ -1327,12 +1518,16 @@ struct HomePage {
                   description: item.description,
                   releaseDate: item.releaseDate,
                   uscValid: item.uscValid,
-                  actionLabel: item.actionLabel,
+                  actionLabel: this.newsRowLabel(item),
                   isCurrent: item.actionLabel === 'In Use',
+                  highlightUpdate: item.highlightUpdate === true,
                   showButton: item.actionLabel !== 'In Use',
+                  btnEnabled: item.actionLabel !== 'Unavailable' &&
+                    this.newsBusyTag.length === 0,
                   onAction: () => { this.handleNewsAction(item); }
                 })
-              }, (item: ProteusHomeNewsItem, idx: number) => `n_${idx}`)
+              }, (item: ProteusHomeNewsItem, idx: number) =>
+                `n_${item.tagName ?? item.actionLabel}_${idx}`)
             }
             .width('100%')
           }
@@ -1345,7 +1540,10 @@ struct HomePage {
               .width(13)
               .height(13)
               .margin({ right: 4 })
-              .onChange((on: boolean) => { this.ignoreBeta = on; })
+              .onChange((on: boolean) => {
+                this.ignoreBeta = on;
+                this.rebuildNewsFromCache();
+              })
             Text('Ignore beta version updates')
               .fontSize(9)
               .fontColor(ProteusHomeColors.TEXT_DIM)
