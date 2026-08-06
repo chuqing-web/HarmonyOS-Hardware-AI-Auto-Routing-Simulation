@@ -469,6 +469,104 @@ export function pruneZeroLengthTracks(doc: PcbDocument): number {
     return before - kept.length;
 }
 /**
+ * 合并同网同层同宽、端点相接且共线的相邻段，减少 via/吸附产生的碎短线。
+ * @returns 被合并掉的段数
+ */
+export function mergeColinearTracks(doc: PcbDocument): number {
+    const eps = 0.51;
+    const samePt = (a: Point2D, b: Point2D): boolean => Math.abs(a.x - b.x) < eps && Math.abs(a.y - b.y) < eps;
+    const isHoriz = (t: PcbTrack): boolean => Math.abs(t.start.y - t.end.y) < eps;
+    const isVert = (t: PcbTrack): boolean => Math.abs(t.start.x - t.end.x) < eps;
+    let merged = 0;
+    let changed = true;
+    while (changed) {
+        changed = false;
+        const tracks = doc.tracks;
+        let foundI = -1;
+        let foundJ = -1;
+        let ns: Point2D | null = null;
+        let ne: Point2D | null = null;
+        for (let i = 0; i < tracks.length && foundI < 0; i++) {
+            const a = tracks[i];
+            if (!isHoriz(a) && !isVert(a)) {
+                continue;
+            }
+            for (let j = i + 1; j < tracks.length; j++) {
+                const b = tracks[j];
+                if (a.layer !== b.layer || a.netId !== b.netId ||
+                    Math.abs(a.width - b.width) > 0.1) {
+                    continue;
+                }
+                if (isHoriz(a) !== isHoriz(b) || isVert(a) !== isVert(b)) {
+                    continue;
+                }
+                let joined: Point2D | null = null;
+                let otherA: Point2D | null = null;
+                let otherB: Point2D | null = null;
+                if (samePt(a.end, b.start)) {
+                    joined = a.end;
+                    otherA = a.start;
+                    otherB = b.end;
+                }
+                else if (samePt(a.end, b.end)) {
+                    joined = a.end;
+                    otherA = a.start;
+                    otherB = b.start;
+                }
+                else if (samePt(a.start, b.start)) {
+                    joined = a.start;
+                    otherA = a.end;
+                    otherB = b.end;
+                }
+                else if (samePt(a.start, b.end)) {
+                    joined = a.start;
+                    otherA = a.end;
+                    otherB = b.start;
+                }
+                if (joined === null || otherA === null || otherB === null) {
+                    continue;
+                }
+                if (isHoriz(a)) {
+                    if (Math.abs(otherA.y - otherB.y) >= eps || Math.abs(otherA.y - joined.y) >= eps) {
+                        continue;
+                    }
+                }
+                else {
+                    if (Math.abs(otherA.x - otherB.x) >= eps || Math.abs(otherA.x - joined.x) >= eps) {
+                        continue;
+                    }
+                }
+                foundI = i;
+                foundJ = j;
+                ns = { x: otherA.x, y: otherA.y };
+                ne = { x: otherB.x, y: otherB.y };
+                break;
+            }
+        }
+        if (foundI >= 0 && foundJ >= 0 && ns !== null && ne !== null) {
+            tracks[foundI].start = ns;
+            tracks[foundI].end = ne;
+            tracks.splice(foundJ, 1);
+            merged++;
+            changed = true;
+        }
+    }
+    return merged;
+}
+/** 删除短于 minLen 的碎段（默认 2；须先 mergeColinear 以免误删有效短跳） */
+export function pruneShortTracks(doc: PcbDocument, minLen: number = 2): number {
+    const before = doc.tracks.length;
+    const kept: PcbTrack[] = [];
+    for (let i = 0; i < doc.tracks.length; i++) {
+        const t = doc.tracks[i];
+        if (pointDist(t.start, t.end) >= minLen) {
+            kept.push(t);
+        }
+    }
+    doc.tracks = kept;
+    return before - kept.length;
+}
+/**
  * 仅吸附「与指定封装同网且端点已靠近其焊盘」的走线端点。
  * 折点整体移动，避免只动一段把拐角拆开。
  */

@@ -7,7 +7,8 @@ import {
   WireAutoRouter, WarRouteContext, WarCompObstacle, WirePathPreviewResult,
   DeviceHitGeometry, WorldHitRect, WIRE_OBSTACLE_PAD, IdUtil, makeRouteLine,
   Logger, INSTR_TRACE_TAG, traceAiWireDraw, traceAiWireFix, traceAiWireInventory,
-  WarRouteOrder, WarOrderPin, MainThreadYield, NetLabelAnchorInfo
+  WarRouteOrder, WarOrderPin, MainThreadYield, NetLabelAnchorInfo,
+  WireConflictGeometry
 } from 'common';
 import { IComponentLibrary } from 'component_library';
 import { PinWorldResolver } from './PinWorldResolver';
@@ -35,17 +36,27 @@ export class WarRouteAdapter {
     this.library = lib;
   }
 
-  /** 保留 stub/短线（points 空或 ≤3），清长线供 WAR 重布 */
+  /**
+   * 仅保留真正短 stub；其余（含超长 2 点直穿线）清掉供 WAR 重布。
+   * 旧逻辑 pts≤3 全留 → (90,290)-(2180,290) 被当成 stub，WAR_SKIP 后仍压脚。
+   */
   static stripNonStubWires(wires: RouteLine[]): RouteLine[] {
     const out: RouteLine[] = [];
     const dropped: string[] = [];
     for (let i = 0; i < wires.length; i++) {
       const w = wires[i];
-      if (!w.points || w.points.length < 2 || w.points.length <= 3) {
+      if (!w.points || w.points.length < 2) {
         out.push(w);
-      } else {
-        dropped.push(`wireId=${w.uuid ?? '?'} pts=${w.points.length} net=${w.netUuid.substring(0, 12)}`);
+        continue;
       }
+      if (WireConflictGeometry.isShortStub(w)) {
+        out.push(w);
+        continue;
+      }
+      const span = WireConflictGeometry.pathLength(w.points);
+      dropped.push(
+        `wireId=${w.uuid ?? '?'} pts=${w.points.length} len=${Math.round(span)} ` +
+        `net=${w.netUuid.substring(0, 12)}`);
     }
     if (dropped.length > 0) {
       Logger.info(INSTR_TRACE_TAG,

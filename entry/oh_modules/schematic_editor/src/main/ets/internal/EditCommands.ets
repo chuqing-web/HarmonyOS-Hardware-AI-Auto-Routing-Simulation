@@ -959,6 +959,12 @@ export class CommandHistory {
   canUndo(): boolean { return this.undoStack.length > 0; }
   canRedo(): boolean { return this.redoStack.length > 0; }
 
+  /** 切换工程时丢弃跨文档撤销栈，避免 Undo 回到上一文件 */
+  clear(): void {
+    this.undoStack = [];
+    this.redoStack = [];
+  }
+
   estimateMemoryBytes(): number {
     let total = 0;
     for (let i = 0; i < this.undoStack.length; i++) total += this.undoStack[i].getMemoryEstimate();

@@ -14,8 +14,9 @@ import { TopoPdfExporter } from "@bundle:com.elecdraw.aischsim/entry@file_persis
 import { buildBomCsv } from "@bundle:com.elecdraw.aischsim/entry@file_persistence/ets/internal/BomExportHelper";
 import type { BomLookup } from "@bundle:com.elecdraw.aischsim/entry@file_persistence/ets/internal/BomExportHelper";
 const SCHSIM_VERSION = '2.0.0';
-const RECENT_MAX = 10;
+const RECENT_MAX = 50;
 const RECOVERY_DIR = 'schsim_recovery';
+const RECENT_FILES_NAME = 'recent_files.json';
 interface FilePathEventData {
     path: string;
 }
@@ -478,15 +479,78 @@ export class FilePersistenceImpl implements IFilePersistence {
     }
     getRecentFiles(): string[] { return copyStringArray(this.recentFiles); }
     addRecentFile(path: string): void {
+        if (path.length === 0) {
+            return;
+        }
         this.recentFiles = this.recentFiles.filter(p => p !== path);
         this.recentFiles.unshift(path);
         if (this.recentFiles.length > RECENT_MAX) {
             this.recentFiles = this.recentFiles.slice(0, RECENT_MAX);
         }
+        this.persistRecentFiles();
     }
-    clearRecentFiles(): void { this.recentFiles = []; }
+    clearRecentFiles(): void {
+        this.recentFiles = [];
+        this.persistRecentFiles();
+    }
     setAppBaseDir(dir: string): void {
         this.appBaseDir = dir;
+        this.loadRecentFiles();
+    }
+    private getRecentFilesPath(): string {
+        return `${this.appBaseDir}/${RECENT_FILES_NAME}`;
+    }
+    /** 从沙箱读取最近打开列表（最前 = 最近一次打开） */
+    private loadRecentFiles(): void {
+        if (!this.appBaseDir) {
+            return;
+        }
+        try {
+            const path = this.getRecentFilesPath();
+            fs.accessSync(path);
+            const fileHandle = fs.openSync(path, fs.OpenMode.READ_ONLY);
+            const stat = fs.statSync(path);
+            const buffer = new ArrayBuffer(stat.size);
+            fs.readSync(fileHandle.fd, buffer);
+            fs.closeSync(fileHandle);
+            const json = arrayBufferToString(buffer);
+            const parsed = JSON.parse(json) as string[];
+            if (!Array.isArray(parsed)) {
+                return;
+            }
+            const cleaned: string[] = [];
+            const seen: Set<string> = new Set();
+            for (let i = 0; i < parsed.length; i++) {
+                const p = parsed[i];
+                if (typeof p !== 'string' || p.length === 0 || seen.has(p)) {
+                    continue;
+                }
+                seen.add(p);
+                cleaned.push(p);
+                if (cleaned.length >= RECENT_MAX) {
+                    break;
+                }
+            }
+            this.recentFiles = cleaned;
+        }
+        catch (_e) {
+            /* 无历史文件时保持空列表 */
+        }
+    }
+    private persistRecentFiles(): void {
+        if (!this.appBaseDir) {
+            return;
+        }
+        try {
+            const path = this.getRecentFilesPath();
+            const json = JSON.stringify(this.recentFiles);
+            const fileHandle = fs.openSync(path, fs.OpenMode.CREATE | fs.OpenMode.WRITE_ONLY | fs.OpenMode.TRUNC);
+            fs.writeSync(fileHandle.fd, json);
+            fs.closeSync(fileHandle);
+        }
+        catch (_e) {
+            /* best-effort */
+        }
     }
     getSessionFilePath(): string {
         return `${this.appBaseDir}/session.json`;

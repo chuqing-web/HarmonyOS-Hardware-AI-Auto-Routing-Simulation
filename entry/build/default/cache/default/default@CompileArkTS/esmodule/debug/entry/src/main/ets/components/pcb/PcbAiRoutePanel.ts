@@ -22,12 +22,34 @@ interface PcbAiRoutePanel_Params {
 import { AppService } from "@bundle:com.elecdraw.aischsim/entry/ets/services/AppService";
 import type { AiGenLogEntry } from "@bundle:com.elecdraw.aischsim/entry/ets/services/AppService";
 import { Logger, INSTR_TRACE_TAG } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
-import type { AiApiConfig, ProgressInfo } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
+import type { AiApiConfig, ProgressInfo, PcbPlacementMode, PcbDocument } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
 import { AiApiConfigSection } from "@bundle:com.elecdraw.aischsim/entry/ets/components/AiApiConfigSection";
-import { ProteusClassicBtn, ProteusChipGrid } from "@bundle:com.elecdraw.aischsim/entry/ets/components/proteus/ProteusWidgets";
+import { ProteusClassicBtn, ProteusChipTab } from "@bundle:com.elecdraw.aischsim/entry/ets/components/proteus/ProteusWidgets";
 import { ProteusColors, ProteusFonts } from "@bundle:com.elecdraw.aischsim/entry/ets/theme/ProteusTheme";
 const COPPER_OPTIONS: number[] = [2, 4, 6, 8];
-const COPPER_LABELS: string[] = ['2', '4', '6', '8'];
+const COPPER_LABELS: string[] = ['2L', '4L', '6L', '8L'];
+/** 安装孔不计入「已有功能封装」 */
+function isMountFootprint(defId: string, refDes: string): boolean {
+    const d = (defId ?? '').toUpperCase();
+    if (d === 'FP_MOUNT' || d.indexOf('MOUNT') >= 0) {
+        return true;
+    }
+    const r = (refDes ?? '').toUpperCase();
+    return r.length >= 2 && r.charAt(0) === 'H' && d.indexOf('PINHDR') < 0;
+}
+function countFunctionalFootprints(doc: PcbDocument | null): number {
+    if (!doc) {
+        return 0;
+    }
+    let n = 0;
+    for (let i = 0; i < doc.footprints.length; i++) {
+        const fp = doc.footprints[i];
+        if (!isMountFootprint(fp.defId, fp.refDes)) {
+            n++;
+        }
+    }
+    return n;
+}
 export class PcbAiRoutePanel extends ViewPU {
     constructor(parent, params, __localStorage, elmtId = -1, paramsLambda = undefined, extraInfo) {
         super(parent, __localStorage, elmtId, extraInfo);
@@ -213,7 +235,7 @@ export class PcbAiRoutePanel extends ViewPU {
     aboutToAppear(): void {
         this.apiRefreshTick++;
         this.enableReasoning = this.appService.aiEnableReasoning;
-        this.appendLog('system', 'PCB AI route: place → net → layer → geometry → QA（与原理图共用 API / 推理开关）');
+        this.appendLog('system', 'PCB AI route: place→net→layer→geometry → 尾段QA（对齐原理图；与原理图共用 API / 推理开关）');
     }
     private appendLog(role: 'user' | 'assistant' | 'system', text: string): void {
         this.logSeq++;
@@ -291,14 +313,6 @@ export class PcbAiRoutePanel extends ViewPU {
         }
         return 2;
     }
-    private copperSelectedIdx(): number {
-        for (let i = 0; i < COPPER_OPTIONS.length; i++) {
-            if (COPPER_OPTIONS[i] === this.confirmCopperCount) {
-                return i;
-            }
-        }
-        return 0;
-    }
     /** 点「开始」：先弹层数确认；busy 时走取消 */
     private onStartClicked(): void {
         if (this.aiBusy) {
@@ -333,9 +347,17 @@ export class PcbAiRoutePanel extends ViewPU {
             Logger.info(INSTR_TRACE_TAG, `[AI_PCB_UI] copper confirm keep ${target}`);
         }
         this.statusMessage = `AI 布线铜层：${target}`;
-        void this.runAiRoute(target);
+        const n = countFunctionalFootprints(this.appService.pcbEditor.getDocument());
+        const mode: PcbPlacementMode = n > 0 ? 'auto' : 'full';
+        if (n > 0) {
+            this.appendLog('system', `已有 ${n} 个功能封装 → AI 评审现布局(auto: keep|revise)`);
+        }
+        else {
+            this.appendLog('system', '无功能封装 → 全量布局(full)');
+        }
+        void this.runAiRoute(target, mode);
     }
-    private async runAiRoute(confirmedCopper?: number): Promise<void> {
+    private async runAiRoute(confirmedCopper?: number, placementMode: PcbPlacementMode = 'full'): Promise<void> {
         if (this.aiBusy) {
             this.appService.cancelAiGenerate();
             this.appendLog('system', 'cancel requested');
@@ -352,14 +374,18 @@ export class PcbAiRoutePanel extends ViewPU {
         const cu = confirmedCopper !== undefined
             ? confirmedCopper
             : this.appService.pcbEditor.getLayerStackCopperCount();
+        const placeHint = placementMode === 'auto'
+            ? '布局=AI裁定'
+            : (placementMode === 'revise' ? '布局=增量调整' : '布局=全量');
         this.aiBusy = true;
         this.aiProgress = 0;
         this.aiStage = 'placement';
-        this.appendLog('user', `Start PCB AI route · Cu=${cu} · ${this.enableReasoning ? '推理开' : '推理关'}`);
-        this.appendLog('system', `开始 PCB AI 布线 · Cu=${cu} · 画布已锁定（place→net→layer→geometry→QA）` +
-            ` · ${this.enableReasoning ? '深度思考' : '无 thinking'} · QA 仍可自动加层`);
-        this.appendLog('assistant', '正在准备布局与布线…');
-        Logger.info(INSTR_TRACE_TAG, `[AI_PCB_UI] run start Cu=${cu} reasoning=${this.enableReasoning}`);
+        this.appendLog('user', `Start PCB AI route · Cu=${cu} · ${placeHint} · ${this.enableReasoning ? '推理开' : '推理关'}`);
+        this.appendLog('system', `开始 PCB AI 布线 · Cu=${cu} · ${placeHint} · 画布已锁定` +
+            `（place→net→layer→geometry → 尾段QA）` +
+            ` · ${this.enableReasoning ? '深度思考' : '无 thinking'} · 层数已锁定不可再改`);
+        this.appendLog('assistant', placementMode === 'auto' ? '正在把现有布局发给 AI 裁定…' : '正在准备布局与布线…');
+        Logger.info(INSTR_TRACE_TAG, `[AI_PCB_UI] run start Cu=${cu} placeMode=${placementMode} reasoning=${this.enableReasoning}`);
         const prevProgress: (p: ProgressInfo) => void = this.appService.onAiProgress;
         this.appService.onAiProgress = (p: ProgressInfo): void => {
             this.aiProgress = p.progress;
@@ -368,7 +394,7 @@ export class PcbAiRoutePanel extends ViewPU {
             prevProgress(p);
         };
         try {
-            const ok: boolean = await this.appService.aiPcbAutoRoute();
+            const ok: boolean = await this.appService.aiPcbAutoRoute(placementMode);
             const detail = this.statusMessage.trim();
             if (ok) {
                 this.appendLog('assistant', detail.length > 0 ? detail : 'Done: placement + multilayer tracks/vias applied');
@@ -405,6 +431,7 @@ export class PcbAiRoutePanel extends ViewPU {
             Column.height('100%');
             Column.justifyContent(FlexAlign.Center);
             Column.alignItems(HorizontalAlign.Center);
+            Column.padding({ left: 8, right: 8 });
             Column.backgroundColor('#99000000');
             Column.hitTestBehavior(HitTestMode.Default);
             Column.onClick(() => {
@@ -413,96 +440,104 @@ export class PcbAiRoutePanel extends ViewPU {
         }, Column);
         this.observeComponentCreation2((elmtId, isInitialRender) => {
             Column.create({ space: 10 });
-            Column.width('88%');
-            Column.padding({ left: 14, right: 14, top: 14, bottom: 14 });
+            Column.width('100%');
+            Column.padding({ left: 10, right: 10, top: 12, bottom: 12 });
+            Column.alignItems(HorizontalAlign.Center);
             Column.backgroundColor(ProteusColors.CANVAS_BG);
             Column.border({ width: 1, color: ProteusColors.DIVIDER });
             Column.shadow({ radius: 8, color: '#44000000', offsetX: 0, offsetY: 2 });
+            Column.clip(true);
         }, Column);
         this.observeComponentCreation2((elmtId, isInitialRender) => {
-            Text.create('确认布线铜层数');
+            Text.create('AI 布线 · 铜层');
             Text.fontSize(ProteusFonts.TITLE);
             Text.fontColor(ProteusColors.TEXT_PRIMARY);
             Text.fontWeight(FontWeight.Medium);
             Text.width('100%');
+            Text.textAlign(TextAlign.Center);
         }, Text);
         Text.pop();
         this.observeComponentCreation2((elmtId, isInitialRender) => {
-            Text.create(`当前板：${this.boardCopperCount} 层铜`);
-            Text.fontSize(11);
-            Text.fontColor(ProteusColors.SELECTED);
-            Text.width('100%');
-        }, Text);
-        Text.pop();
-        this.observeComponentCreation2((elmtId, isInitialRender) => {
-            Text.create('请选择本次 AI 布线使用的铜层数：');
+            Text.create(`当前板 ${this.boardCopperCount} 层 · 选择并锁定层数`);
             Text.fontSize(10);
             Text.fontColor(ProteusColors.TEXT_SECONDARY);
             Text.width('100%');
+            Text.textAlign(TextAlign.Center);
+            Text.maxLines(2);
+            Text.textOverflow({ overflow: TextOverflow.Ellipsis });
         }, Text);
         Text.pop();
-        {
-            this.observeComponentCreation2((elmtId, isInitialRender) => {
-                if (isInitialRender) {
-                    let componentCall = new ProteusChipGrid(this, {
-                        labels: COPPER_LABELS,
-                        selectedIdx: this.copperSelectedIdx(),
-                        colsPerRow: 4,
-                        onSelect: (idx: number) => {
-                            if (idx >= 0 && idx < COPPER_OPTIONS.length) {
-                                this.confirmCopperCount = COPPER_OPTIONS[idx];
-                            }
-                        }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbAiRoutePanel.ets", line: 264, col: 9 });
-                    ViewPU.create(componentCall);
-                    let paramsLambda = () => {
-                        return {
-                            labels: COPPER_LABELS,
-                            selectedIdx: this.copperSelectedIdx(),
-                            colsPerRow: 4,
-                            onSelect: (idx: number) => {
-                                if (idx >= 0 && idx < COPPER_OPTIONS.length) {
-                                    this.confirmCopperCount = COPPER_OPTIONS[idx];
-                                }
-                            }
-                        };
-                    };
-                    componentCall.paramsGenerator_ = paramsLambda;
-                }
-                else {
-                    this.updateStateVarsOfChildByElmtId(elmtId, {
-                        labels: COPPER_LABELS,
-                        selectedIdx: this.copperSelectedIdx(),
-                        colsPerRow: 4
-                    });
-                }
-            }, { name: "ProteusChipGrid" });
-        }
         this.observeComponentCreation2((elmtId, isInitialRender) => {
-            Text.create('失败时 QA 仍可能自动加层（如 2→4）。');
+            Row.create({ space: 4 });
+            Row.width('100%');
+        }, Row);
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            ForEach.create();
+            const forEachItemGenFunction = (_item, idx: number) => {
+                const n = _item;
+                {
+                    this.observeComponentCreation2((elmtId, isInitialRender) => {
+                        if (isInitialRender) {
+                            let componentCall = new ProteusChipTab(this, {
+                                label: COPPER_LABELS[idx],
+                                selected: this.confirmCopperCount === n,
+                                fillWidth: true,
+                                onSelect: () => { this.confirmCopperCount = n; }
+                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbAiRoutePanel.ets", line: 292, col: 13 });
+                            ViewPU.create(componentCall);
+                            let paramsLambda = () => {
+                                return {
+                                    label: COPPER_LABELS[idx],
+                                    selected: this.confirmCopperCount === n,
+                                    fillWidth: true,
+                                    onSelect: () => { this.confirmCopperCount = n; }
+                                };
+                            };
+                            componentCall.paramsGenerator_ = paramsLambda;
+                        }
+                        else {
+                            this.updateStateVarsOfChildByElmtId(elmtId, {
+                                label: COPPER_LABELS[idx],
+                                selected: this.confirmCopperCount === n,
+                                fillWidth: true
+                            });
+                        }
+                    }, { name: "ProteusChipTab" });
+                }
+            };
+            this.forEachUpdateFunction(elmtId, COPPER_OPTIONS, forEachItemGenFunction, (n: number) => `ai_cu_${n}`, true, false);
+        }, ForEach);
+        ForEach.pop();
+        Row.pop();
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            Text.create('确认后几何/QA 不再自动加层');
             Text.fontSize(9);
             Text.fontColor(ProteusColors.TEXT_SECONDARY);
             Text.width('100%');
+            Text.textAlign(TextAlign.Center);
         }, Text);
         Text.pop();
         this.observeComponentCreation2((elmtId, isInitialRender) => {
             Row.create({ space: 8 });
             Row.width('100%');
-            Row.justifyContent(FlexAlign.SpaceBetween);
         }, Row);
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            Column.create();
+            Column.layoutWeight(1);
+        }, Column);
         {
             this.observeComponentCreation2((elmtId, isInitialRender) => {
                 if (isInitialRender) {
                     let componentCall = new ProteusClassicBtn(this, {
                         label: '取消',
-                        widthVal: '48%',
+                        widthVal: '100%',
                         onAction: () => { this.cancelLayerConfirm(); }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbAiRoutePanel.ets", line: 281, col: 11 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbAiRoutePanel.ets", line: 310, col: 13 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
                             label: '取消',
-                            widthVal: '48%',
+                            widthVal: '100%',
                             onAction: () => { this.cancelLayerConfirm(); }
                         };
                     };
@@ -511,24 +546,29 @@ export class PcbAiRoutePanel extends ViewPU {
                 else {
                     this.updateStateVarsOfChildByElmtId(elmtId, {
                         label: '取消',
-                        widthVal: '48%'
+                        widthVal: '100%'
                     });
                 }
             }, { name: "ProteusClassicBtn" });
         }
+        Column.pop();
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            Column.create();
+            Column.layoutWeight(1);
+        }, Column);
         {
             this.observeComponentCreation2((elmtId, isInitialRender) => {
                 if (isInitialRender) {
                     let componentCall = new ProteusClassicBtn(this, {
-                        label: '确认并开始',
-                        widthVal: '48%',
+                        label: '确认开始',
+                        widthVal: '100%',
                         onAction: () => { this.confirmLayerAndStart(); }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbAiRoutePanel.ets", line: 286, col: 11 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbAiRoutePanel.ets", line: 318, col: 13 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
-                            label: '确认并开始',
-                            widthVal: '48%',
+                            label: '确认开始',
+                            widthVal: '100%',
                             onAction: () => { this.confirmLayerAndStart(); }
                         };
                     };
@@ -536,12 +576,13 @@ export class PcbAiRoutePanel extends ViewPU {
                 }
                 else {
                     this.updateStateVarsOfChildByElmtId(elmtId, {
-                        label: '确认并开始',
-                        widthVal: '48%'
+                        label: '确认开始',
+                        widthVal: '100%'
                     });
                 }
             }, { name: "ProteusClassicBtn" });
         }
+        Column.pop();
         Row.pop();
         Column.pop();
         Column.pop();
@@ -659,7 +700,7 @@ export class PcbAiRoutePanel extends ViewPU {
                                 let componentCall = new AiApiConfigSection(this, {
                                     statusMessage: this.__statusMessage,
                                     refreshTick: this.apiRefreshTick
-                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbAiRoutePanel.ets", line: 362, col: 11 });
+                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbAiRoutePanel.ets", line: 398, col: 11 });
                                 ViewPU.create(componentCall);
                                 let paramsLambda = () => {
                                     return {
@@ -759,7 +800,7 @@ export class PcbAiRoutePanel extends ViewPU {
             Column.border({ width: { top: 1 }, color: ProteusColors.DIVIDER });
         }, Column);
         this.observeComponentCreation2((elmtId, isInitialRender) => {
-            Text.create('当前 PCB：AI 布局封装后多层布线与过孔。失败不改板。');
+            Text.create('有封装时把现布局发给 AI 裁定 keep/revise；再多层布线。失败不改板。');
             Text.fontSize(9);
             Text.fontColor(ProteusColors.TEXT_SECONDARY);
             Text.width('100%');
@@ -804,7 +845,7 @@ export class PcbAiRoutePanel extends ViewPU {
                         label: this.aiBusy ? '布线中…' : '开始 AI 布线',
                         widthVal: '100%',
                         onAction: () => { this.onStartClicked(); }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbAiRoutePanel.ets", line: 427, col: 11 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbAiRoutePanel.ets", line: 463, col: 11 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -833,7 +874,7 @@ export class PcbAiRoutePanel extends ViewPU {
                             this.logs = [];
                             this.appendLog('system', '日志已清空');
                         }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbAiRoutePanel.ets", line: 432, col: 11 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbAiRoutePanel.ets", line: 468, col: 11 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {

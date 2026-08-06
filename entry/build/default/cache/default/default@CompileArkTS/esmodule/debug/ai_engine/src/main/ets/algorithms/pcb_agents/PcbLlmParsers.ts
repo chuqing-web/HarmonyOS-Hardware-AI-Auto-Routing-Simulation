@@ -1,5 +1,5 @@
 import { PcbViaKind, Logger, INSTR_TRACE_TAG } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
-import type { PcbPlacementPlan, PcbPlacementItem, PcbPlacementGroup, PcbNetPlanResult, PcbNetPlanEntry, PcbRoutePolicy, PcbQaRepairPlan, PcbLayerRole, PcbRouteMode, PcbNetKind, PcbLlmGeometryPlan, PcbLlmTrackPath, PcbLlmViaSpec, Point2D } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
+import type { PcbPlacementPlan, PcbPlacementItem, PcbPlacementGroup, PcbPlacementDecision, PcbNetPlanResult, PcbNetPlanEntry, PcbRoutePolicy, PcbQaRepairPlan, PcbLayerRole, PcbRouteMode, PcbNetKind, PcbLlmGeometryPlan, PcbLlmTrackPath, PcbLlmViaSpec, Point2D } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
 import { PromptLoader } from "@bundle:com.elecdraw.aischsim/entry@ai_engine/ets/prompts/PromptLoader";
 function asString(v: Object | undefined | null, fallback: string = ''): string {
     if (v === undefined || v === null) {
@@ -81,16 +81,131 @@ function collectLayerRolePatch(raw: Record<string, Object>, out: Record<string, 
         }
     }
 }
-export function parsePcbPlacementPlan(raw: string): PcbPlacementPlan | null {
+function parsePlacementDecision(json: Record<string, Object>): PcbPlacementDecision | undefined {
+    const raw = asString(json['decision'] ?? json['action'] ?? json['placementDecision'] ??
+        json['placement_decision']).toLowerCase();
+    if (raw === 'keep' || raw === 'skip' || raw === 'reuse' || raw === 'ok' || raw === 'good') {
+        return 'keep';
+    }
+    if (raw === 'revise' || raw === 'adjust' || raw === 'fix' || raw === 'bad' || raw === 'rework') {
+        return 'revise';
+    }
+    return undefined;
+}
+/** Agnes 常见碎片：只回了 groups[] 里的一个元素 */
+function isPlacementGroupFragment(json: Record<string, Object>): boolean {
+    const hasName = asString(json['name']).length > 0;
+    const hasFpIds = Array.isArray(json['footprintIds']) || Array.isArray(json['footprint_ids']);
+    if (!hasName || !hasFpIds) {
+        return false;
+    }
+    const hasDecision = parsePlacementDecision(json) !== undefined;
+    const hasPlacements = Array.isArray(json['placements']) || Array.isArray(json['placement']);
+    const hasBoard = asNumber(json['boardWidthMil'] ?? json['board_width_mil'] ?? json['boardWidth']) > 0;
+    // 根上有 name+footprintIds 且无 decision/placements/board → 碎片
+    return !hasDecision && !hasPlacements && !hasBoard;
+}
+function readBoardSize(json: Record<string, Object>): number[] {
+    const bw = asNumber(json['boardWidthMil'] ?? json['board_width_mil'] ?? json['boardWidth'] ??
+        json['widthMil'] ?? json['width_mil']);
+    const bh = asNumber(json['boardHeightMil'] ?? json['board_height_mil'] ?? json['boardHeight'] ??
+        json['heightMil'] ?? json['height_mil']);
+    if (bw > 0 && bh > 0) {
+        return [bw, bh];
+    }
+    const bs = json['boardSize'] ?? json['board_size'] ?? json['board'];
+    if (bs !== null && typeof bs === 'object' && !Array.isArray(bs)) {
+        const o = bs as Record<string, Object>;
+        const w2 = asNumber(o['widthMil'] ?? o['width_mil'] ?? o['width'] ?? o['w']);
+        const h2 = asNumber(o['heightMil'] ?? o['height_mil'] ?? o['height'] ?? o['h']);
+        if (w2 > 0 && h2 > 0) {
+            return [w2, h2];
+        }
+    }
+    return [0, 0];
+}
+/**
+ * 严格诊断 placement 回复（供 KEEP_RETRY 提示）。空串=可通过 parse。
+ * mode=auto|revise 时强制 decision + board；禁止 groups 碎片冒充根对象。
+ */
+export function diagnosePcbPlacementReply(raw: string, mode: string = 'full'): string {
     const json = PromptLoader.extractJson<Record<string, Object>>(raw);
     if (!json) {
-        Logger.warn(INSTR_TRACE_TAG, '[AI_PCB] placement JSON parse fail');
-        return null;
+        return PromptLoader.describeJsonImpurity(raw) || 'parse_fail';
     }
+    if (isPlacementGroupFragment(json)) {
+        return 'schema_fragment_group: 禁止只输出 groups 元素' +
+            '（如 {"name":"power_input","footprintIds":[...]}）；' +
+            '根对象必须含 decision+"boardWidthMil"+"boardHeightMil"';
+    }
+    const decision = parsePlacementDecision(json);
+    const needDecision = mode === 'auto' || mode === 'revise';
+    if (needDecision && decision === undefined) {
+        return 'missing_decision: 根对象必须含 decision="keep"|"revise"';
+    }
+    const wh = readBoardSize(json);
+    if (wh[0] <= 0 || wh[1] <= 0) {
+        return 'missing_board: 必须输出 boardWidthMil 与 boardHeightMil（正数 mil）';
+    }
+    if (decision === 'keep') {
+        return '';
+    }
+    // revise / full / 无 decision 的 full：须有 placements
     const arr = (json['placements'] ?? json['placement']) as Object[] | undefined;
     if (!arr || !Array.isArray(arr) || arr.length === 0) {
+        if (decision === 'revise' || needDecision) {
+            return 'revise_empty_placements: decision=revise 时 placements 不可空';
+        }
+        return 'missing_placements: 根对象必须含非空 placements[]';
+    }
+    let n = 0;
+    for (let i = 0; i < arr.length; i++) {
+        const o = arr[i] as Record<string, Object>;
+        if (asString(o['footprintId'] ?? o['footprint_id'] ?? o['id']).length > 0) {
+            n++;
+        }
+    }
+    if (n === 0) {
+        return 'placements_no_ids: placements[].footprintId 须逐字复制列表 id';
+    }
+    return '';
+}
+export function parsePcbPlacementPlan(raw: string, mode: string = 'full'): PcbPlacementPlan | null {
+    const diag = diagnosePcbPlacementReply(raw, mode);
+    if (diag.length > 0) {
+        Logger.warn(INSTR_TRACE_TAG, `[AI_PCB] placement schema reject | ${diag}`);
         return null;
     }
+    const json = PromptLoader.extractJson<Record<string, Object>>(raw);
+    if (!json) {
+        return null;
+    }
+    const decision = parsePlacementDecision(json);
+    const reason = asString(json['reason']).length > 0
+        ? asString(json['reason'])
+        : undefined;
+    const lockedRaw = json['lockedIds'] ?? json['locked_ids'];
+    const lockedIds: string[] = [];
+    if (Array.isArray(lockedRaw)) {
+        for (let i = 0; i < (lockedRaw as Object[]).length; i++) {
+            lockedIds.push(asString((lockedRaw as Object[])[i]));
+        }
+    }
+    const wh = readBoardSize(json);
+    const boardWidthMil = wh[0] > 0 ? wh[0] : undefined;
+    const boardHeightMil = wh[1] > 0 ? wh[1] : undefined;
+    if (decision === 'keep') {
+        return {
+            fromLlm: true,
+            placements: [],
+            lockedIds,
+            decision: 'keep',
+            boardWidthMil,
+            boardHeightMil,
+            reason: reason ?? 'keep existing placement'
+        };
+    }
+    const arr = (json['placements'] ?? json['placement']) as Object[];
     const placements: PcbPlacementItem[] = [];
     for (let i = 0; i < arr.length; i++) {
         const o = arr[i] as Record<string, Object>;
@@ -105,16 +220,6 @@ export function parsePcbPlacementPlan(raw: string): PcbPlacementPlan | null {
             rotationDeg: asNumber(o['rotationDeg'] ?? o['rotation'] ?? o['rotation_deg']),
             mirrored: asBool(o['mirrored'])
         });
-    }
-    if (placements.length === 0) {
-        return null;
-    }
-    const lockedRaw = json['lockedIds'] ?? json['locked_ids'];
-    const lockedIds: string[] = [];
-    if (Array.isArray(lockedRaw)) {
-        for (let i = 0; i < (lockedRaw as Object[]).length; i++) {
-            lockedIds.push(asString((lockedRaw as Object[])[i]));
-        }
     }
     const groups: PcbPlacementGroup[] = [];
     const gRaw = json['groups'];
@@ -141,36 +246,15 @@ export function parsePcbPlacementPlan(raw: string): PcbPlacementPlan | null {
             }
         }
     }
-    // 板框尺寸：boardWidthMil/boardHeightMil 或 boardSize.{width,height} / width+height
-    let boardWidthMil: number | undefined = undefined;
-    let boardHeightMil: number | undefined = undefined;
-    const bw = asNumber(json['boardWidthMil'] ?? json['board_width_mil'] ?? json['boardWidth'] ??
-        json['widthMil'] ?? json['width_mil']);
-    const bh = asNumber(json['boardHeightMil'] ?? json['board_height_mil'] ?? json['boardHeight'] ??
-        json['heightMil'] ?? json['height_mil']);
-    if (bw > 0 && bh > 0) {
-        boardWidthMil = bw;
-        boardHeightMil = bh;
-    }
-    else {
-        const bs = json['boardSize'] ?? json['board_size'] ?? json['board'];
-        if (bs !== null && typeof bs === 'object' && !Array.isArray(bs)) {
-            const o = bs as Record<string, Object>;
-            const w2 = asNumber(o['widthMil'] ?? o['width_mil'] ?? o['width'] ?? o['w']);
-            const h2 = asNumber(o['heightMil'] ?? o['height_mil'] ?? o['height'] ?? o['h']);
-            if (w2 > 0 && h2 > 0) {
-                boardWidthMil = w2;
-                boardHeightMil = h2;
-            }
-        }
-    }
     return {
         fromLlm: true,
         placements,
         lockedIds,
         groups: groups.length > 0 ? groups : undefined,
+        decision: decision ?? 'revise',
         boardWidthMil,
-        boardHeightMil
+        boardHeightMil,
+        reason
     };
 }
 export function parsePcbNetPlan(raw: string): PcbNetPlanResult | null {

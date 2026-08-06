@@ -70,9 +70,11 @@ function makePowerSupplies(): ComponentDefinition[] {
             category: ComponentCategory.POWER_SUPPLY,
             manufacturer: 'Generic',
             description: '交流电压源 (正弦波)',
+            // AC± 用 PASSIVE：单电源实验中 AC- 常并入 GND；若标 POWER 会触发
+            // 「电源脚与地脚同网」误报（lab_amp / lab_filter 等）
             pins: [
-                makePin('1', 'AC+', '1', PinType.POWER, -20, 0),
-                makePin('2', 'AC-', '2', PinType.POWER, 20, 0)
+                makePin('1', 'AC+', '1', PinType.PASSIVE, -20, 0),
+                makePin('2', 'AC-', '2', PinType.PASSIVE, 20, 0)
             ],
             defaultParams: params2('amplitude', '220V', 'frequency', '50Hz'),
             spiceModel: 'V{name} {AC+} {AC-} SIN(0 {amplitude} {frequency})',

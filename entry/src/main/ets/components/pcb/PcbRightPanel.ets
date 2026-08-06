@@ -12,7 +12,6 @@ import { ProteusClassicBtn, ProteusPanelTitle, ProteusSidebarTab } from '../prot
 import { ProteusIconName } from '../proteus/ProteusIcons';
 import { PcbTeachingPanel } from './PcbTeachingPanel';
 import { PcbGerberPreview } from './PcbGerberPreview';
-import { PcbAiRoutePanel } from './PcbAiRoutePanel';
 
 enum PcbRightTab {
   PROPERTIES = 0,
@@ -20,8 +19,7 @@ enum PcbRightTab {
   LIBRARY = 2,
   STACK = 3,
   GERBER = 4,
-  TEACHING = 5,
-  AI_ROUTE = 6
+  TEACHING = 5
 }
 
 @Component
@@ -62,13 +60,6 @@ export struct PcbRightPanel {
   onExportGerber: () => void = () => {};
   getPcbDocument: () => PcbDocument | null = () => null;
   @Prop gerberDocRev: number = 0;
-  /** 外部请求切到 AI 布线 Tab（递增） */
-  @Prop @Watch('onAiTabFocusTick') aiTabFocusTick: number = 0;
-  @Link statusMessage: string;
-  @Link aiBusy: boolean;
-  @Link aiProgress: number;
-  @Link aiStage: string;
-  onAiRouteDone: () => void = () => {};
 
   @State private activeTab: PcbRightTab = PcbRightTab.PROPERTIES;
   @State private fpDefs: PcbFootprintDef[] = [];
@@ -81,12 +72,6 @@ export struct PcbRightPanel {
   private onStackFocusTickChange(): void {
     if (this.stackFocusTick > 0) {
       this.activeTab = PcbRightTab.STACK;
-    }
-  }
-
-  private onAiTabFocusTick(): void {
-    if (this.aiTabFocusTick > 0) {
-      this.activeTab = PcbRightTab.AI_ROUTE;
     }
   }
 
@@ -105,9 +90,6 @@ export struct PcbRightPanel {
     }
     if (this.activeTab === PcbRightTab.TEACHING) {
       return '教学';
-    }
-    if (this.activeTab === PcbRightTab.AI_ROUTE) {
-      return 'AI 布线';
     }
     return '属性';
   }
@@ -137,17 +119,6 @@ export struct PcbRightPanel {
             statusMessage: $teachStatus,
             onRunDrc: () => { this.onRunDrc(); },
             onInserted: () => { this.onPcbTemplateInserted(); }
-          })
-            .layoutWeight(1)
-            .height('100%')
-        } else {
-          PcbAiRoutePanel({
-            statusMessage: $statusMessage,
-            aiBusy: $aiBusy,
-            aiProgress: $aiProgress,
-            aiStage: $aiStage,
-            onRouteDone: () => { this.onAiRouteDone(); },
-            onSetCopperCount: (n: number) => { this.onSetCopperCount(n); }
           })
             .layoutWeight(1)
             .height('100%')
@@ -186,11 +157,6 @@ export struct PcbRightPanel {
             label: '教学', tooltip: 'PCB 教学模板', icon: ProteusIconName.LABEL,
             selected: this.activeTab === PcbRightTab.TEACHING,
             onSelect: () => { this.activeTab = PcbRightTab.TEACHING; }
-          })
-          ProteusSidebarTab({
-            label: 'AI', tooltip: 'AI 布线', icon: ProteusIconName.AI_ROUTE,
-            selected: this.activeTab === PcbRightTab.AI_ROUTE,
-            onSelect: () => { this.activeTab = PcbRightTab.AI_ROUTE; }
           })
         }
         .width(44)

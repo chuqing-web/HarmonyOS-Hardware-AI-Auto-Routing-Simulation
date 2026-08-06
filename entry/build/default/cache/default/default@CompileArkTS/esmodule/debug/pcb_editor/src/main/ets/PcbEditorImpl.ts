@@ -1686,12 +1686,13 @@ export class PcbEditorImpl implements IPcbEditor {
     // ═══════════════════════════════════════════════════
     //  Auto Route / DRC
     // ═══════════════════════════════════════════════════
-    runAutoRoute(): ApiResult<AutoRouteResult> {
-        if (this.guardEdit()) {
-            return ResultHelper.fail(ErrCode.ERR_PROJECT_LOCKED, 'PCB AI 布线中，画布已锁定');
-        }
-        if (!this.document)
+    async runAutoRoute(): Promise<ApiResult<AutoRouteResult>> {
+        // 不调用 guardEdit：调用方会在布线期间 setReadOnly(true) 锁画布，
+        // 若此处再判只读会自锁，表现为「无铜线 / fail 画布已锁定」。
+        // AI 占用由调用方 isAiGenerating() 拦截；applyAiRouteResult 同样不 guard。
+        if (!this.document) {
             return ResultHelper.fail(ErrCode.ERR_PARAM_INVALID, '无 PCB 文档');
+        }
         this.saveSnapshot();
         const layer = isCopperLayer(this.activeLayer) ? this.activeLayer : PcbLayerId.F_CU;
         const sch = this.schematicProvider?.() ?? null;
@@ -1705,7 +1706,7 @@ export class PcbEditorImpl implements IPcbEditor {
                 });
             }
         }
-        const result = autoRoutePcb(this.document, layer, schHints);
+        const result = await autoRoutePcb(this.document, layer, schHints);
         this.refreshConnectivity();
         tracePcbAutoRoute(this.document, layer, result.netCount, result.trackCount, result.messages);
         this.touchModified();

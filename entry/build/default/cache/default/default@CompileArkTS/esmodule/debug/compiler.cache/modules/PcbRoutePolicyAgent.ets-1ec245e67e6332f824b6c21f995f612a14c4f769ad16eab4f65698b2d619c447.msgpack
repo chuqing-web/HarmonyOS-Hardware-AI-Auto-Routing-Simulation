@@ -1,233 +1,0 @@
-Ôr@Ÿªassertions¤code´customTransformCache¬dependencies¢id¤meta±moduleSideEffects¬originalCode±originalSourcemap«resolvedIds®sourcemapChainµsyntheticNamedExportsµtransformDependencies®transformFiles¨cacheAstÔrAÚú/**
- * PcbRoutePolicyAgent â€” æ¯æ¬¡å¿…è·‘ LLMï¼›ç¦æ­¢ skip / é»˜è®¤å±‚è¡¨
- * è¦†ç›–é“œå±‚ key + ç›¸å¯¹ netPlan çš„è¯­ä¹‰è§’è‰²æ ¡éªŒ
- */
-import { Logger, INSTR_TRACE_TAG, copperLayersFromStack, policyCoversCopperLayers, validateLayerRoleSemantics } from 'common';
-import { PromptLoader } from '../../prompts/PromptLoader';
-import { PcbDocSummarizer } from './PcbDocSummarizer';
-import { parsePcbRoutePolicy } from './PcbLlmParsers';
-import { pcbStageChatOpts } from './PcbChatOpts';
-import { pcbImpureReplyReason } from './PcbLlmReplyGuard';
-export class PcbRoutePolicyAgent {
-    async run(bb, api, priorFailHint) {
-        Logger.info(INSTR_TRACE_TAG, `[AI_PCB] stage=route_policy begin runId=${bb.runId}`);
-        if (!bb.workDoc || !bb.netPlan) {
-            return { ok: false, reason: 'missing workDoc/netPlan' };
-        }
-        const tpl = PromptLoader.load('pcb_route');
-        if (!tpl.system || tpl.system.length === 0) {
-            return { ok: false, reason: 'pcb_route prompt missing' };
-        }
-        const netSummary = bb.netPlan.nets.map(n => `${n.netName}:${n.kind}/${n.routeMode}/p${n.priority}`).join(',');
-        let boardSummary = PcbDocSummarizer.boardDiagSnapshot(bb.workDoc, bb.geometry);
-        if (priorFailHint && priorFailHint.length > 0) {
-            boardSummary = `${boardSummary}\nã€ä¸Šè½®å¤±è´¥é¡»ä¿®æ­£ã€‘${priorFailHint}`;
-        }
-        const prompt = PromptLoader.render(tpl, [
-            { key: 'copper_layers', value: PcbDocSummarizer.copperLayers(bb.workDoc) },
-            { key: 'net_plan_summary', value: netSummary },
-            { key: 'board_summary', value: boardSummary }
-        ]);
-        const apiRes = await api.chat(prompt, pcbStageChatOpts(bb.enableReasoning, 0.05));
-        if (!apiRes.success || !apiRes.data) {
-            return { ok: false, reason: apiRes.error ?? 'route_policy LLM failed' };
-        }
-        bb.usedLlm = true;
-        const impure = pcbImpureReplyReason('route_policy', apiRes.data);
-        if (impure) {
-            return { ok: false, reason: impure };
-        }
-        const policy = parsePcbRoutePolicy(apiRes.data);
-        if (!policy) {
-            return { ok: false, reason: `route_policy LLM JSON invalid (${PromptLoader.describeJsonImpurity(apiRes.data)})` };
-        }
-        const copper = copperLayersFromStack(bb.workDoc.layerStack);
-        const missing = policyCoversCopperLayers(policy, copper);
-        if (missing.length > 0) {
-            return { ok: false, reason: `layerRoles missing: ${missing.join(',')}` };
-        }
-        const sem = validateLayerRoleSemantics(policy, bb.netPlan);
-        if (sem.length > 0) {
-            return { ok: false, reason: `layerRoles semantic: ${sem.join('; ')}` };
-        }
-        bb.routePolicy = policy;
-        bb.markStage('route_policy');
-        Logger.info(INSTR_TRACE_TAG, `[AI_PCB] stage=route_policy ok layers=${copper.length}`);
-        return { ok: true, reason: 'ok' };
-    }
-}
-//# sourceMappingURL=PcbRoutePolicyAgent.js.mapÂ–Ù-C:\Projects\ElecDraw_Harmony\common\Index.etsÙUC:\Projects\ElecDraw_Harmony\features\ai_engine\src\main\ets\prompts\PromptLoader.etsÙgC:\Projects\ElecDraw_Harmony\features\ai_engine\src\main\ets\algorithms\pcb_agents\PcbDocSummarizer.etsÙdC:\Projects\ElecDraw_Harmony\features\ai_engine\src\main\ets\algorithms\pcb_agents\PcbLlmParsers.etsÙbC:\Projects\ElecDraw_Harmony\features\ai_engine\src\main\ets\algorithms\pcb_agents\PcbChatOpts.etsÙgC:\Projects\ElecDraw_Harmony\features\ai_engine\src\main\ets\algorithms\pcb_agents\PcbLlmReplyGuard.etsÙjC:\Projects\ElecDraw_Harmony\features\ai_engine\src\main\ets\algorithms\pcb_agents\PcbRoutePolicyAgent.etsÔrB›ªmoduleName±isLocalDependency¯isNodeEntryFile§pkgPath±belongProjectPath§pkgNameªpkgVersion±dependencyPkgInfo¯hostModulesInfo°belongModulePath¬shouldEmitJs©ai_engineÃÂÙ/C:\Projects\ElecDraw_Harmony\features\ai_engine¼C:\Projects\ElecDraw_Harmony©ai_engine¥1.0.0ÔrC’§pkgNameªpkgVersion©ai_engine¥1.0.0‘ÔrD’²hostDependencyName®hostModuleNameµ./PcbRoutePolicyAgent©ai_engineÙ/C:\Projects\ElecDraw_Harmony\features\ai_engineÃÃÚÆ/**
- * PcbRoutePolicyAgent â€” æ¯æ¬¡å¿…è·‘ LLMï¼›ç¦æ­¢ skip / é»˜è®¤å±‚è¡¨
- * è¦†ç›–é“œå±‚ key + ç›¸å¯¹ netPlan çš„è¯­ä¹‰è§’è‰²æ ¡éªŒ
- */
-import {
-  Logger, INSTR_TRACE_TAG, copperLayersFromStack,
-  policyCoversCopperLayers, validateLayerRoleSemantics
-} from 'common';
-import { IAiApiManager } from 'ai_api_manager';
-import { PromptLoader } from '../../prompts/PromptLoader';
-import { PcbRouteBlackboard } from './PcbRouteBlackboard';
-import { PcbDocSummarizer } from './PcbDocSummarizer';
-import { parsePcbRoutePolicy } from './PcbLlmParsers';
-import { PcbAgentStageResult } from './PcbPlacementAgent';
-import { pcbStageChatOpts } from './PcbChatOpts';
-import { pcbImpureReplyReason } from './PcbLlmReplyGuard';
-
-export class PcbRoutePolicyAgent {
-  async run(bb: PcbRouteBlackboard, api: IAiApiManager,
-    priorFailHint?: string): Promise<PcbAgentStageResult> {
-    Logger.info(INSTR_TRACE_TAG, `[AI_PCB] stage=route_policy begin runId=${bb.runId}`);
-    if (!bb.workDoc || !bb.netPlan) {
-      return { ok: false, reason: 'missing workDoc/netPlan' };
-    }
-    const tpl = PromptLoader.load('pcb_route');
-    if (!tpl.system || tpl.system.length === 0) {
-      return { ok: false, reason: 'pcb_route prompt missing' };
-    }
-    const netSummary = bb.netPlan.nets.map(n =>
-      `${n.netName}:${n.kind}/${n.routeMode}/p${n.priority}`).join(',');
-    let boardSummary = PcbDocSummarizer.boardDiagSnapshot(bb.workDoc, bb.geometry);
-    if (priorFailHint && priorFailHint.length > 0) {
-      boardSummary = `${boardSummary}\nã€ä¸Šè½®å¤±è´¥é¡»ä¿®æ­£ã€‘${priorFailHint}`;
-    }
-    const prompt = PromptLoader.render(tpl, [
-      { key: 'copper_layers', value: PcbDocSummarizer.copperLayers(bb.workDoc) },
-      { key: 'net_plan_summary', value: netSummary },
-      { key: 'board_summary', value: boardSummary }
-    ]);
-    const apiRes = await api.chat(prompt, pcbStageChatOpts(bb.enableReasoning, 0.05));
-    if (!apiRes.success || !apiRes.data) {
-      return { ok: false, reason: apiRes.error ?? 'route_policy LLM failed' };
-    }
-    bb.usedLlm = true;
-    const impure = pcbImpureReplyReason('route_policy', apiRes.data);
-    if (impure) {
-      return { ok: false, reason: impure };
-    }
-    const policy = parsePcbRoutePolicy(apiRes.data);
-    if (!policy) {
-      return { ok: false, reason: `route_policy LLM JSON invalid (${PromptLoader.describeJsonImpurity(apiRes.data)})` };
-    }
-    const copper = copperLayersFromStack(bb.workDoc.layerStack);
-    const missing = policyCoversCopperLayers(policy, copper);
-    if (missing.length > 0) {
-      return { ok: false, reason: `layerRoles missing: ${missing.join(',')}` };
-    }
-    const sem = validateLayerRoleSemantics(policy, bb.netPlan);
-    if (sem.length > 0) {
-      return { ok: false, reason: `layerRoles semantic: ${sem.join('; ')}` };
-    }
-    bb.routePolicy = policy;
-    bb.markStage('route_policy');
-    Logger.info(INSTR_TRACE_TAG, `[AI_PCB] stage=route_policy ok layers=${copper.length}`);
-    return { ok: true, reason: 'ok' };
-  }
-}
-ÀÔrE–º../../prompts/PromptLoader²./PcbDocSummarizer¯./PcbLlmParsers­./PcbChatOpts²./PcbLlmReplyGuard¦commonÔrF—ªassertions¨external¢id¤meta±moduleSideEffectsªresolvedByµsyntheticNamedExportsAÂÙUC:\Projects\ElecDraw_Harmony\features\ai_engine\src\main\ets\prompts\PromptLoader.etsAÃªoh-resolveÂFAÂÙgC:\Projects\ElecDraw_Harmony\features\ai_engine\src\main\ets\algorithms\pcb_agents\PcbDocSummarizer.etsAÃªoh-resolveÂFAÂÙdC:\Projects\ElecDraw_Harmony\features\ai_engine\src\main\ets\algorithms\pcb_agents\PcbLlmParsers.etsAÃªoh-resolveÂFAÂÙbC:\Projects\ElecDraw_Harmony\features\ai_engine\src\main\ets\algorithms\pcb_agents\PcbChatOpts.etsAÃªoh-resolveÂFAÂÙgC:\Projects\ElecDraw_Harmony\features\ai_engine\src\main\ets\algorithms\pcb_agents\PcbLlmReplyGuard.etsAÃªoh-resolveÂFAÂÙ-C:\Projects\ElecDraw_Harmony\common\Index.etsAÃªoh-resolveÂ“ÔrG–§version¤fileªsourceRoot§sources¥names¨mappings¶PcbRoutePolicyAgent.js ‘·PcbRoutePolicyAgent.etsÜ :‘”    ‘” Ü ”   ” ”	 ” ” 
-”  ”" ”7 0”9 ”ÌQ ”ÌS ”Ìm 6”Ìo ”Ìu ”Ì} ”Ì~ ˜”  	 ” 	”	 		” 	” 	” 	”9 	9”: 	:˜”   ” ”	 	” ” ”! !”5 5”6 6˜”   ” ”	 	” ” ”$ $”5 5”6 6˜”   ” ”	 	” ” ”! !”0 0”1 1˜”   ” ”	 	” ” ”% %”9 9”: :””   ” ” ”   š” ”	 ”
- ” ” ” "” $” 6” ”$ ” ” 
-” ” ” ”# ”% !”ÌP ÌL”ÌR ÌN”ÌS ÌO”ÌX ÌT”ÌZ ÌV”Ì[ ÌW”Ì\ ÌXœ” ” ” 	” ” ” ” ” ” ” ”& "”( $œ” ” ” ” ” ” ”  ”&  ”( "”ÌA ;”ÌC =”ÌD >‘”	 ›” ” 
-” ” ”  ”! ”% !”& "”1 -”2 .”3 /Ÿ” ” ” 	” ” ” ” ” ” ”% !”& "”, (”1 -”2 .”4 0œ” ” ” ” ” ” ”  ”&  ”( "”ÌB <”ÌD >”ÌE ?‘”	 Ü (” ” 
-” ” ” ” ”% !”& "”* &”+ '”. *”/ +”0 ,”1 -”3 /”4 ”7 	”8 
-”9 ”Ì@ ”ÌD ”ÌE ”ÌF ”ÌJ ”ÌN  ”ÌO !”ÌP "”ÌY +”Ì^ 0”Ì_ 1”Ì` 2”Ìh :”Ìj <”Ìk =”Ìl >”Ìp ÌB”Ìq ÌC”Ìt ÌF”Ìu ÌG”Ìv ÌHÜ ” ” ” ” ”+ '”, (”= 9”> :”Ì@ <”ÌA =”ÌH ÌD”ÌJ ÌF”ÌL ÌH”ÌM ÌI”ÌU ÌQ”ÌV ÌR”ÌW ÌSš” ” ” ” ”* &”+ '”1 -”4 0”5 1”7 3™”  ”  ”  ”  ”*  $”8  2”ÌE  ?”ÌG  ÌA”ÌH  ÌB‘”	 !š” "” "
-” "” "”# "”$ " ”* "&”+ "'”. "*”0 ",Ü ” #” #” #” #”" #”$ #”) ##”+ #%”; #5”< #6”ÌH #ÌB”ÌI #ÌC”ÌK #ÌE”ÌL #ÌF”ÌS #ÌM”ÌT #ÌN”ÌV #ÌPš” $” $” $” $”% $”' $!”, $&”. $(”8 $2”: $4š” %” %” %” %”" %”$ %”) %#”+ %%”7 %1”9 %3“”	 &”
- &” &Ü ” '” '
-” '” '” '”  '”! '”% '!”& '"”, '(”. '*”> ':”? ';”ÌA '=”ÌB '>”ÌQ 'ÌM”ÌS 'ÌO”ÌW 'ÌS”ÌX 'ÌT”ÌY 'ÌU”ÌZ 'ÌVœ” (” (” (	” (” (” (” (”  (”& ("”' (#”+ ('”- ()Ü ” )” )” )” )” )” )”  )”& ) ”( )"”. )(”/ ))”4 ).”8 )2”ÌQ )ÌK”ÌS )ÌM”ÌT )ÌN‘”	 *—” +”
- +” +” +” +” +” +” ,” ,
-” ,” ,”+ ,'”, ,(”: ,6”< ,8”ÌB ,>”ÌC ,?”ÌG ,ÌC”ÌH ,ÌD”ÌI ,ÌE”” -” -” -” -œ” .” .” .” .” .” .”  .”& . ”( ."”. .(”0 .*”1 .+‘”	 /›” 0” 0
-” 0” 0”* 0&”+ 0'”1 0-”2 0.”6 02”7 03”8 04•” 1” 1” 1	” 1” 1Ü ” 2” 2” 2” 2” 2” 2”  2”& 2 ”( 2"”ÌJ 2ÌD”ÌV 2ÌP”ÌW 2ÌQ”Ìk 2Ìe”Ìl 2Ìf”Ìr 2Ìl”Ìs 2Ìm”Ìw 2Ìq”Ìx 2Ìr”Ì{ 2Ìu”Ì} 2Ìw”Ì~ 2Ìx‘”	 3” 4” 4
-” 4” 4”, 4(”- 4)”/ 4+”0 4,”7 43”8 44”ÌB 4>”ÌC 4?”ÌD 4Ì@›” 5” 5
-” 5” 5”0 5,”1 5-”7 53”9 55”? 5;”Ì@ 5<”ÌA 5=˜” 6” 6” 6” 6” 6” 6” 6”  6Ü ” 7” 7” 7” 7” 7” 7”  7”& 7 ”( 7"”? 79”ÌF 7Ì@”ÌG 7ÌA”ÌK 7ÌE”ÌL 7ÌF”ÌO 7ÌI”ÌP 7ÌJ”ÌR 7ÌL”ÌT 7ÌN”ÌU 7ÌO‘”	 8” 9” 9
-” 9” 9”. 9*”/ 9+”5 91”7 93”9 95”: 96”ÌA 9=”ÌB 9>”ÌC 9?˜” :” :” :” :” :” :” :” :Ü ” ;” ;” ;” ;” ;” ;”  ;”& ; ”( ;"”Ì@ ;:”ÌC ;=”ÌD ;>”ÌH ;ÌB”ÌI ;ÌC”ÌM ;ÌG”ÌN ;ÌH”ÌP ;ÌJ”ÌR ;ÌL”ÌS ;ÌM‘”	 <—” =”
- =” =” =” =” =”  =˜” >”
- >” >” >” >”# >”$ > ”% >!” ?” ?
-” ?” ?” ?”# ?”% ?!”ÌN ?ÌJ”ÌT ?ÌP”ÌU ?ÌQ”Ì[ ?ÌW”Ì] ?ÌY”Ì^ ?ÌZ”Ì_ ?Ì[œ” Ì@” Ì@” Ì@” Ì@” Ì@” Ì@” Ì@”! Ì@”# Ì@”' Ì@#”) Ì@%”* Ì@&’” ÌA” ÌA‘” ÌBÔrH–§version¤file§sources®sourcesContent¥names¨mappingsÀ‘À‘ÀÜ ;‘”    ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”  	 ‘”  
- ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”    ‘”  ! ‘”  " ‘”  # ‘”  $ ‘”  % ‘”  & ‘”  ' ‘”  ( ‘”  ) ‘”  * ‘”  + ‘”  , ‘”  - ‘”  . ‘”  / ‘”  0 ‘”  1 ‘”  2 ‘”  3 ‘”  4 ‘”  5 ‘”  6 ‘”  7 ‘”  8 ‘”  9 ‘”  : ÔrI’§missing¦pluginÃ¦genAbcÂÔ  ÔrJ”²dynamicImportCache¹exportAllDeclarationCache»exportNamedDeclarationCache«importCache‘ÔrK–¤type¥start£end«declarationªspecifiers¦source¶ExportNamedDeclarationÍùÍ…ÔrL–¤type¥start£end¢idªsuperClass¤body°ClassDeclarationÍ Í…ÔrM”¤type¥start£end¤nameªIdentifierÍÍ³PcbRoutePolicyAgentÀÔrN”¤type¥start£end¤body©ClassBodyÍÍ…‘ÔrO˜¤type¥start£end¦static¨computed£key¤kind¥value°MethodDefinitionÍ!Í‚ÂÂMªIdentifierÍ'Í*£run¦methodÔrP™¤type¥start£end¢idªexpression©generator¥async¦params¤body²FunctionExpressionÍ*Í‚ÀÂÂÃ“MªIdentifierÍ+Í-¢bbMªIdentifierÍ/Í2£apiMªIdentifierÍ4ÍA­priorFailHintN®BlockStatementÍCÍ‚Ü ÔrQ”¤type¥start£endªexpression³ExpressionStatementÍNÍ¢ÔrR–¤type¥start£end¦callee©arguments¨optional®CallExpressionÍNÍ¡ÔrS—¤type¥start£end¦object¨property¨computed¨optional°MemberExpressionÍNÍYMªIdentifierÍNÍT¦LoggerMªIdentifierÍUÍY¤infoÂÂ’MªIdentifierÍZÍi¯INSTR_TRACE_TAGÔrT•¤type¥start£end«expressions¦quasis¯TemplateLiteralÍkÍ ‘S°MemberExpressionÍ–ÍMªIdentifierÍ–Í˜¢bbMªIdentifierÍ™Í¥runIdÂÂ’ÔrU•¤type¥start£end¥value¤tail¯TemplateElementÍlÍ”ÔrV’£raw¦cookedÙ([AI_PCB] stage=route_policy begin runId=Ù([AI_PCB] stage=route_policy begin runId=ÂU¯TemplateElementÍŸÍŸV  ÃÂÔrW–¤type¥start£end¤testªconsequent©alternate«IfStatementÍ¬ÍÔrX–¤type¥start£end¤left¨operator¥right±LogicalExpressionÍ°ÍÊÔrY–¤type¥start£end¨operator¦prefix¨argument¯UnaryExpressionÍ°Í»¡!ÃS°MemberExpressionÍ±Í»MªIdentifierÍ±Í³¢bbMªIdentifierÍ´Í»§workDocÂÂ¢||Y¯UnaryExpressionÍ¿ÍÊ¡!ÃS°MemberExpressionÍÀÍÊMªIdentifierÍÀÍÂ¢bbMªIdentifierÍÃÍÊ§netPlanÂÂN®BlockStatementÍÌÍ‘ÔrZ”¤type¥start£end¨argument¯ReturnStatementÍÛÍÔr[”¤type¥start£endªproperties°ObjectExpressionÍâÍ’Ôr\™¤type¥start£end¦method©shorthand¨computed£key¥value¤kind¨PropertyÍäÍíÂÂÂMªIdentifierÍäÍæ¢okÔr]•¤type¥start£end¥value£raw§LiteralÍèÍíÂ¥false¤init\¨PropertyÍïÍÂÂÂMªIdentifierÍïÍõ¦reason]§LiteralÍ÷Í·missing workDoc/netPlan¹'missing workDoc/netPlan'¤initÀÔr^•¤type¥start£end¬declarations¤kind³VariableDeclarationÍ(ÍS‘Ôr_•¤type¥start£end¢id¤init²VariableDeclaratorÍ.ÍRMªIdentifierÍ.Í1£tplR®CallExpressionÍ4ÍRS°MemberExpressionÍ4ÍEMªIdentifierÍ4Í@¬PromptLoaderMªIdentifierÍAÍE¤loadÂÂ‘]§LiteralÍFÍQ©pcb_route«'pcb_route'Â¥constW«IfStatementÍ]ÍÜX±LogicalExpressionÍaÍ‡Y¯UnaryExpressionÍaÍl¡!ÃS°MemberExpressionÍbÍlMªIdentifierÍbÍe£tplMªIdentifierÍfÍl¦systemÂÂ¢||X°BinaryExpressionÍpÍ‡S°MemberExpressionÍpÍS°MemberExpressionÍpÍzMªIdentifierÍpÍs£tplMªIdentifierÍtÍz¦systemÂÂMªIdentifierÍ{Í¦lengthÂÂ£===]§LiteralÍ†Í‡ ¡0N®BlockStatementÍ‰ÍÜ‘Z¯ReturnStatementÍ˜ÍÑ[°ObjectExpressionÍŸÍĞ’\¨PropertyÍ¡ÍªÂÂÂMªIdentifierÍ¡Í£¢ok]§LiteralÍ¥ÍªÂ¥false¤init\¨PropertyÍ¬ÍÎÂÂÂMªIdentifierÍ¬Í²¦reason]§LiteralÍ´ÍÎ¸pcb_route prompt missingº'pcb_route prompt missing'¤initÀ^³VariableDeclarationÍæÍT‘_²VariableDeclaratorÍìÍSMªIdentifierÍìÍöªnetSummaryR®CallExpressionÍùÍSS°MemberExpressionÍùÍNR®CallExpressionÍùÍIS°MemberExpressionÍùÍS°MemberExpressionÍùÍS°MemberExpressionÍùÍMªIdentifierÍùÍû¢bbMªIdentifierÍüÍ§netPlanÂÂMªIdentifierÍÍ¤netsÂÂMªIdentifierÍ	Í£mapÂÂ‘P·ArrowFunctionExpressionÍÍHÀÃÂÂ‘MªIdentifierÍÍ¡nT¯TemplateLiteralÍÍH”S°MemberExpressionÍÍMªIdentifierÍÍ¡nMªIdentifierÍÍ§netNameÂÂS°MemberExpressionÍ"Í(MªIdentifierÍ"Í#¡nMªIdentifierÍ$Í(¤kindÂÂS°MemberExpressionÍ,Í7MªIdentifierÍ,Í-¡nMªIdentifierÍ.Í7©routeModeÂÂS°MemberExpressionÍ<ÍFMªIdentifierÍ<Í=¡nMªIdentifierÍ>ÍF¨priorityÂÂ•U¯TemplateElementÍÍV  ÂU¯TemplateElementÍÍ V¡:¡:ÂU¯TemplateElementÍ)Í*V¡/¡/ÂU¯TemplateElementÍ8Í:V¢/p¢/pÂU¯TemplateElementÍGÍGV  ÃÂMªIdentifierÍJÍN¤joinÂÂ‘]§LiteralÍOÍR¡,£','Â¥const^³VariableDeclarationÍ^Í­‘_²VariableDeclaratorÍbÍ¬MªIdentifierÍbÍn¬boardSummaryR®CallExpressionÍqÍ¬S°MemberExpressionÍqÍ“MªIdentifierÍqÍ°PcbDocSummarizerMªIdentifierÍ‚Í“±boardDiagSnapshotÂÂ’S°MemberExpressionÍ”ÍMªIdentifierÍ”Í–¢bbMªIdentifierÍ—Í§workDocÂÂS°MemberExpressionÍ Í«MªIdentifierÍ Í¢¢bbMªIdentifierÍ£Í«¨geometryÂÂÂ£letW«IfStatementÍ·Í<X±LogicalExpressionÍ»ÍäMªIdentifierÍ»ÍÈ­priorFailHint¢&&X°BinaryExpressionÍÌÍäS°MemberExpressionÍÌÍàMªIdentifierÍÌÍÙ­priorFailHintMªIdentifierÍÚÍà¦lengthÂÂ¡>]§LiteralÍãÍä ¡0N®BlockStatementÍæÍ<‘Q³ExpressionStatementÍõÍ1Ôr`–¤type¥start£end¨operator¤left¥right´AssignmentExpressionÍõÍ0¡=MªIdentifierÍõÍ¬boardSummaryT¯TemplateLiteralÍÍ0’MªIdentifierÍÍ¬boardSummaryMªIdentifierÍ!Í.­priorFailHint“U¯TemplateElementÍÍV  ÂU¯TemplateElementÍÍV½\nã€ä¸Šè½®å¤±è´¥é¡»ä¿®æ­£ã€‘¼
-ã€ä¸Šè½®å¤±è´¥é¡»ä¿®æ­£ã€‘ÂU¯TemplateElementÍ/Í/V  ÃÀ^³VariableDeclarationÍFÍM‘_²VariableDeclaratorÍLÍLMªIdentifierÍLÍR¦promptR®CallExpressionÍUÍLS°MemberExpressionÍUÍhMªIdentifierÍUÍa¬PromptLoaderMªIdentifierÍbÍh¦renderÂÂ’MªIdentifierÍiÍl£tplÔra”¤type¥start£end¨elements¯ArrayExpressionÍnÍK“[°ObjectExpressionÍ}ÍÇ’\¨PropertyÍÍ“ÂÂÂMªIdentifierÍÍ‚£key]§LiteralÍ„Í“­copper_layers¯'copper_layers'¤init\¨PropertyÍ•ÍÅÂÂÂMªIdentifierÍ•Íš¥valueR®CallExpressionÍœÍÅS°MemberExpressionÍœÍ¹MªIdentifierÍœÍ¬°PcbDocSummarizerMªIdentifierÍ­Í¹¬copperLayersÂÂ‘S°MemberExpressionÍºÍÄMªIdentifierÍºÍ¼¢bbMªIdentifierÍ½ÍÄ§workDocÂÂÂ¤init[°ObjectExpressionÍÖÍ’\¨PropertyÍØÍïÂÂÂMªIdentifierÍØÍÛ£key]§LiteralÍİÍï°net_plan_summary²'net_plan_summary'¤init\¨PropertyÍñÍÂÂÂMªIdentifierÍñÍö¥valueMªIdentifierÍøÍªnetSummary¤init[°ObjectExpressionÍÍ@’\¨PropertyÍÍ)ÂÂÂMªIdentifierÍÍ£key]§LiteralÍÍ)­board_summary¯'board_summary'¤init\¨PropertyÍ+Í>ÂÂÂMªIdentifierÍ+Í0¥valueMªIdentifierÍ2Í>¬boardSummary¤initÂ¥const^³VariableDeclarationÍWÍ©‘_²VariableDeclaratorÍ]Í¨MªIdentifierÍ]Íc¦apiResZ¯AwaitExpressionÍfÍ¨R®CallExpressionÍlÍ¨S°MemberExpressionÍlÍtMªIdentifierÍlÍo£apiMªIdentifierÍpÍt¤chatÂÂ’MªIdentifierÍuÍ{¦promptR®CallExpressionÍ}Í§MªIdentifierÍ}Í°pcbStageChatOpts’S°MemberExpressionÍÍ MªIdentifierÍÍ¢bbMªIdentifierÍ‘Í ¯enableReasoningÂÂ]§LiteralÍ¢Í¦Ë?©™™™™™š¤0.05ÂÂ¥constW«IfStatementÍ³Í:X±LogicalExpressionÍ·ÍÖY¯UnaryExpressionÍ·ÍÆ¡!ÃS°MemberExpressionÍ¸ÍÆMªIdentifierÍ¸Í¾¦apiResMªIdentifierÍ¿ÍÆ§successÂÂ¢||Y¯UnaryExpressionÍÊÍÖ¡!ÃS°MemberExpressionÍËÍÖMªIdentifierÍËÍÑ¦apiResMªIdentifierÍÒÍÖ¤dataÂÂN®BlockStatementÍØÍ:‘Z¯ReturnStatementÍçÍ/[°ObjectExpressionÍîÍ.’\¨PropertyÍğÍùÂÂÂMªIdentifierÍğÍò¢ok]§LiteralÍôÍùÂ¥false¤init\¨PropertyÍûÍ,ÂÂÂMªIdentifierÍûÍ¦reasonX±LogicalExpressionÍÍ,S°MemberExpressionÍÍMªIdentifierÍÍ	¦apiResMªIdentifierÍ
-Í¥errorÂÂ¢??]§LiteralÍÍ,·route_policy LLM failed¹'route_policy LLM failed'¤initÀQ³ExpressionStatementÍDÍV`´AssignmentExpressionÍDÍU¡=S°MemberExpressionÍDÍNMªIdentifierÍDÍF¢bbMªIdentifierÍGÍN§usedLlmÂÂ]§LiteralÍQÍUÃ¤true^³VariableDeclarationÍ`Í¡‘_²VariableDeclaratorÍfÍ MªIdentifierÍfÍl¦impureR®CallExpressionÍoÍ MªIdentifierÍoÍƒ´pcbImpureReplyReason’]§LiteralÍ„Í’¬route_policy®'route_policy'S°MemberExpressionÍ”ÍŸMªIdentifierÍ”Íš¦apiResMªIdentifierÍ›ÍŸ¤dataÂÂÂ¥constW«IfStatementÍ«ÍöMªIdentifierÍ¯Íµ¦impureN®BlockStatementÍ·Íö‘Z¯ReturnStatementÍÆÍë[°ObjectExpressionÍÍÍê’\¨PropertyÍÏÍØÂÂÂMªIdentifierÍÏÍÑ¢ok]§LiteralÍÓÍØÂ¥false¤init\¨PropertyÍÚÍèÂÂÂMªIdentifierÍÚÍà¦reasonMªIdentifierÍâÍè¦impure¤initÀ^³VariableDeclarationÍ Í0‘_²VariableDeclaratorÍÍ/MªIdentifierÍÍ¦policyR®CallExpressionÍÍ/MªIdentifierÍÍ"³parsePcbRoutePolicy‘S°MemberExpressionÍ#Í.MªIdentifierÍ#Í)¦apiResMªIdentifierÍ*Í.¤dataÂÂÂ¥constW«IfStatementÍ:ÍÓY¯UnaryExpressionÍ>ÍE¡!ÃMªIdentifierÍ?ÍE¦policyN®BlockStatementÍGÍÓ‘Z¯ReturnStatementÍVÍÈ[°ObjectExpressionÍ]ÍÇ’\¨PropertyÍ_ÍhÂÂÂMªIdentifierÍ_Ía¢ok]§LiteralÍcÍhÂ¥false¤init\¨PropertyÍjÍÅÂÂÂMªIdentifierÍjÍp¦reasonT¯TemplateLiteralÍrÍÅ‘R®CallExpressionÍ”ÍÂS°MemberExpressionÍ”ÍµMªIdentifierÍ”Í ¬PromptLoaderMªIdentifierÍ¡Íµ´describeJsonImpurityÂÂ‘S°MemberExpressionÍ¶ÍÁMªIdentifierÍ¶Í¼¦apiResMªIdentifierÍ½ÍÁ¤dataÂÂÂ’U¯TemplateElementÍsÍ’V¿route_policy LLM JSON invalid (¿route_policy LLM JSON invalid (ÂU¯TemplateElementÍÃÍÄV¡)¡)Ã¤initÀ^³VariableDeclarationÍİÍ	‘_²VariableDeclaratorÍãÍ	MªIdentifierÍãÍé¦copperR®CallExpressionÍìÍ	MªIdentifierÍìÍ	µcopperLayersFromStack‘S°MemberExpressionÍ	Í	S°MemberExpressionÍ	Í	MªIdentifierÍ	Í	¢bbMªIdentifierÍ	Í	§workDocÂÂMªIdentifierÍ	Í	ªlayerStackÂÂÂ¥const^³VariableDeclarationÍ	#Í	\‘_²VariableDeclaratorÍ	)Í	[MªIdentifierÍ	)Í	0§missingR®CallExpressionÍ	3Í	[MªIdentifierÍ	3Í	K¸policyCoversCopperLayers’MªIdentifierÍ	LÍ	R¦policyMªIdentifierÍ	TÍ	Z¦copperÂ¥constW«IfStatementÍ	fÍ	áX°BinaryExpressionÍ	jÍ	|S°MemberExpressionÍ	jÍ	xMªIdentifierÍ	jÍ	q§missingMªIdentifierÍ	rÍ	x¦lengthÂÂ¡>]§LiteralÍ	{Í	| ¡0N®BlockStatementÍ	~Í	á‘Z¯ReturnStatementÍ	Í	Ö[°ObjectExpressionÍ	”Í	Õ’\¨PropertyÍ	–Í	ŸÂÂÂMªIdentifierÍ	–Í	˜¢ok]§LiteralÍ	šÍ	ŸÂ¥false¤init\¨PropertyÍ	¡Í	ÓÂÂÂMªIdentifierÍ	¡Í	§¦reasonT¯TemplateLiteralÍ	©Í	Ó‘R®CallExpressionÍ	ÀÍ	ÑS°MemberExpressionÍ	ÀÍ	ÌMªIdentifierÍ	ÀÍ	Ç§missingMªIdentifierÍ	ÈÍ	Ì¤joinÂÂ‘]§LiteralÍ	ÍÍ	Ğ¡,£','Â’U¯TemplateElementÍ	ªÍ	¾V´layerRoles missing: ´layerRoles missing: ÂU¯TemplateElementÍ	ÒÍ	ÒV  Ã¤initÀ^³VariableDeclarationÍ	ëÍ
-&‘_²VariableDeclaratorÍ	ñÍ
-%MªIdentifierÍ	ñÍ	ô£semR®CallExpressionÍ	÷Í
-%MªIdentifierÍ	÷Í
-ºvalidateLayerRoleSemantics’MªIdentifierÍ
-Í
-¦policyS°MemberExpressionÍ
-Í
-$MªIdentifierÍ
-Í
-¢bbMªIdentifierÍ
-Í
-$§netPlanÂÂÂ¥constW«IfStatementÍ
-0Í
-¥X°BinaryExpressionÍ
-4Í
-BS°MemberExpressionÍ
-4Í
->MªIdentifierÍ
-4Í
-7£semMªIdentifierÍ
-8Í
->¦lengthÂÂ¡>]§LiteralÍ
-AÍ
-B ¡0N®BlockStatementÍ
-DÍ
-¥‘Z¯ReturnStatementÍ
-SÍ
-š[°ObjectExpressionÍ
-ZÍ
-™’\¨PropertyÍ
-\Í
-eÂÂÂMªIdentifierÍ
-\Í
-^¢ok]§LiteralÍ
-`Í
-eÂ¥false¤init\¨PropertyÍ
-gÍ
-—ÂÂÂMªIdentifierÍ
-gÍ
-m¦reasonT¯TemplateLiteralÍ
-oÍ
-—‘R®CallExpressionÍ
-‡Í
-•S°MemberExpressionÍ
-‡Í
-MªIdentifierÍ
-‡Í
-Š£semMªIdentifierÍ
-‹Í
-¤joinÂÂ‘]§LiteralÍ
-Í
-”¢; ¤'; 'Â’U¯TemplateElementÍ
-pÍ
-…VµlayerRoles semantic: µlayerRoles semantic: ÂU¯TemplateElementÍ
-–Í
-–V  Ã¤initÀQ³ExpressionStatementÍ
-¯Í
-Ç`´AssignmentExpressionÍ
-¯Í
-Æ¡=S°MemberExpressionÍ
-¯Í
-½MªIdentifierÍ
-¯Í
-±¢bbMªIdentifierÍ
-²Í
-½«routePolicyÂÂMªIdentifierÍ
-ÀÍ
-Æ¦policyQ³ExpressionStatementÍ
-ÑÍ
-îR®CallExpressionÍ
-ÑÍ
-íS°MemberExpressionÍ
-ÑÍ
-İMªIdentifierÍ
-ÑÍ
-Ó¢bbMªIdentifierÍ
-ÔÍ
-İ©markStageÂÂ‘]§LiteralÍ
-ŞÍ
-ì¬route_policy®'route_policy'ÂQ³ExpressionStatementÍ
-øÍOR®CallExpressionÍ
-øÍNS°MemberExpressionÍ
-øÍMªIdentifierÍ
-øÍ
-ş¦LoggerMªIdentifierÍ
-ÿÍ¤infoÂÂ’MªIdentifierÍÍ¯INSTR_TRACE_TAGT¯TemplateLiteralÍÍM‘S°MemberExpressionÍ>ÍKMªIdentifierÍ>ÍD¦copperMªIdentifierÍEÍK¦lengthÂÂ’U¯TemplateElementÍÍ<VÙ&[AI_PCB] stage=route_policy ok layers=Ù&[AI_PCB] stage=route_policy ok layers=ÂU¯TemplateElementÍLÍLV  ÃÂZ¯ReturnStatementÍYÍ{[°ObjectExpressionÍ`Íz’\¨PropertyÍbÍjÂÂÂMªIdentifierÍbÍd¢ok]§LiteralÍfÍjÃ¤true¤init\¨PropertyÍlÍxÂÂÂMªIdentifierÍlÍr¦reason]§LiteralÍtÍx¢ok¤'ok'¤initÀ–Ôrb•¤type¥start£endªspecifiers¦source±ImportDeclarationÌ^ÌÜ•Ôrc•¤type¥start£end¨imported¥local¯ImportSpecifierÌgÌmMªIdentifierÌgÌm¦LoggerMªIdentifierÌgÌm¦Loggerc¯ImportSpecifierÌoÌ~MªIdentifierÌoÌ~¯INSTR_TRACE_TAGMªIdentifierÌoÌ~¯INSTR_TRACE_TAGc¯ImportSpecifierÌ€Ì•MªIdentifierÌ€Ì•µcopperLayersFromStackMªIdentifierÌ€Ì•µcopperLayersFromStackc¯ImportSpecifierÌ—Ì¯MªIdentifierÌ—Ì¯¸policyCoversCopperLayersMªIdentifierÌ—Ì¯¸policyCoversCopperLayersc¯ImportSpecifierÌ±ÌËMªIdentifierÌ±ÌËºvalidateLayerRoleSemanticsMªIdentifierÌ±ÌËºvalidateLayerRoleSemantics]§LiteralÌÓÌÛ¦common¨'common'b±ImportDeclarationÌŞÍ‘c¯ImportSpecifierÌçÌóMªIdentifierÌçÌó¬PromptLoaderMªIdentifierÌçÌó¬PromptLoader]§LiteralÌûÍº../../prompts/PromptLoader¼'../../prompts/PromptLoader'b±ImportDeclarationÍÍP‘c¯ImportSpecifierÍ#Í3MªIdentifierÍ#Í3°PcbDocSummarizerMªIdentifierÍ#Í3°PcbDocSummarizer]§LiteralÍ;ÍO²./PcbDocSummarizer´'./PcbDocSummarizer'b±ImportDeclarationÍRÍˆ‘c¯ImportSpecifierÍ[ÍnMªIdentifierÍ[Ín³parsePcbRoutePolicyMªIdentifierÍ[Ín³parsePcbRoutePolicy]§LiteralÍvÍ‡¯./PcbLlmParsers±'./PcbLlmParsers'b±ImportDeclarationÍŠÍ»‘c¯ImportSpecifierÍ“Í£MªIdentifierÍ“Í£°pcbStageChatOptsMªIdentifierÍ“Í£°pcbStageChatOpts]§LiteralÍ«Íº­./PcbChatOpts¯'./PcbChatOpts'b±ImportDeclarationÍ½Í÷‘c¯ImportSpecifierÍÆÍÚMªIdentifierÍÆÍÚ´pcbImpureReplyReasonMªIdentifierÍÆÍÚ´pcbImpureReplyReason]§LiteralÍâÍö²./PcbLlmReplyGuard´'./PcbLlmReplyGuard'

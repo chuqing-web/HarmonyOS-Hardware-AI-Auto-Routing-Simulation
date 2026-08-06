@@ -16,7 +16,6 @@ interface PcbVerticalToolbar_Params {
     onUpdatePcb?: () => void;
     onDrc?: () => void;
     onAutoRoute?: () => void;
-    onAiRoute?: () => void;
     onCopy?: () => void;
     onPaste?: () => void;
 }
@@ -45,7 +44,6 @@ export class PcbVerticalToolbar extends ViewPU {
         this.onUpdatePcb = () => { };
         this.onDrc = () => { };
         this.onAutoRoute = () => { };
-        this.onAiRoute = () => { };
         this.onCopy = () => { };
         this.onPaste = () => { };
         this.setInitiallyProvidedValue(params);
@@ -90,9 +88,6 @@ export class PcbVerticalToolbar extends ViewPU {
         }
         if (params.onAutoRoute !== undefined) {
             this.onAutoRoute = params.onAutoRoute;
-        }
-        if (params.onAiRoute !== undefined) {
-            this.onAiRoute = params.onAiRoute;
         }
         if (params.onCopy !== undefined) {
             this.onCopy = params.onCopy;
@@ -149,7 +144,6 @@ export class PcbVerticalToolbar extends ViewPU {
     private onUpdatePcb: () => void;
     private onDrc: () => void;
     private onAutoRoute: () => void;
-    private onAiRoute: () => void;
     private onCopy: () => void;
     private onPaste: () => void;
     initialRender() {
@@ -178,7 +172,7 @@ export class PcbVerticalToolbar extends ViewPU {
                         btnSize: 32,
                         active: this.toolMode === PcbToolMode.SELECT,
                         onAction: () => { this.onToolSelect(PcbToolMode.SELECT); }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbVerticalToolbar.ets", line: 33, col: 9 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbVerticalToolbar.ets", line: 32, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -213,7 +207,7 @@ export class PcbVerticalToolbar extends ViewPU {
                         btnSize: 32,
                         active: this.toolMode === PcbToolMode.ROUTE,
                         onAction: () => { this.onToolSelect(PcbToolMode.ROUTE); }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbVerticalToolbar.ets", line: 41, col: 9 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbVerticalToolbar.ets", line: 40, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -248,7 +242,7 @@ export class PcbVerticalToolbar extends ViewPU {
                         btnSize: 32,
                         active: this.toolMode === PcbToolMode.VIA,
                         onAction: () => { this.onToolSelect(PcbToolMode.VIA); }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbVerticalToolbar.ets", line: 49, col: 9 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbVerticalToolbar.ets", line: 48, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -283,7 +277,7 @@ export class PcbVerticalToolbar extends ViewPU {
                         btnSize: 32,
                         active: this.toolMode === PcbToolMode.ZONE_POLY,
                         onAction: () => { this.onToolSelect(PcbToolMode.ZONE_POLY); }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbVerticalToolbar.ets", line: 57, col: 9 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbVerticalToolbar.ets", line: 56, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -318,7 +312,7 @@ export class PcbVerticalToolbar extends ViewPU {
                         btnSize: 32,
                         active: this.toolMode === PcbToolMode.POUR,
                         onAction: () => { this.onToolSelect(PcbToolMode.POUR); }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbVerticalToolbar.ets", line: 65, col: 9 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbVerticalToolbar.ets", line: 64, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -353,7 +347,7 @@ export class PcbVerticalToolbar extends ViewPU {
                         btnSize: 32,
                         active: this.toolMode === PcbToolMode.OUTLINE,
                         onAction: () => { this.onToolSelect(PcbToolMode.OUTLINE); }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbVerticalToolbar.ets", line: 73, col: 9 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbVerticalToolbar.ets", line: 72, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -388,7 +382,7 @@ export class PcbVerticalToolbar extends ViewPU {
                         btnSize: 32,
                         active: this.toolMode === PcbToolMode.MEASURE,
                         onAction: () => { this.onToolSelect(PcbToolMode.MEASURE); }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbVerticalToolbar.ets", line: 81, col: 9 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbVerticalToolbar.ets", line: 80, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -423,7 +417,7 @@ export class PcbVerticalToolbar extends ViewPU {
                         btnSize: 32,
                         active: this.toolMode === PcbToolMode.PLACE_FP,
                         onAction: () => { this.onToolSelect(PcbToolMode.PLACE_FP); }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbVerticalToolbar.ets", line: 89, col: 9 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbVerticalToolbar.ets", line: 88, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -463,7 +457,7 @@ export class PcbVerticalToolbar extends ViewPU {
                         showLabel: false,
                         btnSize: 32,
                         onAction: () => { this.onRotate(); }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbVerticalToolbar.ets", line: 100, col: 9 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbVerticalToolbar.ets", line: 99, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -495,7 +489,7 @@ export class PcbVerticalToolbar extends ViewPU {
                         showLabel: false,
                         btnSize: 32,
                         onAction: () => { this.onFlip(); }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbVerticalToolbar.ets", line: 107, col: 9 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbVerticalToolbar.ets", line: 106, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -527,7 +521,7 @@ export class PcbVerticalToolbar extends ViewPU {
                         showLabel: false,
                         btnSize: 32,
                         onAction: () => { this.onDelete(); }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbVerticalToolbar.ets", line: 114, col: 9 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbVerticalToolbar.ets", line: 113, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -559,7 +553,7 @@ export class PcbVerticalToolbar extends ViewPU {
                         showLabel: false,
                         btnSize: 32,
                         onAction: () => { this.onUndo(); }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbVerticalToolbar.ets", line: 121, col: 9 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbVerticalToolbar.ets", line: 120, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -591,7 +585,7 @@ export class PcbVerticalToolbar extends ViewPU {
                         showLabel: false,
                         btnSize: 32,
                         onAction: () => { this.onRedo(); }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbVerticalToolbar.ets", line: 128, col: 9 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbVerticalToolbar.ets", line: 127, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -623,7 +617,7 @@ export class PcbVerticalToolbar extends ViewPU {
                         showLabel: false,
                         btnSize: 32,
                         onAction: () => { this.onCopy(); }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbVerticalToolbar.ets", line: 135, col: 9 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbVerticalToolbar.ets", line: 134, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -655,7 +649,7 @@ export class PcbVerticalToolbar extends ViewPU {
                         showLabel: false,
                         btnSize: 32,
                         onAction: () => { this.onPaste(); }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbVerticalToolbar.ets", line: 142, col: 9 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbVerticalToolbar.ets", line: 141, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -693,7 +687,7 @@ export class PcbVerticalToolbar extends ViewPU {
                         showLabel: false,
                         btnSize: 32,
                         onAction: () => { this.onFit(); }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbVerticalToolbar.ets", line: 152, col: 9 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbVerticalToolbar.ets", line: 151, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -726,7 +720,7 @@ export class PcbVerticalToolbar extends ViewPU {
                         btnSize: 32,
                         active: this.gridActive,
                         onAction: () => { this.onToggleGrid(); }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbVerticalToolbar.ets", line: 159, col: 9 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbVerticalToolbar.ets", line: 158, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -760,7 +754,7 @@ export class PcbVerticalToolbar extends ViewPU {
                         showLabel: false,
                         btnSize: 32,
                         onAction: () => { this.onUpdatePcb(); }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbVerticalToolbar.ets", line: 167, col: 9 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbVerticalToolbar.ets", line: 166, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -792,7 +786,7 @@ export class PcbVerticalToolbar extends ViewPU {
                         showLabel: false,
                         btnSize: 32,
                         onAction: () => { this.onDrc(); }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbVerticalToolbar.ets", line: 174, col: 9 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbVerticalToolbar.ets", line: 173, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -824,7 +818,7 @@ export class PcbVerticalToolbar extends ViewPU {
                         showLabel: false,
                         btnSize: 32,
                         onAction: () => { this.onAutoRoute(); }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbVerticalToolbar.ets", line: 181, col: 9 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbVerticalToolbar.ets", line: 180, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -841,38 +835,6 @@ export class PcbVerticalToolbar extends ViewPU {
                     this.updateStateVarsOfChildByElmtId(elmtId, {
                         iconName: ProteusIconName.WIRE,
                         tooltip: '自动布线 (F8)',
-                        showLabel: false,
-                        btnSize: 32
-                    });
-                }
-            }, { name: "ProteusToolButton" });
-        }
-        {
-            this.observeComponentCreation2((elmtId, isInitialRender) => {
-                if (isInitialRender) {
-                    let componentCall = new ProteusToolButton(this, {
-                        iconName: ProteusIconName.AI_ROUTE,
-                        tooltip: 'AI 布线面板 (F9)',
-                        showLabel: false,
-                        btnSize: 32,
-                        onAction: () => { this.onAiRoute(); }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/pcb/PcbVerticalToolbar.ets", line: 188, col: 9 });
-                    ViewPU.create(componentCall);
-                    let paramsLambda = () => {
-                        return {
-                            iconName: ProteusIconName.AI_ROUTE,
-                            tooltip: 'AI 布线面板 (F9)',
-                            showLabel: false,
-                            btnSize: 32,
-                            onAction: () => { this.onAiRoute(); }
-                        };
-                    };
-                    componentCall.paramsGenerator_ = paramsLambda;
-                }
-                else {
-                    this.updateStateVarsOfChildByElmtId(elmtId, {
-                        iconName: ProteusIconName.AI_ROUTE,
-                        tooltip: 'AI 布线面板 (F9)',
                         showLabel: false,
                         btnSize: 32
                     });

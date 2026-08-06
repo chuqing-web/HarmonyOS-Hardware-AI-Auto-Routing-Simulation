@@ -1,445 +1,0 @@
-Ôr@Ÿªassertions¤code´customTransformCache¬dependencies¢id¤meta±moduleSideEffects¬originalCode±originalSourcemap«resolvedIds®sourcemapChainµsyntheticNamedExportsµtransformDependencies®transformFiles¨cacheAstÔrAÚˆ/**
- * PcbNetPlanAgent â€” LLM ç½‘ç»œç­–ç•¥ï¼ˆç¦æ­¢æœ¬åœ°å¯å‘å¼å†’å……ï¼‰
- * è¦†ç›–ç‡ï¼špadsâ‰¥2 çš„ç½‘å¿…é¡»å…¨éƒ¨æœ‰æ¡ç›®ï¼›power/gnd ç¼ºå¤±ç¡¬å¤±è´¥
- */
-import { Logger, INSTR_TRACE_TAG } from 'common';
-import { PromptLoader } from '../../prompts/PromptLoader';
-import { PcbDocSummarizer } from './PcbDocSummarizer';
-import { parsePcbNetPlan } from './PcbLlmParsers';
-import { pcbStageChatOpts } from './PcbChatOpts';
-import { pcbImpureReplyReason } from './PcbLlmReplyGuard';
-export class PcbNetPlanAgent {
-    async run(bb, api, priorFailHint) {
-        Logger.info(INSTR_TRACE_TAG, `[AI_PCB] stage=net_plan begin runId=${bb.runId}`);
-        if (!bb.workDoc) {
-            return { ok: false, reason: 'no work doc' };
-        }
-        const tpl = PromptLoader.load('pcb_net_plan');
-        if (!tpl.system || tpl.system.length === 0) {
-            return { ok: false, reason: 'pcb_net_plan prompt missing' };
-        }
-        let netList = PcbDocSummarizer.netList(bb.workDoc);
-        if (priorFailHint && priorFailHint.length > 0) {
-            netList = `${netList}\nã€ä¸Šè½®å¤±è´¥é¡»ä¿®æ­£ã€‘${priorFailHint}`;
-        }
-        const padSummary = `${PcbDocSummarizer.padSummary(bb.workDoc)}\n` +
-            `ã€ç„Šç›˜è¯¦è¡¨ã€‘\n${PcbDocSummarizer.padDetailSummary(bb.workDoc, 48)}`;
-        const prompt = PromptLoader.render(tpl, [
-            { key: 'copper_layers', value: PcbDocSummarizer.copperLayers(bb.workDoc) },
-            { key: 'net_list', value: netList },
-            { key: 'pad_summary', value: padSummary }
-        ]);
-        const apiRes = await api.chat(prompt, pcbStageChatOpts(bb.enableReasoning, 0.05));
-        if (!apiRes.success || !apiRes.data) {
-            return { ok: false, reason: apiRes.error ?? 'net_plan LLM failed' };
-        }
-        bb.usedLlm = true;
-        const impure = pcbImpureReplyReason('net_plan', apiRes.data);
-        if (impure) {
-            return { ok: false, reason: impure };
-        }
-        const plan = parsePcbNetPlan(apiRes.data);
-        if (!plan) {
-            return { ok: false, reason: `net_plan LLM JSON invalid (${PromptLoader.describeJsonImpurity(apiRes.data)})` };
-        }
-        const padCountByNet = new Map();
-        for (const fp of bb.workDoc.footprints) {
-            for (const pad of fp.pads) {
-                const nid = pad.netId ?? '';
-                if (nid.length === 0) {
-                    continue;
-                }
-                padCountByNet.set(nid, (padCountByNet.get(nid) ?? 0) + 1);
-            }
-        }
-        for (let i = 0; i < plan.nets.length; i++) {
-            const e = plan.nets[i];
-            const byId = bb.workDoc.nets.find(n => n.id === e.netId);
-            if (byId) {
-                e.netId = byId.id;
-                e.netName = byId.name;
-                continue;
-            }
-            const byName = bb.workDoc.nets.find(n => n.name === e.netName || n.name === e.netId);
-            if (byName) {
-                e.netId = byName.id;
-                e.netName = byName.name;
-            }
-        }
-        const covered = new Set();
-        for (let i = 0; i < plan.nets.length; i++) {
-            if (plan.nets[i].netId.length > 0) {
-                covered.add(plan.nets[i].netId);
-            }
-        }
-        const mustRoute = [];
-        const missingPowerGnd = [];
-        for (let i = 0; i < bb.workDoc.nets.length; i++) {
-            const n = bb.workDoc.nets[i];
-            const pads = padCountByNet.get(n.id) ?? 0;
-            if (pads < 2) {
-                continue;
-            }
-            mustRoute.push(n.id);
-            if (!covered.has(n.id)) {
-                const uname = n.name.toUpperCase();
-                if (uname === 'GND' || uname === 'VSS' || uname.indexOf('GND') >= 0 ||
-                    uname === 'VCC' || uname === 'VDD' || uname === 'VOUT' || uname.indexOf('VCC') >= 0) {
-                    missingPowerGnd.push(n.name);
-                }
-            }
-        }
-        if (missingPowerGnd.length > 0) {
-            return {
-                ok: false,
-                reason: `net_plan missing power/gnd: ${missingPowerGnd.join(',')}`
-            };
-        }
-        let missingMust = 0;
-        for (let i = 0; i < mustRoute.length; i++) {
-            if (!covered.has(mustRoute[i])) {
-                missingMust++;
-            }
-        }
-        if (mustRoute.length > 0 && missingMust > 0 && missingMust / mustRoute.length > 0.25) {
-            return {
-                ok: false,
-                reason: `net_plan coverage low: missing ${missingMust}/${mustRoute.length} routable nets`
-            };
-        }
-        if (missingMust > 0) {
-            Logger.warn(INSTR_TRACE_TAG, `[AI_PCB] net_plan soft-miss ${missingMust}/${mustRoute.length} routable nets`);
-        }
-        // LLM å‡ ä½•æ—  zone é˜¶æ®µï¼šforcePour ä¸€å¾‹æŒ‰ forceTrackï¼ˆå®½æ€»çº¿äº¦ç”±æŠ˜çº¿è¡¨è¾¾ï¼‰
-        let pourCount = 0;
-        for (let i = 0; i < plan.nets.length; i++) {
-            if (plan.nets[i].routeMode === 'forcePour') {
-                pourCount++;
-            }
-        }
-        if (pourCount > 0) {
-            for (let i = 0; i < plan.nets.length; i++) {
-                const e = plan.nets[i];
-                if (e.routeMode !== 'forcePour') {
-                    continue;
-                }
-                Logger.warn(INSTR_TRACE_TAG, `[AI_PCB] net_plan demote ${e.netName} forcePourâ†’forceTrack (no zone stage)`);
-                e.routeMode = 'forceTrack';
-                if (!e.layerHint || e.layerHint.length === 0) {
-                    e.layerHint = e.kind === 'gnd' ? 'stub' :
-                        (e.kind === 'power' ? 'signal_h' : 'signal_h');
-                }
-                if ((e.kind === 'gnd' || e.kind === 'power') && e.busYOffset === undefined) {
-                    e.busYOffset = e.kind === 'gnd' ? -60 : 60;
-                }
-            }
-        }
-        bb.netPlan = plan;
-        bb.markStage('net_plan');
-        Logger.info(INSTR_TRACE_TAG, `[AI_PCB] stage=net_plan ok nets=${plan.nets.length}`);
-        return { ok: true, reason: 'ok' };
-    }
-}
-//# sourceMappingURL=PcbNetPlanAgent.js.mapÂ–Ù-C:\Projects\ElecDraw_Harmony\common\Index.etsÙUC:\Projects\ElecDraw_Harmony\features\ai_engine\src\main\ets\prompts\PromptLoader.etsÙgC:\Projects\ElecDraw_Harmony\features\ai_engine\src\main\ets\algorithms\pcb_agents\PcbDocSummarizer.etsÙdC:\Projects\ElecDraw_Harmony\features\ai_engine\src\main\ets\algorithms\pcb_agents\PcbLlmParsers.etsÙbC:\Projects\ElecDraw_Harmony\features\ai_engine\src\main\ets\algorithms\pcb_agents\PcbChatOpts.etsÙgC:\Projects\ElecDraw_Harmony\features\ai_engine\src\main\ets\algorithms\pcb_agents\PcbLlmReplyGuard.etsÙfC:\Projects\ElecDraw_Harmony\features\ai_engine\src\main\ets\algorithms\pcb_agents\PcbNetPlanAgent.etsÔrB›ªmoduleName±isLocalDependency¯isNodeEntryFile§pkgPath±belongProjectPath§pkgNameªpkgVersion±dependencyPkgInfo¯hostModulesInfo°belongModulePath¬shouldEmitJs©ai_engineÃÂÙ/C:\Projects\ElecDraw_Harmony\features\ai_engine¼C:\Projects\ElecDraw_Harmony©ai_engine¥1.0.0ÔrC’§pkgNameªpkgVersion©ai_engine¥1.0.0‘ÔrD’²hostDependencyName®hostModuleName±./PcbNetPlanAgent©ai_engineÙ/C:\Projects\ElecDraw_Harmony\features\ai_engineÃÃÚ&/**
- * PcbNetPlanAgent â€” LLM ç½‘ç»œç­–ç•¥ï¼ˆç¦æ­¢æœ¬åœ°å¯å‘å¼å†’å……ï¼‰
- * è¦†ç›–ç‡ï¼špadsâ‰¥2 çš„ç½‘å¿…é¡»å…¨éƒ¨æœ‰æ¡ç›®ï¼›power/gnd ç¼ºå¤±ç¡¬å¤±è´¥
- */
-import { Logger, INSTR_TRACE_TAG } from 'common';
-import { IAiApiManager } from 'ai_api_manager';
-import { PromptLoader } from '../../prompts/PromptLoader';
-import { PcbRouteBlackboard } from './PcbRouteBlackboard';
-import { PcbDocSummarizer } from './PcbDocSummarizer';
-import { parsePcbNetPlan } from './PcbLlmParsers';
-import { PcbAgentStageResult } from './PcbPlacementAgent';
-import { pcbStageChatOpts } from './PcbChatOpts';
-import { pcbImpureReplyReason } from './PcbLlmReplyGuard';
-
-export class PcbNetPlanAgent {
-  async run(bb: PcbRouteBlackboard, api: IAiApiManager,
-    priorFailHint?: string): Promise<PcbAgentStageResult> {
-    Logger.info(INSTR_TRACE_TAG, `[AI_PCB] stage=net_plan begin runId=${bb.runId}`);
-    if (!bb.workDoc) {
-      return { ok: false, reason: 'no work doc' };
-    }
-    const tpl = PromptLoader.load('pcb_net_plan');
-    if (!tpl.system || tpl.system.length === 0) {
-      return { ok: false, reason: 'pcb_net_plan prompt missing' };
-    }
-    let netList = PcbDocSummarizer.netList(bb.workDoc);
-    if (priorFailHint && priorFailHint.length > 0) {
-      netList = `${netList}\nã€ä¸Šè½®å¤±è´¥é¡»ä¿®æ­£ã€‘${priorFailHint}`;
-    }
-    const padSummary =
-      `${PcbDocSummarizer.padSummary(bb.workDoc)}\n` +
-      `ã€ç„Šç›˜è¯¦è¡¨ã€‘\n${PcbDocSummarizer.padDetailSummary(bb.workDoc, 48)}`;
-    const prompt = PromptLoader.render(tpl, [
-      { key: 'copper_layers', value: PcbDocSummarizer.copperLayers(bb.workDoc) },
-      { key: 'net_list', value: netList },
-      { key: 'pad_summary', value: padSummary }
-    ]);
-    const apiRes = await api.chat(prompt, pcbStageChatOpts(bb.enableReasoning, 0.05));
-    if (!apiRes.success || !apiRes.data) {
-      return { ok: false, reason: apiRes.error ?? 'net_plan LLM failed' };
-    }
-    bb.usedLlm = true;
-    const impure = pcbImpureReplyReason('net_plan', apiRes.data);
-    if (impure) {
-      return { ok: false, reason: impure };
-    }
-    const plan = parsePcbNetPlan(apiRes.data);
-    if (!plan) {
-      return { ok: false, reason: `net_plan LLM JSON invalid (${PromptLoader.describeJsonImpurity(apiRes.data)})` };
-    }
-
-    const padCountByNet: Map<string, number> = new Map();
-    for (const fp of bb.workDoc.footprints) {
-      for (const pad of fp.pads) {
-        const nid = pad.netId ?? '';
-        if (nid.length === 0) {
-          continue;
-        }
-        padCountByNet.set(nid, (padCountByNet.get(nid) ?? 0) + 1);
-      }
-    }
-
-    for (let i = 0; i < plan.nets.length; i++) {
-      const e = plan.nets[i];
-      const byId = bb.workDoc.nets.find(n => n.id === e.netId);
-      if (byId) {
-        e.netId = byId.id;
-        e.netName = byId.name;
-        continue;
-      }
-      const byName = bb.workDoc.nets.find(n => n.name === e.netName || n.name === e.netId);
-      if (byName) {
-        e.netId = byName.id;
-        e.netName = byName.name;
-      }
-    }
-
-    const covered: Set<string> = new Set();
-    for (let i = 0; i < plan.nets.length; i++) {
-      if (plan.nets[i].netId.length > 0) {
-        covered.add(plan.nets[i].netId);
-      }
-    }
-
-    const mustRoute: string[] = [];
-    const missingPowerGnd: string[] = [];
-    for (let i = 0; i < bb.workDoc.nets.length; i++) {
-      const n = bb.workDoc.nets[i];
-      const pads = padCountByNet.get(n.id) ?? 0;
-      if (pads < 2) {
-        continue;
-      }
-      mustRoute.push(n.id);
-      if (!covered.has(n.id)) {
-        const uname = n.name.toUpperCase();
-        if (uname === 'GND' || uname === 'VSS' || uname.indexOf('GND') >= 0 ||
-          uname === 'VCC' || uname === 'VDD' || uname === 'VOUT' || uname.indexOf('VCC') >= 0) {
-          missingPowerGnd.push(n.name);
-        }
-      }
-    }
-    if (missingPowerGnd.length > 0) {
-      return {
-        ok: false,
-        reason: `net_plan missing power/gnd: ${missingPowerGnd.join(',')}`
-      };
-    }
-    let missingMust = 0;
-    for (let i = 0; i < mustRoute.length; i++) {
-      if (!covered.has(mustRoute[i])) {
-        missingMust++;
-      }
-    }
-    if (mustRoute.length > 0 && missingMust > 0 && missingMust / mustRoute.length > 0.25) {
-      return {
-        ok: false,
-        reason: `net_plan coverage low: missing ${missingMust}/${mustRoute.length} routable nets`
-      };
-    }
-    if (missingMust > 0) {
-      Logger.warn(INSTR_TRACE_TAG,
-        `[AI_PCB] net_plan soft-miss ${missingMust}/${mustRoute.length} routable nets`);
-    }
-
-    // LLM å‡ ä½•æ—  zone é˜¶æ®µï¼šforcePour ä¸€å¾‹æŒ‰ forceTrackï¼ˆå®½æ€»çº¿äº¦ç”±æŠ˜çº¿è¡¨è¾¾ï¼‰
-    let pourCount = 0;
-    for (let i = 0; i < plan.nets.length; i++) {
-      if (plan.nets[i].routeMode === 'forcePour') {
-        pourCount++;
-      }
-    }
-    if (pourCount > 0) {
-      for (let i = 0; i < plan.nets.length; i++) {
-        const e = plan.nets[i];
-        if (e.routeMode !== 'forcePour') {
-          continue;
-        }
-        Logger.warn(INSTR_TRACE_TAG,
-          `[AI_PCB] net_plan demote ${e.netName} forcePourâ†’forceTrack (no zone stage)`);
-        e.routeMode = 'forceTrack';
-        if (!e.layerHint || e.layerHint.length === 0) {
-          e.layerHint = e.kind === 'gnd' ? 'stub' :
-            (e.kind === 'power' ? 'signal_h' : 'signal_h');
-        }
-        if ((e.kind === 'gnd' || e.kind === 'power') && e.busYOffset === undefined) {
-          e.busYOffset = e.kind === 'gnd' ? -60 : 60;
-        }
-      }
-    }
-
-    bb.netPlan = plan;
-    bb.markStage('net_plan');
-    Logger.info(INSTR_TRACE_TAG, `[AI_PCB] stage=net_plan ok nets=${plan.nets.length}`);
-    return { ok: true, reason: 'ok' };
-  }
-}
-ÀÔrE–¦common¯./PcbLlmParsers²./PcbLlmReplyGuard²./PcbDocSummarizer­./PcbChatOptsº../../prompts/PromptLoaderÔrF—ªassertions¨external¢id¤meta±moduleSideEffectsªresolvedByµsyntheticNamedExportsAÂÙ-C:\Projects\ElecDraw_Harmony\common\Index.etsAÃªoh-resolveÂFAÂÙdC:\Projects\ElecDraw_Harmony\features\ai_engine\src\main\ets\algorithms\pcb_agents\PcbLlmParsers.etsAÃªoh-resolveÂFAÂÙgC:\Projects\ElecDraw_Harmony\features\ai_engine\src\main\ets\algorithms\pcb_agents\PcbLlmReplyGuard.etsAÃªoh-resolveÂFAÂÙgC:\Projects\ElecDraw_Harmony\features\ai_engine\src\main\ets\algorithms\pcb_agents\PcbDocSummarizer.etsAÃªoh-resolveÂFAÂÙbC:\Projects\ElecDraw_Harmony\features\ai_engine\src\main\ets\algorithms\pcb_agents\PcbChatOpts.etsAÃªoh-resolveÂFAÂÙUC:\Projects\ElecDraw_Harmony\features\ai_engine\src\main\ets\prompts\PromptLoader.etsAÃªoh-resolveÂ“ÔrG–§version¤fileªsourceRoot§sources¥names¨mappings²PcbNetPlanAgent.js ‘³PcbNetPlanAgent.etsÜ ‘”    ‘” š”   ” ”	 	” ” ”   ”" "”( (”0 0”1 1˜”   ” ”	 	” ” ” ”9 9”: :˜”   ” ”	 	” ” ”! !”5 5”6 6˜”  	 ” 	”	 		” 	” 	”  	 ”1 	1”2 	2˜”   ” ”	 	” ” ”! !”0 0”1 1˜”   ” ”	 	” ” ”% %”9 9”: :””   ” ” ” š” ”	 ”
- ” ” ” "” $” 6” ”$ ” ” 
-” ” ” ”# ”% !”ÌL ÌH”ÌN ÌJ”ÌO ÌK”ÌT ÌP”ÌV ÌR”ÌW ÌS”ÌX ÌT—” ” ” 	” ” ” ” œ” ” ” ” ” ” ”  ”&  ”( "”5 /”7 1”8 2‘”	 ›” ” 
-” ” ”  ”! ”% !”& "”4 0”5 1”6 2Ÿ” ” ” 	” ” ” ” ” ” ”% !”& "”, (”1 -”2 .”4 0œ” ” ” ” ” ” ”  ”&  ”( "”ÌE ?”ÌG ÌA”ÌH ÌB‘”	 ” ” ” ” ”& "”' #”. *”/ +”1 -”2 .”9 5”: 6”; 7š” ” ” ” ”* &”+ '”1 -”4 0”5 1”7 3™” ” ” ” ”  ”. (”; 5”= 7”> 8‘”	 ” ” 
-” ” ” 	”. ”/ ”9 $”: %”< '”= (”ÌD /”ÌE 0”ÌI 4” ” ”' !”( "”8 2”9 3”; 5”< 6”ÌC =”ÌE ?”ÌG ÌA”ÌH ÌB”ÌJ ÌD”ÌK ÌEš”  ”  
-”  ”  ”#  ”$   ”*  &”+  '”.  *”0  ,Ü ” !” !” !” !”" !”$ !”) !#”+ !%”; !5”< !6”ÌH !ÌB”ÌI !ÌC”ÌK !ÌE”ÌL !ÌF”ÌS !ÌM”ÌT !ÌN”ÌV !ÌPš” "” "” "” "” "” "”$ "”& " ”- "'”/ ")š” #” #” #” #”  #”" #”' #!”) ##”3 #-”5 #/“”	 $”
- $” $Ü ” %” %
-” %” %” %”  %”! %”% %!”& %"”, %(”. %*”> %:”? %;”ÌA %=”ÌB %>”ÌQ %ÌM”ÌS %ÌO”ÌW %ÌS”ÌX %ÌT”ÌY %ÌU”ÌZ %ÌVœ” &” &” &	” &” &” &” &”  &”& &"”' &#”+ &'”- &)Ü ” '” '” '” '” '” '”  '”& ' ”( '"”. '(”/ ')”4 '.”8 '2”ÌM 'ÌG”ÌO 'ÌI”ÌP 'ÌJ‘”	 (—” )”
- )” )” )” )” )” )” *” *
-” *” *”+ *'”, *(”6 *2”8 *4”> *:”? *;”ÌC *?”ÌD *Ì@”ÌE *ÌA”” +” +” +” +œ” ,” ,” ,” ,” ,” ,”  ,”& , ”( ,"”. ,(”0 ,*”1 ,+‘”	 -›” .” .
-” .” .”$ . ”% .!”+ .'”, .(”0 .,”1 .-”2 ..•” /” /” /	” /” /Ü ” 0” 0” 0” 0” 0” 0”  0”& 0 ”( 0"”ÌF 0Ì@”ÌR 0ÌL”ÌS 0ÌM”Ìg 0Ìa”Ìh 0Ìb”Ìn 0Ìh”Ìo 0Ìi”Ìs 0Ìm”Ìt 0Ìn”Ìw 0Ìq”Ìy 0Ìs”Ìz 0Ìt‘”	 1˜” 3” 3
-” 3” 3/”" 33”% 36”' 38”( 39›” 4” 4	” 4” 4” 4” 4” 4”# 4”$ 4 ”. 4*”0 4,™” 5” 5” 5” 5” 5”  5”! 5”% 5”' 5!š” 6” 6” 6” 6” 6”  6”% 6”) 6!”+ 6#”, 6$˜” 7” 7” 7” 7” 7”# 7”$ 7”& 7’” 8
-” 8‘” 9	Ü ” :” :” :”! :”" :”% :”' :”( : ”5 :-”6 :.”9 :1”: :2”= :5”> :6”ÌB ::”ÌC :;”ÌD :<”ÌG :?”ÌH :Ì@”ÌI :ÌA”ÌJ :ÌB‘” ;‘”	 <Ü ” >” >	” >” >” >” >” >” >” >”  >”! >”% >!”& >"”, >(”. >*”/ >+”1 >-”3 >/›” ?” ?” ?” ?” ?” ?” ?”  ?”! ?”" ?”# ?Ü ” Ì@” Ì@” Ì@” Ì@” Ì@” Ì@”# Ì@”$ Ì@”( Ì@"”) Ì@#”- Ì@'”. Ì@(”/ Ì@)”0 Ì@*”2 Ì@,”3 Ì@-”4 Ì@.”5 Ì@/”7 Ì@1”< Ì@6”= Ì@7”> Ì@8”ÌC Ì@=”ÌD Ì@>”ÌE Ì@?”” ÌA” ÌA
-” ÌA” ÌA™” ÌB” ÌB	” ÌB
-” ÌB” ÌB” ÌB” ÌB”! ÌB”" ÌB™” ÌC” ÌC	” ÌC
-” ÌC” ÌC”  ÌC”! ÌC”% ÌC”& ÌC’” ÌD” ÌD‘” ÌEÜ !” ÌF” ÌF” ÌF” ÌF” ÌF” ÌF”% ÌF”& ÌF ”* ÌF$”+ ÌF%”/ ÌF)”0 ÌF*”1 ÌF+”2 ÌF,”4 ÌF.”5 ÌF/”6 ÌF0”7 ÌF1”; ÌF5”Ì@ ÌF:”ÌA ÌF;”ÌB ÌF<”ÌI ÌFÌC”ÌM ÌFÌG”ÌN ÌFÌH”ÌO ÌFÌI”ÌS ÌFÌM”ÌX ÌFÌR”ÌY ÌFÌS”ÌZ ÌFÌT”Ì_ ÌFÌY”Ì` ÌFÌZ”Ìa ÌFÌ[”” ÌG” ÌG
-” ÌG” ÌG™” ÌH” ÌH	” ÌH
-” ÌH” ÌH”  ÌH”! ÌH”# ÌH”$ ÌH™” ÌI” ÌI	” ÌI
-” ÌI” ÌI”" ÌI”# ÌI”' ÌI”( ÌI ‘” ÌJ‘”	 ÌK˜” ÌM” ÌM
-” ÌM” ÌM!” ÌM%” ÌM(”! ÌM*”" ÌM+Ü ” ÌN” ÌN	” ÌN” ÌN” ÌN” ÌN” ÌN” ÌN” ÌN”  ÌN”! ÌN”% ÌN!”& ÌN"”, ÌN(”. ÌN*”/ ÌN+”1 ÌN-”3 ÌN/Ÿ” ÌO” ÌO
-” ÌO” ÌO” ÌO” ÌO” ÌO” ÌO” ÌO”" ÌO”# ÌO”) ÌO#”, ÌO&”- ÌO'”/ ÌO)Ÿ” ÌP” ÌP” ÌP” ÌP” ÌP”  ÌP”! ÌP”% ÌP”& ÌP”' ÌP”( ÌP ”) ÌP!”. ÌP&”/ ÌP'”0 ÌP(‘” ÌQ‘”	 ÌR–” ÌT” ÌT
-” ÌT” ÌT ” ÌT"” ÌT#–” ÌU” ÌU
-” ÌU”  ÌU&”" ÌU(”# ÌU)Ü ” ÌV” ÌV	” ÌV” ÌV” ÌV” ÌV” ÌV” ÌV” ÌV” ÌV” ÌV”& ÌV"”' ÌV#”+ ÌV'”, ÌV(”2 ÌV.”4 ÌV0”5 ÌV1”7 ÌV3”9 ÌV5” ÌW” ÌW” ÌW” ÌW” ÌW” ÌW”  ÌW”! ÌW”% ÌW”& ÌW ”' ÌW!”( ÌW"”) ÌW#Ÿ” ÌX” ÌX” ÌX” ÌX”& ÌX ”' ÌX!”* ÌX$”+ ÌX%”, ÌX&”- ÌX'”/ ÌX)”0 ÌX*”4 ÌX.”5 ÌX/”6 ÌX0–” ÌY” ÌY
-” ÌY” ÌY” ÌY” ÌY’” ÌZ” ÌZ‘” Ì[š” Ì\” Ì\” Ì\” Ì\” Ì\” Ì\” Ì\” Ì\”  Ì\”! Ì\œ” Ì]” Ì]
-” Ì]” Ì]” Ì]” Ì]” Ì]” Ì]” Ì]”! Ì]”" Ì]”$ Ì]›” Ì^” Ì^” Ì^” Ì^” Ì^”  Ì^”$ Ì^”% Ì^”0 Ì^(”2 Ì^*”3 Ì^+Ü ” Ì_” Ì_” Ì_” Ì_”# Ì_”' Ì_”, Ì_$”1 Ì_)”6 Ì_.”: Ì_2”? Ì_7”Ì@ Ì_8”ÌG Ì_?”ÌH Ì_Ì@”ÌM Ì_ÌE”ÌN Ì_ÌF”ÌR Ì_ÌJ”ÌS Ì_ÌKÜ ” Ì`
-” Ì`” Ì`”# Ì`”' Ì`”, Ì`"”1 Ì`'”6 Ì`,”: Ì`0”? Ì`5”ÌD Ì`:”ÌJ Ì`Ì@”ÌN Ì`ÌD”ÌS Ì`ÌI”ÌT Ì`ÌJ”Ì[ Ì`ÌQ”Ì\ Ì`ÌR”Ìa Ì`ÌW”Ìb Ì`ÌX”Ìf Ì`Ì\”Ìg Ì`Ì]”Ìi Ì`Ì_š” Ìa
-”# Ìa”$ Ìa”( Ìa”) Ìa”* Ìa ”+ Ìa!”/ Ìa%”0 Ìa&”1 Ìa'‘” Ìb	‘” Ìc‘”	 Ìd˜” Ìe” Ìe” Ìe” Ìe”" Ìe”% Ìe!”& Ìe"”( Ìe$’” Ìf” Ìf”” Ìg” Ìg
-” Ìg” Ìg›” Ìh” Ìh” Ìh”7 Ìh/”ÌF Ìh>”ÌG Ìh?”ÌK ÌhÌC”ÌL ÌhÌD”ÌO ÌhÌG”ÌP ÌhÌH”ÌR ÌhÌJ’” Ìi” Ìi‘”	 Ìj–” Ìk” Ìk” Ìk” Ìk” Ìk” ÌkÜ ” Ìl” Ìl	” Ìl” Ìl” Ìl” Ìl” Ìl” Ìl” Ìl”% Ìl!”& Ìl"”, Ìl(”. Ìl*”/ Ìl+”1 Ìl-”3 Ìl/” Ìm” Ìm
-” Ìm” Ìm” Ìm” Ìm” Ìm”& Ìm ”' Ìm!”( Ìm"”) Ìm#”* Ìm$”, Ìm&”” Ìn” Ìn” Ìn” Ìn‘” Ìo‘”	 ÌpÜ ” Ìq” Ìq” Ìq” Ìq” Ìq” Ìq”  Ìq”$ Ìq ”/ Ìq+”2 Ìq.”3 Ìq/”7 Ìq3”ÌB Ìq>”ÌE ÌqÌA”ÌN ÌqÌJ”ÌO ÌqÌK”ÌU ÌqÌQ”ÌX ÌqÌT”Ì\ ÌqÌX”Ì^ ÌqÌZ’” Ìr” Ìr”” Ìs” Ìs
-” Ìs” Ìsš” Ìt” Ìt” Ìt”: Ìt2”ÌE Ìt=”ÌI ÌtÌA”ÌR ÌtÌJ”ÌS ÌtÌK”ÌY ÌtÌQ”Ìi ÌtÌa’” Ìu” Ìu‘”	 Ìv–” Ìw” Ìw” Ìw” Ìw” Ìw” ÌwÜ ” Ìx” Ìx” Ìx” Ìx” Ìx”' Ìx!”) Ìy”ÌH Ìy'”ÌS Ìy2”ÌW Ìy6”Ì` Ìy?”Ìa ÌyÌ@”Ìg ÌyÌF”Ìw ÌyÌV”Ìx ÌyÌW”Ìy ÌyÌX‘”	 Ìz’” Ì|”> Ì|:–” Ì}” Ì}” Ì}” Ì}” Ì}” Ì}Ü ” Ì~” Ì~	” Ì~” Ì~” Ì~” Ì~” Ì~” Ì~” Ì~”  Ì~”! Ì~”% Ì~!”& Ì~"”, Ì~(”. Ì~*”/ Ì~+”1 Ì~-”3 Ì~/” Ì” Ì
-” Ì” Ì” Ì” Ì” Ì” Ì” Ì”& Ì ”+ Ì%”6 Ì0”8 Ì2”” Ì€” Ì€” Ì€” Ì€‘” Ì‘”	 Ì‚–” Ìƒ” Ìƒ” Ìƒ” Ìƒ” Ìƒ” ÌƒÜ ” Ì„” Ì„” Ì„” Ì„” Ì„” Ì„” Ì„” Ì„”  Ì„”$ Ì„”% Ì„”) Ì„#”* Ì„$”0 Ì„*”2 Ì„,”3 Ì„-”5 Ì„/”7 Ì„1›” Ì…” Ì…” Ì…” Ì…” Ì…” Ì…”# Ì…”$ Ì…”% Ì…”& Ì…”' Ì…˜” Ì†” Ì†” Ì†” Ì†” Ì†”$ Ì†”/ Ì†'”1 Ì†)’” Ì‡
-” Ì‡‘” Ìˆ	” Ì‰” Ì‰” Ì‰” Ì‰” Ì‰”+ Ì‰#”- ÌŠ
-”ÌI ÌŠ&”ÌJ ÌŠ'”ÌK ÌŠ(”ÌR ÌŠ/”Ìy ÌŠÌV”Ìz ÌŠÌW”Ì{ ÌŠÌX—” Ì‹” Ì‹	” Ì‹
-” Ì‹” Ì‹”* Ì‹"”+ Ì‹#Ÿ” ÌŒ” ÌŒ” ÌŒ” ÌŒ” ÌŒ”  ÌŒ”$ ÌŒ”% ÌŒ”& ÌŒ”/ ÌŒ'”0 ÌŒ(”6 ÌŒ.”; ÌŒ3”< ÌŒ4”> ÌŒ6Ü ” Ì
-” Ì” Ì” Ì”" Ì”# Ì”$ Ì”( Ì”- Ì#”2 Ì(”3 Ì)”4 Ì*”5 Ì+”; Ì1”< Ì2”= Ì3Ü ” Ì” Ì” Ì” Ì” Ì”$ Ì”+ Ì”, Ì ”- Ì!”. Ì"”8 Ì,”9 Ì-”: Ì.”; Ì/”ÌE Ì9”ÌF Ì:”ÌG Ì;‘” Ì	Ü ” Ì” Ì” Ì” Ì” Ì” Ì”  Ì”% Ì”) Ì!”* Ì"”+ Ì#”/ Ì'”4 Ì,”; Ì3”< Ì4”Ì@ Ì8”ÌA Ì9”ÌB Ì:”ÌL ÌÌD”ÌQ ÌÌI”ÌZ ÌÌR”Ì\ ÌÌTÜ ” Ì‘
-” Ì‘” Ì‘”  Ì‘”# Ì‘”$ Ì‘”% Ì‘”) Ì‘”. Ì‘$”3 Ì‘)”4 Ì‘*”5 Ì‘+”6 Ì‘,”7 Ì‘-”9 Ì‘/”: Ì‘0”; Ì‘1”< Ì‘2”> Ì‘4”? Ì‘5‘” Ì’	‘” Ì“‘”	 Ì”—” Ì–”
- Ì–” Ì–” Ì–” Ì–” Ì–” Ì–˜” Ì—”
- Ì—” Ì—” Ì—” Ì—” Ì—”  Ì—”! Ì—Ü ” Ì˜” Ì˜
-” Ì˜” Ì˜” Ì˜”# Ì˜”% Ì˜!”ÌH Ì˜ÌD”ÌL Ì˜ÌH”ÌM Ì˜ÌI”ÌQ Ì˜ÌM”ÌR Ì˜ÌN”ÌX Ì˜ÌT”ÌZ Ì˜ÌV”Ì[ Ì˜ÌW”Ì\ Ì˜ÌXœ” Ì™” Ì™” Ì™” Ì™” Ì™” Ì™” Ì™”! Ì™”# Ì™”' Ì™#”) Ì™%”* Ì™&’” Ìš” Ìš‘” Ì›ÔrH–§version¤file§sources®sourcesContent¥names¨mappingsÀ‘À‘ÀÜ ‘”    ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”  	 ‘”  
- ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”    ‘”  ! ‘”  " ‘”  # ‘”  $ ‘”  % ‘”  & ‘”  ' ‘”  ( ‘”  ) ‘”  * ‘”  + ‘”  , ‘”  - ‘”  . ‘”  / ‘”  0 ‘”  1 ‘”  2 ‘”  3 ‘”  4 ‘”  5 ‘”  6 ‘”  7 ‘”  8 ‘”  9 ‘”  : ‘”  ; ‘”  < ‘”  = ‘”  > ‘”  ? ‘”  Ì@ ‘”  ÌA ‘”  ÌB ‘”  ÌC ‘”  ÌD ‘”  ÌE ‘”  ÌF ‘”  ÌG ‘”  ÌH ‘”  ÌI ‘”  ÌJ ‘”  ÌK ‘”  ÌL ‘”  ÌM ‘”  ÌN ‘”  ÌO ‘”  ÌP ‘”  ÌQ ‘”  ÌR ‘”  ÌS ‘”  ÌT ‘”  ÌU ‘”  ÌV ‘”  ÌW ‘”  ÌX ‘”  ÌY ‘”  ÌZ ‘”  Ì[ ‘”  Ì\ ‘”  Ì] ‘”  Ì^ ‘”  Ì_ ‘”  Ì` ‘”  Ìa ‘”  Ìb ‘”  Ìc ‘”  Ìd ‘”  Ìe ‘”  Ìf ‘”  Ìg ‘”  Ìh ‘”  Ìi ‘”  Ìj ‘”  Ìk ‘”  Ìl ‘”  Ìm ‘”  Ìn ‘”  Ìo ‘”  Ìp ‘”  Ìq ‘”  Ìr ‘”  Ìs ‘”  Ìt ‘”  Ìu ‘”  Ìv ‘”  Ìw ‘”  Ìx ‘”  Ìy ‘”  Ìz ‘”  Ì{ ‘”  Ì| ‘”  Ì} ‘”  Ì~ ‘”  Ì ‘”  Ì€ ‘”  Ì ‘”  Ì‚ ‘”  Ìƒ ‘”  Ì„ ‘”  Ì… ‘”  Ì† ‘”  Ì‡ ‘”  Ìˆ ‘”  Ì‰ ‘”  ÌŠ ‘”  Ì‹ ‘”  ÌŒ ‘”  Ì ‘”  Ì ÔrI’§missing¦pluginÃ¦genAbcÂÔ  ÔrJ”²dynamicImportCache¹exportAllDeclarationCache»exportNamedDeclarationCache«importCache‘ÔrK–¤type¥start£end«declarationªspecifiers¦source¶ExportNamedDeclarationÍ§ÍËÔrL–¤type¥start£end¢idªsuperClass¤body°ClassDeclarationÍ®ÍËÔrM”¤type¥start£end¤nameªIdentifierÍ´ÍÃ¯PcbNetPlanAgentÀÔrN”¤type¥start£end¤body©ClassBodyÍÄÍË‘ÔrO˜¤type¥start£end¦static¨computed£key¤kind¥value°MethodDefinitionÍËÍÈÂÂMªIdentifierÍÑÍÔ£run¦methodÔrP™¤type¥start£end¢idªexpression©generator¥async¦params¤body²FunctionExpressionÍÔÍÈÀÂÂÃ“MªIdentifierÍÕÍ×¢bbMªIdentifierÍÙÍÜ£apiMªIdentifierÍŞÍë­priorFailHintN®BlockStatementÍíÍÈÜ #ÔrQ”¤type¥start£endªexpression³ExpressionStatementÍøÍHÔrR–¤type¥start£end¦callee©arguments¨optional®CallExpressionÍøÍGÔrS—¤type¥start£end¦object¨property¨computed¨optional°MemberExpressionÍøÍMªIdentifierÍøÍş¦LoggerMªIdentifierÍÿÍ¤infoÂÂ’MªIdentifierÍÍ¯INSTR_TRACE_TAGÔrT•¤type¥start£end«expressions¦quasis¯TemplateLiteralÍÍF‘S°MemberExpressionÍ<ÍDMªIdentifierÍ<Í>¢bbMªIdentifierÍ?ÍD¥runIdÂÂ’ÔrU•¤type¥start£end¥value¤tail¯TemplateElementÍÍ:ÔrV’£raw¦cookedÙ$[AI_PCB] stage=net_plan begin runId=Ù$[AI_PCB] stage=net_plan begin runId=ÂU¯TemplateElementÍEÍEV  ÃÂÔrW–¤type¥start£end¤testªconsequent©alternate«IfStatementÍRÍ©ÔrX–¤type¥start£end¨operator¦prefix¨argument¯UnaryExpressionÍVÍa¡!ÃS°MemberExpressionÍWÍaMªIdentifierÍWÍY¢bbMªIdentifierÍZÍa§workDocÂÂN®BlockStatementÍcÍ©‘ÔrY”¤type¥start£end¨argument¯ReturnStatementÍrÍÔrZ”¤type¥start£endªproperties°ObjectExpressionÍyÍ’Ôr[™¤type¥start£end¦method©shorthand¨computed£key¥value¤kind¨PropertyÍ{Í„ÂÂÂMªIdentifierÍ{Í}¢okÔr\•¤type¥start£end¥value£raw§LiteralÍÍ„Â¥false¤init[¨PropertyÍ†Í›ÂÂÂMªIdentifierÍ†ÍŒ¦reason\§LiteralÍÍ›«no work doc­'no work doc'¤initÀÔr]•¤type¥start£end¬declarations¤kind³VariableDeclarationÍ³Íá‘Ôr^•¤type¥start£end¢id¤init²VariableDeclaratorÍ¹ÍàMªIdentifierÍ¹Í¼£tplR®CallExpressionÍ¿ÍàS°MemberExpressionÍ¿ÍĞMªIdentifierÍ¿ÍË¬PromptLoaderMªIdentifierÍÌÍĞ¤loadÂÂ‘\§LiteralÍÑÍß¬pcb_net_plan®'pcb_net_plan'Â¥constW«IfStatementÍëÍmÔr_–¤type¥start£end¤left¨operator¥right±LogicalExpressionÍïÍX¯UnaryExpressionÍïÍú¡!ÃS°MemberExpressionÍğÍúMªIdentifierÍğÍó£tplMªIdentifierÍôÍú¦systemÂÂ¢||_°BinaryExpressionÍşÍS°MemberExpressionÍşÍS°MemberExpressionÍşÍMªIdentifierÍşÍ£tplMªIdentifierÍÍ¦systemÂÂMªIdentifierÍ	Í¦lengthÂÂ£===\§LiteralÍÍ ¡0N®BlockStatementÍÍm‘Y¯ReturnStatementÍ&ÍbZ°ObjectExpressionÍ-Ía’[¨PropertyÍ/Í8ÂÂÂMªIdentifierÍ/Í1¢ok\§LiteralÍ3Í8Â¥false¤init[¨PropertyÍ:Í_ÂÂÂMªIdentifierÍ:Í@¦reason\§LiteralÍBÍ_»pcb_net_plan prompt missing½'pcb_net_plan prompt missing'¤initÀ]³VariableDeclarationÍwÍª‘^²VariableDeclaratorÍ{Í©MªIdentifierÍ{Í‚§netListR®CallExpressionÍ…Í©S°MemberExpressionÍ…ÍMªIdentifierÍ…Í•°PcbDocSummarizerMªIdentifierÍ–Í§netListÂÂ‘S°MemberExpressionÍÍ¨MªIdentifierÍÍ ¢bbMªIdentifierÍ¡Í¨§workDocÂÂÂ£letW«IfStatementÍ´Í/_±LogicalExpressionÍ¸ÍáMªIdentifierÍ¸ÍÅ­priorFailHint¢&&_°BinaryExpressionÍÉÍáS°MemberExpressionÍÉÍİMªIdentifierÍÉÍÖ­priorFailHintMªIdentifierÍ×Íİ¦lengthÂÂ¡>\§LiteralÍàÍá ¡0N®BlockStatementÍãÍ/‘Q³ExpressionStatementÍòÍ$Ôr`–¤type¥start£end¨operator¤left¥right´AssignmentExpressionÍòÍ#¡=MªIdentifierÍòÍù§netListT¯TemplateLiteralÍüÍ#’MªIdentifierÍÿÍ§netListMªIdentifierÍÍ!­priorFailHint“U¯TemplateElementÍıÍıV  ÂU¯TemplateElementÍÍV½\nã€ä¸Šè½®å¤±è´¥é¡»ä¿®æ­£ã€‘¼
-ã€ä¸Šè½®å¤±è´¥é¡»ä¿®æ­£ã€‘ÂU¯TemplateElementÍ"Í"V  ÃÀ]³VariableDeclarationÍ9ÍÉ‘^²VariableDeclaratorÍ?ÍÈMªIdentifierÍ?ÍIªpadSummary_°BinaryExpressionÍLÍÈT¯TemplateLiteralÍLÍz‘R®CallExpressionÍOÍvS°MemberExpressionÍOÍjMªIdentifierÍOÍ_°PcbDocSummarizerMªIdentifierÍ`ÍjªpadSummaryÂÂ‘S°MemberExpressionÍkÍuMªIdentifierÍkÍm¢bbMªIdentifierÍnÍu§workDocÂÂÂ’U¯TemplateElementÍMÍMV  ÂU¯TemplateElementÍwÍyV¢\n¡
-Ã¡+T¯TemplateLiteralÍŠÍÈ‘R®CallExpressionÍ•ÍÆS°MemberExpressionÍ•Í¶MªIdentifierÍ•Í¥°PcbDocSummarizerMªIdentifierÍ¦Í¶°padDetailSummaryÂÂ’S°MemberExpressionÍ·ÍÁMªIdentifierÍ·Í¹¢bbMªIdentifierÍºÍÁ§workDocÂÂ\§LiteralÍÃÍÅ0¢48Â’U¯TemplateElementÍ‹Í“V´ã€ç„Šç›˜è¯¦è¡¨ã€‘\n³ã€ç„Šç›˜è¯¦è¡¨ã€‘
-ÂU¯TemplateElementÍÇÍÇV  Ã¥const]³VariableDeclarationÍÓÍË‘^²VariableDeclaratorÍÙÍÊMªIdentifierÍÙÍß¦promptR®CallExpressionÍâÍÊS°MemberExpressionÍâÍõMªIdentifierÍâÍî¬PromptLoaderMªIdentifierÍïÍõ¦renderÂÂ’MªIdentifierÍöÍù£tplÔra”¤type¥start£end¨elements¯ArrayExpressionÍûÍÉ“Z°ObjectExpressionÍ
-ÍT’[¨PropertyÍÍ ÂÂÂMªIdentifierÍÍ£key\§LiteralÍÍ ­copper_layers¯'copper_layers'¤init[¨PropertyÍ"ÍRÂÂÂMªIdentifierÍ"Í'¥valueR®CallExpressionÍ)ÍRS°MemberExpressionÍ)ÍFMªIdentifierÍ)Í9°PcbDocSummarizerMªIdentifierÍ:ÍF¬copperLayersÂÂ‘S°MemberExpressionÍGÍQMªIdentifierÍGÍI¢bbMªIdentifierÍJÍQ§workDocÂÂÂ¤initZ°ObjectExpressionÍcÍ†’[¨PropertyÍeÍtÂÂÂMªIdentifierÍeÍh£key\§LiteralÍjÍt¨net_listª'net_list'¤init[¨PropertyÍvÍ„ÂÂÂMªIdentifierÍvÍ{¥valueMªIdentifierÍ}Í„§netList¤initZ°ObjectExpressionÍ•Í¾’[¨PropertyÍ—Í©ÂÂÂMªIdentifierÍ—Íš£key\§LiteralÍœÍ©«pad_summary­'pad_summary'¤init[¨PropertyÍ«Í¼ÂÂÂMªIdentifierÍ«Í°¥valueMªIdentifierÍ²Í¼ªpadSummary¤initÂ¥const]³VariableDeclarationÍÕÍ'‘^²VariableDeclaratorÍÛÍ&MªIdentifierÍÛÍá¦apiResY¯AwaitExpressionÍäÍ&R®CallExpressionÍêÍ&S°MemberExpressionÍêÍòMªIdentifierÍêÍí£apiMªIdentifierÍîÍò¤chatÂÂ’MªIdentifierÍóÍù¦promptR®CallExpressionÍûÍ%MªIdentifierÍûÍ°pcbStageChatOpts’S°MemberExpressionÍÍMªIdentifierÍÍ¢bbMªIdentifierÍÍ¯enableReasoningÂÂ\§LiteralÍ Í$Ë?©™™™™™š¤0.05ÂÂ¥constW«IfStatementÍ1Í´_±LogicalExpressionÍ5ÍTX¯UnaryExpressionÍ5ÍD¡!ÃS°MemberExpressionÍ6ÍDMªIdentifierÍ6Í<¦apiResMªIdentifierÍ=ÍD§successÂÂ¢||X¯UnaryExpressionÍHÍT¡!ÃS°MemberExpressionÍIÍTMªIdentifierÍIÍO¦apiResMªIdentifierÍPÍT¤dataÂÂN®BlockStatementÍVÍ´‘Y¯ReturnStatementÍeÍ©Z°ObjectExpressionÍlÍ¨’[¨PropertyÍnÍwÂÂÂMªIdentifierÍnÍp¢ok\§LiteralÍrÍwÂ¥false¤init[¨PropertyÍyÍ¦ÂÂÂMªIdentifierÍyÍ¦reason_±LogicalExpressionÍÍ¦S°MemberExpressionÍÍMªIdentifierÍÍ‡¦apiResMªIdentifierÍˆÍ¥errorÂÂ¢??\§LiteralÍ‘Í¦³net_plan LLM failedµ'net_plan LLM failed'¤initÀQ³ExpressionStatementÍ¾ÍĞ`´AssignmentExpressionÍ¾ÍÏ¡=S°MemberExpressionÍ¾ÍÈMªIdentifierÍ¾ÍÀ¢bbMªIdentifierÍÁÍÈ§usedLlmÂÂ\§LiteralÍËÍÏÃ¤true]³VariableDeclarationÍÚÍ‘^²VariableDeclaratorÍàÍMªIdentifierÍàÍæ¦impureR®CallExpressionÍéÍMªIdentifierÍéÍı´pcbImpureReplyReason’\§LiteralÍşÍ¨net_planª'net_plan'S°MemberExpressionÍ
-ÍMªIdentifierÍ
-Í¦apiResMªIdentifierÍÍ¤dataÂÂÂ¥constW«IfStatementÍ!ÍlMªIdentifierÍ%Í+¦impureN®BlockStatementÍ-Íl‘Y¯ReturnStatementÍ<ÍaZ°ObjectExpressionÍCÍ`’[¨PropertyÍEÍNÂÂÂMªIdentifierÍEÍG¢ok\§LiteralÍIÍNÂ¥false¤init[¨PropertyÍPÍ^ÂÂÂMªIdentifierÍPÍV¦reasonMªIdentifierÍXÍ^¦impure¤initÀ]³VariableDeclarationÍvÍ ‘^²VariableDeclaratorÍ|ÍŸMªIdentifierÍ|Í€¤planR®CallExpressionÍƒÍŸMªIdentifierÍƒÍ’¯parsePcbNetPlan‘S°MemberExpressionÍ“ÍMªIdentifierÍ“Í™¦apiResMªIdentifierÍšÍ¤dataÂÂÂ¥constW«IfStatementÍªÍ=X¯UnaryExpressionÍ®Í³¡!ÃMªIdentifierÍ¯Í³¤planN®BlockStatementÍµÍ=‘Y¯ReturnStatementÍÄÍ2Z°ObjectExpressionÍËÍ1’[¨PropertyÍÍÍÖÂÂÂMªIdentifierÍÍÍÏ¢ok\§LiteralÍÑÍÖÂ¥false¤init[¨PropertyÍØÍ/ÂÂÂMªIdentifierÍØÍŞ¦reasonT¯TemplateLiteralÍàÍ/‘R®CallExpressionÍşÍ,S°MemberExpressionÍşÍMªIdentifierÍşÍ
-¬PromptLoaderMªIdentifierÍÍ´describeJsonImpurityÂÂ‘S°MemberExpressionÍ Í+MªIdentifierÍ Í&¦apiResMªIdentifierÍ'Í+¤dataÂÂÂ’U¯TemplateElementÍáÍüV»net_plan LLM JSON invalid (»net_plan LLM JSON invalid (ÂU¯TemplateElementÍ-Í.V¡)¡)Ã¤initÀ]³VariableDeclarationÍGÍg‘^²VariableDeclaratorÍMÍfMªIdentifierÍMÍZ­padCountByNetÔrb•¤type¥start£end¦callee©arguments­NewExpressionÍ]ÍfMªIdentifierÍaÍd£Map¥constÔrc—¤type¥start£end¥await¤left¥right¤body®ForOfStatementÍqÍ	³Â]³VariableDeclarationÍvÍ~‘^²VariableDeclaratorÍ|Í~MªIdentifierÍ|Í~¢fpÀ¥constS°MemberExpressionÍ‚Í—S°MemberExpressionÍ‚ÍŒMªIdentifierÍ‚Í„¢bbMªIdentifierÍ…ÍŒ§workDocÂÂMªIdentifierÍÍ—ªfootprintsÂÂN®BlockStatementÍ™Í	³‘c®ForOfStatementÍ¨Í	¨Â]³VariableDeclarationÍ­Í¶‘^²VariableDeclaratorÍ³Í¶MªIdentifierÍ³Í¶£padÀ¥constS°MemberExpressionÍºÍÁMªIdentifierÍºÍ¼¢fpMªIdentifierÍ½ÍÁ¤padsÂÂN®BlockStatementÍÃÍ	¨“]³VariableDeclarationÍÖÍò‘^²VariableDeclaratorÍÜÍñMªIdentifierÍÜÍß£nid_±LogicalExpressionÍâÍñS°MemberExpressionÍâÍëMªIdentifierÍâÍå£padMªIdentifierÍæÍë¥netIdÂÂ¢??\§LiteralÍïÍñ ¢''¥constW«IfStatementÍ	Í	M_°BinaryExpressionÍ	Í	S°MemberExpressionÍ	Í	MªIdentifierÍ	Í	£nidMªIdentifierÍ	Í	¦lengthÂÂ£===\§LiteralÍ	Í	 ¡0N®BlockStatementÍ	Í	M‘Ôrd”¤type¥start£end¥label±ContinueStatementÍ	1Í	:ÀÀQ³ExpressionStatementÍ	_Í	™R®CallExpressionÍ	_Í	˜S°MemberExpressionÍ	_Í	pMªIdentifierÍ	_Í	l­padCountByNetMªIdentifierÍ	mÍ	p£setÂÂ’MªIdentifierÍ	qÍ	t£nid_°BinaryExpressionÍ	vÍ	—_±LogicalExpressionÍ	wÍ	’R®CallExpressionÍ	wÍ	S°MemberExpressionÍ	wÍ	ˆMªIdentifierÍ	wÍ	„­padCountByNetMªIdentifierÍ	…Í	ˆ£getÂÂ‘MªIdentifierÍ	‰Í	Œ£nidÂ¢??\§LiteralÍ	‘Í	’ ¡0¡+\§LiteralÍ	–Í	—¡1ÂÔre—¤type¥start£end¤init¤test¦update¤body¬ForStatementÍ	½ÍÌ]³VariableDeclarationÍ	ÂÍ	Ë‘^²VariableDeclaratorÍ	ÆÍ	ËMªIdentifierÍ	ÆÍ	Ç¡i\§LiteralÍ	ÊÍ	Ë ¡0£let_°BinaryExpressionÍ	ÍÍ	áMªIdentifierÍ	ÍÍ	Î¡i¡<S°MemberExpressionÍ	ÑÍ	áS°MemberExpressionÍ	ÑÍ	ÚMªIdentifierÍ	ÑÍ	Õ¤planMªIdentifierÍ	ÖÍ	Ú¤netsÂÂMªIdentifierÍ	ÛÍ	á¦lengthÂÂX°UpdateExpressionÍ	ãÍ	æ¢++ÂMªIdentifierÍ	ãÍ	ä¡iN®BlockStatementÍ	èÍÌ•]³VariableDeclarationÍ	÷Í
-‘^²VariableDeclaratorÍ	ıÍ
-MªIdentifierÍ	ıÍ	ş¡eS°MemberExpressionÍ
-Í
-S°MemberExpressionÍ
-Í
-
-MªIdentifierÍ
-Í
-¤planMªIdentifierÍ
-Í
-
-¤netsÂÂMªIdentifierÍ
-Í
-¡iÃÂ¥const]³VariableDeclarationÍ
-Í
-U‘^²VariableDeclaratorÍ
-"Í
-TMªIdentifierÍ
-"Í
-&¤byIdR®CallExpressionÍ
-)Í
-TS°MemberExpressionÍ
-)Í
-=S°MemberExpressionÍ
-)Í
-8S°MemberExpressionÍ
-)Í
-3MªIdentifierÍ
-)Í
-+¢bbMªIdentifierÍ
-,Í
-3§workDocÂÂMªIdentifierÍ
-4Í
-8¤netsÂÂMªIdentifierÍ
-9Í
-=¤findÂÂ‘P·ArrowFunctionExpressionÍ
->Í
-SÀÃÂÂ‘MªIdentifierÍ
->Í
-?¡n_°BinaryExpressionÍ
-CÍ
-SS°MemberExpressionÍ
-CÍ
-GMªIdentifierÍ
-CÍ
-D¡nMªIdentifierÍ
-EÍ
-G¢idÂÂ£===S°MemberExpressionÍ
-LÍ
-SMªIdentifierÍ
-LÍ
-M¡eMªIdentifierÍ
-NÍ
-S¥netIdÂÂÂ¥constW«IfStatementÍ
-cÍ
-äMªIdentifierÍ
-gÍ
-k¤byIdN®BlockStatementÍ
-mÍ
-ä“Q³ExpressionStatementÍ
-€Í
-’`´AssignmentExpressionÍ
-€Í
-‘¡=S°MemberExpressionÍ
-€Í
-‡MªIdentifierÍ
-€Í
-¡eMªIdentifierÍ
-‚Í
-‡¥netIdÂÂS°MemberExpressionÍ
-ŠÍ
-‘MªIdentifierÍ
-ŠÍ
-¤byIdMªIdentifierÍ
-Í
-‘¢idÂÂQ³ExpressionStatementÍ
-¤Í
-º`´AssignmentExpressionÍ
-¤Í
-¹¡=S°MemberExpressionÍ
-¤Í
-­MªIdentifierÍ
-¤Í
-¥¡eMªIdentifierÍ
-¦Í
-­§netNameÂÂS°MemberExpressionÍ
-°Í
-¹MªIdentifierÍ
-°Í
-´¤byIdMªIdentifierÍ
-µÍ
-¹¤nameÂÂd±ContinueStatementÍ
-ÌÍ
-ÕÀÀ]³VariableDeclarationÍ
-òÍG‘^²VariableDeclaratorÍ
-øÍFMªIdentifierÍ
-øÍ
-ş¦byNameR®CallExpressionÍÍFS°MemberExpressionÍÍS°MemberExpressionÍÍS°MemberExpressionÍÍMªIdentifierÍÍ¢bbMªIdentifierÍÍ§workDocÂÂMªIdentifierÍÍ¤netsÂÂMªIdentifierÍÍ¤findÂÂ‘P·ArrowFunctionExpressionÍÍEÀÃÂÂ‘MªIdentifierÍÍ¡n_±LogicalExpressionÍÍE_°BinaryExpressionÍÍ/S°MemberExpressionÍÍ!MªIdentifierÍÍ¡nMªIdentifierÍÍ!¤nameÂÂ£===S°MemberExpressionÍ&Í/MªIdentifierÍ&Í'¡eMªIdentifierÍ(Í/§netNameÂÂ¢||_°BinaryExpressionÍ3ÍES°MemberExpressionÍ3Í9MªIdentifierÍ3Í4¡nMªIdentifierÍ5Í9¤nameÂÂ£===S°MemberExpressionÍ>ÍEMªIdentifierÍ>Í?¡eMªIdentifierÍ@ÍE¥netIdÂÂÂ¥constW«IfStatementÍUÍÁMªIdentifierÍYÍ_¦byNameN®BlockStatementÍaÍÁ’Q³ExpressionStatementÍtÍˆ`´AssignmentExpressionÍtÍ‡¡=S°MemberExpressionÍtÍ{MªIdentifierÍtÍu¡eMªIdentifierÍvÍ{¥netIdÂÂS°MemberExpressionÍ~Í‡MªIdentifierÍ~Í„¦byNameMªIdentifierÍ…Í‡¢idÂÂQ³ExpressionStatementÍšÍ²`´AssignmentExpressionÍšÍ±¡=S°MemberExpressionÍšÍ£MªIdentifierÍšÍ›¡eMªIdentifierÍœÍ£§netNameÂÂS°MemberExpressionÍ¦Í±MªIdentifierÍ¦Í¬¦byNameMªIdentifierÍ­Í±¤nameÂÂÀ]³VariableDeclarationÍÖÍğ‘^²VariableDeclaratorÍÜÍïMªIdentifierÍÜÍã§coveredb­NewExpressionÍæÍïMªIdentifierÍêÍí£Set¥conste¬ForStatementÍúÍ¤]³VariableDeclarationÍÿÍ‘^²VariableDeclaratorÍÍMªIdentifierÍÍ¡i\§LiteralÍÍ ¡0£let_°BinaryExpressionÍ
-ÍMªIdentifierÍ
-Í¡i¡<S°MemberExpressionÍÍS°MemberExpressionÍÍMªIdentifierÍÍ¤planMªIdentifierÍÍ¤netsÂÂMªIdentifierÍÍ¦lengthÂÂX°UpdateExpressionÍ Í#¢++ÂMªIdentifierÍ Í!¡iN®BlockStatementÍ%Í¤‘W«IfStatementÍ4Í™_°BinaryExpressionÍ8ÍUS°MemberExpressionÍ8ÍQS°MemberExpressionÍ8ÍJS°MemberExpressionÍ8ÍDS°MemberExpressionÍ8ÍAMªIdentifierÍ8Í<¤planMªIdentifierÍ=ÍA¤netsÂÂMªIdentifierÍBÍC¡iÃÂMªIdentifierÍEÍJ¥netIdÂÂMªIdentifierÍKÍQ¦lengthÂÂ¡>\§LiteralÍTÍU ¡0N®BlockStatementÍWÍ™‘Q³ExpressionStatementÍjÍŠR®CallExpressionÍjÍ‰S°MemberExpressionÍjÍuMªIdentifierÍjÍq§coveredMªIdentifierÍrÍu£addÂÂ‘S°MemberExpressionÍvÍˆS°MemberExpressionÍvÍ‚S°MemberExpressionÍvÍMªIdentifierÍvÍz¤planMªIdentifierÍ{Í¤netsÂÂMªIdentifierÍ€Í¡iÃÂMªIdentifierÍƒÍˆ¥netIdÂÂÂÀ]³VariableDeclarationÍ®ÍÃ‘^²VariableDeclaratorÍ´ÍÂMªIdentifierÍ´Í½©mustRoutea¯ArrayExpressionÍÀÍÂ¥const]³VariableDeclarationÍÍÍè‘^²VariableDeclaratorÍÓÍçMªIdentifierÍÓÍâ¯missingPowerGnda¯ArrayExpressionÍåÍç¥conste¬ForStatementÍòÍq]³VariableDeclarationÍ÷Í ‘^²VariableDeclaratorÍûÍ MªIdentifierÍûÍü¡i\§LiteralÍÿÍ  ¡0£let_°BinaryExpressionÍÍMªIdentifierÍÍ¡i¡<S°MemberExpressionÍÍS°MemberExpressionÍÍS°MemberExpressionÍÍMªIdentifierÍÍ¢bbMªIdentifierÍ	Í§workDocÂÂMªIdentifierÍÍ¤netsÂÂMªIdentifierÍÍ¦lengthÂÂX°UpdateExpressionÍÍ!¢++ÂMªIdentifierÍÍ¡iN®BlockStatementÍ#Íq•]³VariableDeclarationÍ2ÍO‘^²VariableDeclaratorÍ8ÍNMªIdentifierÍ8Í9¡nS°MemberExpressionÍ<ÍNS°MemberExpressionÍ<ÍKS°MemberExpressionÍ<ÍFMªIdentifierÍ<Í>¢bbMªIdentifierÍ?ÍF§workDocÂÂMªIdentifierÍGÍK¤netsÂÂMªIdentifierÍLÍM¡iÃÂ¥const]³VariableDeclarationÍ]Í‡‘^²VariableDeclaratorÍcÍ†MªIdentifierÍcÍg¤pads_±LogicalExpressionÍjÍ†R®CallExpressionÍjÍS°MemberExpressionÍjÍ{MªIdentifierÍjÍw­padCountByNetMªIdentifierÍxÍ{£getÂÂ‘S°MemberExpressionÍ|Í€MªIdentifierÍ|Í}¡nMªIdentifierÍ~Í€¢idÂÂÂ¢??\§LiteralÍ…Í† ¡0¥constW«IfStatementÍ•ÍÎ_°BinaryExpressionÍ™Í¡MªIdentifierÍ™Í¤pads¡<\§LiteralÍ Í¡¡2N®BlockStatementÍ£ÍÎ‘d±ContinueStatementÍ¶Í¿ÀÀQ³ExpressionStatementÍÜÍñR®CallExpressionÍÜÍğS°MemberExpressionÍÜÍêMªIdentifierÍÜÍå©mustRouteMªIdentifierÍæÍê¤pushÂÂ‘S°MemberExpressionÍëÍïMªIdentifierÍëÍì¡nMªIdentifierÍíÍï¢idÂÂÂW«IfStatementÍÿÍfX¯UnaryExpressionÍÍ¡!ÃR®CallExpressionÍÍS°MemberExpressionÍÍMªIdentifierÍÍ§coveredMªIdentifierÍÍ£hasÂÂ‘S°MemberExpressionÍÍMªIdentifierÍÍ¡nMªIdentifierÍÍ¢idÂÂÂN®BlockStatementÍÍf’]³VariableDeclarationÍ*ÍM‘^²VariableDeclaratorÍ0ÍLMªIdentifierÍ0Í5¥unameR®CallExpressionÍ8ÍLS°MemberExpressionÍ8ÍJS°MemberExpressionÍ8Í>MªIdentifierÍ8Í9¡nMªIdentifierÍ:Í>¤nameÂÂMªIdentifierÍ?ÍJ«toUpperCaseÂÂÂ¥constW«IfStatementÍ_ÍW_±LogicalExpressionÍcÍ_±LogicalExpressionÍcÍñ_±LogicalExpressionÍcÍİ_±LogicalExpressionÍcÍÊ_±LogicalExpressionÍcÍ¢_±LogicalExpressionÍcÍ…_°BinaryExpressionÍcÍrMªIdentifierÍcÍh¥uname£===\§LiteralÍmÍr£GND¥'GND'¢||_°BinaryExpressionÍvÍ…MªIdentifierÍvÍ{¥uname£===\§LiteralÍ€Í…£VSS¥'VSS'¢||_°BinaryExpressionÍ‰Í¢R®CallExpressionÍ‰ÍS°MemberExpressionÍ‰Í–MªIdentifierÍ‰Í¥unameMªIdentifierÍÍ–§indexOfÂÂ‘\§LiteralÍ—Íœ£GND¥'GND'Â¢>=\§LiteralÍ¡Í¢ ¡0¢||_°BinaryExpressionÍ»ÍÊMªIdentifierÍ»ÍÀ¥uname£===\§LiteralÍÅÍÊ£VCC¥'VCC'¢||_°BinaryExpressionÍÎÍİMªIdentifierÍÎÍÓ¥uname£===\§LiteralÍØÍİ£VDD¥'VDD'¢||_°BinaryExpressionÍáÍñMªIdentifierÍáÍæ¥uname£===\§LiteralÍëÍñ¤VOUT¦'VOUT'¢||_°BinaryExpressionÍõÍR®CallExpressionÍõÍ	S°MemberExpressionÍõÍMªIdentifierÍõÍú¥unameMªIdentifierÍûÍ§indexOfÂÂ‘\§LiteralÍÍ£VCC¥'VCC'Â¢>=\§LiteralÍÍ ¡0N®BlockStatementÍÍW‘Q³ExpressionStatementÍ'ÍDR®CallExpressionÍ'ÍCS°MemberExpressionÍ'Í;MªIdentifierÍ'Í6¯missingPowerGndMªIdentifierÍ7Í;¤pushÂÂ‘S°MemberExpressionÍ<ÍBMªIdentifierÍ<Í=¡nMªIdentifierÍ>ÍB¤nameÂÂÂÀÀW«IfStatementÍ{Í=_°BinaryExpressionÍÍ™S°MemberExpressionÍÍ•MªIdentifierÍÍ¯missingPowerGndMªIdentifierÍÍ•¦lengthÂÂ¡>\§LiteralÍ˜Í™ ¡0N®BlockStatementÍ›Í=‘Y¯ReturnStatementÍªÍ2Z°ObjectExpressionÍ±Í1’[¨PropertyÍÄÍÍÂÂÂMªIdentifierÍÄÍÆ¢ok\§LiteralÍÈÍÍÂ¥false¤init[¨PropertyÍàÍ"ÂÂÂMªIdentifierÍàÍæ¦reasonT¯TemplateLiteralÍèÍ"‘R®CallExpressionÍÍ S°MemberExpressionÍÍMªIdentifierÍÍ¯missingPowerGndMªIdentifierÍÍ¤joinÂÂ‘\§LiteralÍÍ¡,£','Â’U¯TemplateElementÍéÍV¼net_plan missing power/gnd: ¼net_plan missing power/gnd: ÂU¯TemplateElementÍ!Í!V  Ã¤initÀ]³VariableDeclarationÍGÍ[‘^²VariableDeclaratorÍKÍZMªIdentifierÍKÍV«missingMust\§LiteralÍYÍZ ¡0£lete¬ForStatementÍeÍú]³VariableDeclarationÍjÍs‘^²VariableDeclaratorÍnÍsMªIdentifierÍnÍo¡i\§LiteralÍrÍs ¡0£let_°BinaryExpressionÍuÍ‰MªIdentifierÍuÍv¡i¡<S°MemberExpressionÍyÍ‰MªIdentifierÍyÍ‚©mustRouteMªIdentifierÍƒÍ‰¦lengthÂÂX°UpdateExpressionÍ‹Í¢++ÂMªIdentifierÍ‹ÍŒ¡iN®BlockStatementÍÍú‘W«IfStatementÍŸÍïX¯UnaryExpressionÍ£Í½¡!ÃR®CallExpressionÍ¤Í½S°MemberExpressionÍ¤Í¯MªIdentifierÍ¤Í«§coveredMªIdentifierÍ¬Í¯£hasÂÂ‘S°MemberExpressionÍ°Í¼MªIdentifierÍ°Í¹©mustRouteMªIdentifierÍºÍ»¡iÃÂÂN®BlockStatementÍ¿Íï‘Q³ExpressionStatementÍÒÍàX°UpdateExpressionÍÒÍß¢++ÂMªIdentifierÍÒÍİ«missingMustÀW«IfStatementÍÍ_±LogicalExpressionÍÍX_±LogicalExpressionÍÍ/_°BinaryExpressionÍÍS°MemberExpressionÍÍMªIdentifierÍÍ©mustRouteMªIdentifierÍÍ¦lengthÂÂ¡>\§LiteralÍÍ ¡0¢&&_°BinaryExpressionÍ Í/MªIdentifierÍ Í+«missingMust¡>\§LiteralÍ.Í/ ¡0¢&&_°BinaryExpressionÍ3ÍX_°BinaryExpressionÍ3ÍQMªIdentifierÍ3Í>«missingMust¡/S°MemberExpressionÍAÍQMªIdentifierÍAÍJ©mustRouteMªIdentifierÍKÍQ¦lengthÂÂ¡>\§LiteralÍTÍXË?Ğ      ¤0.25N®BlockStatementÍZÍ‘Y¯ReturnStatementÍiÍZ°ObjectExpressionÍpÍ’[¨PropertyÍƒÍŒÂÂÂMªIdentifierÍƒÍ…¢ok\§LiteralÍ‡ÍŒÂ¥false¤init[¨PropertyÍŸÍøÂÂÂMªIdentifierÍŸÍ¥¦reasonT¯TemplateLiteralÍ§Íø’MªIdentifierÍÉÍÔ«missingMustS°MemberExpressionÍØÍèMªIdentifierÍØÍá©mustRouteMªIdentifierÍâÍè¦lengthÂÂ“U¯TemplateElementÍ¨ÍÇV¿net_plan coverage low: missing ¿net_plan coverage low: missing ÂU¯TemplateElementÍÕÍÖV¡/¡/ÂU¯TemplateElementÍéÍ÷V® routable nets® routable netsÃ¤initÀW«IfStatementÍÍ¹_°BinaryExpressionÍ!Í0MªIdentifierÍ!Í,«missingMust¡>\§LiteralÍ/Í0 ¡0N®BlockStatementÍ2Í¹‘Q³ExpressionStatementÍAÍ®R®CallExpressionÍAÍ­S°MemberExpressionÍAÍLMªIdentifierÍAÍG¦LoggerMªIdentifierÍHÍL¤warnÂÂ’MªIdentifierÍMÍ\¯INSTR_TRACE_TAGT¯TemplateLiteralÍ^Í¬’MªIdentifierÍ}Íˆ«missingMustS°MemberExpressionÍŒÍœMªIdentifierÍŒÍ•©mustRouteMªIdentifierÍ–Íœ¦lengthÂÂ“U¯TemplateElementÍ_Í{V¼[AI_PCB] net_plan soft-miss ¼[AI_PCB] net_plan soft-miss ÂU¯TemplateElementÍ‰ÍŠV¡/¡/ÂU¯TemplateElementÍÍ«V® routable nets® routable netsÃÂÀ]³VariableDeclarationÍÍ‘^²VariableDeclaratorÍÍMªIdentifierÍÍ©pourCount\§LiteralÍÍ ¡0£lete¬ForStatementÍÍ¾]³VariableDeclarationÍ$Í-‘^²VariableDeclaratorÍ(Í-MªIdentifierÍ(Í)¡i\§LiteralÍ,Í- ¡0£let_°BinaryExpressionÍ/ÍCMªIdentifierÍ/Í0¡i¡<S°MemberExpressionÍ3ÍCS°MemberExpressionÍ3Í<MªIdentifierÍ3Í7¤planMªIdentifierÍ8Í<¤netsÂÂMªIdentifierÍ=ÍC¦lengthÂÂX°UpdateExpressionÍEÍH¢++ÂMªIdentifierÍEÍF¡iN®BlockStatementÍJÍ¾‘W«IfStatementÍYÍ³_°BinaryExpressionÍ]ÍƒS°MemberExpressionÍ]ÍsS°MemberExpressionÍ]ÍiS°MemberExpressionÍ]ÍfMªIdentifierÍ]Ía¤planMªIdentifierÍbÍf¤netsÂÂMªIdentifierÍgÍh¡iÃÂMªIdentifierÍjÍs©routeModeÂÂ£===\§LiteralÍxÍƒ©forcePour«'forcePour'N®BlockStatementÍ…Í³‘Q³ExpressionStatementÍ˜Í¤X°UpdateExpressionÍ˜Í£¢++ÂMªIdentifierÍ˜Í¡©pourCountÀW«IfStatementÍÈÍø_°BinaryExpressionÍÌÍÙMªIdentifierÍÌÍÕ©pourCount¡>\§LiteralÍØÍÙ ¡0N®BlockStatementÍÛÍø‘e¬ForStatementÍêÍí]³VariableDeclarationÍïÍø‘^²VariableDeclaratorÍóÍøMªIdentifierÍóÍô¡i\§LiteralÍ÷Íø ¡0£let_°BinaryExpressionÍúÍMªIdentifierÍúÍû¡i¡<S°MemberExpressionÍşÍS°MemberExpressionÍşÍMªIdentifierÍşÍ¤planMªIdentifierÍÍ¤netsÂÂMªIdentifierÍÍ¦lengthÂÂX°UpdateExpressionÍÍ¢++ÂMªIdentifierÍÍ¡iN®BlockStatementÍÍí–]³VariableDeclarationÍ(Í?‘^²VariableDeclaratorÍ.Í>MªIdentifierÍ.Í/¡eS°MemberExpressionÍ2Í>S°MemberExpressionÍ2Í;MªIdentifierÍ2Í6¤planMªIdentifierÍ7Í;¤netsÂÂMªIdentifierÍ<Í=¡iÃÂ¥constW«IfStatementÍQÍ¥_°BinaryExpressionÍUÍpS°MemberExpressionÍUÍ`MªIdentifierÍUÍV¡eMªIdentifierÍWÍ`©routeModeÂÂ£!==\§LiteralÍeÍp©forcePour«'forcePour'N®BlockStatementÍrÍ¥‘d±ContinueStatementÍ‰Í’ÀÀQ³ExpressionStatementÍ·Í"R®CallExpressionÍ·Í!S°MemberExpressionÍ·ÍÂMªIdentifierÍ·Í½¦LoggerMªIdentifierÍ¾ÍÂ¤warnÂÂ’MªIdentifierÍÃÍÒ¯INSTR_TRACE_TAGT¯TemplateLiteralÍÔÍ ‘S°MemberExpressionÍğÍùMªIdentifierÍğÍñ¡eMªIdentifierÍòÍù§netNameÂÂ’U¯TemplateElementÍÕÍîV¹[AI_PCB] net_plan demote ¹[AI_PCB] net_plan demote ÂU¯TemplateElementÍúÍVÙ' forcePourâ†’forceTrack (no zone stage)Ù' forcePourâ†’forceTrack (no zone stage)ÃÂQ³ExpressionStatementÍ4ÍO`´AssignmentExpressionÍ4ÍN¡=S°MemberExpressionÍ4Í?MªIdentifierÍ4Í5¡eMªIdentifierÍ6Í?©routeModeÂÂ\§LiteralÍBÍNªforceTrack¬'forceTrack'W«IfStatementÍaÍ+_±LogicalExpressionÍeÍX¯UnaryExpressionÍeÍq¡!ÃS°MemberExpressionÍfÍqMªIdentifierÍfÍg¡eMªIdentifierÍhÍq©layerHintÂÂ¢||_°BinaryExpressionÍuÍS°MemberExpressionÍuÍ‡S°MemberExpressionÍuÍ€MªIdentifierÍuÍv¡eMªIdentifierÍwÍ€©layerHintÂÂMªIdentifierÍÍ‡¦lengthÂÂ£===\§LiteralÍŒÍ ¡0N®BlockStatementÍÍ+‘Q³ExpressionStatementÍ¦Í`´AssignmentExpressionÍ¦Í¡=S°MemberExpressionÍ¦Í±MªIdentifierÍ¦Í§¡eMªIdentifierÍ¨Í±©layerHintÂÂWµConditionalExpressionÍ´Í_°BinaryExpressionÍ´ÍÄS°MemberExpressionÍ´ÍºMªIdentifierÍ´Íµ¡eMªIdentifierÍ¶Íº¤kindÂÂ£===\§LiteralÍ¿ÍÄ£gnd¥'gnd'\§LiteralÍÇÍÍ¤stub¦'stub'WµConditionalExpressionÍêÍ_°BinaryExpressionÍêÍüS°MemberExpressionÍêÍğMªIdentifierÍêÍë¡eMªIdentifierÍìÍğ¤kindÂÂ£===\§LiteralÍõÍü¥power§'power'\§LiteralÍÿÍ	¨signal_hª'signal_h'\§LiteralÍÍ¨signal_hª'signal_h'ÀW«IfStatementÍ=ÍŞ_±LogicalExpressionÍAÍ‡_±LogicalExpressionÍBÍh_°BinaryExpressionÍBÍRS°MemberExpressionÍBÍHMªIdentifierÍBÍC¡eMªIdentifierÍDÍH¤kindÂÂ£===\§LiteralÍMÍR£gnd¥'gnd'¢||_°BinaryExpressionÍVÍhS°MemberExpressionÍVÍ\MªIdentifierÍVÍW¡eMªIdentifierÍXÍ\¤kindÂÂ£===\§LiteralÍaÍh¥power§'power'¢&&_°BinaryExpressionÍmÍ‡S°MemberExpressionÍmÍyMªIdentifierÍmÍn¡eMªIdentifierÍoÍyªbusYOffsetÂÂ£===MªIdentifierÍ~Í‡©undefinedN®BlockStatementÍ‰ÍŞ‘Q³ExpressionStatementÍ ÍË`´AssignmentExpressionÍ ÍÊ¡=S°MemberExpressionÍ Í¬MªIdentifierÍ Í¡¡eMªIdentifierÍ¢Í¬ªbusYOffsetÂÂWµConditionalExpressionÍ¯ÍÊ_°BinaryExpressionÍ¯Í¿S°MemberExpressionÍ¯ÍµMªIdentifierÍ¯Í°¡eMªIdentifierÍ±Íµ¤kindÂÂ£===\§LiteralÍºÍ¿£gnd¥'gnd'X¯UnaryExpressionÍÂÍÅ¡-Ã\§LiteralÍÃÍÅ<¢60\§LiteralÍÈÍÊ<¢60ÀÀQ³ExpressionStatementÍÍ`´AssignmentExpressionÍÍ¡=S°MemberExpressionÍÍMªIdentifierÍÍ¢bbMªIdentifierÍÍ§netPlanÂÂMªIdentifierÍÍ¤planQ³ExpressionStatementÍÍ7R®CallExpressionÍÍ6S°MemberExpressionÍÍ*MªIdentifierÍÍ ¢bbMªIdentifierÍ!Í*©markStageÂÂ‘\§LiteralÍ+Í5¨net_planª'net_plan'ÂQ³ExpressionStatementÍAÍ•R®CallExpressionÍAÍ”S°MemberExpressionÍAÍLMªIdentifierÍAÍG¦LoggerMªIdentifierÍHÍL¤infoÂÂ’MªIdentifierÍMÍ\¯INSTR_TRACE_TAGT¯TemplateLiteralÍ^Í“‘S°MemberExpressionÍÍ‘S°MemberExpressionÍÍŠMªIdentifierÍÍ…¤planMªIdentifierÍ†ÍŠ¤netsÂÂMªIdentifierÍ‹Í‘¦lengthÂÂ’U¯TemplateElementÍ_ÍVÙ [AI_PCB] stage=net_plan ok nets=Ù [AI_PCB] stage=net_plan ok nets=ÂU¯TemplateElementÍ’Í’V  ÃÂY¯ReturnStatementÍŸÍÁZ°ObjectExpressionÍ¦ÍÀ’[¨PropertyÍ¨Í°ÂÂÂMªIdentifierÍ¨Íª¢ok\§LiteralÍ¬Í°Ã¤true¤init[¨PropertyÍ²Í¾ÂÂÂMªIdentifierÍ²Í¸¦reason\§LiteralÍºÍ¾¢ok¤'ok'¤initÀ–Ôrf•¤type¥start£endªspecifiers¦source±ImportDeclarationÌ]Ì’Ôrg•¤type¥start£end¨imported¥local¯ImportSpecifierÌfÌlMªIdentifierÌfÌl¦LoggerMªIdentifierÌfÌl¦Loggerg¯ImportSpecifierÌnÌ}MªIdentifierÌnÌ}¯INSTR_TRACE_TAGMªIdentifierÌnÌ}¯INSTR_TRACE_TAG\§LiteralÌ…Ì¦common¨'common'f±ImportDeclarationÌÌÊ‘g¯ImportSpecifierÌ™Ì¥MªIdentifierÌ™Ì¥¬PromptLoaderMªIdentifierÌ™Ì¥¬PromptLoader\§LiteralÌ­ÌÉº../../prompts/PromptLoader¼'../../prompts/PromptLoader'f±ImportDeclarationÌÌÍ‘g¯ImportSpecifierÌÕÌåMªIdentifierÌÕÌå°PcbDocSummarizerMªIdentifierÌÕÌå°PcbDocSummarizer\§LiteralÌíÍ²./PcbDocSummarizer´'./PcbDocSummarizer'f±ImportDeclarationÍÍ6‘g¯ImportSpecifierÍÍMªIdentifierÍÍ¯parsePcbNetPlanMªIdentifierÍÍ¯parsePcbNetPlan\§LiteralÍ$Í5¯./PcbLlmParsers±'./PcbLlmParsers'f±ImportDeclarationÍ8Íi‘g¯ImportSpecifierÍAÍQMªIdentifierÍAÍQ°pcbStageChatOptsMªIdentifierÍAÍQ°pcbStageChatOpts\§LiteralÍYÍh­./PcbChatOpts¯'./PcbChatOpts'f±ImportDeclarationÍkÍ¥‘g¯ImportSpecifierÍtÍˆMªIdentifierÍtÍˆ´pcbImpureReplyReasonMªIdentifierÍtÍˆ´pcbImpureReplyReason\§LiteralÍÍ¤²./PcbLlmReplyGuard´'./PcbLlmReplyGuard'

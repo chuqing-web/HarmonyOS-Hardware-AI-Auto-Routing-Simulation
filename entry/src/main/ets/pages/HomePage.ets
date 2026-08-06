@@ -563,26 +563,40 @@ struct HomePage {
   }
 
   private buildRecentEntries(): HomeProjectEntry[] {
-    const merged: string[] = [];
+    // 顺序：getRecentFiles() 已是最近打开优先；未进最近列表的沙箱/恢复文件追加在后
+    const ordered: HomeProjectEntry[] = [];
     const seen: Set<string> = new Set();
-    const push = (p: string): void => {
-      if (!seen.has(p)) { seen.add(p); merged.push(p); }
+    const appendIfExists = (path: string): void => {
+      if (seen.has(path) || !this.fileExists(path)) {
+        return;
+      }
+      seen.add(path);
+      ordered.push(this.entryFromPath(path, this.recoveryFiles.includes(path)));
     };
     const recents = this.appService.filePersistence.getRecentFiles();
-    for (let i = 0; i < recents.length; i++) { push(recents[i]); }
-    const sandbox = this.appService.listUserProjectFiles();
-    for (let i = 0; i < sandbox.length; i++) { push(sandbox[i]); }
-    for (let i = 0; i < this.recoveryFiles.length; i++) { push(this.recoveryFiles[i]); }
-    const entries: HomeProjectEntry[] = [];
-    for (let i = 0; i < merged.length; i++) {
-      const path = merged[i];
-      if (!this.fileExists(path)) {
-        continue;
-      }
-      entries.push(this.entryFromPath(path, this.recoveryFiles.includes(path)));
+    for (let i = 0; i < recents.length; i++) {
+      appendIfExists(recents[i]);
     }
-    entries.sort((a, b) => b.modifiedMs - a.modifiedMs);
-    return entries;
+    const rest: HomeProjectEntry[] = [];
+    const pushRest = (path: string): void => {
+      if (seen.has(path) || !this.fileExists(path)) {
+        return;
+      }
+      seen.add(path);
+      rest.push(this.entryFromPath(path, this.recoveryFiles.includes(path)));
+    };
+    const sandbox = this.appService.listUserProjectFiles();
+    for (let i = 0; i < sandbox.length; i++) {
+      pushRest(sandbox[i]);
+    }
+    for (let i = 0; i < this.recoveryFiles.length; i++) {
+      pushRest(this.recoveryFiles[i]);
+    }
+    rest.sort((a, b) => b.modifiedMs - a.modifiedMs);
+    for (let i = 0; i < rest.length; i++) {
+      ordered.push(rest[i]);
+    }
+    return ordered;
   }
 
   private buildSampleEntries(): HomeProjectEntry[] {
@@ -703,6 +717,8 @@ struct HomePage {
       this.refreshLists();
       return;
     }
+    // 首页点击即记入最近打开顺序（加载成功后 loadProject 会再写一次，幂等）
+    this.appService.filePersistence.addRecentFile(path);
     if (ProjectPaths.isPcbProjectPath(path)) {
       this.goToPcbEditor({ launchMode: 'open', projectPath: path });
       return;

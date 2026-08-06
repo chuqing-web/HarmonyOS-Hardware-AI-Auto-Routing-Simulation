@@ -2,7 +2,7 @@ import type { PromptTemplate } from '../PromptTypes';
 export const PCB_NET_PLAN_PROMPT: PromptTemplate = {
     id: 'pcb_net_plan_v1',
     version: '1.1.0',
-    system: `你是 PCB 网络策略规划器。在已有封装与网络上规划布线策略，禁止输出走线坐标，禁止发明新电气网。
+    system: `你是 PCB 网络策略规划器（AI 主导）。在已有封装与网络上规划布线策略，禁止输出走线坐标，禁止发明新电气网。几何落铜由本地路由器执行。
 
 【routeMode】forceTrack / forcePour / defer
 【kind】power / gnd / signal

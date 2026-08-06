@@ -1283,19 +1283,49 @@ export function rebuildWireNetTopology(doc: SchematicDocument, gridSize: number 
     if (sid === undefined) {
       const keepName = inheritedNameForRep.get(rep) ?? '';
       if (keepName.length > 0) {
-        const existing = findNetByName(doc, keepName);
-        if (existing !== null) {
-          sid = existing;
+        const keepUp = keepName.toUpperCase();
+        // 电源轨名：多几何岛必须并回同一 netId（stub 未 UF 连通时也如此）
+        if (keepUp === 'GND' || keepUp === 'VSS' || keepUp === 'AGND') {
+          sid = gndNetId;
           assignInheritExisting++;
           Logger.info(INSTR_TRACE_TAG,
-            `[TOPO] NET_ASSIGN inherit_existing rep=${rep} name=${keepName} → id=${sid}`);
-        } else {
-          signalIdx++;
-          sid = `net_topo_sig_${signalIdx}`;
-          ensureNet(doc, sid, keepName, NetType.SIGNAL);
-          assignInheritNew++;
+            `[TOPO] NET_ASSIGN inherit_rail rep=${rep} name=${keepName} → id=${sid}`);
+        } else if (keepUp === 'VCC' || keepUp === 'VDD') {
+          sid = vccNetId;
+          assignInheritExisting++;
           Logger.info(INSTR_TRACE_TAG,
-            `[TOPO] NET_ASSIGN inherit_new rep=${rep} name=${keepName} → id=${sid}`);
+            `[TOPO] NET_ASSIGN inherit_rail rep=${rep} name=${keepName} → id=${sid}`);
+        } else if (keepUp === 'VEE') {
+          sid = veeNetId;
+          assignInheritExisting++;
+          Logger.info(INSTR_TRACE_TAG,
+            `[TOPO] NET_ASSIGN inherit_rail rep=${rep} name=${keepName} → id=${sid}`);
+        } else {
+          const existing = findNetByName(doc, keepName);
+          // 信号语义名：禁止第二几何岛 inherit_existing 撞成 NET_COLLAPSE
+          const alreadyClaimed = existing !== null &&
+            (netIdToReps.get(existing) ?? []).length > 0;
+          if (existing !== null && !alreadyClaimed) {
+            sid = existing;
+            assignInheritExisting++;
+            Logger.info(INSTR_TRACE_TAG,
+              `[TOPO] NET_ASSIGN inherit_existing rep=${rep} name=${keepName} → id=${sid}`);
+          } else if (existing !== null && alreadyClaimed) {
+            signalIdx++;
+            sid = `net_topo_sig_${signalIdx}`;
+            ensureNet(doc, sid, `NET_${signalIdx}`, NetType.SIGNAL);
+            assignFresh++;
+            Logger.warn(INSTR_TRACE_TAG,
+              `[TOPO] NET_ASSIGN inherit_collision rep=${rep} name=${keepName} ` +
+              `claimed_by=${existing} → fresh NET_${signalIdx} id=${sid}`);
+          } else {
+            signalIdx++;
+            sid = `net_topo_sig_${signalIdx}`;
+            ensureNet(doc, sid, keepName, NetType.SIGNAL);
+            assignInheritNew++;
+            Logger.info(INSTR_TRACE_TAG,
+              `[TOPO] NET_ASSIGN inherit_new rep=${rep} name=${keepName} → id=${sid}`);
+          }
         }
       } else {
         signalIdx++;

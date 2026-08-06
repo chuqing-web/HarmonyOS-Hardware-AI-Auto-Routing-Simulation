@@ -219,7 +219,8 @@ add({
   id: 'VAC', name: 'VAC 交流电源', vendor: 'Generic', category: 'power_supply', sub: 'ac',
   dir: 'Power', depth: 1, model: 'ac_source', modelType: 'spice', isMcu: false,
   symbols: ['regulator.svg'],
-  pins: [pin(1, 'AC+', T.power, -20, 0), pin(2, 'AC-', T.power, 20, 0)],
+  // PASSIVE：AC- 并 GND 时勿触发电源/地同网误报
+  pins: [pin(1, 'AC+', T.passive, -20, 0), pin(2, 'AC-', T.passive, 20, 0)],
   params: { amplitude: '220V', frequency: '50Hz' },
 });
 add({

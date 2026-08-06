@@ -187,14 +187,16 @@ export {
 } from './src/main/ets/types/AiExtendedTypes';
 
 export {
-  PcbLayerRole, PcbRouteMode, PcbNetKind, PcbResidualKind,
+  PcbLayerRole, PcbRouteMode, PcbNetKind, PcbResidualKind, PcbPlacementMode,
+  PcbPlacementDecision,
   PcbPlacementItem, PcbPlacementGroup, PcbPlacementPlan,
   PcbNetPlanEntry, PcbNetPlanResult,
   PcbViaPreference, PcbRoutePolicy, PcbQaRepairPlan,
   PcbGeometrySeg, PcbGeometryResult, PcbGeoFailDetail, PcbAiRouteResult, PcbPadEndpoint,
   PcbLlmTrackPath, PcbLlmViaSpec, PcbLlmGeometryPlan,
   emptyPcbAiRouteResult, copperRoleKeys, policyCoversCopperLayers,
-  validateLayerRoleSemantics, policyHasStub
+  validateLayerRoleSemantics, policyHasStub, isTrustedPcbStrategy,
+  PcbTrustedStrategyFlags
 } from './src/main/ets/types/PcbAiRouteTypes';
 
 export {
@@ -397,7 +399,12 @@ export {
 export { routePowerBuses, PowerBusRouteOut } from './src/main/ets/utils/pcb_route/PowerBusRouter';
 export { createViaAt } from './src/main/ets/utils/pcb_route/PcbViaFactory';
 export { ensureAllCopperUsed, fillUnusedCopperLayers } from './src/main/ets/utils/pcb_route/ensureAllCopperUsed';
-export { applyPcbPlacementPlan, PlacementApplyResult } from './src/main/ets/utils/pcb_route/PcbPlacementExecutor';
+export {
+  applyPcbPlacementPlan, PlacementApplyResult, PlacementApplyOptions
+} from './src/main/ets/utils/pcb_route/PcbPlacementExecutor';
+export {
+  buildLocalNetPlan, buildLocalRoutePolicy
+} from './src/main/ets/utils/pcb_route/PcbLocalStrategy';
 export {
   pathClearOfTracks, pathClearBlockReason, clearanceForNet, trackWidthForNet
 } from './src/main/ets/utils/pcb_route/PcbClearanceOracle';
@@ -412,7 +419,7 @@ export {
   tracePcbManualRoute, tracePcbManualRouteReject, tracePcbTrackAdded,
   tracePcbDrc, tracePcbSchCompare, tracePcbNetRoutingSummary, tracePcbReverseResult,
   tracePcbFullState, tracePcbPinConnectivity, tracePcbCanvasRealtime, PcbCanvasTraceSnapshot,
-  tracePcbLayoutCrowd, tracePcbView2dAudit, tracePcbView3dAudit, tracePcbDisplayDump,
+  tracePcbLayoutCrowd, tracePcbTrackCrossAudit, tracePcbView2dAudit, tracePcbView3dAudit, tracePcbDisplayDump,
   PcbView2dTraceParams, PcbView3dTraceParams
 } from './src/main/ets/utils/PcbTraceLog';
 
@@ -421,7 +428,7 @@ export {
   updateTracksForFootprintTransformDetailed, syncMovedTrackJunctions,
   lockTrackEndpointsToPads,
   collectNetIdsForFootprints, snapTrackEndpointsToPads, snapTrackEndpointsNearFootprints,
-  pruneZeroLengthTracks,
+  pruneZeroLengthTracks, mergeColinearTracks, pruneShortTracks,
   orderPointsNearestNeighbor, padSnapTolerance, junctionMatchTolerance,
   pcbPadPosKey, TrackFollowResult, TrackEndpointSnapshot
 } from './src/main/ets/utils/PcbTrackBindUtil';

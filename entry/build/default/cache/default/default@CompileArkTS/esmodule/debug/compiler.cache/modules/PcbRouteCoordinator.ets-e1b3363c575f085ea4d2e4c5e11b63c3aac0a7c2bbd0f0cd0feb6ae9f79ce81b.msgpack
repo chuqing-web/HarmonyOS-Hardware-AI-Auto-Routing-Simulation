@@ -1,604 +1,0 @@
-Ôr@Ÿªassertions¤code´customTransformCache¬dependencies¢id¤meta±moduleSideEffects¬originalCode±originalSourcemap«resolvedIds®sourcemapChainµsyntheticNamedExportsµtransformDependencies®transformFiles¨cacheAstÔrAÚ)A/**
- * PcbRouteCoordinator â€” placement â†’ net_plan â†’ route_policy â†’ geometry â†’ qa
- * NEVER_ABORT critiqueï¼šKEEP_RETRYï¼›ä»…ç”¨æˆ·å–æ¶ˆ / æ—  LLM / æ— å¯äº¤ä»˜é“œ æ‰ STAGE_FAILã€‚
- * residual å¿…é¡»æœ‰ tracks|viasï¼›ç¦æ­¢ placement-only / unused_copper / signal_fail è½¯å†™å›ã€‚
- */
-import { emptyPcbAiRouteResult, IdUtil, Logger, INSTR_TRACE_TAG, makeProgress } from 'common';
-import { PcbRouteBlackboard } from './PcbRouteBlackboard';
-import { PcbPlacementAgent } from './PcbPlacementAgent';
-import { PcbNetPlanAgent } from './PcbNetPlanAgent';
-import { PcbRoutePolicyAgent } from './PcbRoutePolicyAgent';
-import { PcbGeometryAgent } from './PcbGeometryAgent';
-import { PcbQaAgent } from './PcbQaAgent';
-import { shouldSkipQaAfterGeometryFail } from './PcbLlmReplyGuard';
-const PCB_KEEP_RETRY_OUTER = 3;
-/** ç½‘ç»œ/ä¼ è¾“ç±»å¤±è´¥ï¼ˆä¸å¸ƒå±€è§„åˆ™å¤±è´¥åŒºåˆ†ï¼Œé¿å…æ©ç›–ã€Œå·²æœ‰ LLM å›å¤ã€ï¼‰ */
-function isNetworkishFailReason(reason) {
-    const m = reason.toLowerCase();
-    return m.indexOf('request failed') >= 0
-        || m.indexOf('timeout') >= 0
-        || m.indexOf('è¶…æ—¶') >= 0
-        || m.indexOf('2300') >= 0
-        || m.indexOf('network') >= 0
-        || m.indexOf('connect') >= 0
-        || m.indexOf('ä»£ç†') >= 0
-        || m.indexOf('http') >= 0
-        || m.indexOf('cancelled') >= 0
-        || m.indexOf('empty content') >= 0
-        || m.indexOf('non-json body') >= 0
-        || m.indexOf('llm failed') >= 0
-        || m.indexOf('placement llm failed') >= 0;
-}
-/** å¯è½¯æ¥å—çš„ residualï¼šä»…å°‘é‡æœªå¸ƒç½‘ï¼›ç¡¬ DRC / ç¼ºé“œ / ä¿¡å·å¤±è´¥æ‹’å†™ */
-function isSoftAcceptableResidual(kind, reason) {
-    if (kind === 'unused_copper' || kind === 'signal_fail' || kind === 'placement_only') {
-        return false;
-    }
-    const u = reason.toUpperCase();
-    if (u.indexOf('SHORT') >= 0 || u.indexOf('CLEARANCE') >= 0) {
-        return false;
-    }
-    if (kind === 'unrouted') {
-        return true;
-    }
-    // è½»å¾® drc ä¸”æ—  SHORT/CLEARANCEï¼šä»æ‹’ï¼ˆé¿å…è„æ¿å†™å›ï¼‰ï¼›ä»… unrouted å¯ soft
-    return false;
-}
-export class PcbRouteCoordinator {
-    constructor() {
-        this.bb = new PcbRouteBlackboard();
-        this.placement = new PcbPlacementAgent();
-        this.netPlan = new PcbNetPlanAgent();
-        this.routePolicy = new PcbRoutePolicyAgent();
-        this.geometry = new PcbGeometryAgent();
-        this.qa = new PcbQaAgent();
-    }
-    async run(sourceDoc, api, runDrc, isCancel, onProgress, enableReasoning = false) {
-        const runId = IdUtil.generate('pcbai');
-        Logger.info(INSTR_TRACE_TAG, `[AI_PCB] START runId=${runId} fp=${sourceDoc.footprints.length} nets=${sourceDoc.nets.length}` +
-            ` reasoning=${enableReasoning}`);
-        this.bb.reset(runId, sourceDoc, enableReasoning);
-        onProgress?.(makeProgress(8, 'PCB AI å‡†å¤‡'));
-        if (isCancel && isCancel()) {
-            return emptyPcbAiRouteResult('start', 'cancelled', false);
-        }
-        let placeHint = '';
-        onProgress?.(makeProgress(15, 'PCB å¸ƒå±€'));
-        const p1 = await this.keepRetry('placement', isCancel, placeHint, (hint) => this.placement.run(this.bb, api, hint));
-        if (!p1.ok) {
-            return this.stageFail('placement', p1.reason);
-        }
-        if (isCancel && isCancel()) {
-            return emptyPcbAiRouteResult('placement', 'cancelled', this.bb.usedLlm);
-        }
-        let netHint = '';
-        onProgress?.(makeProgress(30, 'PCB ç½‘ç»œè®¡åˆ’'));
-        const p2 = await this.keepRetry('net_plan', isCancel, netHint, (hint) => this.netPlan.run(this.bb, api, hint));
-        if (!p2.ok) {
-            return this.stageFail('net_plan', p2.reason);
-        }
-        let lastQaReason = '';
-        let lastResidualKind = 'drc';
-        for (let outer = 0; outer < PCB_KEEP_RETRY_OUTER; outer++) {
-            if (isCancel && isCancel()) {
-                return emptyPcbAiRouteResult('route_policy', 'cancelled', this.bb.usedLlm);
-            }
-            const failHint = lastQaReason.length > 0 ? lastQaReason : undefined;
-            onProgress?.(makeProgress(45 + outer * 5, `PCB å±‚è§’è‰²ç­–ç•¥ (${outer + 1})`));
-            const p3 = await this.keepRetry('route_policy', isCancel, failHint ?? '', (hint) => this.routePolicy.run(this.bb, api, hint.length > 0 ? hint : failHint));
-            if (!p3.ok) {
-                Logger.warn(INSTR_TRACE_TAG, `[AI_PCB] KEEP_RETRY route_policy exhausted outer=${outer + 1}/${PCB_KEEP_RETRY_OUTER} | ${p3.reason}`);
-                lastQaReason = p3.reason;
-                lastResidualKind = 'drc';
-                continue;
-            }
-            onProgress?.(makeProgress(65 + outer * 3, 'PCB å‡ ä½•å¸ƒçº¿(LLM)'));
-            const p4 = await this.keepRetry('geometry', isCancel, failHint ?? '', (hint) => this.geometry.run(this.bb, api, hint.length > 0 ? hint : failHint));
-            if (!p4.ok) {
-                if (shouldSkipQaAfterGeometryFail(p4.reason)) {
-                    Logger.warn(INSTR_TRACE_TAG, `[AI_PCB] geometry not applied â†’ skip qa_repair outer=${outer + 1} | ${p4.reason}`);
-                    lastQaReason = p4.reason;
-                    lastResidualKind = 'signal_fail';
-                    continue;
-                }
-                Logger.warn(INSTR_TRACE_TAG, `[AI_PCB] geometry soft-fail â†’ qa_repair | ${p4.reason}`);
-            }
-            onProgress?.(makeProgress(78 + outer * 3, 'PCB DRC/QA'));
-            const p5 = await this.qa.gate(this.bb, api, runDrc);
-            if (p5.ok) {
-                const kind = p5.residual
-                    ? (p5.residualKind ?? 'drc')
-                    : 'none';
-                return this.successResult(!!p5.residual, kind, p5.residual ? p5.reason : '');
-            }
-            lastQaReason = p5.reason;
-            lastResidualKind = p5.residualKind ?? 'drc';
-            Logger.warn(INSTR_TRACE_TAG, `[AI_PCB] KEEP_RETRY demote ABORTâ†’RETRY outer=${outer + 1}/${PCB_KEEP_RETRY_OUTER} | ${p5.reason}`);
-        }
-        // ä»… soft residual + æœ‰é“œ æ‰ ACCEPTï¼›ç¡¬æ®‹ç•™ STAGE_FAIL
-        if (this.bb.usedLlm && this.hasDeliverableGeometry() &&
-            isSoftAcceptableResidual(lastResidualKind, lastQaReason)) {
-            Logger.warn(INSTR_TRACE_TAG, `[AI_PCB] KEEP_RETRY ACCEPT soft residual kind=${lastResidualKind} | ${lastQaReason}`);
-            return this.successResult(true, lastResidualKind, lastQaReason.length > 0 ? lastQaReason : 'residual after retries');
-        }
-        if (this.hasDeliverableGeometry() && !isSoftAcceptableResidual(lastResidualKind, lastQaReason)) {
-            Logger.warn(INSTR_TRACE_TAG, `[AI_PCB] refuse dirty residual kind=${lastResidualKind} | ${lastQaReason}`);
-        }
-        return this.stageFail('qa', lastQaReason.length > 0 ? lastQaReason : 'PCB AI exhausted without deliverable copper');
-    }
-    async keepRetry(stage, isCancel, initialHint, fn) {
-        let last = { ok: false, reason: `${stage} not run` };
-        let hint = initialHint;
-        let layoutFailReason = '';
-        for (let outer = 0; outer < PCB_KEEP_RETRY_OUTER; outer++) {
-            if (isCancel && isCancel()) {
-                return { ok: false, reason: 'cancelled' };
-            }
-            last = await fn(hint);
-            if (last.ok) {
-                return last;
-            }
-            hint = last.reason;
-            // åŒºåˆ†å¸ƒå±€è§„åˆ™å¤±è´¥ vs åç»­ç½‘ç»œå¤±è´¥ï¼Œé¿å…ã€Œæ˜æ˜æœ‰å›å¤å´æŠ¥ç½‘ç»œã€
-            if (!isNetworkishFailReason(last.reason)) {
-                layoutFailReason = last.reason;
-            }
-            Logger.warn(INSTR_TRACE_TAG, `[AI_PCB] KEEP_RETRY ${stage} outer=${outer + 1}/${PCB_KEEP_RETRY_OUTER} | ${last.reason}`);
-        }
-        if (layoutFailReason.length > 0 && isNetworkishFailReason(last.reason)) {
-            return {
-                ok: false,
-                reason: `${layoutFailReason}ï¼›å…¶åé‡è¯•ç½‘ç»œå¤±è´¥: ${last.reason}`
-            };
-        }
-        return last;
-    }
-    hasDeliverableGeometry() {
-        const tracks = this.bb.workDoc?.tracks?.length ?? 0;
-        const vias = this.bb.workDoc?.vias?.length ?? 0;
-        return tracks > 0 || vias > 0;
-    }
-    successResult(residual, kind, residualNote = '') {
-        if (!this.bb.usedLlm) {
-            return this.stageFail('gate', 'usedLlm=false â€” refuse non-AI delivery');
-        }
-        if (!this.hasDeliverableGeometry()) {
-            return this.stageFail('gate', 'refuse empty-copper delivery');
-        }
-        if (residual && !isSoftAcceptableResidual(kind, residualNote)) {
-            return this.stageFail('gate', `refuse dirty residual[${kind}]: ${residualNote.length > 0 ? residualNote : kind}`);
-        }
-        const tracks = this.bb.workDoc?.tracks ?? [];
-        const vias = this.bb.workDoc?.vias ?? [];
-        const footprints = this.bb.workDoc?.footprints;
-        const msg = residual
-            ? `AI PCB route residual[${kind}] tracks=${tracks.length} vias=${vias.length}` +
-                (residualNote.length > 0 ? ` | ${residualNote}` : '')
-            : `AI PCB route ok tracks=${tracks.length} vias=${vias.length}`;
-        const result = {
-            success: true,
-            usedLlm: true,
-            abortStage: '',
-            abortReason: '',
-            deliveredWithResidual: residual,
-            residualKind: residual ? kind : 'none',
-            trackCount: tracks.length,
-            viaCount: vias.length,
-            netCount: this.bb.geometry?.routedNetIds.length ?? 0,
-            placedCount: this.bb.placementPlan?.placements.length ?? 0,
-            messages: [msg],
-            tracks,
-            vias,
-            footprints,
-            placementPlan: this.bb.placementPlan ?? undefined,
-            netPlan: this.bb.netPlan ?? undefined,
-            routePolicy: this.bb.routePolicy ?? undefined
-        };
-        Logger.info(INSTR_TRACE_TAG, `[AI_PCB] DONE runId=${this.bb.runId} residual=${residual} kind=${kind}` +
-            ` tracks=${tracks.length} vias=${vias.length}`);
-        return result;
-    }
-    stageFail(stage, reason) {
-        Logger.error(INSTR_TRACE_TAG, `[AI_PCB] STAGE_FAIL ${stage} | ${reason}`);
-        this.bb.abort(stage, reason);
-        return emptyPcbAiRouteResult(this.bb.abortStage, this.bb.abortReason, this.bb.usedLlm);
-    }
-}
-//# sourceMappingURL=PcbRouteCoordinator.js.mapÂ˜Ù-C:\Projects\ElecDraw_Harmony\common\Index.etsÙiC:\Projects\ElecDraw_Harmony\features\ai_engine\src\main\ets\algorithms\pcb_agents\PcbRouteBlackboard.etsÙhC:\Projects\ElecDraw_Harmony\features\ai_engine\src\main\ets\algorithms\pcb_agents\PcbPlacementAgent.etsÙfC:\Projects\ElecDraw_Harmony\features\ai_engine\src\main\ets\algorithms\pcb_agents\PcbNetPlanAgent.etsÙjC:\Projects\ElecDraw_Harmony\features\ai_engine\src\main\ets\algorithms\pcb_agents\PcbRoutePolicyAgent.etsÙgC:\Projects\ElecDraw_Harmony\features\ai_engine\src\main\ets\algorithms\pcb_agents\PcbGeometryAgent.etsÙaC:\Projects\ElecDraw_Harmony\features\ai_engine\src\main\ets\algorithms\pcb_agents\PcbQaAgent.etsÙgC:\Projects\ElecDraw_Harmony\features\ai_engine\src\main\ets\algorithms\pcb_agents\PcbLlmReplyGuard.etsÙjC:\Projects\ElecDraw_Harmony\features\ai_engine\src\main\ets\algorithms\pcb_agents\PcbRouteCoordinator.etsÔrB›ªmoduleName±isLocalDependency¯isNodeEntryFile§pkgPath±belongProjectPath§pkgNameªpkgVersion±dependencyPkgInfo¯hostModulesInfo°belongModulePath¬shouldEmitJs©ai_engineÃÂÙ/C:\Projects\ElecDraw_Harmony\features\ai_engine¼C:\Projects\ElecDraw_Harmony©ai_engine¥1.0.0ÔrC’§pkgNameªpkgVersion©ai_engine¥1.0.0‘ÔrD’²hostDependencyName®hostModuleNameÙ+./algorithms/pcb_agents/PcbRouteCoordinator©ai_engineÙ/C:\Projects\ElecDraw_Harmony\features\ai_engineÃÃÚ(/**
- * PcbRouteCoordinator â€” placement â†’ net_plan â†’ route_policy â†’ geometry â†’ qa
- * NEVER_ABORT critiqueï¼šKEEP_RETRYï¼›ä»…ç”¨æˆ·å–æ¶ˆ / æ—  LLM / æ— å¯äº¤ä»˜é“œ æ‰ STAGE_FAILã€‚
- * residual å¿…é¡»æœ‰ tracks|viasï¼›ç¦æ­¢ placement-only / unused_copper / signal_fail è½¯å†™å›ã€‚
- */
-import {
-  PcbDocument, PcbAiRouteResult, PcbResidualKind, emptyPcbAiRouteResult,
-  IdUtil, Logger, INSTR_TRACE_TAG, ProgressCallback, makeProgress
-} from 'common';
-import { IAiApiManager } from 'ai_api_manager';
-import { PcbRouteBlackboard } from './PcbRouteBlackboard';
-import { PcbPlacementAgent, PcbAgentStageResult } from './PcbPlacementAgent';
-import { PcbNetPlanAgent } from './PcbNetPlanAgent';
-import { PcbRoutePolicyAgent } from './PcbRoutePolicyAgent';
-import { PcbGeometryAgent } from './PcbGeometryAgent';
-import { PcbQaAgent, PcbDrcRunner } from './PcbQaAgent';
-import { shouldSkipQaAfterGeometryFail } from './PcbLlmReplyGuard';
-
-const PCB_KEEP_RETRY_OUTER: number = 3;
-
-/** ç½‘ç»œ/ä¼ è¾“ç±»å¤±è´¥ï¼ˆä¸å¸ƒå±€è§„åˆ™å¤±è´¥åŒºåˆ†ï¼Œé¿å…æ©ç›–ã€Œå·²æœ‰ LLM å›å¤ã€ï¼‰ */
-function isNetworkishFailReason(reason: string): boolean {
-  const m = reason.toLowerCase();
-  return m.indexOf('request failed') >= 0
-    || m.indexOf('timeout') >= 0
-    || m.indexOf('è¶…æ—¶') >= 0
-    || m.indexOf('2300') >= 0
-    || m.indexOf('network') >= 0
-    || m.indexOf('connect') >= 0
-    || m.indexOf('ä»£ç†') >= 0
-    || m.indexOf('http') >= 0
-    || m.indexOf('cancelled') >= 0
-    || m.indexOf('empty content') >= 0
-    || m.indexOf('non-json body') >= 0
-    || m.indexOf('llm failed') >= 0
-    || m.indexOf('placement llm failed') >= 0;
-}
-
-/** å¯è½¯æ¥å—çš„ residualï¼šä»…å°‘é‡æœªå¸ƒç½‘ï¼›ç¡¬ DRC / ç¼ºé“œ / ä¿¡å·å¤±è´¥æ‹’å†™ */
-function isSoftAcceptableResidual(kind: PcbResidualKind, reason: string): boolean {
-  if (kind === 'unused_copper' || kind === 'signal_fail' || kind === 'placement_only') {
-    return false;
-  }
-  const u = reason.toUpperCase();
-  if (u.indexOf('SHORT') >= 0 || u.indexOf('CLEARANCE') >= 0) {
-    return false;
-  }
-  if (kind === 'unrouted') {
-    return true;
-  }
-  // è½»å¾® drc ä¸”æ—  SHORT/CLEARANCEï¼šä»æ‹’ï¼ˆé¿å…è„æ¿å†™å›ï¼‰ï¼›ä»… unrouted å¯ soft
-  return false;
-}
-
-export class PcbRouteCoordinator {
-  private bb: PcbRouteBlackboard = new PcbRouteBlackboard();
-  private placement = new PcbPlacementAgent();
-  private netPlan = new PcbNetPlanAgent();
-  private routePolicy = new PcbRoutePolicyAgent();
-  private geometry = new PcbGeometryAgent();
-  private qa = new PcbQaAgent();
-
-  async run(
-    sourceDoc: PcbDocument,
-    api: IAiApiManager,
-    runDrc: PcbDrcRunner,
-    isCancel?: () => boolean,
-    onProgress?: ProgressCallback,
-    enableReasoning: boolean = false
-  ): Promise<PcbAiRouteResult> {
-    const runId = IdUtil.generate('pcbai');
-    Logger.info(INSTR_TRACE_TAG,
-      `[AI_PCB] START runId=${runId} fp=${sourceDoc.footprints.length} nets=${sourceDoc.nets.length}` +
-      ` reasoning=${enableReasoning}`);
-    this.bb.reset(runId, sourceDoc, enableReasoning);
-    onProgress?.(makeProgress(8, 'PCB AI å‡†å¤‡'));
-
-    if (isCancel && isCancel()) {
-      return emptyPcbAiRouteResult('start', 'cancelled', false);
-    }
-
-    let placeHint = '';
-    onProgress?.(makeProgress(15, 'PCB å¸ƒå±€'));
-    const p1 = await this.keepRetry('placement', isCancel, placeHint,
-      (hint) => this.placement.run(this.bb, api, hint));
-    if (!p1.ok) {
-      return this.stageFail('placement', p1.reason);
-    }
-
-    if (isCancel && isCancel()) {
-      return emptyPcbAiRouteResult('placement', 'cancelled', this.bb.usedLlm);
-    }
-
-    let netHint = '';
-    onProgress?.(makeProgress(30, 'PCB ç½‘ç»œè®¡åˆ’'));
-    const p2 = await this.keepRetry('net_plan', isCancel, netHint,
-      (hint) => this.netPlan.run(this.bb, api, hint));
-    if (!p2.ok) {
-      return this.stageFail('net_plan', p2.reason);
-    }
-
-    let lastQaReason = '';
-    let lastResidualKind: PcbResidualKind = 'drc';
-    for (let outer = 0; outer < PCB_KEEP_RETRY_OUTER; outer++) {
-      if (isCancel && isCancel()) {
-        return emptyPcbAiRouteResult('route_policy', 'cancelled', this.bb.usedLlm);
-      }
-
-      const failHint = lastQaReason.length > 0 ? lastQaReason : undefined;
-      onProgress?.(makeProgress(45 + outer * 5, `PCB å±‚è§’è‰²ç­–ç•¥ (${outer + 1})`));
-      const p3 = await this.keepRetry('route_policy', isCancel, failHint ?? '',
-        (hint) => this.routePolicy.run(this.bb, api, hint.length > 0 ? hint : failHint));
-      if (!p3.ok) {
-        Logger.warn(INSTR_TRACE_TAG,
-          `[AI_PCB] KEEP_RETRY route_policy exhausted outer=${outer + 1}/${PCB_KEEP_RETRY_OUTER} | ${p3.reason}`);
-        lastQaReason = p3.reason;
-        lastResidualKind = 'drc';
-        continue;
-      }
-
-      onProgress?.(makeProgress(65 + outer * 3, 'PCB å‡ ä½•å¸ƒçº¿(LLM)'));
-      const p4 = await this.keepRetry('geometry', isCancel, failHint ?? '',
-        (hint) => this.geometry.run(this.bb, api, hint.length > 0 ? hint : failHint));
-      if (!p4.ok) {
-        if (shouldSkipQaAfterGeometryFail(p4.reason)) {
-          Logger.warn(INSTR_TRACE_TAG,
-            `[AI_PCB] geometry not applied â†’ skip qa_repair outer=${outer + 1} | ${p4.reason}`);
-          lastQaReason = p4.reason;
-          lastResidualKind = 'signal_fail';
-          continue;
-        }
-        Logger.warn(INSTR_TRACE_TAG,
-          `[AI_PCB] geometry soft-fail â†’ qa_repair | ${p4.reason}`);
-      }
-
-      onProgress?.(makeProgress(78 + outer * 3, 'PCB DRC/QA'));
-      const p5 = await this.qa.gate(this.bb, api, runDrc);
-      if (p5.ok) {
-        const kind: PcbResidualKind = p5.residual
-          ? (p5.residualKind ?? 'drc')
-          : 'none';
-        return this.successResult(!!p5.residual, kind, p5.residual ? p5.reason : '');
-      }
-
-      lastQaReason = p5.reason;
-      lastResidualKind = p5.residualKind ?? 'drc';
-      Logger.warn(INSTR_TRACE_TAG,
-        `[AI_PCB] KEEP_RETRY demote ABORTâ†’RETRY outer=${outer + 1}/${PCB_KEEP_RETRY_OUTER} | ${p5.reason}`);
-    }
-
-    // ä»… soft residual + æœ‰é“œ æ‰ ACCEPTï¼›ç¡¬æ®‹ç•™ STAGE_FAIL
-    if (this.bb.usedLlm && this.hasDeliverableGeometry() &&
-      isSoftAcceptableResidual(lastResidualKind, lastQaReason)) {
-      Logger.warn(INSTR_TRACE_TAG,
-        `[AI_PCB] KEEP_RETRY ACCEPT soft residual kind=${lastResidualKind} | ${lastQaReason}`);
-      return this.successResult(true, lastResidualKind,
-        lastQaReason.length > 0 ? lastQaReason : 'residual after retries');
-    }
-
-    if (this.hasDeliverableGeometry() && !isSoftAcceptableResidual(lastResidualKind, lastQaReason)) {
-      Logger.warn(INSTR_TRACE_TAG,
-        `[AI_PCB] refuse dirty residual kind=${lastResidualKind} | ${lastQaReason}`);
-    }
-
-    return this.stageFail('qa',
-      lastQaReason.length > 0 ? lastQaReason : 'PCB AI exhausted without deliverable copper');
-  }
-
-  private async keepRetry(
-    stage: string,
-    isCancel: (() => boolean) | undefined,
-    initialHint: string,
-    fn: (hint: string) => Promise<PcbAgentStageResult>
-  ): Promise<PcbAgentStageResult> {
-    let last: PcbAgentStageResult = { ok: false, reason: `${stage} not run` };
-    let hint = initialHint;
-    let layoutFailReason = '';
-    for (let outer = 0; outer < PCB_KEEP_RETRY_OUTER; outer++) {
-      if (isCancel && isCancel()) {
-        return { ok: false, reason: 'cancelled' };
-      }
-      last = await fn(hint);
-      if (last.ok) {
-        return last;
-      }
-      hint = last.reason;
-      // åŒºåˆ†å¸ƒå±€è§„åˆ™å¤±è´¥ vs åç»­ç½‘ç»œå¤±è´¥ï¼Œé¿å…ã€Œæ˜æ˜æœ‰å›å¤å´æŠ¥ç½‘ç»œã€
-      if (!isNetworkishFailReason(last.reason)) {
-        layoutFailReason = last.reason;
-      }
-      Logger.warn(INSTR_TRACE_TAG,
-        `[AI_PCB] KEEP_RETRY ${stage} outer=${outer + 1}/${PCB_KEEP_RETRY_OUTER} | ${last.reason}`);
-    }
-    if (layoutFailReason.length > 0 && isNetworkishFailReason(last.reason)) {
-      return {
-        ok: false,
-        reason: `${layoutFailReason}ï¼›å…¶åé‡è¯•ç½‘ç»œå¤±è´¥: ${last.reason}`
-      };
-    }
-    return last;
-  }
-
-  private hasDeliverableGeometry(): boolean {
-    const tracks = this.bb.workDoc?.tracks?.length ?? 0;
-    const vias = this.bb.workDoc?.vias?.length ?? 0;
-    return tracks > 0 || vias > 0;
-  }
-
-  private successResult(
-    residual: boolean,
-    kind: PcbResidualKind,
-    residualNote: string = ''
-  ): PcbAiRouteResult {
-    if (!this.bb.usedLlm) {
-      return this.stageFail('gate', 'usedLlm=false â€” refuse non-AI delivery');
-    }
-    if (!this.hasDeliverableGeometry()) {
-      return this.stageFail('gate', 'refuse empty-copper delivery');
-    }
-    if (residual && !isSoftAcceptableResidual(kind, residualNote)) {
-      return this.stageFail('gate',
-        `refuse dirty residual[${kind}]: ${residualNote.length > 0 ? residualNote : kind}`);
-    }
-    const tracks = this.bb.workDoc?.tracks ?? [];
-    const vias = this.bb.workDoc?.vias ?? [];
-    const footprints = this.bb.workDoc?.footprints;
-    const msg = residual
-      ? `AI PCB route residual[${kind}] tracks=${tracks.length} vias=${vias.length}` +
-        (residualNote.length > 0 ? ` | ${residualNote}` : '')
-      : `AI PCB route ok tracks=${tracks.length} vias=${vias.length}`;
-    const result: PcbAiRouteResult = {
-      success: true,
-      usedLlm: true,
-      abortStage: '',
-      abortReason: '',
-      deliveredWithResidual: residual,
-      residualKind: residual ? kind : 'none',
-      trackCount: tracks.length,
-      viaCount: vias.length,
-      netCount: this.bb.geometry?.routedNetIds.length ?? 0,
-      placedCount: this.bb.placementPlan?.placements.length ?? 0,
-      messages: [msg],
-      tracks,
-      vias,
-      footprints,
-      placementPlan: this.bb.placementPlan ?? undefined,
-      netPlan: this.bb.netPlan ?? undefined,
-      routePolicy: this.bb.routePolicy ?? undefined
-    };
-    Logger.info(INSTR_TRACE_TAG,
-      `[AI_PCB] DONE runId=${this.bb.runId} residual=${residual} kind=${kind}` +
-      ` tracks=${tracks.length} vias=${vias.length}`);
-    return result;
-  }
-
-  private stageFail(stage: string, reason: string): PcbAiRouteResult {
-    Logger.error(INSTR_TRACE_TAG, `[AI_PCB] STAGE_FAIL ${stage} | ${reason}`);
-    this.bb.abort(stage, reason);
-    return emptyPcbAiRouteResult(this.bb.abortStage, this.bb.abortReason, this.bb.usedLlm);
-  }
-}
-ÀÔrE˜´./PcbRouteBlackboard±./PcbNetPlanAgent³./PcbPlacementAgent²./PcbGeometryAgentµ./PcbRoutePolicyAgent¬./PcbQaAgent²./PcbLlmReplyGuard¦commonÔrF—ªassertions¨external¢id¤meta±moduleSideEffectsªresolvedByµsyntheticNamedExportsAÂÙiC:\Projects\ElecDraw_Harmony\features\ai_engine\src\main\ets\algorithms\pcb_agents\PcbRouteBlackboard.etsAÃªoh-resolveÂFAÂÙfC:\Projects\ElecDraw_Harmony\features\ai_engine\src\main\ets\algorithms\pcb_agents\PcbNetPlanAgent.etsAÃªoh-resolveÂFAÂÙhC:\Projects\ElecDraw_Harmony\features\ai_engine\src\main\ets\algorithms\pcb_agents\PcbPlacementAgent.etsAÃªoh-resolveÂFAÂÙgC:\Projects\ElecDraw_Harmony\features\ai_engine\src\main\ets\algorithms\pcb_agents\PcbGeometryAgent.etsAÃªoh-resolveÂFAÂÙjC:\Projects\ElecDraw_Harmony\features\ai_engine\src\main\ets\algorithms\pcb_agents\PcbRoutePolicyAgent.etsAÃªoh-resolveÂFAÂÙaC:\Projects\ElecDraw_Harmony\features\ai_engine\src\main\ets\algorithms\pcb_agents\PcbQaAgent.etsAÃªoh-resolveÂFAÂÙgC:\Projects\ElecDraw_Harmony\features\ai_engine\src\main\ets\algorithms\pcb_agents\PcbLlmReplyGuard.etsAÃªoh-resolveÂFAÂÙ-C:\Projects\ElecDraw_Harmony\common\Index.etsAÃªoh-resolveÂ“ÔrG–§version¤fileªsourceRoot§sources¥names¨mappings¶PcbRouteCoordinator.js ‘·PcbRouteCoordinator.etsÜ Î‘”    ‘” Ü ”   ” ”	 2” ÌG”  ”& ”( 
-”. ”0 ”? !”ÌA 5”ÌM ÌA”ÌO ”ÌU ”Ì] ”Ì^ ˜”  
- ” 
-”	 
-	” 
-” 
-”# 
-#”9 
-9”: 
-:˜”   ” ”	 	” ” 1”" 7”7 ÌL”8 ÌM˜”   ” ”	 	” ” ”   ”3 3”4 4˜”   ” ”	 	” ” ”$ $”; ;”< <˜”   ” ”	 	” ” ”! !”5 5”6 6˜”   ” ”	 	” ” #” )”) 7”* 8˜”   ” ”	 	”& &”( (”. .”ÌB ÌB”ÌC ÌC–”   ” ” ” %” &” '’”   ”* *•”   ”	 	” ”   ”& .™” ”
- ” 	” ” ” ”  ”"  ”# !š” ” 	” 
-” ” ” ”% #”& $”* (”+ )™” ” ” 	” ” ” ” ”# ”$  ™” ” ” 	” ” ” ” ” ” ™” ” ” 	” ” ” ” ”  ”! ™” ” ” 	” ” ” ” ”# ”$  ™” ” ” 	” ” ” ” ”# ”$  ™” ” ” 	” ” ” ” ” ” ™” ” ” 	” ” ” ” ”  ”! ™” ” ” 	” ” ”  ”! ”% !”& "™”  ”  ”  	”  ”  ”$   ”%  !”)  %”*  &™” !” !” !	” !” !”$ ! ”% !!”) !%”* !&™” "” "” "	” "” "”! "”" "”& ""”' "#š” #” #” #	” #” #”+ #'”, #(”0 #,”1 #-”2 #.’”  $ ” $’”  & ”0 &0—”  ' ”	 '	”! '!”" '"”& '7”( '9”. 'ÌG” (” (” (
-” (”  (”$ ("”( (&”- (+”: (8”> (<”ÌB (Ì@”ÌG (ÌE”ÌW (ÌU”ÌY (ÌW”” )” )” )” )‘” *™” +”
- +” +	” +” +” +”  +”" + ”# +!Ü ” ,” ,”	 ,”
- ,” ,” ,” ,” ,” ,” ,”# ,!”$ ,"”% ,#”, ,*”- ,+”8 ,6”9 ,7”= ,;”> ,<”Ì@ ,>”” -” -” -” -‘” .–” /” /” /
-” /” /” /”” 0” 0” 0” 0‘” 1’” 2”= 2;”” 3” 3	” 3” 3’”  4 ” 4””  6 ” 6” 6”  6 ‘” 6 —” 7
-” 7” 7#” 7'”( 79”* 7;”+ 7<—” 8
-” 8” 8” 8”. 8+”0 8-”1 8.—” 9
-” 9” 9” 9”* 9'”, 9)”- 9*—” :
-” :” :” :”2 :/”4 :1”5 :2—” ;
-” ;” ;” ;”, ;)”. ;+”/ ;,—” <
-” <” <” <”  <”" <”# < ’” Í ” ÍÜ ” >”	 >”
- >” >” ?” ?” Ì@” Ì@” ÌA”$ ÌA”& ÌB”. ÌB”0 ÌC”: ÌC!”< ÌD”ÌN ÌD”ÌS ÌD$›” ÌF” ÌF
-” ÌF” ÌF” ÌF” ÌF”% ÌF!”& ÌF"”- ÌF)”. ÌF*”/ ÌF+Ü ” ÌG” ÌG
-” ÌG” ÌG” ÌG”# ÌG”% ÌH”= ÌH”ÌB ÌH#”ÌI ÌH*”ÌR ÌH3”ÌS ÌH4”Ì] ÌH>”Ì^ ÌH?”Ìd ÌHÌE”Ìm ÌHÌN”Ìv ÌHÌW”Ìw ÌHÌX”Ì{ ÌHÌ\”Ì| ÌHÌ]”Ì‚ ÌHÌc”Ì„ ÌHÌe–” ÌI” ÌI”) ÌI#”+ ÌI%”, ÌI&”- ÌI'” ÌJ” ÌJ” ÌJ	” ÌJ” ÌJ” ÌJ” ÌJ” ÌJ” ÌJ”& ÌJ"”( ÌJ$”7 ÌJ3”8 ÌJ4”9 ÌJ5œ” ÌK” ÌK” ÌK” ÌK”! ÌK”" ÌK”# ÌK”% ÌK!”0 ÌK,”1 ÌK-”2 ÌK.”3 ÌK/—” ÌM” ÌM” ÌM” ÌM”  ÌM”" ÌM”$ ÌM ›” ÌN” ÌN”( ÌN"”) ÌN#”0 ÌN*”2 ÌN,”= ÌN7”? ÌN9”ÌD ÌN>”ÌE ÌN?”ÌF ÌNÌ@‘”	 ÌO–” ÌQ” ÌQ” ÌQ” ÌQ” ÌQ” ÌQœ” ÌR” ÌR” ÌR” ÌR”! ÌR”" ÌR”$ ÌR ”& ÌR"”. ÌR*”/ ÌR+”0 ÌR,”1 ÌR-Ü $” ÌS” ÌS
-” ÌS” ÌS” ÌS” ÌS” ÌS”' ÌS#”( ÌS$”3 ÌS/”5 ÌS1”= ÌS9”? ÌS;”ÌH ÌSÌD”ÌJ ÌT”ÌK ÌT”ÌO ÌT”ÌQ ÌT”ÌS ÌT”ÌT ÌT”ÌX ÌT”ÌY ÌT”Ìb ÌT”Ìc ÌT”Ìf ÌT"”Ìg ÌT#”Ìk ÌT'”Ìl ÌT(”Ìn ÌT*”Ìp ÌT,”Ìs ÌT/”Ìu ÌT1”Ìy ÌT5”Ìz ÌT6”Ì{ ÌT7”Ì| ÌT8—” ÌU” ÌU” ÌU	” ÌU” ÌU” ÌU” ÌU” ÌV” ÌV” ÌV” ÌV”! ÌV”" ÌV”- ÌV'”/ ÌV)”1 ÌV+”2 ÌV,”8 ÌV2”9 ÌV3”: ÌV4‘”	 ÌW—” ÌY” ÌY” ÌY” ÌY”  ÌY”" ÌY”$ ÌY Ÿ” ÌZ” ÌZ”( ÌZ"”) ÌZ#”4 ÌZ.”6 ÌZ0”ÌA ÌZ;”ÌC ÌZ=”ÌG ÌZÌA”ÌH ÌZÌB”ÌJ ÌZÌD”ÌK ÌZÌE”ÌR ÌZÌL”ÌS ÌZÌM”ÌT ÌZÌN‘”	 Ì[–” Ì]” Ì]” Ì]” Ì]” Ì]” Ì]œ” Ì^” Ì^” Ì^” Ì^”! Ì^”" Ì^”$ Ì^ ”& Ì^"”0 Ì^,”1 Ì^-”2 Ì^.”3 Ì^/Ü $” Ì_” Ì_
-” Ì_” Ì_” Ì_” Ì_” Ì_”' Ì_#”( Ì_$”2 Ì_.”4 Ì_0”< Ì_8”> Ì_:”ÌE Ì_ÌA”ÌG Ì`”ÌH Ì`”ÌL Ì`”ÌN Ì`”ÌP Ì`”ÌQ Ì`”ÌU Ì`”ÌV Ì`”Ì] Ì`”Ì^ Ì`”Ìa Ì` ”Ìb Ì`!”Ìf Ì`%”Ìg Ì`&”Ìi Ì`(”Ìk Ì`*”Ìn Ì`-”Ìp Ì`/”Ìt Ì`3”Ìu Ì`4”Ìv Ì`5”Ìw Ì`6—” Ìa” Ìa” Ìa	” Ìa” Ìa” Ìa” Ìa” Ìb” Ìb” Ìb” Ìb”! Ìb”" Ìb”, Ìb&”. Ìb(”0 Ìb*”1 Ìb+”7 Ìb1”8 Ìb2”9 Ìb3‘”	 Ìc–” Ìe” Ìe” Ìe” Ìe” Ìe” Ìe–” Ìf” Ìf” Ìf” Ìf,”$ Ìf1”% Ìf2” Ìg” Ìg	” Ìg” Ìg” Ìg” Ìg” Ìg”! Ìg”$ Ìg ”8 Ìg4”: Ìg6”? Ìg;”ÌA Ìg=”ÌC Ìg?—” Ìh” Ìh
-” Ìh” Ìh”$ Ìh”& Ìh ”( Ìh"Ÿ” Ìi” Ìi”, Ìi$”- Ìi%”; Ìi3”= Ìi5”ÌH ÌiÌ@”ÌJ ÌiÌB”ÌN ÌiÌF”ÌO ÌiÌG”ÌQ ÌiÌI”ÌR ÌiÌJ”ÌY ÌiÌQ”ÌZ ÌiÌR”Ì[ ÌiÌS‘” ÌjÜ ” Ìl” Ìl” Ìl” Ìl”) Ìl#”* Ìl$”0 Ìl*”3 Ìl-”4 Ìl.”5 Ìl/”6 Ìl0”7 Ìl1”ÌC Ìl=”ÌD Ìl>”ÌE Ìl?”ÌF ÌlÌ@”ÌO ÌlÌI”ÌP ÌlÌJÜ ” Ìm” Ìm” Ìm” Ìm”% Ìm”& Ìm ”( Ìm"”+ Ìm%”0 Ìm*”3 Ìm-”4 Ìm.”6 Ìm0”ÌD Ìm>”ÌI ÌmÌC”ÌL ÌmÌF”ÌM ÌmÌG”ÌP ÌmÌJ”ÌQ ÌmÌK”ÌR ÌmÌL”ÌS ÌmÌMÜ 2” Ìn” Ìn” Ìn” Ìn” Ìn”! Ìn”" Ìn”+ Ìn%”, Ìn&”: Ìn4”< Ìn6”ÌD Ìn>”ÌF ÌnÌ@”ÌN ÌnÌH”ÌR ÌnÌL”ÌT ÌnÌN”ÌV Ìo”ÌW Ìo	”Ì[ Ìo”Ì] Ìo”Ì_ Ìo”Ì` Ìo”Ìd Ìo”Ìe Ìo”Ìp Ìo"”Ìq Ìo#”Ìt Ìo&”Ìu Ìo'”Ìy Ìo+”Ìz Ìo,”Ì| Ìo.”Ì~ Ìo0”Ì Ìo3”Ìƒ Ìo5”Ì‡ Ìo9”Ìˆ Ìo:”Ì ÌoÌ@”Ì‘ ÌoÌC”Ì’ ÌoÌD”Ì“ ÌoÌE”Ì” ÌoÌF”Ì• ÌoÌG”Ì™ ÌoÌK”Ìš ÌoÌL”Ì› ÌoÌM”Ìœ ÌoÌN”Ì¤ ÌoÌV”Ì¥ ÌoÌW”Ì¦ ÌoÌX”Ì§ ÌoÌY—” Ìp” Ìp
-” Ìp” Ìp” Ìp” Ìp” ÌpÜ ” Ìq” Ìq” Ìq” Ìq” Ìq”+ Ìq#”- Ìr
-”Ìa Ìr>”Ìf ÌrÌC”Ìi ÌrÌF”Ìj ÌrÌG”Ìn ÌrÌK”Ì‚ ÌrÌ_”Ìˆ ÌrÌe”ÌŠ ÌrÌg”Ì‹ ÌrÌh”Ì‘ ÌrÌn”Ì“ ÌrÌp”Ì” ÌrÌq”Ì• ÌrÌr—” Ìs” Ìs” Ìs”! Ìs”" Ìs”( Ìs ”) Ìs!•” Ìt”  Ìt”# Ìt”( Ìt ”) Ìt!’” Ìu” Ìu‘” ÌvÜ ” Ìx” Ìx” Ìx” Ìx”% Ìx”& Ìx ”( Ìx"”+ Ìx%”0 Ìx*”3 Ìx-”4 Ìx.”6 Ìx0”ÌE Ìx?”ÌF ÌxÌ@”ÌG ÌxÌA”ÌH ÌxÌBÜ 2” Ìy” Ìy” Ìy” Ìy” Ìy”! Ìy”" Ìy”+ Ìy%”, Ìy&”6 Ìy0”8 Ìy2”Ì@ Ìy:”ÌB Ìy<”ÌJ ÌyÌD”ÌN ÌyÌH”ÌP ÌyÌJ”ÌR Ìz”ÌS Ìz	”ÌW Ìz”ÌY Ìz”Ì[ Ìz”Ì\ Ìz”Ì` Ìz”Ìa Ìz”Ìi Ìz”Ìj Ìz ”Ìm Ìz#”Ìn Ìz$”Ìr Ìz(”Ìs Ìz)”Ìu Ìz+”Ìw Ìz-”Ìz Ìz0”Ì| Ìz2”Ì€ Ìz6”Ì Ìz7”Ì‡ Ìz=”ÌŠ ÌzÌ@”Ì‹ ÌzÌA”ÌŒ ÌzÌB”Ì ÌzÌC”Ì ÌzÌD”Ì’ ÌzÌH”Ì“ ÌzÌI”Ì” ÌzÌJ”Ì• ÌzÌK”Ì ÌzÌS”Ì ÌzÌT”ÌŸ ÌzÌU”Ì  ÌzÌV—” Ì{” Ì{
-” Ì{” Ì{” Ì{” Ì{” Ì{™” Ì|” Ì|”1 Ì|)”2 Ì|*”4 Ì|,”5 Ì|-”; Ì|3”< Ì|4”> Ì|6Ü ” Ì}
-” Ì}” Ì}” Ì}”  Ì}”/ Ì}%”1 Ì~”Ìi Ì~ÌD”Ìn Ì~ÌI”Ìq Ì~ÌL”Ìr Ì~ÌM”Ìx Ì~ÌS”Ìz Ì~ÌU”Ì{ Ì~ÌV”Ì Ì~Ì\”Ìƒ Ì~Ì^”Ì„ Ì~Ì_”Ì… Ì~Ì`—” Ì
-”  Ì”# Ì”% Ì”& Ì”, Ì"”- Ì#•” Ì€
-”$ Ì€”' Ì€”4 Ì€*”5 Ì€+’” Ì
-” Ì‘” Ì‚	” Ìƒ” Ìƒ” Ìƒ” Ìƒ” Ìƒ”+ Ìƒ#”- Ì„
-”ÌZ Ì„7”Ì\ Ì„9”Ì] Ì„:”Ìc Ì„Ì@”Ìe Ì„ÌB”Ìf Ì„ÌC”Ìg Ì„ÌD‘” Ì…Ü ” Ì‡” Ì‡” Ì‡” Ì‡”% Ì‡”& Ì‡ ”( Ì‡"”+ Ì‡%”0 Ì‡*”3 Ì‡-”4 Ì‡.”6 Ì‡0”ÌB Ì‡<”ÌC Ì‡=”ÌD Ì‡>”ÌE Ì‡?Ü ” Ìˆ” Ìˆ” Ìˆ” Ìˆ” Ìˆ”! Ìˆ”" Ìˆ”$ Ìˆ”% Ìˆ”) Ìˆ#”* Ìˆ$”. Ìˆ(”/ Ìˆ)”1 Ìˆ+”3 Ìˆ-”6 Ìˆ0”8 Ìˆ2”> Ìˆ8”? Ìˆ9”Ì@ Ìˆ:–” Ì‰” Ì‰
-” Ì‰” Ì‰” Ì‰” Ì‰—” ÌŠ” ÌŠ” ÌŠ” ÌŠ&” ÌŠ(”  ÌŠ)”( ÌŠ1š” Ì‹
-” Ì‹” Ì‹” Ì‹” Ì‹” Ì‹”& Ì‹”* Ì‹ ”/ Ì‹%”0 Ì‹&•” ÌŒ
-” ÌŒ” ÌŒ” ÌŒ” ÌŒÜ ” Ì” Ì” Ì” Ì”) Ì!”* Ì"”+ Ì#”, Ì$”. Ì&”/ Ì'”7 Ì/”9 Ì1”= Ì5”? Ì7”ÌA Ì9”ÌB Ì:”ÌJ ÌÌB”ÌK ÌÌC”ÌL ÌÌD”ÌM ÌÌE”ÌO ÌÌG”ÌP ÌÌH”ÌV ÌÌN”ÌW ÌÌO”ÌX ÌÌP”ÌY ÌÌQ”Ì[ ÌÌS”Ì\ ÌÌT”Ì] ÌÌU‘” Ì—” Ì” Ì” Ì” Ì” Ì”$ Ì”% Ì™” Ì‘” Ì‘” Ì‘”! Ì‘”" Ì‘”. Ì‘(”2 Ì‘,”7 Ì‘1”8 Ì‘2Ü ” Ì’” Ì’” Ì’” Ì’” Ì’”' Ì’!”) Ì“”ÌY Ì“8”Ì^ Ì“=”Ìa Ì“Ì@”Ìb Ì“ÌA”Ìf Ì“ÌE”Ìz Ì“ÌY”Ì€ Ì“Ì_”Ì‚ Ì“Ìa”Ìƒ Ì“Ìb”Ì‰ Ì“Ìh”Ì‹ Ì“Ìj”ÌŒ Ì“Ìk”Ì Ì“Ìl‘”	 Ì”’” Ì–”7 Ì–3œ” Ì—” Ì—” Ì—” Ì—” Ì—” Ì—” Ì—” Ì—”# Ì—”$ Ì— ”: Ì—6”< Ì—8˜” Ì˜”$ Ì˜”% Ì˜”5 Ì˜/”7 Ì˜1”ÌC Ì˜=”ÌD Ì˜>”ÌF Ì˜Ì@” Ì™” Ì™” Ì™” Ì™” Ì™”' Ì™!”) Ìš”ÌZ Ìš9”Ìj ÌšÌI”Ìp ÌšÌO”Ì| ÌšÌ[”Ì~ ÌšÌ]”Ì ÌšÌ^”Ì€ ÌšÌ_Ü ” Ì›” Ì›” Ì›” Ì›”% Ì›”& Ì› ”* Ì›$”, Ì›&”< Ì›6”> Ìœ”ÌJ Ìœ”ÌK Ìœ”ÌQ Ìœ”ÌT Ìœ”ÌU Ìœ”ÌV Ìœ ”ÌW Ìœ!”ÌX Ìœ"”Ìd Ìœ.”Ìe Ìœ/”Ìf Ìœ0”Ìg Ìœ1”Ì ÌœÌI”Ì€ ÌœÌJ”Ì ÌœÌK‘”	 ÌŸ” ÌŸ” ÌŸ” ÌŸ” ÌŸ”' ÌŸ#”) ÌŸ%”- ÌŸ)”. ÌŸ*”ÌF ÌŸÌB”ÌG ÌŸÌC”ÌW ÌŸÌS”ÌY ÌŸÌU”Ìe ÌŸÌa”Ìf ÌŸÌb”Ìh ÌŸÌd” Ì ” Ì ” Ì ” Ì ” Ì ”' Ì !”) Ì¡”ÌP Ì¡/”Ì` Ì¡?”Ìf Ì¡ÌE”Ìr Ì¡ÌQ”Ìt Ì¡ÌS”Ìu Ì¡ÌT”Ìv Ì¡ÌU‘”	 Ì¢Ü ” Ì¤” Ì¤” Ì¤” Ì¤” Ì¤” Ì¤”" Ì¤”$ Ì¥”0 Ì¥”1 Ì¥”7 Ì¥”: Ì¥”; Ì¥”< Ì¥”= Ì¥”> Ì¥ ”ÌJ Ì¥,”ÌK Ì¥-”ÌL Ì¥.”ÌM Ì¥/”Ìz Ì¥Ì\”Ì{ Ì¥Ì]”Ì| Ì¥Ì^’” Ì¦” Ì¦œ” Ì¨
-”	 Ì¨”
- Ì¨” Ì¨” Ì©” Ì©” Ìª”# Ìª)”% Ì«”0 Ì«”2 Ì¬”4 Ì¬6Ü ” Ì®” Ì®” Ì®” Ì®$” Ì®&” Ì®(” Ì®*” Ì®/”  Ì®1”& Ì®7”( Ì®9”+ Ì®<”0 Ì®ÌA”: Ì®ÌK”< Ì®ÌM”= Ì®ÌN–” Ì¯” Ì¯” Ì¯” Ì¯” Ì¯” Ì¯–” Ì°” Ì°” Ì°” Ì°”! Ì°”" Ì°” Ì±” Ì±	” Ì±” Ì±” Ì±” Ì±” Ì±”! Ì±”$ Ì± ”8 Ì±4”: Ì±6”? Ì±;”ÌA Ì±=”ÌC Ì±?—” Ì²” Ì²
-” Ì²” Ì²”$ Ì²”& Ì² ”( Ì²"œ” Ì³” Ì³” Ì³” Ì³” Ì³”" Ì³”$ Ì³”* Ì³"”, Ì³$”7 Ì³/”9 Ì³1”: Ì³2‘” Ì´™” Ìµ” Ìµ
-” Ìµ” Ìµ” Ìµ” Ìµ”  Ìµ”! Ìµ”" Ìµ–” Ì¶” Ì¶
-” Ì¶” Ì¶” Ì¶” Ì¶”” Ì·” Ì·” Ì·” Ì·‘” Ì¸—” Ì¹” Ì¹
-” Ì¹” Ì¹” Ì¹” Ì¹” Ì¹’” Ìº”/ Ìº)š” Ì»” Ì»
-” Ì»”' Ì»!”( Ì»"”, Ì»&”- Ì»'”3 Ì»-”4 Ì».”6 Ì»0—” Ì¼”  Ì¼”# Ì¼”' Ì¼”( Ì¼ ”. Ì¼&”/ Ì¼'‘” Ì½Ü ” Ì¾” Ì¾” Ì¾” Ì¾” Ì¾”' Ì¾!”) Ì¿”Ì@ Ì¿”ÌE Ì¿$”ÌO Ì¿.”ÌT Ì¿3”ÌW Ì¿6”ÌX Ì¿7”Ì\ Ì¿;”Ìp Ì¿ÌO”Ìv Ì¿ÌU”Ìz Ì¿ÌY”Ì{ Ì¿ÌZ”Ì Ì¿Ì`”Ìƒ Ì¿Ìb”Ì„ Ì¿Ìc”Ì… Ì¿Ìd‘”	 ÌÀŸ” ÌÁ” ÌÁ” ÌÁ” ÌÁ”# ÌÁ”& ÌÁ"”' ÌÁ#”+ ÌÁ'”ÌA ÌÁ=”ÌB ÌÁ>”ÌF ÌÁÌB”ÌG ÌÁÌC”ÌM ÌÁÌI”ÌN ÌÁÌJ”ÌP ÌÁÌL’” ÌÂ” ÌÂ”” ÌÃ” ÌÃ
-” ÌÃ” ÌÃš” ÌÄ” ÌÄ” ÌÄ” ÌÄ”+ ÌÄ#”9 ÌÄ1”= ÌÄ5”> ÌÄ6”ÌD ÌÄ<”ÌF ÌÄ>’” ÌÅ” ÌÅ‘”	 ÌÆ”” ÌÇ” ÌÇ” ÌÇ” ÌÇ’” ÌÈ” ÌÈ’” ÌÊ
-” ÌÊ Ü ” ÌË” ÌË
-” ÌË” ÌË” ÌË” ÌË” ÌË” ÌË”& ÌË"”( ÌË$”. ÌË*”0 ÌË,”6 ÌË2”: ÌË6”; ÌË7”< ÌË8Ü ” ÌÌ” ÌÌ
-” ÌÌ” ÌÌ” ÌÌ” ÌÌ” ÌÌ” ÌÌ”$ ÌÌ ”& ÌÌ"”* ÌÌ&”, ÌÌ(”2 ÌÌ.”6 ÌÌ2”7 ÌÌ3”8 ÌÌ4š” ÌÍ” ÌÍ” ÌÍ” ÌÍ” ÌÍ” ÌÍ”! ÌÍ”$ ÌÍ ”% ÌÍ!”& ÌÍ"’” ÌÎ” ÌÎ™” ÌĞ
-” ÌĞ” ÌÑ” ÌÑ” ÌÒ”  ÌÒ”" ÌÓ”1 ÌÓ”3 ÌÓ™” ÌÕ” ÌÕ” ÌÕ	” ÌÕ” ÌÕ” ÌÕ” ÌÕ” ÌÕ” ÌÕ›” ÌÖ” ÌÖ” ÌÖ” ÌÖ”! ÌÖ”" ÌÖ”( ÌÖ"”* ÌÖ$”ÌR ÌÖÌL”ÌS ÌÖÌM”ÌT ÌÖÌN‘”	 Ì×˜” ÌØ” ÌØ” ÌØ	” ÌØ” ÌØ”( ÌØ$”* ÌØ&”, ÌØ(›” ÌÙ” ÌÙ” ÌÙ” ÌÙ”! ÌÙ”" ÌÙ”( ÌÙ"”* ÌÙ$”ÌH ÌÙÌB”ÌI ÌÙÌC”ÌJ ÌÙÌD‘”	 ÌÚœ” ÌÛ” ÌÛ” ÌÛ” ÌÛ” ÌÛ”1 ÌÛ-”2 ÌÛ.”6 ÌÛ2”8 ÌÛ4”ÌD ÌÛÌ@”ÌE ÌÛÌA”ÌG ÌÛÌCÜ ” ÌÜ” ÌÜ” ÌÜ” ÌÜ”! ÌÜ”" ÌÜ”( ÌÜ"”* Ìİ”ÌC Ìİ!”ÌG Ìİ%”ÌM Ìİ+”ÌY Ìİ7”ÌZ Ìİ8”Ì` Ìİ>”Ìc ÌİÌA”Ìd ÌİÌB”Ìe ÌİÌC”Ìf ÌİÌD”Ìg ÌİÌE”Ìs ÌİÌQ”Ìt ÌİÌR”Ìu ÌİÌS”Ìv ÌİÌT”Ìz ÌİÌX”Ì| ÌİÌZ”Ì} ÌİÌ[”Ì~ ÌİÌ\‘”	 ÌŞ” Ìß” Ìß
-” Ìß” Ìß” Ìß” Ìß” Ìß” Ìß”& Ìß"”( Ìß$”. Ìß*”2 Ìß.”4 Ìß0”5 Ìß1” Ìà” Ìà
-” Ìà” Ìà” Ìà” Ìà” Ìà” Ìà”$ Ìà ”& Ìà"”* Ìà&”. Ìà*”0 Ìà,”1 Ìà-œ” Ìá” Ìá
-” Ìá” Ìá” Ìá”  Ìá”" Ìá”# Ìá”* Ìá&”, Ìá(”6 Ìá2”7 Ìá3•” Ìâ” Ìâ
-” Ìâ” Ìâ” Ìâ” Ìã” Ìã” Ìã”' Ìã!”+ Ìã%”7 Ìã1”= Ìã7”> Ìã8”ÌD Ìã>”ÌM ÌãÌG”ÌQ ÌãÌK”ÌR ÌãÌL”ÌX ÌãÌR”ÌZ ÌãÌTÜ ” Ìä” Ìä	” Ìä” Ìä”$ Ìä”' Ìä”( Ìä ”) Ìä!”* Ìä"”+ Ìä#”1 Ìä)”= Ìä5”? Ìä7”Ì@ Ìä8”ÌA Ìä9”ÌB Ìä:”ÌD Ìä<”ÌE Ìä=” Ìå” Ìå” Ìå”( Ìå"”. Ìå(”/ Ìå)”5 Ìå/”> Ìå8”ÌB Ìå<”ÌC Ìå=”ÌI ÌåÌC”ÌK ÌåÌE”ÌL ÌåÌF”” Ìæ” Ìæ
-” Ìæ” Ìæ%”” Ìç” Ìç” Ìç” Ìç”” Ìè” Ìè” Ìè” Ìè”” Ìé” Ìé” Ìé” Ìé”” Ìê” Ìê” Ìê” Ìê”” Ìë”! Ìë”# Ìë”+ Ìë%œ” Ìì” Ìì” Ìì”" Ìì”# Ìì”$ Ìì”% Ìì”) Ìì#”* Ìì$”+ Ìì%”, Ìì&”2 Ìì,–” Ìí” Ìí” Ìí” Ìí” Ìí”% Ìí–” Ìî” Ìî” Ìî” Ìî” Ìî”! Ìî” Ìï” Ìï” Ìï” Ìï” Ìï” Ìï” Ìï”& Ìï ”( Ìï"”4 Ìï.”5 Ìï/”; Ìï5”? Ìï9”Ì@ Ìï:” Ìğ” Ìğ” Ìğ” Ìğ” Ìğ”  Ìğ”! Ìğ”. Ìğ(”0 Ìğ*”: Ìğ4”; Ìğ5”ÌA Ìğ;”ÌE Ìğ?”ÌF ÌğÌ@–” Ìñ” Ìñ” Ìñ” Ìñ” Ìñ” Ìñ’” Ìò” Ìò’” Ìó” Ìó
-’” Ìô” Ìôš” Ìõ” Ìõ” Ìõ” Ìõ”  Ìõ”" Ìõ”# Ìõ”0 Ìõ*”4 Ìõ.”= Ìõ7š” Ìö” Ìö” Ìö” Ìö” Ìö” Ìö” Ìö”$ Ìö”( Ìö"”1 Ìö+š” Ì÷” Ì÷” Ì÷” Ì÷” Ì÷”  Ì÷”! Ì÷”, Ì÷&”0 Ì÷*”9 Ì÷3’”	 Ìø”
- ÌøÜ ” Ìù” Ìù
-” Ìù” Ìù” Ìù”# Ìù”% Ìú”< Ìú”Ì@ Ìú!”ÌA Ìú"”ÌC Ìú$”ÌD Ìú%”ÌI Ìú*”ÌV Ìú7”Ì^ Ìú?”Ìg ÌúÌH”Ìk ÌúÌL”Ìm ÌúÌNœ” Ìû” Ìû” Ìû” Ìû”$ Ìû”- Ìû'”1 Ìû+”2 Ìû,”8 Ìû2”: Ìû4”; Ìû5”< Ìû6”” Ìü” Ìü” Ìü” Ìü’” Ìı” Ìı–” Ìÿ
-” Ìÿ” Ìÿ” Ìÿ!” Ìÿ#” Ìÿ1” Í ” Í 
-” Í ” Í ” Í ”$ Í  ”& Í "”= Í 9”ÌB Í >”ÌH Í ÌD”ÌN Í ÌJ”ÌP Í ÌL”ÌQ Í ÌM”ÌR Í ÌNœ” Í” Í” Í	” Í” Í” Í” Í” Í” Í”# Í”$ Í ”% Í!Ü ” Í” Í”$ Í ”% Í!”) Í%”* Í&”, Í(”- Í)”7 Í3”9 Í5”= Í9”> Í:”Ì@ Í<”ÌA Í=”ÌL ÍÌH”ÌN ÍÌJ”ÌR ÍÌN”ÌS ÍÌO”ÌU ÍÌQ”ÌV ÍÌR”Ì] ÍÌY”Ì^ ÍÌZ”Ì_ ÍÌ[’” Í” Í‘” ÍÔrH–§version¤file§sources®sourcesContent¥names¨mappingsÀ‘À‘ÀÜ Ï‘”    ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”  	 ‘”  
- ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”    ‘”  ! ‘”  " ‘”  # ‘”  $ ‘”  % ‘”  & ‘”  ' ‘”  ( ‘”  ) ‘”  * ‘”  + ‘”  , ‘”  - ‘”  . ‘”  / ‘”  0 ‘”  1 ‘”  2 ‘”  3 ‘”  4 ‘”  5 ‘”  6 ‘”  7 ‘”  8 ‘”  9 ‘”  : ‘”  ; ‘”  < ‘”  = ‘”  > ‘”  ? ‘”  Ì@ ‘”  ÌA ‘”  ÌB ‘”  ÌC ‘”  ÌD ‘”  ÌE ‘”  ÌF ‘”  ÌG ‘”  ÌH ‘”  ÌI ‘”  ÌJ ‘”  ÌK ‘”  ÌL ‘”  ÌM ‘”  ÌN ‘”  ÌO ‘”  ÌP ‘”  ÌQ ‘”  ÌR ‘”  ÌS ‘”  ÌT ‘”  ÌU ‘”  ÌV ‘”  ÌW ‘”  ÌX ‘”  ÌY ‘”  ÌZ ‘”  Ì[ ‘”  Ì\ ‘”  Ì] ‘”  Ì^ ‘”  Ì_ ‘”  Ì` ‘”  Ìa ‘”  Ìb ‘”  Ìc ‘”  Ìd ‘”  Ìe ‘”  Ìf ‘”  Ìg ‘”  Ìh ‘”  Ìi ‘”  Ìj ‘”  Ìk ‘”  Ìl ‘”  Ìm ‘”  Ìn ‘”  Ìo ‘”  Ìp ‘”  Ìq ‘”  Ìr ‘”  Ìs ‘”  Ìt ‘”  Ìu ‘”  Ìv ‘”  Ìw ‘”  Ìx ‘”  Ìy ‘”  Ìz ‘”  Ì{ ‘”  Ì| ‘”  Ì} ‘”  Ì~ ‘”  Ì ‘”  Ì€ ‘”  Ì ‘”  Ì‚ ‘”  Ìƒ ‘”  Ì„ ‘”  Ì… ‘”  Ì† ‘”  Ì‡ ‘”  Ìˆ ‘”  Ì‰ ‘”  ÌŠ ‘”  Ì‹ ‘”  ÌŒ ‘”  Ì ‘”  Ì ‘”  Ì ‘”  Ì ‘”  Ì‘ ‘”  Ì’ ‘”  Ì“ ‘”  Ì” ‘”  Ì• ‘”  Ì– ‘”  Ì— ‘”  Ì˜ ‘”  Ì™ ‘”  Ìš ‘”  Ì› ‘”  Ìœ ‘”  Ì ‘”  Ì ‘”  ÌŸ ‘”  Ì  ‘”  Ì¡ ‘”  Ì¢ ‘”  Ì£ ‘”  Ì¤ ‘”  Ì¥ ‘”  Ì¦ ‘”  Ì§ ‘”  Ì¨ ‘”  Ì© ‘”  Ìª ‘”  Ì« ‘”  Ì¬ ‘”  Ì­ ‘”  Ì® ‘”  Ì¯ ‘”  Ì° ‘”  Ì± ‘”  Ì² ‘”  Ì³ ‘”  Ì´ ‘”  Ìµ ‘”  Ì¶ ‘”  Ì· ‘”  Ì¸ ‘”  Ì¹ ‘”  Ìº ‘”  Ì» ‘”  Ì¼ ‘”  Ì½ ‘”  Ì¾ ‘”  Ì¿ ‘”  ÌÀ ‘”  ÌÁ ‘”  ÌÂ ‘”  ÌÃ ‘”  ÌÄ ‘”  ÌÅ ‘”  ÌÆ ‘”  ÌÇ ‘”  ÌÈ ‘”  ÌÉ ‘”  ÌÊ ‘”  ÌË ‘”  ÌÌ ‘”  ÌÍ ‘”  ÌÎ ÔrI’§missing¦pluginÃ¦genAbcÂÔ  ÔrJ”²dynamicImportCache¹exportAllDeclarationCache»exportNamedDeclarationCache«importCache‘ÔrK–¤type¥start£end«declarationªspecifiers¦source¶ExportNamedDeclarationÍ€Í'¾ÔrL–¤type¥start£end¢idªsuperClass¤body°ClassDeclarationÍ‡Í'¾ÔrM”¤type¥start£end¤nameªIdentifierÍÍ ³PcbRouteCoordinatorÀÔrN”¤type¥start£end¤body©ClassBodyÍ¡Í'¾–ÔrO˜¤type¥start£end¦static¨computed£key¤kind¥value°MethodDefinitionÍ¨ÍÚÂÂMªIdentifierÍ¨Í³«constructor«constructorÔrP™¤type¥start£end¢idªexpression©generator¥async¦params¤body²FunctionExpressionÍ³ÍÚÀÂÂÂN®BlockStatementÍ¶ÍÚ–ÔrQ”¤type¥start£endªexpression³ExpressionStatementÍÁÍäÔrR–¤type¥start£end¨operator¤left¥right´AssignmentExpressionÍÁÍã¡=ÔrS—¤type¥start£end¦object¨property¨computed¨optional°MemberExpressionÍÁÍÈÔrT“¤type¥start£end®ThisExpressionÍÁÍÅMªIdentifierÍÆÍÈ¢bbÂÂÔrU•¤type¥start£end¦callee©arguments­NewExpressionÍËÍãMªIdentifierÍÏÍá²PcbRouteBlackboardQ³ExpressionStatementÍîÍR´AssignmentExpressionÍîÍ¡=S°MemberExpressionÍîÍüT®ThisExpressionÍîÍòMªIdentifierÍóÍü©placementÂÂU­NewExpressionÍÿÍMªIdentifierÍÍ±PcbPlacementAgentQ³ExpressionStatementÍ!ÍFR´AssignmentExpressionÍ!ÍE¡=S°MemberExpressionÍ!Í-T®ThisExpressionÍ!Í%MªIdentifierÍ&Í-§netPlanÂÂU­NewExpressionÍ0ÍEMªIdentifierÍ4ÍC¯PcbNetPlanAgentQ³ExpressionStatementÍPÍ}R´AssignmentExpressionÍPÍ|¡=S°MemberExpressionÍPÍ`T®ThisExpressionÍPÍTMªIdentifierÍUÍ`«routePolicyÂÂU­NewExpressionÍcÍ|MªIdentifierÍgÍz³PcbRoutePolicyAgentQ³ExpressionStatementÍ‡Í®R´AssignmentExpressionÍ‡Í­¡=S°MemberExpressionÍ‡Í”T®ThisExpressionÍ‡Í‹MªIdentifierÍŒÍ”¨geometryÂÂU­NewExpressionÍ—Í­MªIdentifierÍ›Í«°PcbGeometryAgentQ³ExpressionStatementÍ¸ÍÓR´AssignmentExpressionÍ¸ÍÒ¡=S°MemberExpressionÍ¸Í¿T®ThisExpressionÍ¸Í¼MªIdentifierÍ½Í¿¢qaÂÂU­NewExpressionÍÂÍÒMªIdentifierÍÆÍĞªPcbQaAgentO°MethodDefinitionÍàÍ0ÂÂMªIdentifierÍæÍé£run¦methodP²FunctionExpressionÍéÍ0ÀÂÂÃ–MªIdentifierÍêÍó©sourceDocMªIdentifierÍõÍø£apiMªIdentifierÍúÍ	 ¦runDrcMªIdentifierÍ	Í	
-¨isCancelMªIdentifierÍ	Í	ªonProgressÔrV•¤type¥start£end¤left¥right±AssignmentPatternÍ	Í	/MªIdentifierÍ	Í	'¯enableReasoningÔrW•¤type¥start£end¥value£raw§LiteralÍ	*Í	/Â¥falseN®BlockStatementÍ	1Í0Ü ÔrX•¤type¥start£end¬declarations¤kind³VariableDeclarationÍ	<Í	c‘ÔrY•¤type¥start£end¢id¤init²VariableDeclaratorÍ	BÍ	bMªIdentifierÍ	BÍ	G¥runIdÔrZ–¤type¥start£end¦callee©arguments¨optional®CallExpressionÍ	JÍ	bS°MemberExpressionÍ	JÍ	YMªIdentifierÍ	JÍ	P¦IdUtilMªIdentifierÍ	QÍ	Y¨generateÂÂ‘W§LiteralÍ	ZÍ	a¥pcbai§'pcbai'Â¥constQ³ExpressionStatementÍ	mÍ
-Z®CallExpressionÍ	mÍ
-S°MemberExpressionÍ	mÍ	xMªIdentifierÍ	mÍ	s¦LoggerMªIdentifierÍ	tÍ	x¤infoÂÂ’MªIdentifierÍ	yÍ	ˆ¯INSTR_TRACE_TAGÔr[–¤type¥start£end¤left¨operator¥right°BinaryExpressionÍ	ŠÍ
-Ôr\•¤type¥start£end«expressions¦quasis¯TemplateLiteralÍ	ŠÍ	é“MªIdentifierÍ	¢Í	§¥runIdS°MemberExpressionÍ	®Í	ÉS°MemberExpressionÍ	®Í	ÂMªIdentifierÍ	®Í	·©sourceDocMªIdentifierÍ	¸Í	ÂªfootprintsÂÂMªIdentifierÍ	ÃÍ	É¦lengthÂÂS°MemberExpressionÍ	ÒÍ	çS°MemberExpressionÍ	ÒÍ	àMªIdentifierÍ	ÒÍ	Û©sourceDocMªIdentifierÍ	ÜÍ	à¤netsÂÂMªIdentifierÍ	áÍ	ç¦lengthÂÂ”Ôr]•¤type¥start£end¥value¤tail¯TemplateElementÍ	‹Í	 Ôr^’£raw¦cookedµ[AI_PCB] START runId=µ[AI_PCB] START runId=Â]¯TemplateElementÍ	¨Í	¬^¤ fp=¤ fp=Â]¯TemplateElementÍ	ÊÍ	Ğ^¦ nets=¦ nets=Â]¯TemplateElementÍ	èÍ	è^  Ã¡+\¯TemplateLiteralÍ	ùÍ
-‘MªIdentifierÍ
-Í
-¯enableReasoning’]¯TemplateElementÍ	úÍ
-^« reasoning=« reasoning=Â]¯TemplateElementÍ
-Í
-^  ÃÂQ³ExpressionStatementÍ
-$Í
-UZ®CallExpressionÍ
-$Í
-TS°MemberExpressionÍ
-$Í
-1S°MemberExpressionÍ
-$Í
-+T®ThisExpressionÍ
-$Í
-(MªIdentifierÍ
-)Í
-+¢bbÂÂMªIdentifierÍ
-,Í
-1¥resetÂÂ“MªIdentifierÍ
-2Í
-7¥runIdMªIdentifierÍ
-9Í
-B©sourceDocMªIdentifierÍ
-DÍ
-S¯enableReasoningÂQ³ExpressionStatementÍ
-_Í
-ŠQ¯ChainExpressionÍ
-_Í
-‰Z®CallExpressionÍ
-_Í
-‰MªIdentifierÍ
-_Í
-iªonProgress‘Z®CallExpressionÍ
-lÍ
-ˆMªIdentifierÍ
-lÍ
-x¬makeProgress’W§LiteralÍ
-yÍ
-z¡8W§LiteralÍ
-|Í
-‡­PCB AI å‡†å¤‡¯'PCB AI å‡†å¤‡'ÂÃÔr_–¤type¥start£end¤testªconsequent©alternate«IfStatementÍ
-”Í[±LogicalExpressionÍ
-˜Í
-®MªIdentifierÍ
-˜Í
- ¨isCancel¢&&Z®CallExpressionÍ
-¤Í
-®MªIdentifierÍ
-¤Í
-¬¨isCancelÂN®BlockStatementÍ
-°Í‘Ôr`”¤type¥start£end¨argument¯ReturnStatementÍ
-¿Í
-ùZ®CallExpressionÍ
-ÆÍ
-øMªIdentifierÍ
-ÆÍ
-ÛµemptyPcbAiRouteResult“W§LiteralÍ
-ÜÍ
-ã¥start§'start'W§LiteralÍ
-åÍ
-ğ©cancelled«'cancelled'W§LiteralÍ
-òÍ
-÷Â¥falseÂÀX³VariableDeclarationÍÍ!‘Y²VariableDeclaratorÍÍ MªIdentifierÍÍ©placeHintW§LiteralÍÍ  ¢''£letQ³ExpressionStatementÍ+ÍTQ¯ChainExpressionÍ+ÍSZ®CallExpressionÍ+ÍSMªIdentifierÍ+Í5ªonProgress‘Z®CallExpressionÍ8ÍRMªIdentifierÍ8ÍD¬makeProgress’W§LiteralÍEÍG¢15W§LiteralÍIÍQªPCB å¸ƒå±€¬'PCB å¸ƒå±€'ÂÃX³VariableDeclarationÍ^ÍÒ‘Y²VariableDeclaratorÍdÍÑMªIdentifierÍdÍf¢p1`¯AwaitExpressionÍiÍÑZ®CallExpressionÍoÍÑS°MemberExpressionÍoÍ}T®ThisExpressionÍoÍsMªIdentifierÍtÍ}©keepRetryÂÂ”W§LiteralÍ~Í‰©placement«'placement'MªIdentifierÍ‹Í“¨isCancelMªIdentifierÍ•Í©placeHintP·ArrowFunctionExpressionÍ ÍĞÀÃÂÂ‘MªIdentifierÍ¡Í¥¤hintZ®CallExpressionÍªÍĞS°MemberExpressionÍªÍ¼S°MemberExpressionÍªÍ¸T®ThisExpressionÍªÍ®MªIdentifierÍ¯Í¸©placementÂÂMªIdentifierÍ¹Í¼£runÂÂ“S°MemberExpressionÍ½ÍÄT®ThisExpressionÍ½ÍÁMªIdentifierÍÂÍÄ¢bbÂÂMªIdentifierÍÆÍÉ£apiMªIdentifierÍËÍÏ¤hintÂÂ¥const_«IfStatementÍÜÍ0Ôra–¤type¥start£end¨operator¦prefix¨argument¯UnaryExpressionÍàÍæ¡!ÃS°MemberExpressionÍáÍæMªIdentifierÍáÍã¢p1MªIdentifierÍäÍæ¢okÂÂN®BlockStatementÍèÍ0‘`¯ReturnStatementÍ÷Í%Z®CallExpressionÍşÍ$S°MemberExpressionÍşÍT®ThisExpressionÍşÍMªIdentifierÍÍ©stageFailÂÂ’W§LiteralÍÍ©placement«'placement'S°MemberExpressionÍÍ#MªIdentifierÍÍ¢p1MªIdentifierÍÍ#¦reasonÂÂÂÀ_«IfStatementÍ:Í¸[±LogicalExpressionÍ>ÍTMªIdentifierÍ>ÍF¨isCancel¢&&Z®CallExpressionÍJÍTMªIdentifierÍJÍR¨isCancelÂN®BlockStatementÍVÍ¸‘`¯ReturnStatementÍeÍ­Z®CallExpressionÍlÍ¬MªIdentifierÍlÍµemptyPcbAiRouteResult“W§LiteralÍ‚Í©placement«'placement'W§LiteralÍÍš©cancelled«'cancelled'S°MemberExpressionÍœÍ«S°MemberExpressionÍœÍ£T®ThisExpressionÍœÍ MªIdentifierÍ¡Í£¢bbÂÂMªIdentifierÍ¤Í«§usedLlmÂÂÂÀX³VariableDeclarationÍÂÍÓ‘Y²VariableDeclaratorÍÆÍÒMªIdentifierÍÆÍÍ§netHintW§LiteralÍĞÍÒ ¢''£letQ³ExpressionStatementÍİÍQ¯ChainExpressionÍİÍZ®CallExpressionÍİÍMªIdentifierÍİÍçªonProgress‘Z®CallExpressionÍêÍMªIdentifierÍêÍö¬makeProgress’W§LiteralÍ÷Íù¢30W§LiteralÍûÍ°PCB ç½‘ç»œè®¡åˆ’²'PCB ç½‘ç»œè®¡åˆ’'ÂÃX³VariableDeclarationÍÍ‘Y²VariableDeclaratorÍÍ€MªIdentifierÍÍ¢p2`¯AwaitExpressionÍÍ€Z®CallExpressionÍ#Í€S°MemberExpressionÍ#Í1T®ThisExpressionÍ#Í'MªIdentifierÍ(Í1©keepRetryÂÂ”W§LiteralÍ2Í<¨net_planª'net_plan'MªIdentifierÍ>ÍF¨isCancelMªIdentifierÍHÍO§netHintP·ArrowFunctionExpressionÍQÍÀÃÂÂ‘MªIdentifierÍRÍV¤hintZ®CallExpressionÍ[ÍS°MemberExpressionÍ[ÍkS°MemberExpressionÍ[ÍgT®ThisExpressionÍ[Í_MªIdentifierÍ`Íg§netPlanÂÂMªIdentifierÍhÍk£runÂÂ“S°MemberExpressionÍlÍsT®ThisExpressionÍlÍpMªIdentifierÍqÍs¢bbÂÂMªIdentifierÍuÍx£apiMªIdentifierÍzÍ~¤hintÂÂ¥const_«IfStatementÍ‹ÍŞa¯UnaryExpressionÍÍ•¡!ÃS°MemberExpressionÍÍ•MªIdentifierÍÍ’¢p2MªIdentifierÍ“Í•¢okÂÂN®BlockStatementÍ—ÍŞ‘`¯ReturnStatementÍ¦ÍÓZ®CallExpressionÍ­ÍÒS°MemberExpressionÍ­Í»T®ThisExpressionÍ­Í±MªIdentifierÍ²Í»©stageFailÂÂ’W§LiteralÍ¼ÍÆ¨net_planª'net_plan'S°MemberExpressionÍÈÍÑMªIdentifierÍÈÍÊ¢p2MªIdentifierÍËÍÑ¦reasonÂÂÂÀX³VariableDeclarationÍèÍş‘Y²VariableDeclaratorÍìÍıMªIdentifierÍìÍø¬lastQaReasonW§LiteralÍûÍı ¢''£letX³VariableDeclarationÍÍ%‘Y²VariableDeclaratorÍÍ$MªIdentifierÍÍ°lastResidualKindW§LiteralÍÍ$£drc¥'drc'£letÔrb—¤type¥start£end¤init¤test¦update¤body¬ForStatementÍ/ÍêX³VariableDeclarationÍ4ÍA‘Y²VariableDeclaratorÍ8ÍAMªIdentifierÍ8Í=¥outerW§LiteralÍ@ÍA ¡0£let[°BinaryExpressionÍCÍ_MªIdentifierÍCÍH¥outer¡<MªIdentifierÍKÍ_´PCB_KEEP_RETRY_OUTERa°UpdateExpressionÍaÍh¢++ÂMªIdentifierÍaÍf¥outerN®BlockStatementÍjÍê_«IfStatementÍyÍ[±LogicalExpressionÍ}Í“MªIdentifierÍ}Í…¨isCancel¢&&Z®CallExpressionÍ‰Í“MªIdentifierÍ‰Í‘¨isCancelÂN®BlockStatementÍ•Í‘`¯ReturnStatementÍ¨ÍóZ®CallExpressionÍ¯ÍòMªIdentifierÍ¯ÍÄµemptyPcbAiRouteResult“W§LiteralÍÅÍÓ¬route_policy®'route_policy'W§LiteralÍÕÍà©cancelled«'cancelled'S°MemberExpressionÍâÍñS°MemberExpressionÍâÍéT®ThisExpressionÍâÍæMªIdentifierÍçÍé¢bbÂÂMªIdentifierÍêÍñ§usedLlmÂÂÂÀX³VariableDeclarationÍÍT‘Y²VariableDeclaratorÍÍSMªIdentifierÍÍ¨failHint_µConditionalExpressionÍ!ÍS[°BinaryExpressionÍ!Í8S°MemberExpressionÍ!Í4MªIdentifierÍ!Í-¬lastQaReasonMªIdentifierÍ.Í4¦lengthÂÂ¡>W§LiteralÍ7Í8 ¡0MªIdentifierÍ;ÍG¬lastQaReasonMªIdentifierÍJÍS©undefined¥constQ³ExpressionStatementÍbÍ©Q¯ChainExpressionÍbÍ¨Z®CallExpressionÍbÍ¨MªIdentifierÍbÍlªonProgress‘Z®CallExpressionÍoÍ§MªIdentifierÍoÍ{¬makeProgress’[°BinaryExpressionÍ|ÍŠW§LiteralÍ|Í~-¢45¡+[°BinaryExpressionÍÍŠMªIdentifierÍÍ†¥outer¡*W§LiteralÍ‰ÍŠ¡5\¯TemplateLiteralÍŒÍ¦‘[°BinaryExpressionÍšÍ£MªIdentifierÍšÍŸ¥outer¡+W§LiteralÍ¢Í£¡1’]¯TemplateElementÍÍ˜^µPCB å±‚è§’è‰²ç­–ç•¥ (µPCB å±‚è§’è‰²ç­–ç•¥ (Â]¯TemplateElementÍ¤Í¥^¡)¡)ÃÂÃX³VariableDeclarationÍ·ÍR‘Y²VariableDeclaratorÍ½ÍQMªIdentifierÍ½Í¿¢p3`¯AwaitExpressionÍÂÍQZ®CallExpressionÍÈÍQS°MemberExpressionÍÈÍÖT®ThisExpressionÍÈÍÌMªIdentifierÍÍÍÖ©keepRetryÂÂ”W§LiteralÍ×Íå¬route_policy®'route_policy'MªIdentifierÍçÍï¨isCancel[±LogicalExpressionÍñÍÿMªIdentifierÍñÍù¨failHint¢??W§LiteralÍıÍÿ ¢''P·ArrowFunctionExpressionÍÍPÀÃÂÂ‘MªIdentifierÍÍ¤hintZ®CallExpressionÍÍPS°MemberExpressionÍÍS°MemberExpressionÍÍT®ThisExpressionÍÍMªIdentifierÍÍ«routePolicyÂÂMªIdentifierÍÍ£runÂÂ“S°MemberExpressionÍ Í'T®ThisExpressionÍ Í$MªIdentifierÍ%Í'¢bbÂÂMªIdentifierÍ)Í,£api_µConditionalExpressionÍ.ÍO[°BinaryExpressionÍ.Í=S°MemberExpressionÍ.Í9MªIdentifierÍ.Í2¤hintMªIdentifierÍ3Í9¦lengthÂÂ¡>W§LiteralÍ<Í= ¡0MªIdentifierÍ@ÍD¤hintMªIdentifierÍGÍO¨failHintÂÂ¥const_«IfStatementÍ`Í„a¯UnaryExpressionÍdÍj¡!ÃS°MemberExpressionÍeÍjMªIdentifierÍeÍg¢p3MªIdentifierÍhÍj¢okÂÂN®BlockStatementÍlÍ„”Q³ExpressionStatementÍÍZ®CallExpressionÍÍS°MemberExpressionÍÍŠMªIdentifierÍÍ…¦LoggerMªIdentifierÍ†ÍŠ¤warnÂÂ’MªIdentifierÍ‹Íš¯INSTR_TRACE_TAG\¯TemplateLiteralÍœÍ“[°BinaryExpressionÍĞÍÙMªIdentifierÍĞÍÕ¥outer¡+W§LiteralÍØÍÙ¡1MªIdentifierÍİÍñ´PCB_KEEP_RETRY_OUTERS°MemberExpressionÍ÷Í MªIdentifierÍ÷Íù¢p3MªIdentifierÍúÍ ¦reasonÂÂ”]¯TemplateElementÍÍÎ^Ù1[AI_PCB] KEEP_RETRY route_policy exhausted outer=Ù1[AI_PCB] KEEP_RETRY route_policy exhausted outer=Â]¯TemplateElementÍÚÍÛ^¡/¡/Â]¯TemplateElementÍòÍõ^£ | £ | Â]¯TemplateElementÍÍ^  ÃÂQ³ExpressionStatementÍÍ/R´AssignmentExpressionÍÍ.¡=MªIdentifierÍÍ"¬lastQaReasonS°MemberExpressionÍ%Í.MªIdentifierÍ%Í'¢p3MªIdentifierÍ(Í.¦reasonÂÂQ³ExpressionStatementÍAÍZR´AssignmentExpressionÍAÍY¡=MªIdentifierÍAÍQ°lastResidualKindW§LiteralÍTÍY£drc¥'drc'Ôrc”¤type¥start£end¥label±ContinueStatementÍlÍuÀÀQ³ExpressionStatementÍ’ÍÎQ¯ChainExpressionÍ’ÍÍZ®CallExpressionÍ’ÍÍMªIdentifierÍ’ÍœªonProgress‘Z®CallExpressionÍŸÍÌMªIdentifierÍŸÍ«¬makeProgress’[°BinaryExpressionÍ¬ÍºW§LiteralÍ¬Í®ÌA¢65¡+[°BinaryExpressionÍ±ÍºMªIdentifierÍ±Í¶¥outer¡*W§LiteralÍ¹Íº¡3W§LiteralÍ¼ÍËµPCB å‡ ä½•å¸ƒçº¿(LLM)·'PCB å‡ ä½•å¸ƒçº¿(LLM)'ÂÃX³VariableDeclarationÍÜÍp‘Y²VariableDeclaratorÍâÍoMªIdentifierÍâÍä¢p4`¯AwaitExpressionÍçÍoZ®CallExpressionÍíÍoS°MemberExpressionÍíÍûT®ThisExpressionÍíÍñMªIdentifierÍòÍû©keepRetryÂÂ”W§LiteralÍüÍ¨geometryª'geometry'MªIdentifierÍÍ¨isCancel[±LogicalExpressionÍÍ MªIdentifierÍÍ¨failHint¢??W§LiteralÍÍ  ¢''P·ArrowFunctionExpressionÍ"ÍnÀÃÂÂ‘MªIdentifierÍ#Í'¤hintZ®CallExpressionÍ,ÍnS°MemberExpressionÍ,Í=S°MemberExpressionÍ,Í9T®ThisExpressionÍ,Í0MªIdentifierÍ1Í9¨geometryÂÂMªIdentifierÍ:Í=£runÂÂ“S°MemberExpressionÍ>ÍET®ThisExpressionÍ>ÍBMªIdentifierÍCÍE¢bbÂÂMªIdentifierÍGÍJ£api_µConditionalExpressionÍLÍm[°BinaryExpressionÍLÍ[S°MemberExpressionÍLÍWMªIdentifierÍLÍP¤hintMªIdentifierÍQÍW¦lengthÂÂ¡>W§LiteralÍZÍ[ ¡0MªIdentifierÍ^Íb¤hintMªIdentifierÍeÍm¨failHintÂÂ¥const_«IfStatementÍ~Íca¯UnaryExpressionÍ‚Íˆ¡!ÃS°MemberExpressionÍƒÍˆMªIdentifierÍƒÍ…¢p4MªIdentifierÍ†Íˆ¢okÂÂN®BlockStatementÍŠÍc’_«IfStatementÍÍëZ®CallExpressionÍ¡ÍÉMªIdentifierÍ¡Í¾½shouldSkipQaAfterGeometryFail‘S°MemberExpressionÍ¿ÍÈMªIdentifierÍ¿ÍÁ¢p4MªIdentifierÍÂÍÈ¦reasonÂÂÂN®BlockStatementÍËÍë”Q³ExpressionStatementÍâÍSZ®CallExpressionÍâÍRS°MemberExpressionÍâÍíMªIdentifierÍâÍè¦LoggerMªIdentifierÍéÍí¤warnÂÂ’MªIdentifierÍîÍı¯INSTR_TRACE_TAG\¯TemplateLiteralÍÿÍQ’[°BinaryExpressionÍ7Í@MªIdentifierÍ7Í<¥outer¡+W§LiteralÍ?Í@¡1S°MemberExpressionÍFÍOMªIdentifierÍFÍH¢p4MªIdentifierÍIÍO¦reasonÂÂ“]¯TemplateElementÍ Í5^Ù7[AI_PCB] geometry not applied â†’ skip qa_repair outer=Ù7[AI_PCB] geometry not applied â†’ skip qa_repair outer=Â]¯TemplateElementÍAÍD^£ | £ | Â]¯TemplateElementÍPÍP^  ÃÂQ³ExpressionStatementÍiÍ‚R´AssignmentExpressionÍiÍ¡=MªIdentifierÍiÍu¬lastQaReasonS°MemberExpressionÍxÍMªIdentifierÍxÍz¢p4MªIdentifierÍ{Í¦reasonÂÂQ³ExpressionStatementÍ˜Í¹R´AssignmentExpressionÍ˜Í¸¡=MªIdentifierÍ˜Í¨°lastResidualKindW§LiteralÍ«Í¸«signal_fail­'signal_fail'c±ContinueStatementÍÏÍØÀÀQ³ExpressionStatementÍıÍTZ®CallExpressionÍıÍSS°MemberExpressionÍıÍMªIdentifierÍıÍ¦LoggerMªIdentifierÍÍ¤warnÂÂ’MªIdentifierÍ	Í¯INSTR_TRACE_TAG\¯TemplateLiteralÍÍR‘S°MemberExpressionÍGÍPMªIdentifierÍGÍI¢p4MªIdentifierÍJÍP¦reasonÂÂ’]¯TemplateElementÍÍE^Ù,[AI_PCB] geometry soft-fail â†’ qa_repair | Ù,[AI_PCB] geometry soft-fail â†’ qa_repair | Â]¯TemplateElementÍQÍQ^  ÃÂÀQ³ExpressionStatementÍqÍªQ¯ChainExpressionÍqÍ©Z®CallExpressionÍqÍ©MªIdentifierÍqÍ{ªonProgress‘Z®CallExpressionÍ~Í¨MªIdentifierÍ~ÍŠ¬makeProgress’[°BinaryExpressionÍ‹Í™W§LiteralÍ‹ÍÌN¢78¡+[°BinaryExpressionÍÍ™MªIdentifierÍÍ•¥outer¡*W§LiteralÍ˜Í™¡3W§LiteralÍ›Í§ªPCB DRC/QA¬'PCB DRC/QA'ÂÃX³VariableDeclarationÍ¸Íì‘Y²VariableDeclaratorÍ¾ÍëMªIdentifierÍ¾ÍÀ¢p5`¯AwaitExpressionÍÃÍëZ®CallExpressionÍÉÍëS°MemberExpressionÍÉÍÕS°MemberExpressionÍÉÍĞT®ThisExpressionÍÉÍÍMªIdentifierÍÎÍĞ¢qaÂÂMªIdentifierÍÑÍÕ¤gateÂÂ“S°MemberExpressionÍÖÍİT®ThisExpressionÍÖÍÚMªIdentifierÍÛÍİ¢bbÂÂMªIdentifierÍßÍâ£apiMªIdentifierÍäÍê¦runDrcÂ¥const_«IfStatementÍúÍïS°MemberExpressionÍşÍMªIdentifierÍşÍ ¢p5MªIdentifierÍÍ¢okÂÂN®BlockStatementÍÍï’X³VariableDeclarationÍÍ‘Y²VariableDeclaratorÍÍ€MªIdentifierÍÍ"¤kind_µConditionalExpressionÍ%Í€S°MemberExpressionÍ%Í0MªIdentifierÍ%Í'¢p5MªIdentifierÍ(Í0¨residualÂÂ[±LogicalExpressionÍIÍaS°MemberExpressionÍIÍXMªIdentifierÍIÍK¢p5MªIdentifierÍLÍX¬residualKindÂÂ¢??W§LiteralÍ\Ía£drc¥'drc'W§LiteralÍzÍ€¤none¦'none'¥const`¯ReturnStatementÍ“ÍàZ®CallExpressionÍšÍßS°MemberExpressionÍšÍ¬T®ThisExpressionÍšÍMªIdentifierÍŸÍ¬­successResultÂÂ“a¯UnaryExpressionÍ­Íº¡!Ãa¯UnaryExpressionÍ®Íº¡!ÃS°MemberExpressionÍ¯ÍºMªIdentifierÍ¯Í±¢p5MªIdentifierÍ²Íº¨residualÂÂMªIdentifierÍ¼ÍÀ¤kind_µConditionalExpressionÍÂÍŞS°MemberExpressionÍÂÍÍMªIdentifierÍÂÍÄ¢p5MªIdentifierÍÅÍÍ¨residualÂÂS°MemberExpressionÍĞÍÙMªIdentifierÍĞÍÒ¢p5MªIdentifierÍÓÍÙ¦reasonÂÂW§LiteralÍÜÍŞ ¢''ÂÀQ³ExpressionStatementÍıÍR´AssignmentExpressionÍıÍ¡=MªIdentifierÍıÍ	¬lastQaReasonS°MemberExpressionÍÍMªIdentifierÍÍ¢p5MªIdentifierÍÍ¦reasonÂÂQ³ExpressionStatementÍ$ÍPR´AssignmentExpressionÍ$ÍO¡=MªIdentifierÍ$Í4°lastResidualKind[±LogicalExpressionÍ7ÍOS°MemberExpressionÍ7ÍFMªIdentifierÍ7Í9¢p5MªIdentifierÍ:ÍF¬residualKindÂÂ¢??W§LiteralÍJÍO£drc¥'drc'Q³ExpressionStatementÍ^ÍßZ®CallExpressionÍ^ÍŞS°MemberExpressionÍ^ÍiMªIdentifierÍ^Íd¦LoggerMªIdentifierÍeÍi¤warnÂÂ’MªIdentifierÍjÍy¯INSTR_TRACE_TAG\¯TemplateLiteralÍ{Íİ“[°BinaryExpressionÍ«Í´MªIdentifierÍ«Í°¥outer¡+W§LiteralÍ³Í´¡1MªIdentifierÍ¸ÍÌ´PCB_KEEP_RETRY_OUTERS°MemberExpressionÍÒÍÛMªIdentifierÍÒÍÔ¢p5MªIdentifierÍÕÍÛ¦reasonÂÂ”]¯TemplateElementÍ|Í©^Ù/[AI_PCB] KEEP_RETRY demote ABORTâ†’RETRY outer=Ù/[AI_PCB] KEEP_RETRY demote ABORTâ†’RETRY outer=Â]¯TemplateElementÍµÍ¶^¡/¡/Â]¯TemplateElementÍÍÍĞ^£ | £ | Â]¯TemplateElementÍÜÍÜ^  ÃÂ_«IfStatementÍ-Í½[±LogicalExpressionÍ1Íª[±LogicalExpressionÍ1ÍaS°MemberExpressionÍ1Í@S°MemberExpressionÍ1Í8T®ThisExpressionÍ1Í5MªIdentifierÍ6Í8¢bbÂÂMªIdentifierÍ9Í@§usedLlmÂÂ¢&&Z®CallExpressionÍDÍaS°MemberExpressionÍDÍ_T®ThisExpressionÍDÍHMªIdentifierÍIÍ_¶hasDeliverableGeometryÂÂÂ¢&&Z®CallExpressionÍrÍªMªIdentifierÍrÍŠ¸isSoftAcceptableResidual’MªIdentifierÍ‹Í›°lastResidualKindMªIdentifierÍÍ©¬lastQaReasonÂN®BlockStatementÍ¬Í½’Q³ExpressionStatementÍ»Í/Z®CallExpressionÍ»Í.S°MemberExpressionÍ»ÍÆMªIdentifierÍ»ÍÁ¦LoggerMªIdentifierÍÂÍÆ¤warnÂÂ’MªIdentifierÍÇÍÖ¯INSTR_TRACE_TAG\¯TemplateLiteralÍØÍ-’MªIdentifierÍ	Í°lastResidualKindMªIdentifierÍÍ+¬lastQaReason“]¯TemplateElementÍÙÍ^Ù.[AI_PCB] KEEP_RETRY ACCEPT soft residual kind=Ù.[AI_PCB] KEEP_RETRY ACCEPT soft residual kind=Â]¯TemplateElementÍÍ^£ | £ | Â]¯TemplateElementÍ,Í,^  ÃÂ`¯ReturnStatementÍ=Í²Z®CallExpressionÍDÍ±S°MemberExpressionÍDÍVT®ThisExpressionÍDÍHMªIdentifierÍIÍV­successResultÂÂ“W§LiteralÍWÍ[Ã¤trueMªIdentifierÍ]Ím°lastResidualKind_µConditionalExpressionÍoÍ°[°BinaryExpressionÍoÍ†S°MemberExpressionÍoÍ‚MªIdentifierÍoÍ{¬lastQaReasonMªIdentifierÍ|Í‚¦lengthÂÂ¡>W§LiteralÍ…Í† ¡0MªIdentifierÍ‰Í•¬lastQaReasonW§LiteralÍ˜Í°¶residual after retries¸'residual after retries'ÂÀ_«IfStatementÍÇÍ«[±LogicalExpressionÍËÍ%Z®CallExpressionÍËÍèS°MemberExpressionÍËÍæT®ThisExpressionÍËÍÏMªIdentifierÍĞÍæ¶hasDeliverableGeometryÂÂÂ¢&&a¯UnaryExpressionÍìÍ%¡!ÃZ®CallExpressionÍíÍ%MªIdentifierÍíÍ¸isSoftAcceptableResidual’MªIdentifierÍÍ°lastResidualKindMªIdentifierÍÍ$¬lastQaReasonÂN®BlockStatementÍ'Í«‘Q³ExpressionStatementÍ6Í Z®CallExpressionÍ6ÍŸS°MemberExpressionÍ6ÍAMªIdentifierÍ6Í<¦LoggerMªIdentifierÍ=ÍA¤warnÂÂ’MªIdentifierÍBÍQ¯INSTR_TRACE_TAG\¯TemplateLiteralÍSÍ’MªIdentifierÍzÍŠ°lastResidualKindMªIdentifierÍÍœ¬lastQaReason“]¯TemplateElementÍTÍx^Ù$[AI_PCB] refuse dirty residual kind=Ù$[AI_PCB] refuse dirty residual kind=Â]¯TemplateElementÍ‹Í^£ | £ | Â]¯TemplateElementÍÍ^  ÃÂÀ`¯ReturnStatementÍµÍ)Z®CallExpressionÍ¼Í(S°MemberExpressionÍ¼ÍÊT®ThisExpressionÍ¼ÍÀMªIdentifierÍÁÍÊ©stageFailÂÂ’W§LiteralÍËÍÏ¢qa¤'qa'_µConditionalExpressionÍÑÍ'[°BinaryExpressionÍÑÍèS°MemberExpressionÍÑÍäMªIdentifierÍÑÍİ¬lastQaReasonMªIdentifierÍŞÍä¦lengthÂÂ¡>W§LiteralÍçÍè ¡0MªIdentifierÍëÍ÷¬lastQaReasonW§LiteralÍúÍ'Ù+PCB AI exhausted without deliverable copperÙ-'PCB AI exhausted without deliverable copper'ÂO°MethodDefinitionÍ6ÍxÂÂMªIdentifierÍ<ÍE©keepRetry¦methodP²FunctionExpressionÍEÍxÀÂÂÃ”MªIdentifierÍFÍK¥stageMªIdentifierÍMÍU¨isCancelMªIdentifierÍWÍb«initialHintMªIdentifierÍdÍf¢fnN®BlockStatementÍhÍx–X³VariableDeclarationÍsÍ¨‘Y²VariableDeclaratorÍwÍ§MªIdentifierÍwÍ{¤lastÔrd”¤type¥start£endªproperties°ObjectExpressionÍ~Í§’Ôre™¤type¥start£end¦method©shorthand¨computed£key¥value¤kind¨PropertyÍ€Í‰ÂÂÂMªIdentifierÍ€Í‚¢okW§LiteralÍ„Í‰Â¥false¤inite¨PropertyÍ‹Í¥ÂÂÂMªIdentifierÍ‹Í‘¦reason\¯TemplateLiteralÍ“Í¥‘MªIdentifierÍ–Í›¥stage’]¯TemplateElementÍ”Í”^  Â]¯TemplateElementÍœÍ¤^¨ not run¨ not runÃ¤init£letX³VariableDeclarationÍ²ÍÉ‘Y²VariableDeclaratorÍ¶ÍÈMªIdentifierÍ¶Íº¤hintMªIdentifierÍ½ÍÈ«initialHint£letX³VariableDeclarationÍÓÍí‘Y²VariableDeclaratorÍ×ÍìMªIdentifierÍ×Íç°layoutFailReasonW§LiteralÍêÍì ¢''£letb¬ForStatementÍ÷ÍsX³VariableDeclarationÍüÍ	‘Y²VariableDeclaratorÍ Í	MªIdentifierÍ Í¥outerW§LiteralÍÍ	 ¡0£let[°BinaryExpressionÍÍ'MªIdentifierÍÍ¥outer¡<MªIdentifierÍÍ'´PCB_KEEP_RETRY_OUTERa°UpdateExpressionÍ)Í0¢++ÂMªIdentifierÍ)Í.¥outerN®BlockStatementÍ2Ís–_«IfStatementÍAÍ©[±LogicalExpressionÍEÍ[MªIdentifierÍEÍM¨isCancel¢&&Z®CallExpressionÍQÍ[MªIdentifierÍQÍY¨isCancelÂN®BlockStatementÍ]Í©‘`¯ReturnStatementÍpÍšd°ObjectExpressionÍwÍ™’e¨PropertyÍyÍ‚ÂÂÂMªIdentifierÍyÍ{¢okW§LiteralÍ}Í‚Â¥false¤inite¨PropertyÍ„Í—ÂÂÂMªIdentifierÍ„ÍŠ¦reasonW§LiteralÍŒÍ—©cancelled«'cancelled'¤initÀQ³ExpressionStatementÍ·ÍÍR´AssignmentExpressionÍ·ÍÌ¡=MªIdentifierÍ·Í»¤last`¯AwaitExpressionÍ¾ÍÌZ®CallExpressionÍÄÍÌMªIdentifierÍÄÍÆ¢fn‘MªIdentifierÍÇÍË¤hintÂ_«IfStatementÍÛÍS°MemberExpressionÍßÍæMªIdentifierÍßÍã¤lastMªIdentifierÍäÍæ¢okÂÂN®BlockStatementÍèÍ‘`¯ReturnStatementÍûÍMªIdentifierÍÍ¤lastÀQ³ExpressionStatementÍ$Í7R´AssignmentExpressionÍ$Í6¡=MªIdentifierÍ$Í(¤hintS°MemberExpressionÍ+Í6MªIdentifierÍ+Í/¤lastMªIdentifierÍ0Í6¦reasonÂÂ_«IfStatementÍvÍáa¯UnaryExpressionÍzÍ¡!ÃZ®CallExpressionÍ{ÍMªIdentifierÍ{Í‘¶isNetworkishFailReason‘S°MemberExpressionÍ’ÍMªIdentifierÍ’Í–¤lastMªIdentifierÍ—Í¦reasonÂÂÂN®BlockStatementÍ Íá‘Q³ExpressionStatementÍ³ÍÒR´AssignmentExpressionÍ³ÍÑ¡=MªIdentifierÍ³ÍÃ°layoutFailReasonS°MemberExpressionÍÆÍÑMªIdentifierÍÆÍÊ¤lastMªIdentifierÍËÍÑ¦reasonÂÂÀQ³ExpressionStatementÍïÍhZ®CallExpressionÍïÍgS°MemberExpressionÍïÍúMªIdentifierÍïÍõ¦LoggerMªIdentifierÍöÍú¤warnÂÂ’MªIdentifierÍûÍ
-¯INSTR_TRACE_TAG\¯TemplateLiteralÍÍf”MªIdentifierÍ#Í(¥stage[°BinaryExpressionÍ2Í;MªIdentifierÍ2Í7¥outer¡+W§LiteralÍ:Í;¡1MªIdentifierÍ?ÍS´PCB_KEEP_RETRY_OUTERS°MemberExpressionÍYÍdMªIdentifierÍYÍ]¤lastMªIdentifierÍ^Íd¦reasonÂÂ•]¯TemplateElementÍÍ!^´[AI_PCB] KEEP_RETRY ´[AI_PCB] KEEP_RETRY Â]¯TemplateElementÍ)Í0^§ outer=§ outer=Â]¯TemplateElementÍ<Í=^¡/¡/Â]¯TemplateElementÍTÍW^£ | £ | Â]¯TemplateElementÍeÍe^  ÃÂ_«IfStatementÍ}Í[[±LogicalExpressionÍÍÃ[°BinaryExpressionÍÍœS°MemberExpressionÍÍ˜MªIdentifierÍÍ‘°layoutFailReasonMªIdentifierÍ’Í˜¦lengthÂÂ¡>W§LiteralÍ›Íœ ¡0¢&&Z®CallExpressionÍ ÍÃMªIdentifierÍ Í¶¶isNetworkishFailReason‘S°MemberExpressionÍ·ÍÂMªIdentifierÍ·Í»¤lastMªIdentifierÍ¼ÍÂ¦reasonÂÂÂN®BlockStatementÍÅÍ[‘`¯ReturnStatementÍÔÍPd°ObjectExpressionÍÛÍO’e¨PropertyÍîÍ÷ÂÂÂMªIdentifierÍîÍğ¢okW§LiteralÍòÍ÷Â¥false¤inite¨PropertyÍ
-Í@ÂÂÂMªIdentifierÍ
-Í¦reason\¯TemplateLiteralÍÍ@’MªIdentifierÍÍ%°layoutFailReasonS°MemberExpressionÍ3Í>MªIdentifierÍ3Í7¤lastMªIdentifierÍ8Í>¦reasonÂÂ“]¯TemplateElementÍÍ^  Â]¯TemplateElementÍ&Í1^½ï¼›å…¶åé‡è¯•ç½‘ç»œå¤±è´¥: ½ï¼›å…¶åé‡è¯•ç½‘ç»œå¤±è´¥: Â]¯TemplateElementÍ?Í?^  Ã¤initÀ`¯ReturnStatementÍeÍqMªIdentifierÍlÍp¤lastO°MethodDefinitionÍ~Í?ÂÂMªIdentifierÍ~Í”¶hasDeliverableGeometry¦methodP²FunctionExpressionÍ”Í?ÀÂÂÂN®BlockStatementÍ—Í?“X³VariableDeclarationÍ¢ÍÖ‘Y²VariableDeclaratorÍ¨ÍÕMªIdentifierÍ¨Í®¦tracks[±LogicalExpressionÍ±ÍÕQ¯ChainExpressionÍ±ÍĞS°MemberExpressionÍ±ÍĞS°MemberExpressionÍ±ÍÈS°MemberExpressionÍ±ÍÀS°MemberExpressionÍ±Í¸T®ThisExpressionÍ±ÍµMªIdentifierÍ¶Í¸¢bbÂÂMªIdentifierÍ¹ÍÀ§workDocÂÂMªIdentifierÍÂÍÈ¦tracksÂÃMªIdentifierÍÊÍĞ¦lengthÂÃ¢??W§LiteralÍÔÍÕ ¡0¥constX³VariableDeclarationÍàÍ‘Y²VariableDeclaratorÍæÍMªIdentifierÍæÍê¤vias[±LogicalExpressionÍíÍQ¯ChainExpressionÍíÍ
-S°MemberExpressionÍíÍ
-S°MemberExpressionÍíÍS°MemberExpressionÍíÍüS°MemberExpressionÍíÍôT®ThisExpressionÍíÍñMªIdentifierÍòÍô¢bbÂÂMªIdentifierÍõÍü§workDocÂÂMªIdentifierÍşÍ¤viasÂÃMªIdentifierÍÍ
-¦lengthÂÃ¢??W§LiteralÍÍ ¡0¥const`¯ReturnStatementÍÍ8[±LogicalExpressionÍ!Í7[°BinaryExpressionÍ!Í+MªIdentifierÍ!Í'¦tracks¡>W§LiteralÍ*Í+ ¡0¢||[°BinaryExpressionÍ/Í7MªIdentifierÍ/Í3¤vias¡>W§LiteralÍ6Í7 ¡0O°MethodDefinitionÍEÍ&¸ÂÂMªIdentifierÍEÍR­successResult¦methodP²FunctionExpressionÍRÍ&¸ÀÂÂÂ“MªIdentifierÍSÍ[¨residualMªIdentifierÍ]Ía¤kindV±AssignmentPatternÍcÍtMªIdentifierÍcÍo¬residualNoteW§LiteralÍrÍt ¢''N®BlockStatementÍvÍ&¸š_«IfStatementÍÍùa¯UnaryExpressionÍ…Í•¡!ÃS°MemberExpressionÍ†Í•S°MemberExpressionÍ†ÍT®ThisExpressionÍ†ÍŠMªIdentifierÍ‹Í¢bbÂÂMªIdentifierÍÍ•§usedLlmÂÂN®BlockStatementÍ—Íù‘`¯ReturnStatementÍ¦ÍîZ®CallExpressionÍ­ÍíS°MemberExpressionÍ­Í»T®ThisExpressionÍ­Í±MªIdentifierÍ²Í»©stageFailÂÂ’W§LiteralÍ¼ÍÂ¤gate¦'gate'W§LiteralÍÄÍìÙ(usedLlm=false â€” refuse non-AI deliveryÙ*'usedLlm=false â€” refuse non-AI delivery'ÂÀ_«IfStatementÍ Í a¯UnaryExpressionÍ Í %¡!ÃZ®CallExpressionÍ Í %S°MemberExpressionÍ Í #T®ThisExpressionÍ Í MªIdentifierÍ Í #¶hasDeliverableGeometryÂÂÂN®BlockStatementÍ 'Í ‘`¯ReturnStatementÍ 6Í tZ®CallExpressionÍ =Í sS°MemberExpressionÍ =Í KT®ThisExpressionÍ =Í AMªIdentifierÍ BÍ K©stageFailÂÂ’W§LiteralÍ LÍ R¤gate¦'gate'W§LiteralÍ TÍ r¼refuse empty-copper delivery¾'refuse empty-copper delivery'ÂÀ_«IfStatementÍ ‰Í!T[±LogicalExpressionÍ Í ÆMªIdentifierÍ Í •¨residual¢&&a¯UnaryExpressionÍ ™Í Æ¡!ÃZ®CallExpressionÍ šÍ ÆMªIdentifierÍ šÍ ²¸isSoftAcceptableResidual’MªIdentifierÍ ³Í ·¤kindMªIdentifierÍ ¹Í Å¬residualNoteÂN®BlockStatementÍ ÈÍ!T‘`¯ReturnStatementÍ ×Í!IZ®CallExpressionÍ ŞÍ!HS°MemberExpressionÍ ŞÍ ìT®ThisExpressionÍ ŞÍ âMªIdentifierÍ ãÍ ì©stageFailÂÂ’W§LiteralÍ íÍ ó¤gate¦'gate'\¯TemplateLiteralÍ õÍ!G’MªIdentifierÍ!Í!¤kind_µConditionalExpressionÍ!Í!E[°BinaryExpressionÍ!Í!/S°MemberExpressionÍ!Í!+MªIdentifierÍ!Í!$¬residualNoteMªIdentifierÍ!%Í!+¦lengthÂÂ¡>W§LiteralÍ!.Í!/ ¡0MªIdentifierÍ!2Í!>¬residualNoteMªIdentifierÍ!AÍ!E¤kind“]¯TemplateElementÍ öÍ!^¶refuse dirty residual[¶refuse dirty residual[Â]¯TemplateElementÍ!Í!^£]: £]: Â]¯TemplateElementÍ!FÍ!F^  ÃÂÀX³VariableDeclarationÍ!^Í!‹‘Y²VariableDeclaratorÍ!dÍ!ŠMªIdentifierÍ!dÍ!j¦tracks[±LogicalExpressionÍ!mÍ!ŠQ¯ChainExpressionÍ!mÍ!„S°MemberExpressionÍ!mÍ!„S°MemberExpressionÍ!mÍ!|S°MemberExpressionÍ!mÍ!tT®ThisExpressionÍ!mÍ!qMªIdentifierÍ!rÍ!t¢bbÂÂMªIdentifierÍ!uÍ!|§workDocÂÂMªIdentifierÍ!~Í!„¦tracksÂÃ¢??Ôrf”¤type¥start£end¨elements¯ArrayExpressionÍ!ˆÍ!Š¥constX³VariableDeclarationÍ!•Í!¾‘Y²VariableDeclaratorÍ!›Í!½MªIdentifierÍ!›Í!Ÿ¤vias[±LogicalExpressionÍ!¢Í!½Q¯ChainExpressionÍ!¢Í!·S°MemberExpressionÍ!¢Í!·S°MemberExpressionÍ!¢Í!±S°MemberExpressionÍ!¢Í!©T®ThisExpressionÍ!¢Í!¦MªIdentifierÍ!§Í!©¢bbÂÂMªIdentifierÍ!ªÍ!±§workDocÂÂMªIdentifierÍ!³Í!·¤viasÂÃ¢??f¯ArrayExpressionÍ!»Í!½¥constX³VariableDeclarationÍ!ÈÍ!÷‘Y²VariableDeclaratorÍ!ÎÍ!öMªIdentifierÍ!ÎÍ!ØªfootprintsQ¯ChainExpressionÍ!ÛÍ!öS°MemberExpressionÍ!ÛÍ!öS°MemberExpressionÍ!ÛÍ!êS°MemberExpressionÍ!ÛÍ!âT®ThisExpressionÍ!ÛÍ!ßMªIdentifierÍ!àÍ!â¢bbÂÂMªIdentifierÍ!ãÍ!ê§workDocÂÂMªIdentifierÍ!ìÍ!öªfootprintsÂÃ¥constX³VariableDeclarationÍ"Í#‘Y²VariableDeclaratorÍ"Í#MªIdentifierÍ"Í"
-£msg_µConditionalExpressionÍ"Í#MªIdentifierÍ"Í"¨residual[°BinaryExpressionÍ"%Í"º\¯TemplateLiteralÍ"%Í"q“MªIdentifierÍ">Í"B¤kindS°MemberExpressionÍ"NÍ"[MªIdentifierÍ"NÍ"T¦tracksMªIdentifierÍ"UÍ"[¦lengthÂÂS°MemberExpressionÍ"dÍ"oMªIdentifierÍ"dÍ"h¤viasMªIdentifierÍ"iÍ"o¦lengthÂÂ”]¯TemplateElementÍ"&Í"<^¶AI PCB route residual[¶AI PCB route residual[Â]¯TemplateElementÍ"CÍ"L^©] tracks=©] tracks=Â]¯TemplateElementÍ"\Í"b^¦ vias=¦ vias=Â]¯TemplateElementÍ"pÍ"p^  Ã¡+_µConditionalExpressionÍ"†Í"¹[°BinaryExpressionÍ"†Í"S°MemberExpressionÍ"†Í"™MªIdentifierÍ"†Í"’¬residualNoteMªIdentifierÍ"“Í"™¦lengthÂÂ¡>W§LiteralÍ"œÍ" ¡0\¯TemplateLiteralÍ" Í"´‘MªIdentifierÍ"¦Í"²¬residualNote’]¯TemplateElementÍ"¡Í"¤^£ | £ | Â]¯TemplateElementÍ"³Í"³^  ÃW§LiteralÍ"·Í"¹ ¢''\¯TemplateLiteralÍ"ÊÍ#’S°MemberExpressionÍ"äÍ"ñMªIdentifierÍ"äÍ"ê¦tracksMªIdentifierÍ"ëÍ"ñ¦lengthÂÂS°MemberExpressionÍ"úÍ#MªIdentifierÍ"úÍ"ş¤viasMªIdentifierÍ"ÿÍ#¦lengthÂÂ“]¯TemplateElementÍ"ËÍ"â^·AI PCB route ok tracks=·AI PCB route ok tracks=Â]¯TemplateElementÍ"òÍ"ø^¦ vias=¦ vias=Â]¯TemplateElementÍ#Í#^  Ã¥constX³VariableDeclarationÍ#Í%ê‘Y²VariableDeclaratorÍ#Í%éMªIdentifierÍ#Í#¦resultd°ObjectExpressionÍ#!Í%éÜ e¨PropertyÍ#0Í#=ÂÂÂMªIdentifierÍ#0Í#7§successW§LiteralÍ#9Í#=Ã¤true¤inite¨PropertyÍ#LÍ#YÂÂÂMªIdentifierÍ#LÍ#S§usedLlmW§LiteralÍ#UÍ#YÃ¤true¤inite¨PropertyÍ#hÍ#vÂÂÂMªIdentifierÍ#hÍ#rªabortStageW§LiteralÍ#tÍ#v ¢''¤inite¨PropertyÍ#…Í#”ÂÂÂMªIdentifierÍ#…Í#«abortReasonW§LiteralÍ#’Í#” ¢''¤inite¨PropertyÍ#£Í#ÂÂÂÂMªIdentifierÍ#£Í#¸µdeliveredWithResidualMªIdentifierÍ#ºÍ#Â¨residual¤inite¨PropertyÍ#ÑÍ#÷ÂÂÂMªIdentifierÍ#ÑÍ#İ¬residualKind_µConditionalExpressionÍ#ßÍ#÷MªIdentifierÍ#ßÍ#ç¨residualMªIdentifierÍ#êÍ#î¤kindW§LiteralÍ#ñÍ#÷¤none¦'none'¤inite¨PropertyÍ$Í$ÂÂÂMªIdentifierÍ$Í$ªtrackCountS°MemberExpressionÍ$Í$MªIdentifierÍ$Í$¦tracksMªIdentifierÍ$Í$¦lengthÂÂ¤inite¨PropertyÍ$.Í$CÂÂÂMªIdentifierÍ$.Í$6¨viaCountS°MemberExpressionÍ$8Í$CMªIdentifierÍ$8Í$<¤viasMªIdentifierÍ$=Í$C¦lengthÂÂ¤inite¨PropertyÍ$RÍ$†ÂÂÂMªIdentifierÍ$RÍ$Z¨netCount[±LogicalExpressionÍ$\Í$†Q¯ChainExpressionÍ$\Í$S°MemberExpressionÍ$\Í$S°MemberExpressionÍ$\Í$zS°MemberExpressionÍ$\Í$lS°MemberExpressionÍ$\Í$cT®ThisExpressionÍ$\Í$`MªIdentifierÍ$aÍ$c¢bbÂÂMªIdentifierÍ$dÍ$l¨geometryÂÂMªIdentifierÍ$nÍ$z¬routedNetIdsÂÃMªIdentifierÍ${Í$¦lengthÂÂ¢??W§LiteralÍ$…Í$† ¡0¤inite¨PropertyÍ$•Í$ÏÂÂÂMªIdentifierÍ$•Í$ «placedCount[±LogicalExpressionÍ$¢Í$ÏQ¯ChainExpressionÍ$¢Í$ÊS°MemberExpressionÍ$¢Í$ÊS°MemberExpressionÍ$¢Í$ÃS°MemberExpressionÍ$¢Í$·S°MemberExpressionÍ$¢Í$©T®ThisExpressionÍ$¢Í$¦MªIdentifierÍ$§Í$©¢bbÂÂMªIdentifierÍ$ªÍ$·­placementPlanÂÂMªIdentifierÍ$¹Í$ÃªplacementsÂÃMªIdentifierÍ$ÄÍ$Ê¦lengthÂÂ¢??W§LiteralÍ$ÎÍ$Ï ¡0¤inite¨PropertyÍ$ŞÍ$íÂÂÂMªIdentifierÍ$ŞÍ$æ¨messagesf¯ArrayExpressionÍ$èÍ$í‘MªIdentifierÍ$éÍ$ì£msg¤initÔrg™¤type¥start£end¦method©shorthand¨computed£key¤kind¥value¨PropertyÍ$üÍ%ÂÃÂMªIdentifierÍ$üÍ%¦tracks¤initMªIdentifierÍ$üÍ%¦tracksg¨PropertyÍ%Í%ÂÃÂMªIdentifierÍ%Í%¤vias¤initMªIdentifierÍ%Í%¤viasg¨PropertyÍ%$Í%.ÂÃÂMªIdentifierÍ%$Í%.ªfootprints¤initMªIdentifierÍ%$Í%.ªfootprintse¨PropertyÍ%=Í%nÂÂÂMªIdentifierÍ%=Í%J­placementPlan[±LogicalExpressionÍ%LÍ%nS°MemberExpressionÍ%LÍ%aS°MemberExpressionÍ%LÍ%ST®ThisExpressionÍ%LÍ%PMªIdentifierÍ%QÍ%S¢bbÂÂMªIdentifierÍ%TÍ%a­placementPlanÂÂ¢??MªIdentifierÍ%eÍ%n©undefined¤inite¨PropertyÍ%}Í%¢ÂÂÂMªIdentifierÍ%}Í%„§netPlan[±LogicalExpressionÍ%†Í%¢S°MemberExpressionÍ%†Í%•S°MemberExpressionÍ%†Í%T®ThisExpressionÍ%†Í%ŠMªIdentifierÍ%‹Í%¢bbÂÂMªIdentifierÍ%Í%•§netPlanÂÂ¢??MªIdentifierÍ%™Í%¢©undefined¤inite¨PropertyÍ%±Í%ŞÂÂÂMªIdentifierÍ%±Í%¼«routePolicy[±LogicalExpressionÍ%¾Í%ŞS°MemberExpressionÍ%¾Í%ÑS°MemberExpressionÍ%¾Í%ÅT®ThisExpressionÍ%¾Í%ÂMªIdentifierÍ%ÃÍ%Å¢bbÂÂMªIdentifierÍ%ÆÍ%Ñ«routePolicyÂÂ¢??MªIdentifierÍ%ÕÍ%Ş©undefined¤init¥constQ³ExpressionStatementÍ%ôÍ&™Z®CallExpressionÍ%ôÍ&˜S°MemberExpressionÍ%ôÍ%ÿMªIdentifierÍ%ôÍ%ú¦LoggerMªIdentifierÍ%ûÍ%ÿ¤infoÂÂ’MªIdentifierÍ& Í&¯INSTR_TRACE_TAG[°BinaryExpressionÍ&Í&—\¯TemplateLiteralÍ&Í&Y“S°MemberExpressionÍ&(Í&5S°MemberExpressionÍ&(Í&/T®ThisExpressionÍ&(Í&,MªIdentifierÍ&-Í&/¢bbÂÂMªIdentifierÍ&0Í&5¥runIdÂÂMªIdentifierÍ&BÍ&J¨residualMªIdentifierÍ&SÍ&W¤kind”]¯TemplateElementÍ&Í&&^´[AI_PCB] DONE runId=´[AI_PCB] DONE runId=Â]¯TemplateElementÍ&6Í&@^ª residual=ª residual=Â]¯TemplateElementÍ&KÍ&Q^¦ kind=¦ kind=Â]¯TemplateElementÍ&XÍ&X^  Ã¡+\¯TemplateLiteralÍ&iÍ&—’S°MemberExpressionÍ&tÍ&MªIdentifierÍ&tÍ&z¦tracksMªIdentifierÍ&{Í&¦lengthÂÂS°MemberExpressionÍ&ŠÍ&•MªIdentifierÍ&ŠÍ&¤viasMªIdentifierÍ&Í&•¦lengthÂÂ“]¯TemplateElementÍ&jÍ&r^¨ tracks=¨ tracks=Â]¯TemplateElementÍ&‚Í&ˆ^¦ vias=¦ vias=Â]¯TemplateElementÍ&–Í&–^  ÃÂ`¯ReturnStatementÍ&£Í&±MªIdentifierÍ&ªÍ&°¦resultO°MethodDefinitionÍ&¾Í'»ÂÂMªIdentifierÍ&¾Í&Ç©stageFail¦methodP²FunctionExpressionÍ&ÇÍ'»ÀÂÂÂ’MªIdentifierÍ&ÈÍ&Í¥stageMªIdentifierÍ&ÏÍ&Õ¦reasonN®BlockStatementÍ&×Í'»“Q³ExpressionStatementÍ&âÍ',Z®CallExpressionÍ&âÍ'+S°MemberExpressionÍ&âÍ&îMªIdentifierÍ&âÍ&è¦LoggerMªIdentifierÍ&éÍ&î¥errorÂÂ’MªIdentifierÍ&ïÍ&ş¯INSTR_TRACE_TAG\¯TemplateLiteralÍ' Í'*’MªIdentifierÍ'Í'¥stageMªIdentifierÍ'"Í'(¦reason“]¯TemplateElementÍ'Í'^´[AI_PCB] STAGE_FAIL ´[AI_PCB] STAGE_FAIL Â]¯TemplateElementÍ'Í' ^£ | £ | Â]¯TemplateElementÍ')Í')^  ÃÂQ³ExpressionStatementÍ'6Í'SZ®CallExpressionÍ'6Í'RS°MemberExpressionÍ'6Í'CS°MemberExpressionÍ'6Í'=T®ThisExpressionÍ'6Í':MªIdentifierÍ';Í'=¢bbÂÂMªIdentifierÍ'>Í'C¥abortÂÂ’MªIdentifierÍ'DÍ'I¥stageMªIdentifierÍ'KÍ'Q¦reasonÂ`¯ReturnStatementÍ']Í'´Z®CallExpressionÍ'dÍ'³MªIdentifierÍ'dÍ'yµemptyPcbAiRouteResult“S°MemberExpressionÍ'zÍ'ŒS°MemberExpressionÍ'zÍ'T®ThisExpressionÍ'zÍ'~MªIdentifierÍ'Í'¢bbÂÂMªIdentifierÍ'‚Í'ŒªabortStageÂÂS°MemberExpressionÍ'Í'¡S°MemberExpressionÍ'Í'•T®ThisExpressionÍ'Í'’MªIdentifierÍ'“Í'•¢bbÂÂMªIdentifierÍ'–Í'¡«abortReasonÂÂS°MemberExpressionÍ'£Í'²S°MemberExpressionÍ'£Í'ªT®ThisExpressionÍ'£Í'§MªIdentifierÍ'¨Í'ª¢bbÂÂMªIdentifierÍ'«Í'²§usedLlmÂÂÂÀ˜Ôrh•¤type¥start£endªspecifiers¦source±ImportDeclarationÌòÍP•Ôri•¤type¥start£end¨imported¥local¯ImportSpecifierÌûÍMªIdentifierÌûÍµemptyPcbAiRouteResultMªIdentifierÌûÍµemptyPcbAiRouteResulti¯ImportSpecifierÍÍMªIdentifierÍÍ¦IdUtilMªIdentifierÍÍ¦IdUtili¯ImportSpecifierÍÍ MªIdentifierÍÍ ¦LoggerMªIdentifierÍÍ ¦Loggeri¯ImportSpecifierÍ"Í1MªIdentifierÍ"Í1¯INSTR_TRACE_TAGMªIdentifierÍ"Í1¯INSTR_TRACE_TAGi¯ImportSpecifierÍ3Í?MªIdentifierÍ3Í?¬makeProgressMªIdentifierÍ3Í?¬makeProgressW§LiteralÍGÍO¦common¨'common'h±ImportDeclarationÍRÍŒ‘i¯ImportSpecifierÍ[ÍmMªIdentifierÍ[Ím²PcbRouteBlackboardMªIdentifierÍ[Ím²PcbRouteBlackboardW§LiteralÍuÍ‹´./PcbRouteBlackboard¶'./PcbRouteBlackboard'h±ImportDeclarationÍÍÆ‘i¯ImportSpecifierÍ—Í¨MªIdentifierÍ—Í¨±PcbPlacementAgentMªIdentifierÍ—Í¨±PcbPlacementAgentW§LiteralÍ°ÍÅ³./PcbPlacementAgentµ'./PcbPlacementAgent'h±ImportDeclarationÍÈÍü‘i¯ImportSpecifierÍÑÍàMªIdentifierÍÑÍà¯PcbNetPlanAgentMªIdentifierÍÑÍà¯PcbNetPlanAgentW§LiteralÍèÍû±./PcbNetPlanAgent³'./PcbNetPlanAgent'h±ImportDeclarationÍşÍ:‘i¯ImportSpecifierÍÍMªIdentifierÍÍ³PcbRoutePolicyAgentMªIdentifierÍÍ³PcbRoutePolicyAgentW§LiteralÍ"Í9µ./PcbRoutePolicyAgent·'./PcbRoutePolicyAgent'h±ImportDeclarationÍ<Ír‘i¯ImportSpecifierÍEÍUMªIdentifierÍEÍU°PcbGeometryAgentMªIdentifierÍEÍU°PcbGeometryAgentW§LiteralÍ]Íq²./PcbGeometryAgent´'./PcbGeometryAgent'h±ImportDeclarationÍtÍ‘i¯ImportSpecifierÍ}Í‡MªIdentifierÍ}Í‡ªPcbQaAgentMªIdentifierÍ}Í‡ªPcbQaAgentW§LiteralÍÍ¬./PcbQaAgent®'./PcbQaAgent'h±ImportDeclarationÍ Íã‘i¯ImportSpecifierÍ©ÍÆMªIdentifierÍ©ÍÆ½shouldSkipQaAfterGeometryFailMªIdentifierÍ©ÍÆ½shouldSkipQaAfterGeometryFailW§LiteralÍÎÍâ²./PcbLlmReplyGuard´'./PcbLlmReplyGuard'

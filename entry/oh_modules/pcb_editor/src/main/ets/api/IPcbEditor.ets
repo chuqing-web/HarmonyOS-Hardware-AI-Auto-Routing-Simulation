@@ -145,8 +145,8 @@ export interface IPcbEditor {
   hitTestVia(worldX: number, worldY: number): PcbVia | null;
   hitTestZone(worldX: number, worldY: number): PcbZone | null;
   hitTestFootprint(worldX: number, worldY: number): PcbFootprintInst | null;
-  /** 经典自动布线（L 链，非 AI） */
-  runAutoRoute(): ApiResult<AutoRouteResult>;
+  /** 经典自动布线（L 链，非 AI；异步让出主线程） */
+  runAutoRoute(): Promise<ApiResult<AutoRouteResult>>;
   /** 应用 PCB AI 布线结果 */
   applyAiRouteResult(tracks: PcbTrack[], vias: PcbVia[],
     footprints?: PcbFootprintInst[]): ApiResult<AutoRouteResult>;

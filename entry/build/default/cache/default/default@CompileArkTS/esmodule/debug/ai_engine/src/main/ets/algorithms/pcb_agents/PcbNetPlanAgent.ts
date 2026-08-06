@@ -1,4 +1,5 @@
 import { Logger, INSTR_TRACE_TAG } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
+import type { PcbNetPlanEntry } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
 import type { IAiApiManager } from 'ai_api_manager';
 import { PromptLoader } from "@bundle:com.elecdraw.aischsim/entry@ai_engine/ets/prompts/PromptLoader";
 import type { PcbRouteBlackboard } from './PcbRouteBlackboard';
@@ -21,8 +22,9 @@ export class PcbNetPlanAgent {
         if (priorFailHint && priorFailHint.length > 0) {
             netList = `${netList}\n【上轮失败须修正】${priorFailHint}`;
         }
-        const padSummary = `${PcbDocSummarizer.padSummary(bb.workDoc)}\n` +
-            `【焊盘详表】\n${PcbDocSummarizer.padDetailSummary(bb.workDoc, 48)}`;
+        const padSummary = `【UNITS】coord=mil size=mil\n` +
+            `${PcbDocSummarizer.padSummary(bb.workDoc)}\n` +
+            `【焊盘详表】\n${PcbDocSummarizer.padDetailSummary(bb.workDoc, 80)}`;
         const prompt = PromptLoader.render(tpl, [
             { key: 'copper_layers', value: PcbDocSummarizer.copperLayers(bb.workDoc) },
             { key: 'net_list', value: netList },
@@ -41,6 +43,9 @@ export class PcbNetPlanAgent {
         if (!plan) {
             return { ok: false, reason: `net_plan LLM JSON invalid (${PromptLoader.describeJsonImpurity(apiRes.data)})` };
         }
+        if (!plan.fromLlm) {
+            return { ok: false, reason: 'net_plan not from LLM — refuse local spoof' };
+        }
         const padCountByNet: Map<string, number> = new Map();
         for (const fp of bb.workDoc.footprints) {
             for (const pad of fp.pads) {
@@ -51,20 +56,35 @@ export class PcbNetPlanAgent {
                 padCountByNet.set(nid, (padCountByNet.get(nid) ?? 0) + 1);
             }
         }
+        const invented: string[] = [];
+        const resolved: PcbNetPlanEntry[] = [];
         for (let i = 0; i < plan.nets.length; i++) {
             const e = plan.nets[i];
             const byId = bb.workDoc.nets.find(n => n.id === e.netId);
             if (byId) {
                 e.netId = byId.id;
                 e.netName = byId.name;
+                resolved.push(e);
                 continue;
             }
             const byName = bb.workDoc.nets.find(n => n.name === e.netName || n.name === e.netId);
             if (byName) {
                 e.netId = byName.id;
                 e.netName = byName.name;
+                resolved.push(e);
+                continue;
             }
+            invented.push(e.netName.length > 0 ? e.netName : e.netId);
         }
+        // 加固：拒绝编造电气网（禁止 LLM 发明新网）
+        if (invented.length > 0) {
+            return {
+                ok: false,
+                reason: `net_plan invented nets: ${invented.slice(0, 6).join(',')}` +
+                    `${invented.length > 6 ? '…' : ''} — only use nets from board netlist`
+            };
+        }
+        plan.nets = resolved;
         const covered: Set<string> = new Set();
         for (let i = 0; i < plan.nets.length; i++) {
             if (plan.nets[i].netId.length > 0) {
@@ -94,48 +114,51 @@ export class PcbNetPlanAgent {
                 reason: `net_plan missing power/gnd: ${missingPowerGnd.join(',')}`
             };
         }
-        let missingMust = 0;
+        const missingNames: string[] = [];
         for (let i = 0; i < mustRoute.length; i++) {
             if (!covered.has(mustRoute[i])) {
-                missingMust++;
+                const n = bb.workDoc.nets.find(x => x.id === mustRoute[i]);
+                missingNames.push(n?.name ?? mustRoute[i]);
             }
         }
-        if (mustRoute.length > 0 && missingMust > 0 && missingMust / mustRoute.length > 0.25) {
+        // 加固：可布网必须全部覆盖（不再 25% 软放过）
+        if (missingNames.length > 0) {
             return {
                 ok: false,
-                reason: `net_plan coverage low: missing ${missingMust}/${mustRoute.length} routable nets`
+                reason: `net_plan coverage incomplete: missing ${missingNames.length}/` +
+                    `${mustRoute.length} routable — ${missingNames.slice(0, 8).join(',')}` +
+                    `${missingNames.length > 8 ? '…' : ''}`
             };
         }
-        if (missingMust > 0) {
-            Logger.warn(INSTR_TRACE_TAG, `[AI_PCB] net_plan soft-miss ${missingMust}/${mustRoute.length} routable nets`);
-        }
-        // LLM 几何无 zone 阶段：forcePour 一律按 forceTrack（宽总线亦由折线表达）
-        let pourCount = 0;
+        // 无 zone 阶段：forcePour → forceTrack；电源/地补 busYOffset
+        let powerSlot = 0;
         for (let i = 0; i < plan.nets.length; i++) {
-            if (plan.nets[i].routeMode === 'forcePour') {
-                pourCount++;
-            }
-        }
-        if (pourCount > 0) {
-            for (let i = 0; i < plan.nets.length; i++) {
-                const e = plan.nets[i];
-                if (e.routeMode !== 'forcePour') {
-                    continue;
-                }
+            const e = plan.nets[i];
+            if (e.routeMode === 'forcePour') {
                 Logger.warn(INSTR_TRACE_TAG, `[AI_PCB] net_plan demote ${e.netName} forcePour→forceTrack (no zone stage)`);
                 e.routeMode = 'forceTrack';
                 if (!e.layerHint || e.layerHint.length === 0) {
-                    e.layerHint = e.kind === 'gnd' ? 'stub' :
-                        (e.kind === 'power' ? 'signal_h' : 'signal_h');
+                    e.layerHint = e.kind === 'gnd' ? 'gnd_bus' :
+                        (e.kind === 'power' ? 'vcc_bus' : 'signal_h');
                 }
-                if ((e.kind === 'gnd' || e.kind === 'power') && e.busYOffset === undefined) {
-                    e.busYOffset = e.kind === 'gnd' ? -60 : 60;
-                }
+            }
+            if (e.routeMode === 'defer') {
+                continue;
+            }
+            if (e.kind === 'gnd' && e.busYOffset === undefined) {
+                e.busYOffset = -80;
+            }
+            else if (e.kind === 'power' && e.busYOffset === undefined) {
+                e.busYOffset = 80 + powerSlot * 40;
+                powerSlot++;
+            }
+            if ((!e.layerHint || e.layerHint.length === 0) && e.kind === 'signal') {
+                e.layerHint = 'signal_h';
             }
         }
         bb.netPlan = plan;
         bb.markStage('net_plan');
-        Logger.info(INSTR_TRACE_TAG, `[AI_PCB] stage=net_plan ok nets=${plan.nets.length}`);
+        Logger.info(INSTR_TRACE_TAG, `[AI_PCB] stage=net_plan ok fromLlm nets=${plan.nets.length} mustRoute=${mustRoute.length}`);
         return { ok: true, reason: 'ok' };
     }
 }

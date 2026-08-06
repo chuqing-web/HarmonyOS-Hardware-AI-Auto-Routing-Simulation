@@ -6,6 +6,7 @@ import type { PcbDocument, PcbFootprintInst, PcbTrack, PcbRatsnestEdge, PcbSelec
 import { parsePinRef } from "@bundle:com.elecdraw.aischsim/entry@common/ets/utils/PinRefUtil";
 import { getGlobalPcbFootprintLibrary } from "@bundle:com.elecdraw.aischsim/entry@common/ets/utils/PcbFootprintLibrary";
 import { padWorldPosition, pointInPolygon } from "@bundle:com.elecdraw.aischsim/entry@common/ets/utils/PcbZoneUtil";
+import { WireConflictGeometry } from "@bundle:com.elecdraw.aischsim/entry@common/ets/utils/WireConflictGeometry";
 /** 画布实时状态（由编辑器采集，写入 instr_trace） */
 export interface PcbCanvasTraceSnapshot {
     viewport: ViewportState;
@@ -98,6 +99,7 @@ export function tracePcbAutoRoute(doc: PcbDocument, layer: PcbLayerId, netCount:
         tracePcb('AUTO_ROUTE_MSG', messages[i]);
     }
     tracePcbNetRoutingSummary(doc);
+    tracePcbTrackCrossAudit(doc, 'after_auto_route');
 }
 export function tracePcbManualRoute(action: string, detail: string): void {
     tracePcb(`ROUTE_${action}`, detail);
@@ -828,6 +830,238 @@ interface CrowdPadSample {
     r: number;
     fpRef: string;
 }
+const TRACK_AXIS_EPS = 0.75;
+const TRACK_CROSS_LOG_LIMIT = 40;
+const TRACK_OVERLAP_LOG_LIMIT = 40;
+const TRACK_MIN_LEN = 0.5;
+type TrackAxisKind = 'h' | 'v' | 'd';
+interface LayerTrackAxisBuckets {
+    layer: PcbLayerId;
+    horiz: PcbTrack[];
+    vert: PcbTrack[];
+    diag: PcbTrack[];
+}
+function trackSegmentLen(t: PcbTrack): number {
+    return Math.hypot(t.end.x - t.start.x, t.end.y - t.start.y);
+}
+function classifyTrackAxis(t: PcbTrack): TrackAxisKind {
+    const dx = Math.abs(t.end.x - t.start.x);
+    const dy = Math.abs(t.end.y - t.start.y);
+    if (dx <= TRACK_AXIS_EPS && dy > TRACK_AXIS_EPS) {
+        return 'v';
+    }
+    if (dy <= TRACK_AXIS_EPS && dx > TRACK_AXIS_EPS) {
+        return 'h';
+    }
+    return 'd';
+}
+function trackNetLabel(t: PcbTrack): string {
+    return t.netName || t.netId || '(none)';
+}
+/** AABB 快速排斥：两段包围盒无重叠则不可能相交/重叠 */
+function trackAabbMayTouch(a: PcbTrack, b: PcbTrack, pad: number): boolean {
+    const aMinX = Math.min(a.start.x, a.end.x) - pad;
+    const aMaxX = Math.max(a.start.x, a.end.x) + pad;
+    const aMinY = Math.min(a.start.y, a.end.y) - pad;
+    const aMaxY = Math.max(a.start.y, a.end.y) + pad;
+    const bMinX = Math.min(b.start.x, b.end.x);
+    const bMaxX = Math.max(b.start.x, b.end.x);
+    const bMinY = Math.min(b.start.y, b.end.y);
+    const bMaxY = Math.max(b.start.y, b.end.y);
+    return !(bMaxX < aMinX || bMinX > aMaxX || bMaxY < aMinY || bMinY > aMaxY);
+}
+function crossTouchKind(a: PcbTrack, b: PcbTrack, cross: Point2D): string {
+    const endTol = 3;
+    const nearA = Math.hypot(cross.x - a.start.x, cross.y - a.start.y) <= endTol ||
+        Math.hypot(cross.x - a.end.x, cross.y - a.end.y) <= endTol;
+    const nearB = Math.hypot(cross.x - b.start.x, cross.y - b.start.y) <= endTol ||
+        Math.hypot(cross.x - b.end.x, cross.y - b.end.y) <= endTol;
+    if (nearA && nearB) {
+        return 'corner';
+    }
+    if (nearA || nearB) {
+        return 'T_touch';
+    }
+    return 'midspan';
+}
+function bucketTracksByLayerAxis(tracks: PcbTrack[]): LayerTrackAxisBuckets[] {
+    const byLayer: Map<PcbLayerId, LayerTrackAxisBuckets> = new Map();
+    for (let i = 0; i < tracks.length; i++) {
+        const t = tracks[i];
+        if (!t.netId || t.netId.length === 0) {
+            continue;
+        }
+        if (trackSegmentLen(t) < TRACK_MIN_LEN) {
+            continue;
+        }
+        let bucket = byLayer.get(t.layer);
+        if (bucket === undefined) {
+            bucket = { layer: t.layer, horiz: [], vert: [], diag: [] };
+            byLayer.set(t.layer, bucket);
+        }
+        const axis = classifyTrackAxis(t);
+        if (axis === 'h') {
+            bucket.horiz.push(t);
+        }
+        else if (axis === 'v') {
+            bucket.vert.push(t);
+        }
+        else {
+            bucket.diag.push(t);
+        }
+    }
+    const out: LayerTrackAxisBuckets[] = [];
+    byLayer.forEach((b: LayerTrackAxisBuckets, _ly: PcbLayerId) => {
+        out.push(b);
+    });
+    return out;
+}
+interface TrackCrossScanResult {
+    crossCount: number;
+    overlapCount: number;
+    pairsChecked: number;
+    layerBits: string[];
+    /** 仅在需要写日志时填充前 N 条明细 */
+    crossSamples: string[];
+    overlapSamples: string[];
+}
+/** 同层异网交叉/重叠扫描（H×V 分桶 + AABB 预筛）；collectSamples=false 时只计数 */
+function scanSameLayerTrackConflicts(tracks: PcbTrack[], collectSamples: boolean): TrackCrossScanResult {
+    const layers = bucketTracksByLayerAxis(tracks);
+    let crossCount = 0;
+    let overlapCount = 0;
+    let pairsChecked = 0;
+    const layerBits: string[] = [];
+    const crossSamples: string[] = [];
+    const overlapSamples: string[] = [];
+    const seenPair: Set<string> = new Set();
+    const considerPair = (a: PcbTrack, b: PcbTrack): void => {
+        if (a.netId === b.netId) {
+            return;
+        }
+        if (!trackAabbMayTouch(a, b, TRACK_AXIS_EPS)) {
+            return;
+        }
+        const key = a.id < b.id ? `${a.id}|${b.id}` : `${b.id}|${a.id}`;
+        if (seenPair.has(key)) {
+            return;
+        }
+        seenPair.add(key);
+        pairsChecked++;
+        const kind = WireConflictGeometry.segmentConflict(a.start, a.end, b.start, b.end);
+        if (kind === 'none') {
+            return;
+        }
+        const na = trackNetLabel(a);
+        const nb = trackNetLabel(b);
+        if (kind === 'collinear_overlap') {
+            overlapCount++;
+            if (collectSamples && overlapSamples.length < TRACK_OVERLAP_LOG_LIMIT) {
+                overlapSamples.push(`${na} × ${nb} layer=${a.layer} ` +
+                    `A=(${Math.round(a.start.x)},${Math.round(a.start.y)})→` +
+                    `(${Math.round(a.end.x)},${Math.round(a.end.y)}) ` +
+                    `B=(${Math.round(b.start.x)},${Math.round(b.start.y)})→` +
+                    `(${Math.round(b.end.x)},${Math.round(b.end.y)})`);
+            }
+            return;
+        }
+        crossCount++;
+        if (collectSamples && crossSamples.length < TRACK_CROSS_LOG_LIMIT) {
+            const crossPt = WireConflictGeometry.orthogonalCrossPoint(a.start, a.end, b.start, b.end);
+            const touch = crossPt !== null ? crossTouchKind(a, b, crossPt) : 'midspan';
+            const at = crossPt !== null
+                ? `(${Math.round(crossPt.x)},${Math.round(crossPt.y)})`
+                : '?';
+            crossSamples.push(`${na} × ${nb} layer=${a.layer} kind=${touch} at=${at} ` +
+                `A=(${Math.round(a.start.x)},${Math.round(a.start.y)})→` +
+                `(${Math.round(a.end.x)},${Math.round(a.end.y)}) ` +
+                `B=(${Math.round(b.start.x)},${Math.round(b.start.y)})→` +
+                `(${Math.round(b.end.x)},${Math.round(b.end.y)})`);
+        }
+    };
+    for (let li = 0; li < layers.length; li++) {
+        const buck = layers[li];
+        const layerCrossBefore = crossCount;
+        const layerOverlapBefore = overlapCount;
+        for (let hi = 0; hi < buck.horiz.length; hi++) {
+            for (let vi = 0; vi < buck.vert.length; vi++) {
+                considerPair(buck.horiz[hi], buck.vert[vi]);
+            }
+        }
+        for (let i = 0; i < buck.horiz.length; i++) {
+            for (let j = i + 1; j < buck.horiz.length; j++) {
+                considerPair(buck.horiz[i], buck.horiz[j]);
+            }
+        }
+        for (let i = 0; i < buck.vert.length; i++) {
+            for (let j = i + 1; j < buck.vert.length; j++) {
+                considerPair(buck.vert[i], buck.vert[j]);
+            }
+        }
+        const axisAll: PcbTrack[] = [];
+        for (let i = 0; i < buck.horiz.length; i++) {
+            axisAll.push(buck.horiz[i]);
+        }
+        for (let i = 0; i < buck.vert.length; i++) {
+            axisAll.push(buck.vert[i]);
+        }
+        for (let i = 0; i < buck.diag.length; i++) {
+            axisAll.push(buck.diag[i]);
+        }
+        for (let di = 0; di < buck.diag.length; di++) {
+            for (let j = 0; j < axisAll.length; j++) {
+                if (buck.diag[di].id === axisAll[j].id) {
+                    continue;
+                }
+                considerPair(buck.diag[di], axisAll[j]);
+            }
+        }
+        const lc = crossCount - layerCrossBefore;
+        const lo = overlapCount - layerOverlapBefore;
+        layerBits.push(`${buck.layer}:h=${buck.horiz.length}/v=${buck.vert.length}/d=${buck.diag.length}` +
+            `/cross=${lc}/overlap=${lo}`);
+    }
+    return {
+        crossCount: crossCount,
+        overlapCount: overlapCount,
+        pairsChecked: pairsChecked,
+        layerBits: layerBits,
+        crossSamples: crossSamples,
+        overlapSamples: overlapSamples
+    };
+}
+/**
+ * 同层异网走线交叉/共线重叠审计（H×V 分桶 + AABB 预筛，避免全量 O(n²)）
+ * - TRACK_CROSS：正交/斜线穿越（异网短路）
+ * - TRACK_OVERLAP：同层共线重叠
+ */
+export function tracePcbTrackCrossAudit(doc: PcbDocument, reason: string): void {
+    Logger.info(INSTR_TRACE_TAG, `[PCB] ---------- TRACK CROSS (${reason}) ----------`);
+    const tracks = doc.tracks;
+    const scan = scanSameLayerTrackConflicts(tracks, true);
+    for (let i = 0; i < scan.crossSamples.length; i++) {
+        tracePcbWarn('TRACK_CROSS', scan.crossSamples[i]);
+    }
+    for (let i = 0; i < scan.overlapSamples.length; i++) {
+        tracePcbWarn('TRACK_OVERLAP', scan.overlapSamples[i]);
+    }
+    if (scan.crossCount === 0 && scan.overlapCount === 0) {
+        tracePcb('TRACK_CROSS', '(none detected)');
+    }
+    else if (scan.crossCount > TRACK_CROSS_LOG_LIMIT || scan.overlapCount > TRACK_OVERLAP_LOG_LIMIT) {
+        tracePcbWarn('TRACK_CROSS', `...truncated cross logged=${Math.min(scan.crossCount, TRACK_CROSS_LOG_LIMIT)}/${scan.crossCount} ` +
+            `overlap logged=${Math.min(scan.overlapCount, TRACK_OVERLAP_LOG_LIMIT)}/${scan.overlapCount}`);
+    }
+    const summary = `cross=${scan.crossCount} overlap=${scan.overlapCount} pairsChecked=${scan.pairsChecked} ` +
+        `tracks=${tracks.length} layers=[${scan.layerBits.join(', ')}]`;
+    if (scan.crossCount > 0 || scan.overlapCount > 0) {
+        tracePcbWarn('TRACK_CROSS_SUMMARY', summary);
+    }
+    else {
+        tracePcb('TRACK_CROSS_SUMMARY', summary);
+    }
+    Logger.info(INSTR_TRACE_TAG, `[PCB] ---------- TRACK CROSS END ----------`);
+}
 /**
  * 布局拥挤 / 干涉 / 间距诊断 — 排查器件重叠、网络间距、板内密度
  */
@@ -919,25 +1153,63 @@ export function tracePcbLayoutCrowd(doc: PcbDocument, reason: string): void {
             }
         }
     }
-    // 同层异网走线间距粗检（限制对数量）
+    // 同层异网交叉 / 共线重叠（全量 H×V 分桶）
+    tracePcbTrackCrossAudit(doc, `crowd:${reason}`);
+    // 同层异网走线间距粗检（H×V / 同向分桶 + AABB；跳过零长；不截断到 120）
     let trackClash = 0;
     const tracks = doc.tracks;
-    const tLimit = Math.min(tracks.length, 120);
-    for (let i = 0; i < tLimit; i++) {
-        const t1 = tracks[i];
-        if (!t1.netId || t1.netId.length === 0)
-            continue;
-        for (let j = i + 1; j < tLimit; j++) {
-            const t2 = tracks[j];
-            if (t1.layer !== t2.layer || !t2.netId || t2.netId === t1.netId)
-                continue;
-            const d = segClearance(t1.start, t1.end, t2.start, t2.end) - (t1.width + t2.width) * 0.5;
-            if (d < clr) {
-                trackClash++;
-                if (trackClash <= 25) {
-                    tracePcbWarn('CROWD_TRACK', `${t1.netName || t1.netId} × ${t2.netName || t2.netId} layer=${t1.layer} ` +
-                        `gap≈${d.toFixed(1)}mil < clr=${clr}`);
-                }
+    const layerBuckets = bucketTracksByLayerAxis(tracks);
+    const clearancePairs = (a: PcbTrack, b: PcbTrack): void => {
+        if (a.netId === b.netId) {
+            return;
+        }
+        if (!trackAabbMayTouch(a, b, clr + (a.width + b.width) * 0.5)) {
+            return;
+        }
+        // 已构成交叉/重叠的由 TRACK_CROSS 报告，此处只报间距不足
+        const conflict = WireConflictGeometry.segmentConflict(a.start, a.end, b.start, b.end);
+        if (conflict !== 'none') {
+            return;
+        }
+        const d = segClearance(a.start, a.end, b.start, b.end) - (a.width + b.width) * 0.5;
+        if (d < clr) {
+            trackClash++;
+            if (trackClash <= 25) {
+                tracePcbWarn('CROWD_TRACK', `${trackNetLabel(a)} × ${trackNetLabel(b)} layer=${a.layer} ` +
+                    `gap≈${d.toFixed(1)}mil < clr=${clr}`);
+            }
+        }
+    };
+    for (let li = 0; li < layerBuckets.length; li++) {
+        const buck = layerBuckets[li];
+        for (let hi = 0; hi < buck.horiz.length; hi++) {
+            for (let vi = 0; vi < buck.vert.length; vi++) {
+                clearancePairs(buck.horiz[hi], buck.vert[vi]);
+            }
+        }
+        for (let i = 0; i < buck.horiz.length; i++) {
+            for (let j = i + 1; j < buck.horiz.length; j++) {
+                clearancePairs(buck.horiz[i], buck.horiz[j]);
+            }
+        }
+        for (let i = 0; i < buck.vert.length; i++) {
+            for (let j = i + 1; j < buck.vert.length; j++) {
+                clearancePairs(buck.vert[i], buck.vert[j]);
+            }
+        }
+        const axisAll: PcbTrack[] = [];
+        for (let i = 0; i < buck.horiz.length; i++) {
+            axisAll.push(buck.horiz[i]);
+        }
+        for (let i = 0; i < buck.vert.length; i++) {
+            axisAll.push(buck.vert[i]);
+        }
+        for (let i = 0; i < buck.diag.length; i++) {
+            for (let j = 0; j < axisAll.length; j++) {
+                clearancePairs(buck.diag[i], axisAll[j]);
+            }
+            for (let j = i + 1; j < buck.diag.length; j++) {
+                clearancePairs(buck.diag[i], buck.diag[j]);
             }
         }
     }
@@ -966,7 +1238,8 @@ export function tracePcbLayoutCrowd(doc: PcbDocument, reason: string): void {
         tracePcb('CROWD_DENSITY', `fp=${placeable} boardArea≈${Math.round(boardArea)} mil² avg≈${Math.round(areaPerFp)}/器件`);
     }
     tracePcb('CROWD_SUMMARY', `fpOverlap=${overlapFp} fpTight=${tightFp} offBoard=${offBoard} ` +
-        `padClash=${padClash} trackClash=${trackClash} clr=${clr} padsSampled=${padLimit} trkSampled=${tLimit}`);
+        `padClash=${padClash} trackClash=${trackClash} clr=${clr} ` +
+        `padsSampled=${padLimit} trk=${tracks.length}`);
     Logger.info(INSTR_TRACE_TAG, `[PCB] ---------- LAYOUT CROWD END ----------`);
 }
 /** 2D 画布展示审计入参 */
@@ -1115,8 +1388,14 @@ export function tracePcbView2dAudit(doc: PcbDocument, p: PcbView2dTraceParams, r
     const sel = p.selection;
     tracePcb('VIEW2D_SEL', `kind=${sel.kind} fp=${sel.footprintIds.length} trk=${sel.trackIds.length} ` +
         `via=${sel.viaIds.length} zone=${sel.zoneIds.length}`);
+    const crossScan = scanSameLayerTrackConflicts(doc.tracks, false);
+    if (crossScan.crossCount > 0 || crossScan.overlapCount > 0) {
+        tracePcbWarn('VIEW2D_TRACK_CROSS', `cross=${crossScan.crossCount} overlap=${crossScan.overlapCount} ` +
+            `pairsChecked=${crossScan.pairsChecked} — 详见 AUTO_ROUTE/FULL_STATE 的 TRACK_CROSS`);
+    }
     tracePcb('VIEW2D_SUMMARY', `fpInView=${inView} fpOutView=${outView} hiddenLayersWithCu=${hiddenWithContent} ` +
         `zeroLenTrk=${zeroLen} shortTrk=${shortTrk} noNetTrk=${noNetTrk} ` +
+        `trackCross=${crossScan.crossCount} trackOverlap=${crossScan.overlapCount} ` +
         `fp=${doc.footprints.length} trk=${doc.tracks.length} via=${doc.vias.length} ` +
         `rats=${p.ratsnestCount} drc=${p.drcCount}`);
     Logger.info(INSTR_TRACE_TAG, `[PCB] ---------- VIEW2D AUDIT END ----------`);

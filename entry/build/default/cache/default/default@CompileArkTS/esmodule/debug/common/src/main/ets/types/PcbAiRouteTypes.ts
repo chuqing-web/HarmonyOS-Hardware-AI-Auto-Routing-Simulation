@@ -7,6 +7,15 @@ export type PcbRouteMode = 'forceTrack' | 'forcePour' | 'defer';
 export type PcbNetKind = 'power' | 'gnd' | 'signal';
 /** residual 分类，供 UI / 写回策略分流 */
 export type PcbResidualKind = 'none' | 'drc' | 'unrouted' | 'unused_copper' | 'signal_fail' | 'placement_only';
+/**
+ * placement 阶段模式：
+ * - full：空板/首次，LLM 全量定板+位姿
+ * - auto：已有功能封装，把现板态势发给 LLM，由其 decision=keep|revise
+ * - skip / revise：内部或程序化；UI 不再询问
+ */
+export type PcbPlacementMode = 'full' | 'auto' | 'skip' | 'revise';
+/** auto 模式下 LLM 裁定：沿用现有 / 增量调整 */
+export type PcbPlacementDecision = 'keep' | 'revise';
 export interface PcbPlacementItem {
     footprintId: string;
     x: number;
@@ -25,6 +34,8 @@ export interface PcbPlacementPlan {
     placements: PcbPlacementItem[];
     groups?: PcbPlacementGroup[];
     lockedIds?: string[];
+    /** auto：LLM 裁定 keep=沿用现位姿 / revise=增量改 */
+    decision?: PcbPlacementDecision;
     /** 板框宽（mil，原点左下/左上矩形），由 LLM 决定 */
     boardWidthMil?: number;
     /** 板框高（mil） */
@@ -42,20 +53,33 @@ export interface PcbNetPlanEntry {
     busYOffset?: number;
     priority: number;
 }
-/** LLM pcb_net_plan 输出 */
+/** LLM pcb_net_plan 输出；fromLocal=本地确定性策略（与 fromLlm 二选一可信） */
 export interface PcbNetPlanResult {
     fromLlm: boolean;
+    /** 本地确定性 builder 产出；几何门禁接受 fromLlm || fromLocal */
+    fromLocal?: boolean;
     nets: PcbNetPlanEntry[];
     priorityOrder: string[];
     reason?: string;
+}
+/** 策略可信标记（LLM 或本地确定性） */
+export interface PcbTrustedStrategyFlags {
+    fromLlm: boolean;
+    fromLocal?: boolean;
+}
+/** 网络计划/层策略是否可信（LLM 或本地确定性） */
+export function isTrustedPcbStrategy(plan: PcbTrustedStrategyFlags): boolean {
+    return plan.fromLlm || !!plan.fromLocal;
 }
 export interface PcbViaPreference {
     kind: PcbViaKind;
     preferThrough: boolean;
 }
-/** LLM pcb_route 输出 — 层角色必须覆盖文档全部铜层 */
+/** LLM / 本地 pcb_route 输出 — 层角色必须覆盖文档全部铜层 */
 export interface PcbRoutePolicy {
     fromLlm: boolean;
+    /** 本地确定性 builder 产出；几何门禁接受 fromLlm || fromLocal */
+    fromLocal?: boolean;
     layerRoles: Record<string, PcbLayerRole>;
     netPriority: Record<string, number>;
     viaPreference: PcbViaPreference;
@@ -76,7 +100,7 @@ export interface PcbQaRepairPlan {
     routeModePatch?: Record<string, PcbRouteMode>;
     /** 电源总线 Y 偏移补丁：key=netId|网名，value=mil */
     busYOffsetPatch?: Record<string, number>;
-    /** 升铜层：2→4/6/8；执行后须补 layerRolePatch 覆盖新层（缺则本地填默认） */
+    /** 升铜层（已废弃）：用户确认层数后锁定，管线忽略此字段 */
     raiseCopperTo?: number;
     notes: string;
 }

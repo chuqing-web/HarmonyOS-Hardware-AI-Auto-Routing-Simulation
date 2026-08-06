@@ -1,4 +1,4 @@
-import { CommandHistory, MoveCommand, PlaceCommand, BatchDeleteCommand, AddWireCommand, ClearWiresCommand, RotateCommand, MirrorCommand, SetDeviceParamCommand, ApplyRouteCommand, BatchMoveCommand, BatchSetDeviceParamCommand, LoadDocumentCommand } from "@bundle:com.elecdraw.aischsim/entry@schematic_editor/ets/internal/EditCommands";
+import { CommandHistory, MoveCommand, PlaceCommand, BatchDeleteCommand, AddWireCommand, ClearWiresCommand, RotateCommand, MirrorCommand, SetDeviceParamCommand, ApplyRouteCommand, BatchMoveCommand, BatchSetDeviceParamCommand } from "@bundle:com.elecdraw.aischsim/entry@schematic_editor/ets/internal/EditCommands";
 import type { BatchMoveEntry } from "@bundle:com.elecdraw.aischsim/entry@schematic_editor/ets/internal/EditCommands";
 import { WireAutoRouter } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
 import type { WarCompObstacle, WarRouteContext } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
@@ -1683,12 +1683,14 @@ export class SchematicEditorImpl implements ISchematicEditor {
     }
     loadDocument(doc: SchematicDocument): ApiResult<void> {
         const normalized = this.normalizeDocument(doc);
-        if (this.document !== null) {
-            this.commandHistory.push(new LoadDocumentCommand((): SchematicDocument | null => this.document, (d: SchematicDocument | null): void => { this.document = d; }, normalized));
-        }
-        else {
-            this.document = normalized;
-        }
+        // 工程切换：直接替换文档并清空撤销/选择/视口锁，禁止 Undo 或残影回到上一文件
+        this.commandHistory.clear();
+        this.document = normalized;
+        this.selectedIds = [];
+        this.selectedWireIds = [];
+        this.viewportUserLocked = false;
+        this.lockedComponentIds.clear();
+        CallbackRegistry.getInstance().emitSelection([], []);
         this.rebuildRefDesCounters();
         this.invalidateConnectivityCache();
         this.rebuildNetPinConnectivity();

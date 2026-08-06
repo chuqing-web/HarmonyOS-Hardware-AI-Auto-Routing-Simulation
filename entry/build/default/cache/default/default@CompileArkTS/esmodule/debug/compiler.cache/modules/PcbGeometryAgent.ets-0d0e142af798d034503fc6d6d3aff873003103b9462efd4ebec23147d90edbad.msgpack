@@ -1,519 +1,0 @@
-Ôr@Ÿªassertions¤code´customTransformCache¬dependencies¢id¤meta±moduleSideEffects¬originalCode±originalSourcemap«resolvedIds®sourcemapChainµsyntheticNamedExportsµtransformDependencies®transformFiles¨cacheAstÔrAÚ(/**
- * PcbGeometryAgent â€” LLM å†³å®šæŠ˜çº¿æ‹å¼¯ä¸è¿‡å­”ä½ç½®ï¼›æœ¬åœ°åªæ ¡éªŒ clearance å¹¶è½é“œ
- */
-import { Logger, INSTR_TRACE_TAG, applyLlmPcbGeometry, runPcbGeometryRoute } from 'common';
-import { PromptLoader } from '../../prompts/PromptLoader';
-import { commitGeometryToWorkDoc } from './PcbRouteBlackboard';
-import { PcbDocSummarizer } from './PcbDocSummarizer';
-import { parsePcbGeometryPlan } from './PcbLlmParsers';
-import { pcbStageChatOpts } from './PcbChatOpts';
-import { countFloatPads, pcbImpureReplyReason } from './PcbLlmReplyGuard';
-export class PcbGeometryAgent {
-    async run(bb, api, priorFailHint) {
-        Logger.info(INSTR_TRACE_TAG, `[AI_PCB] stage=geometry begin runId=${bb.runId}`);
-        if (!bb.workDoc || !bb.routePolicy || !bb.netPlan) {
-            return { ok: false, reason: 'missing policy/netPlan/doc' };
-        }
-        if (!bb.routePolicy.fromLlm || !bb.netPlan.fromLlm) {
-            return { ok: false, reason: 'geometry refuses non-LLM policy' };
-        }
-        const tpl = PromptLoader.load('pcb_geometry');
-        if (!tpl.system || tpl.system.length === 0) {
-            return { ok: false, reason: 'pcb_geometry prompt missing' };
-        }
-        const netSummary = bb.netPlan.nets.map(n => `${n.netName}:${n.kind}/${n.routeMode}/p${n.priority}` +
-            (n.layerHint ? `/L=${n.layerHint}` : '') +
-            (n.busYOffset !== undefined ? `/busY=${n.busYOffset}` : '')).join(',');
-        const layerRoles = JSON.stringify(bb.routePolicy.layerRoles);
-        let failHint = PcbDocSummarizer.boardDiagSnapshot(bb.workDoc, bb.geometry);
-        const floatN = countFloatPads(bb.workDoc);
-        if (floatN > 0) {
-            failHint = `${failHint}\nã€æ³¨æ„ã€‘æœªç»‘å®šç½‘ç»œç„Šç›˜ floatPads=${floatN}ï¼ŒæŠ˜çº¿é¡»é¿å¼€è¿™äº› pad_block(float)ï¼›` +
-                `ç«¯ç‚¹è½åœ¨ç„Šç›˜ä¸­å¿ƒå¯è±å…`;
-        }
-        if (priorFailHint && priorFailHint.length > 0) {
-            failHint = `${failHint}\nã€ä¸Šè½®å¤±è´¥é¡»ä¿®æ­£æŠ˜ç‚¹/è¿‡å­”ã€‘${priorFailHint}`;
-        }
-        const prompt = PromptLoader.render(tpl, [
-            { key: 'board_outline', value: PcbDocSummarizer.boardOutline(bb.workDoc) },
-            { key: 'copper_layers', value: PcbDocSummarizer.copperLayers(bb.workDoc) },
-            { key: 'layer_roles', value: layerRoles },
-            { key: 'net_plan_summary', value: netSummary },
-            { key: 'pad_detail', value: PcbDocSummarizer.padDetailSummary(bb.workDoc, 80) },
-            { key: 'pad_blocks', value: PcbDocSummarizer.padBlockSummary(bb.workDoc) },
-            { key: 'fail_hint', value: failHint }
-        ]);
-        const apiRes = await api.chat(prompt, pcbStageChatOpts(bb.enableReasoning, 0.1));
-        if (!apiRes.success || !apiRes.data) {
-            const apiErr = apiRes.error ?? 'geometry LLM failed';
-            // thinking åƒå…‰è¾“å‡ºé¢åº¦ï¼ˆç©º contentï¼‰ï¼šAPI å±‚å·² nudge é‡è¯•è¿‡ä¸€æ¬¡ï¼Œ
-            // ä¸¤è½®ç©ºæ­£æ–‡è¯´æ˜è¯¥æ¨¡å‹ç»“æ„æ€§æ— æ³•äº§å‡º â†’ æœ¬åœ°ç¡®å®šæ€§å…œåº•ï¼Œä¸å†ç©ºè½¬é‡è¯•
-            if (apiErr.indexOf('empty content') >= 0) {
-                return this.localFallback(bb, `geometry LLM empty content: ${apiErr}`);
-            }
-            return { ok: false, reason: apiErr };
-        }
-        bb.usedLlm = true;
-        const impure = pcbImpureReplyReason('geometry', apiRes.data);
-        if (impure) {
-            return this.localFallback(bb, impure);
-        }
-        const plan = parsePcbGeometryPlan(apiRes.data);
-        if (!plan) {
-            const impurity = PromptLoader.describeJsonImpurity(apiRes.data);
-            return this.localFallback(bb, `geometry LLM JSON invalid (${impurity})`);
-        }
-        // è¦†ç›–ç‡é—¨ç¦ï¼šæœ‰æ•ˆæŠ˜çº¿ç½‘æ•°è¿œå°‘äº net_plan â†’ æ‹’æ”¶çç¢è¾“å‡º
-        const planNetKeys = new Set();
-        for (let i = 0; i < plan.tracks.length; i++) {
-            const t = plan.tracks[i];
-            const k = (t.netId && t.netId.length > 0) ? t.netId :
-                ((t.netName && t.netName.length > 0) ? t.netName : '');
-            if (k.length > 0) {
-                planNetKeys.add(k);
-            }
-        }
-        for (let i = 0; i < plan.vias.length; i++) {
-            const v = plan.vias[i];
-            const k = (v.netId && v.netId.length > 0) ? v.netId :
-                ((v.netName && v.netName.length > 0) ? v.netName : '');
-            if (k.length > 0) {
-                planNetKeys.add(k);
-            }
-        }
-        const needNets = bb.netPlan.nets.length;
-        if (needNets >= 4 && planNetKeys.size < Math.max(2, Math.ceil(needNets * 0.25))) {
-            Logger.warn(INSTR_TRACE_TAG, `[AI_PCB] geometry trivial coverage nets=${planNetKeys.size}/${needNets}` +
-                ` tracks=${plan.tracks.length}`);
-            return this.localFallback(bb, `geometry trivial coverage ${planNetKeys.size}/${needNets} nets` +
-                ` (tracks=${plan.tracks.length}) â€” need fuller route set`);
-        }
-        // å…¨é‡é‡å¸ƒï¼šæ¸…ç©ºæ—§é“œï¼Œé¿å…æ—§çº¿å½“éšœç¢è¯¯æ€
-        bb.workDoc.tracks = [];
-        bb.workDoc.vias = [];
-        let geo = applyLlmPcbGeometry(bb.workDoc, bb.routePolicy, bb.netPlan, plan);
-        bb.geometry = geo;
-        if (!geo.ok) {
-            // æœ¬åœ°ç¡®å®šæ€§å…œåº•ï¼šLLM æŠ˜çº¿ clearance/è¿é€šæ€§åå¤å¤±è´¥ï¼ˆpad_block ç­‰ï¼‰æ—¶ï¼Œ
-            // ç”¨æœ¬åœ°æ­£äº¤è·¯ç”±å™¨ï¼ˆL/jog/æ¿è¾¹èµ°å»Š/ç¯å½¢ç»•è¡Œï¼‰å…¨é‡é‡å¸ƒï¼Œä¸ä¾èµ– LLM ç©ºé—´æ¨ç†ã€‚
-            // è¯¥è·¯ç”±å™¨åªæäº¤è¿‡ clearance çš„æ®µï¼Œäº§ç‰©å¤©ç„¶åˆæ³•ã€‚
-            const local = runPcbGeometryRoute(bb.workDoc, bb.routePolicy, bb.netPlan);
-            if (local.ok) {
-                Logger.warn(INSTR_TRACE_TAG, `[AI_PCB] stage=geometry LLM fail â†’ local deterministic ok` +
-                    ` tracks=${local.tracks.length} vias=${local.vias.length} | ${geo.reason}`);
-                geo = local;
-                bb.geometry = geo;
-            }
-            else if (local.tracks.length + local.vias.length > geo.tracks.length + geo.vias.length ||
-                local.failedNetIds.length < geo.failedNetIds.length) {
-                Logger.warn(INSTR_TRACE_TAG, `[AI_PCB] stage=geometry both fail â†’ prefer local (fewer failed)` +
-                    ` llmFail=${geo.failedNetIds.length} localFail=${local.failedNetIds.length}`);
-                geo = local;
-                bb.geometry = geo;
-            }
-            else {
-                Logger.warn(INSTR_TRACE_TAG, `[AI_PCB] stage=geometry local fallback no better` +
-                    ` llmFail=${geo.failedNetIds.length} localFail=${local.failedNetIds.length}`);
-            }
-        }
-        if (!geo.ok) {
-            const details = geo.failDetails ?? [];
-            for (let i = 0; i < details.length && i < 8; i++) {
-                const d = details[i];
-                Logger.warn(INSTR_TRACE_TAG, `[AI_PCB] geo_fail_detail ${d.netName} ${d.cause}` +
-                    ` (${Math.round(d.from.x)},${Math.round(d.from.y)})â†’` +
-                    `(${Math.round(d.to.x)},${Math.round(d.to.y)})` +
-                    (d.blocker ? ` | ${d.blocker}` : ''));
-            }
-            if (geo.tracks.length > 0 || geo.vias.length > 0) {
-                commitGeometryToWorkDoc(bb, geo.tracks, geo.vias);
-                Logger.warn(INSTR_TRACE_TAG, `[AI_PCB] stage=geometry partial commit tracks=${geo.tracks.length} | ${geo.reason}`);
-            }
-            else {
-                Logger.warn(INSTR_TRACE_TAG, `[AI_PCB] stage=geometry fail | ${geo.reason}`);
-            }
-            return { ok: false, reason: geo.reason, residualKind: 'signal_fail' };
-        }
-        commitGeometryToWorkDoc(bb, geo.tracks, geo.vias);
-        bb.markStage('geometry');
-        Logger.info(INSTR_TRACE_TAG, `[AI_PCB] stage=geometry ok tracks=${geo.tracks.length} vias=${geo.vias.length}` +
-            ` (${geo.reason === 'ok' ? 'LLM paths' : 'local deterministic'})`);
-        return { ok: true, reason: 'ok' };
-    }
-    /**
-     * LLM å‡ ä½•ä¸å¯ç”¨ï¼ˆæ‚è´¨ / JSON éæ³• / çç¢è¦†ç›–ï¼‰æ—¶çš„æœ¬åœ°ç¡®å®šæ€§å…œåº•ï¼š
-     * å…¨é‡é‡å¸ƒå¹¶è½é“œï¼›æˆåŠŸåˆ™ stage okï¼Œå¤±è´¥åˆ™æäº¤éƒ¨åˆ†é“œå¹¶è¿”å›å¤±è´¥åŸå› ã€‚
-     * ç½‘ç»œå¤±è´¥ï¼ˆapi.chat æœªæˆåŠŸï¼‰ä¸è§¦å‘ â€”â€” é‚£æ˜¯ç¯å¢ƒé—®é¢˜ï¼Œäº¤ç”±å¤–å±‚ KEEP_RETRYï¼Œ
-     * ä¸” usedLlm æœªç½®ä½æ—¶äº¤ä»˜æœ¬å°±è¢«æ‹’ã€‚
-     */
-    localFallback(bb, llmNote) {
-        if (!bb.workDoc || !bb.routePolicy || !bb.netPlan) {
-            return { ok: false, reason: 'missing policy/netPlan/doc' };
-        }
-        bb.workDoc.tracks = [];
-        bb.workDoc.vias = [];
-        const local = runPcbGeometryRoute(bb.workDoc, bb.routePolicy, bb.netPlan);
-        bb.geometry = local;
-        if (local.ok) {
-            commitGeometryToWorkDoc(bb, local.tracks, local.vias);
-            bb.markStage('geometry');
-            Logger.warn(INSTR_TRACE_TAG, `[AI_PCB] stage=geometry local deterministic ok tracks=${local.tracks.length}` +
-                ` vias=${local.vias.length} | LLM unusable: ${llmNote}`);
-            return { ok: true, reason: 'ok' };
-        }
-        const details = local.failDetails ?? [];
-        for (let i = 0; i < details.length && i < 8; i++) {
-            const d = details[i];
-            Logger.warn(INSTR_TRACE_TAG, `[AI_PCB] geo_fail_detail ${d.netName} ${d.cause}` +
-                ` (${Math.round(d.from.x)},${Math.round(d.from.y)})â†’` +
-                `(${Math.round(d.to.x)},${Math.round(d.to.y)})` +
-                (d.blocker ? ` | ${d.blocker}` : ''));
-        }
-        if (local.tracks.length > 0 || local.vias.length > 0) {
-            commitGeometryToWorkDoc(bb, local.tracks, local.vias);
-            Logger.warn(INSTR_TRACE_TAG, `[AI_PCB] stage=geometry local partial commit tracks=${local.tracks.length} | ${local.reason}`);
-        }
-        else {
-            Logger.warn(INSTR_TRACE_TAG, `[AI_PCB] stage=geometry fail | ${local.reason} | LLM unusable: ${llmNote}`);
-        }
-        return { ok: false, reason: local.reason, residualKind: 'signal_fail' };
-    }
-}
-//# sourceMappingURL=PcbGeometryAgent.js.mapÂ—Ù-C:\Projects\ElecDraw_Harmony\common\Index.etsÙUC:\Projects\ElecDraw_Harmony\features\ai_engine\src\main\ets\prompts\PromptLoader.etsÙiC:\Projects\ElecDraw_Harmony\features\ai_engine\src\main\ets\algorithms\pcb_agents\PcbRouteBlackboard.etsÙgC:\Projects\ElecDraw_Harmony\features\ai_engine\src\main\ets\algorithms\pcb_agents\PcbDocSummarizer.etsÙdC:\Projects\ElecDraw_Harmony\features\ai_engine\src\main\ets\algorithms\pcb_agents\PcbLlmParsers.etsÙbC:\Projects\ElecDraw_Harmony\features\ai_engine\src\main\ets\algorithms\pcb_agents\PcbChatOpts.etsÙgC:\Projects\ElecDraw_Harmony\features\ai_engine\src\main\ets\algorithms\pcb_agents\PcbLlmReplyGuard.etsÙgC:\Projects\ElecDraw_Harmony\features\ai_engine\src\main\ets\algorithms\pcb_agents\PcbGeometryAgent.etsÔrB›ªmoduleName±isLocalDependency¯isNodeEntryFile§pkgPath±belongProjectPath§pkgNameªpkgVersion±dependencyPkgInfo¯hostModulesInfo°belongModulePath¬shouldEmitJs©ai_engineÃÂÙ/C:\Projects\ElecDraw_Harmony\features\ai_engine¼C:\Projects\ElecDraw_Harmony©ai_engine¥1.0.0ÔrC’§pkgNameªpkgVersion©ai_engine¥1.0.0‘ÔrD’²hostDependencyName®hostModuleName²./PcbGeometryAgent©ai_engineÙ/C:\Projects\ElecDraw_Harmony\features\ai_engineÃÃÚ%#/**
- * PcbGeometryAgent â€” LLM å†³å®šæŠ˜çº¿æ‹å¼¯ä¸è¿‡å­”ä½ç½®ï¼›æœ¬åœ°åªæ ¡éªŒ clearance å¹¶è½é“œ
- */
-import {
-  Logger, INSTR_TRACE_TAG, applyLlmPcbGeometry, runPcbGeometryRoute
-} from 'common';
-import { IAiApiManager } from 'ai_api_manager';
-import { PromptLoader } from '../../prompts/PromptLoader';
-import { PcbRouteBlackboard, commitGeometryToWorkDoc } from './PcbRouteBlackboard';
-import { PcbDocSummarizer } from './PcbDocSummarizer';
-import { parsePcbGeometryPlan } from './PcbLlmParsers';
-import { PcbAgentStageResult } from './PcbPlacementAgent';
-import { pcbStageChatOpts } from './PcbChatOpts';
-import { countFloatPads, pcbImpureReplyReason } from './PcbLlmReplyGuard';
-
-export class PcbGeometryAgent {
-  async run(bb: PcbRouteBlackboard, api: IAiApiManager,
-    priorFailHint?: string): Promise<PcbAgentStageResult> {
-    Logger.info(INSTR_TRACE_TAG, `[AI_PCB] stage=geometry begin runId=${bb.runId}`);
-    if (!bb.workDoc || !bb.routePolicy || !bb.netPlan) {
-      return { ok: false, reason: 'missing policy/netPlan/doc' };
-    }
-    if (!bb.routePolicy.fromLlm || !bb.netPlan.fromLlm) {
-      return { ok: false, reason: 'geometry refuses non-LLM policy' };
-    }
-
-    const tpl = PromptLoader.load('pcb_geometry');
-    if (!tpl.system || tpl.system.length === 0) {
-      return { ok: false, reason: 'pcb_geometry prompt missing' };
-    }
-
-    const netSummary = bb.netPlan.nets.map(n =>
-      `${n.netName}:${n.kind}/${n.routeMode}/p${n.priority}` +
-      (n.layerHint ? `/L=${n.layerHint}` : '') +
-      (n.busYOffset !== undefined ? `/busY=${n.busYOffset}` : '')
-    ).join(',');
-    const layerRoles = JSON.stringify(bb.routePolicy.layerRoles);
-    let failHint = PcbDocSummarizer.boardDiagSnapshot(bb.workDoc, bb.geometry);
-    const floatN = countFloatPads(bb.workDoc);
-    if (floatN > 0) {
-      failHint = `${failHint}\nã€æ³¨æ„ã€‘æœªç»‘å®šç½‘ç»œç„Šç›˜ floatPads=${floatN}ï¼ŒæŠ˜çº¿é¡»é¿å¼€è¿™äº› pad_block(float)ï¼›` +
-        `ç«¯ç‚¹è½åœ¨ç„Šç›˜ä¸­å¿ƒå¯è±å…`;
-    }
-    if (priorFailHint && priorFailHint.length > 0) {
-      failHint = `${failHint}\nã€ä¸Šè½®å¤±è´¥é¡»ä¿®æ­£æŠ˜ç‚¹/è¿‡å­”ã€‘${priorFailHint}`;
-    }
-
-    const prompt = PromptLoader.render(tpl, [
-      { key: 'board_outline', value: PcbDocSummarizer.boardOutline(bb.workDoc) },
-      { key: 'copper_layers', value: PcbDocSummarizer.copperLayers(bb.workDoc) },
-      { key: 'layer_roles', value: layerRoles },
-      { key: 'net_plan_summary', value: netSummary },
-      { key: 'pad_detail', value: PcbDocSummarizer.padDetailSummary(bb.workDoc, 80) },
-      { key: 'pad_blocks', value: PcbDocSummarizer.padBlockSummary(bb.workDoc) },
-      { key: 'fail_hint', value: failHint }
-    ]);
-
-    const apiRes = await api.chat(prompt, pcbStageChatOpts(bb.enableReasoning, 0.1));
-    if (!apiRes.success || !apiRes.data) {
-      const apiErr = apiRes.error ?? 'geometry LLM failed';
-      // thinking åƒå…‰è¾“å‡ºé¢åº¦ï¼ˆç©º contentï¼‰ï¼šAPI å±‚å·² nudge é‡è¯•è¿‡ä¸€æ¬¡ï¼Œ
-      // ä¸¤è½®ç©ºæ­£æ–‡è¯´æ˜è¯¥æ¨¡å‹ç»“æ„æ€§æ— æ³•äº§å‡º â†’ æœ¬åœ°ç¡®å®šæ€§å…œåº•ï¼Œä¸å†ç©ºè½¬é‡è¯•
-      if (apiErr.indexOf('empty content') >= 0) {
-        return this.localFallback(bb, `geometry LLM empty content: ${apiErr}`);
-      }
-      return { ok: false, reason: apiErr };
-    }
-    bb.usedLlm = true;
-
-    const impure = pcbImpureReplyReason('geometry', apiRes.data);
-    if (impure) {
-      return this.localFallback(bb, impure);
-    }
-
-    const plan = parsePcbGeometryPlan(apiRes.data);
-    if (!plan) {
-      const impurity = PromptLoader.describeJsonImpurity(apiRes.data);
-      return this.localFallback(bb, `geometry LLM JSON invalid (${impurity})`);
-    }
-
-    // è¦†ç›–ç‡é—¨ç¦ï¼šæœ‰æ•ˆæŠ˜çº¿ç½‘æ•°è¿œå°‘äº net_plan â†’ æ‹’æ”¶çç¢è¾“å‡º
-    const planNetKeys: Set<string> = new Set();
-    for (let i = 0; i < plan.tracks.length; i++) {
-      const t = plan.tracks[i];
-      const k = (t.netId && t.netId.length > 0) ? t.netId :
-        ((t.netName && t.netName.length > 0) ? t.netName : '');
-      if (k.length > 0) {
-        planNetKeys.add(k);
-      }
-    }
-    for (let i = 0; i < plan.vias.length; i++) {
-      const v = plan.vias[i];
-      const k = (v.netId && v.netId.length > 0) ? v.netId :
-        ((v.netName && v.netName.length > 0) ? v.netName : '');
-      if (k.length > 0) {
-        planNetKeys.add(k);
-      }
-    }
-    const needNets = bb.netPlan.nets.length;
-    if (needNets >= 4 && planNetKeys.size < Math.max(2, Math.ceil(needNets * 0.25))) {
-      Logger.warn(INSTR_TRACE_TAG,
-        `[AI_PCB] geometry trivial coverage nets=${planNetKeys.size}/${needNets}` +
-        ` tracks=${plan.tracks.length}`);
-      return this.localFallback(bb,
-        `geometry trivial coverage ${planNetKeys.size}/${needNets} nets` +
-        ` (tracks=${plan.tracks.length}) â€” need fuller route set`);
-    }
-
-    // å…¨é‡é‡å¸ƒï¼šæ¸…ç©ºæ—§é“œï¼Œé¿å…æ—§çº¿å½“éšœç¢è¯¯æ€
-    bb.workDoc.tracks = [];
-    bb.workDoc.vias = [];
-    let geo = applyLlmPcbGeometry(bb.workDoc, bb.routePolicy, bb.netPlan, plan);
-    bb.geometry = geo;
-    if (!geo.ok) {
-      // æœ¬åœ°ç¡®å®šæ€§å…œåº•ï¼šLLM æŠ˜çº¿ clearance/è¿é€šæ€§åå¤å¤±è´¥ï¼ˆpad_block ç­‰ï¼‰æ—¶ï¼Œ
-      // ç”¨æœ¬åœ°æ­£äº¤è·¯ç”±å™¨ï¼ˆL/jog/æ¿è¾¹èµ°å»Š/ç¯å½¢ç»•è¡Œï¼‰å…¨é‡é‡å¸ƒï¼Œä¸ä¾èµ– LLM ç©ºé—´æ¨ç†ã€‚
-      // è¯¥è·¯ç”±å™¨åªæäº¤è¿‡ clearance çš„æ®µï¼Œäº§ç‰©å¤©ç„¶åˆæ³•ã€‚
-      const local = runPcbGeometryRoute(bb.workDoc, bb.routePolicy, bb.netPlan);
-      if (local.ok) {
-        Logger.warn(INSTR_TRACE_TAG,
-          `[AI_PCB] stage=geometry LLM fail â†’ local deterministic ok` +
-          ` tracks=${local.tracks.length} vias=${local.vias.length} | ${geo.reason}`);
-        geo = local;
-        bb.geometry = geo;
-      } else if (local.tracks.length + local.vias.length > geo.tracks.length + geo.vias.length ||
-        local.failedNetIds.length < geo.failedNetIds.length) {
-        Logger.warn(INSTR_TRACE_TAG,
-          `[AI_PCB] stage=geometry both fail â†’ prefer local (fewer failed)` +
-          ` llmFail=${geo.failedNetIds.length} localFail=${local.failedNetIds.length}`);
-        geo = local;
-        bb.geometry = geo;
-      } else {
-        Logger.warn(INSTR_TRACE_TAG,
-          `[AI_PCB] stage=geometry local fallback no better` +
-          ` llmFail=${geo.failedNetIds.length} localFail=${local.failedNetIds.length}`);
-      }
-    }
-    if (!geo.ok) {
-      const details = geo.failDetails ?? [];
-      for (let i = 0; i < details.length && i < 8; i++) {
-        const d = details[i];
-        Logger.warn(INSTR_TRACE_TAG,
-          `[AI_PCB] geo_fail_detail ${d.netName} ${d.cause}` +
-          ` (${Math.round(d.from.x)},${Math.round(d.from.y)})â†’` +
-          `(${Math.round(d.to.x)},${Math.round(d.to.y)})` +
-          (d.blocker ? ` | ${d.blocker}` : ''));
-      }
-      if (geo.tracks.length > 0 || geo.vias.length > 0) {
-        commitGeometryToWorkDoc(bb, geo.tracks, geo.vias);
-        Logger.warn(INSTR_TRACE_TAG,
-          `[AI_PCB] stage=geometry partial commit tracks=${geo.tracks.length} | ${geo.reason}`);
-      } else {
-        Logger.warn(INSTR_TRACE_TAG, `[AI_PCB] stage=geometry fail | ${geo.reason}`);
-      }
-      return { ok: false, reason: geo.reason, residualKind: 'signal_fail' };
-    }
-    commitGeometryToWorkDoc(bb, geo.tracks, geo.vias);
-    bb.markStage('geometry');
-    Logger.info(INSTR_TRACE_TAG,
-      `[AI_PCB] stage=geometry ok tracks=${geo.tracks.length} vias=${geo.vias.length}` +
-      ` (${geo.reason === 'ok' ? 'LLM paths' : 'local deterministic'})`);
-    return { ok: true, reason: 'ok' };
-  }
-
-  /**
-   * LLM å‡ ä½•ä¸å¯ç”¨ï¼ˆæ‚è´¨ / JSON éæ³• / çç¢è¦†ç›–ï¼‰æ—¶çš„æœ¬åœ°ç¡®å®šæ€§å…œåº•ï¼š
-   * å…¨é‡é‡å¸ƒå¹¶è½é“œï¼›æˆåŠŸåˆ™ stage okï¼Œå¤±è´¥åˆ™æäº¤éƒ¨åˆ†é“œå¹¶è¿”å›å¤±è´¥åŸå› ã€‚
-   * ç½‘ç»œå¤±è´¥ï¼ˆapi.chat æœªæˆåŠŸï¼‰ä¸è§¦å‘ â€”â€” é‚£æ˜¯ç¯å¢ƒé—®é¢˜ï¼Œäº¤ç”±å¤–å±‚ KEEP_RETRYï¼Œ
-   * ä¸” usedLlm æœªç½®ä½æ—¶äº¤ä»˜æœ¬å°±è¢«æ‹’ã€‚
-   */
-  private localFallback(bb: PcbRouteBlackboard, llmNote: string): PcbAgentStageResult {
-    if (!bb.workDoc || !bb.routePolicy || !bb.netPlan) {
-      return { ok: false, reason: 'missing policy/netPlan/doc' };
-    }
-    bb.workDoc.tracks = [];
-    bb.workDoc.vias = [];
-    const local = runPcbGeometryRoute(bb.workDoc, bb.routePolicy, bb.netPlan);
-    bb.geometry = local;
-    if (local.ok) {
-      commitGeometryToWorkDoc(bb, local.tracks, local.vias);
-      bb.markStage('geometry');
-      Logger.warn(INSTR_TRACE_TAG,
-        `[AI_PCB] stage=geometry local deterministic ok tracks=${local.tracks.length}` +
-        ` vias=${local.vias.length} | LLM unusable: ${llmNote}`);
-      return { ok: true, reason: 'ok' };
-    }
-    const details = local.failDetails ?? [];
-    for (let i = 0; i < details.length && i < 8; i++) {
-      const d = details[i];
-      Logger.warn(INSTR_TRACE_TAG,
-        `[AI_PCB] geo_fail_detail ${d.netName} ${d.cause}` +
-        ` (${Math.round(d.from.x)},${Math.round(d.from.y)})â†’` +
-        `(${Math.round(d.to.x)},${Math.round(d.to.y)})` +
-        (d.blocker ? ` | ${d.blocker}` : ''));
-    }
-    if (local.tracks.length > 0 || local.vias.length > 0) {
-      commitGeometryToWorkDoc(bb, local.tracks, local.vias);
-      Logger.warn(INSTR_TRACE_TAG,
-        `[AI_PCB] stage=geometry local partial commit tracks=${local.tracks.length} | ${local.reason}`);
-    } else {
-      Logger.warn(INSTR_TRACE_TAG,
-        `[AI_PCB] stage=geometry fail | ${local.reason} | LLM unusable: ${llmNote}`);
-    }
-    return { ok: false, reason: local.reason, residualKind: 'signal_fail' };
-  }
-}
-ÀÔrE—´./PcbRouteBlackboard²./PcbDocSummarizerº../../prompts/PromptLoader¯./PcbLlmParsers¦common­./PcbChatOpts²./PcbLlmReplyGuardÔrF—ªassertions¨external¢id¤meta±moduleSideEffectsªresolvedByµsyntheticNamedExportsAÂÙiC:\Projects\ElecDraw_Harmony\features\ai_engine\src\main\ets\algorithms\pcb_agents\PcbRouteBlackboard.etsAÃªoh-resolveÂFAÂÙgC:\Projects\ElecDraw_Harmony\features\ai_engine\src\main\ets\algorithms\pcb_agents\PcbDocSummarizer.etsAÃªoh-resolveÂFAÂÙUC:\Projects\ElecDraw_Harmony\features\ai_engine\src\main\ets\prompts\PromptLoader.etsAÃªoh-resolveÂFAÂÙdC:\Projects\ElecDraw_Harmony\features\ai_engine\src\main\ets\algorithms\pcb_agents\PcbLlmParsers.etsAÃªoh-resolveÂFAÂÙ-C:\Projects\ElecDraw_Harmony\common\Index.etsAÃªoh-resolveÂFAÂÙbC:\Projects\ElecDraw_Harmony\features\ai_engine\src\main\ets\algorithms\pcb_agents\PcbChatOpts.etsAÃªoh-resolveÂFAÂÙgC:\Projects\ElecDraw_Harmony\features\ai_engine\src\main\ets\algorithms\pcb_agents\PcbLlmReplyGuard.etsAÃªoh-resolveÂ“ÔrG–§version¤fileªsourceRoot§sources¥names¨mappings³PcbGeometryAgent.js ‘´PcbGeometryAgent.etsÜ µ‘”    ‘” ”   ” ”	 ” ” 
-”  ”" ”5 .”7 0”ÌJ ÌC”ÌL ”ÌR ”ÌZ ”Ì[ ˜”   ” ”	 	” ” ” ”9 9”: :˜”   ” ”	 ”  4”" 6”( <”> ÌR”? ÌS˜”  	 ” 	”	 		” 	” 	”! 	!”5 	5”6 	6˜”  
- ” 
-”	 
-	” 
-” 
-”% 
-%”6 
-6”7 
-7˜”   ” ”	 	” ” ”! !”0 0”1 1š”   ” ”	 	” ” ”- -”/ /”5 5”ÌI ÌI”ÌJ ÌJ””   ” ” ” š” ”	 ”
- ” ” ” "” $” 6” ”$ ” ” 
-” ” ” ”# ”% !”ÌL ÌH”ÌN ÌJ”ÌO ÌK”ÌT ÌP”ÌV ÌR”ÌW ÌS”ÌX ÌTÜ ” ” ” 	” ” ” ” ” ” ” ”* &”. *”/ +”1 -”2 .”9 5”; 7œ” ” ” ” ” ” ”  ”&  ”( "”ÌD >”ÌF Ì@”ÌG ÌA‘”	 Ü ” ” ” 	” ” ” ” ”# ”' #”( $”* &”+ '”2 .”3 /”: 6”< 8œ” ” ” ” ” ” ”  ”&  ”( "”ÌI ÌC”ÌK ÌE”ÌL ÌF‘”	 ›” ” 
-” ” ”  ”! ”% !”& "”4 0”5 1”6 2Ÿ” ” ” 	” ” ” ” ” ” ”% !”& "”, (”1 -”2 .”4 0œ” ” ” ” ” ” ”  ”&  ”( "”ÌE ?”ÌG ÌA”ÌH ÌB‘”	 Ü !” ” 
-” ” ” ” ”% !”& "”* &”+ '”. *”/ +”0 ,”1 -”3 /”4  ”7  	”8  
-”9  ”Ì@  ”ÌD  ”ÌE  ”ÌF  ”ÌJ  ”ÌN   ”ÌO  !”ÌP  "”ÌY  +”Ì^  0”Ì_  1”Ì`  2”Ìh  :”Ìj  <Ü ” !” !” !” !	” !” !” !” !”! !”" !”# !”, !&”. !(”/ !)”0 !*”1 !+”3 !-”4 !.Ü ” "” "” "” "	” "” "”' "!”( ""”) "#”* "$”3 "-”4 ".”5 "/”? "9”ÌA ";”ÌB "<”ÌC "=”ÌD ">”ÌF "Ì@”ÌG "ÌA”ÌH #”ÌI #”ÌM #
-”ÌN #”ÌQ #”ÌR #”ÌS #Ÿ” $” $
-” $” $” $”  $”) $%”* $&”, $(”- $)”8 $4”9 $5”ÌC $?”ÌD $Ì@”ÌE $ÌAÜ ” %” %” %” %”' %#”( %$”9 %5”: %6”< %8”= %9”ÌD %Ì@”ÌF %ÌB”ÌH %ÌD”ÌI %ÌE”ÌQ %ÌM”ÌR %ÌN”ÌS %ÌO›” &” &
-” &” &”% &!”& &"”( &$”) &%”0 &,”1 &-”2 &.–” '” '” '” '” '” '˜” (” (” (” (”" (”= (7”ÌC (=”Ì_ (ÌY“” )” )” )‘”	 *š” +” +” +” +”* +&”+ +'”1 +-”4 +0”5 +1”7 +3™” ,” ,” ,” ,”" ,”5 ,/”ÌB ,<”ÌD ,>”ÌE ,?‘”	 -š” /” /
-” /” /”# /”$ / ”* /&”+ /'”. /*”0 /,Ü ” 0” 0” 0” 0”" 0”$ 0”) 0#”+ 0%”; 05”< 06”ÌH 0ÌB”ÌI 0ÌC”ÌK 0ÌE”ÌL 0ÌF”ÌS 0ÌM”ÌT 0ÌN”ÌV 0ÌPÜ ” 1” 1” 1” 1”" 1”$ 1”) 1#”+ 1%”; 15”< 16”ÌH 1ÌB”ÌI 1ÌC”ÌK 1ÌE”ÌL 1ÌF”ÌS 1ÌM”ÌT 1ÌN”ÌV 1ÌPš” 2” 2” 2” 2”  2”" 2”' 2!”) 2#”3 2-”5 2/š” 3” 3” 3” 3”% 3”' 3!”, 3&”. 3(”8 32”: 34Ü ” 4” 4” 4” 4” 4”! 4”& 4 ”( 4"”8 42”9 43”ÌI 4ÌC”ÌJ 4ÌD”ÌL 4ÌF”ÌM 4ÌG”ÌT 4ÌN”ÌV 4ÌP”ÌX 4ÌR”ÌY 4ÌS”Ì[ 4ÌUÜ ” 5” 5” 5” 5” 5”! 5”& 5 ”( 5"”8 52”9 53”ÌH 5ÌB”ÌI 5ÌC”ÌK 5ÌE”ÌL 5ÌF”ÌS 5ÌM”ÌT 5ÌN”ÌV 5ÌPš” 6” 6” 6” 6” 6”  6”% 6”' 6!”/ 6)”1 6+“”	 7”
- 7” 7Ü ” 9” 9
-” 9” 9” 9”  9”! 9”% 9!”& 9"”, 9(”. 9*”> 9:”? 9;”ÌA 9=”ÌB 9>”ÌQ 9ÌM”ÌS 9ÌO”ÌV 9ÌR”ÌW 9ÌS”ÌX 9ÌT”ÌY 9ÌUœ” :” :” :	” :” :” :” :”  :”& :"”' :#”+ :'”- :)š” ;” ;” ;” ;”! ;”" ;”' ;!”+ ;%”Ì@ ;:”ÌA ;;’” <”= <7’” =”1 =+›” >” >
-” >” >” >” >”. >(”/ >)”3 >-”4 >.”6 >0” ?” ?” ?” ?”) ?!”* ?"”, ?$”. ?&”ÌM ?ÌE”ÌS ?ÌK”ÌU ?ÌM”ÌV ?ÌN”ÌW ?ÌO‘” Ì@œ” ÌA” ÌA” ÌA” ÌA” ÌA” ÌA”  ÌA”& ÌA ”( ÌA"”. ÌA(”0 ÌA*”1 ÌA+‘”	 ÌB—” ÌC”
- ÌC” ÌC” ÌC” ÌC” ÌC” ÌC” ÌE” ÌE
-” ÌE” ÌE”+ ÌE'”, ÌE(”6 ÌE2”8 ÌE4”> ÌE:”? ÌE;”ÌC ÌE?”ÌD ÌEÌ@”ÌE ÌEÌA”” ÌF” ÌF” ÌF” ÌF›” ÌG” ÌG” ÌG” ÌG”% ÌG”& ÌG ”( ÌG"”* ÌG$”0 ÌG*”1 ÌG+”2 ÌG,‘”	 ÌH›” ÌJ” ÌJ
-” ÌJ” ÌJ”) ÌJ%”* ÌJ&”0 ÌJ,”1 ÌJ-”5 ÌJ1”6 ÌJ2”7 ÌJ3•” ÌK” ÌK” ÌK	” ÌK” ÌK” ÌL” ÌL” ÌL” ÌL”) ÌL#”* ÌL$”> ÌL8”? ÌL9”ÌE ÌL?”ÌF ÌLÌ@”ÌJ ÌLÌD”ÌK ÌLÌE”ÌL ÌLÌF” ÌM” ÌM” ÌM” ÌM”% ÌM”& ÌM ”( ÌM"”* ÌM$”ÌH ÌMÌB”ÌP ÌMÌJ”ÌS ÌMÌM”ÌT ÌMÌN”ÌU ÌMÌO‘”	 ÌN’” ÌP”, ÌP(˜” ÌQ” ÌQ
-” ÌQ” ÌQ%”  ÌQ)”# ÌQ,”% ÌQ.”& ÌQ/Ü ” ÌR” ÌR	” ÌR” ÌR” ÌR” ÌR” ÌR” ÌR” ÌR”  ÌR”! ÌR”' ÌR#”( ÌR$”. ÌR*”0 ÌR,”1 ÌR-”3 ÌR/”5 ÌR1›” ÌS” ÌS” ÌS” ÌS” ÌS” ÌS”! ÌS”" ÌS”# ÌS”$ ÌS”% ÌSÜ ” ÌT” ÌT” ÌT” ÌT” ÌT” ÌT” ÌT” ÌT”" ÌT”# ÌT”$ ÌT”) ÌT#”* ÌT$”0 ÌT*”3 ÌT-”4 ÌT.”5 ÌT/”6 ÌT0”7 ÌT1”8 ÌT2”9 ÌT3”: ÌT4”? ÌT9”Ì@ ÌT:”ÌA ÌT;Ü ” ÌU” ÌU	” ÌU
-” ÌU” ÌU” ÌU” ÌU”  ÌU”! ÌU”( ÌU ”) ÌU!”/ ÌU'”2 ÌU*”3 ÌU+”4 ÌU,”5 ÌU-”6 ÌU.”7 ÌU/”8 ÌU0”9 ÌU1”Ì@ ÌU8”ÌA ÌU9”ÌB ÌU:”ÌC ÌU;”ÌE ÌU=”ÌF ÌU>”ÌG ÌU?˜” ÌV” ÌV
-” ÌV” ÌV” ÌV” ÌV” ÌV” ÌV˜” ÌW” ÌW” ÌW” ÌW”  ÌW”! ÌW”" ÌW”# ÌW‘” ÌX‘”	 ÌYÜ ” ÌZ” ÌZ	” ÌZ” ÌZ” ÌZ” ÌZ” ÌZ” ÌZ” ÌZ”  ÌZ”! ÌZ”% ÌZ!”& ÌZ"”, ÌZ(”. ÌZ*”/ ÌZ+”1 ÌZ-”3 ÌZ/›” Ì[” Ì[” Ì[” Ì[” Ì[” Ì[” Ì[”  Ì[”! Ì[”" Ì[”# Ì[Ü ” Ì\” Ì\” Ì\” Ì\” Ì\” Ì\” Ì\” Ì\”" Ì\”# Ì\”$ Ì\”) Ì\#”* Ì\$”0 Ì\*”3 Ì\-”4 Ì\.”5 Ì\/”6 Ì\0”7 Ì\1”8 Ì\2”9 Ì\3”: Ì\4”? Ì\9”Ì@ Ì\:”ÌA Ì\;Ü ” Ì]” Ì]	” Ì]
-” Ì]” Ì]” Ì]” Ì]”  Ì]”! Ì]”( Ì] ”) Ì]!”/ Ì]'”2 Ì]*”3 Ì]+”4 Ì],”5 Ì]-”6 Ì].”7 Ì]/”8 Ì]0”9 Ì]1”Ì@ Ì]8”ÌA Ì]9”ÌB Ì]:”ÌC Ì];”ÌE Ì]=”ÌF Ì]>”ÌG Ì]?˜” Ì^” Ì^
-” Ì^” Ì^” Ì^” Ì^” Ì^” Ì^˜” Ì_” Ì_” Ì_” Ì_”  Ì_”! Ì_”" Ì_”# Ì_‘” Ì`‘”	 Ìaœ” Ìb” Ìb
-” Ìb” Ìb” Ìb” Ìb”# Ìb”$ Ìb ”( Ìb$”) Ìb%”/ Ìb+”0 Ìb,Ü ” Ìc” Ìc” Ìc” Ìc” Ìc” Ìc”( Ìc$”) Ìc%”- Ìc)”0 Ìc,”4 Ìc0”5 Ìc1”8 Ìc4”9 Ìc5”: Ìc6”< Ìc8”Ì@ Ìc<”ÌA Ìc=”ÌE ÌcÌA”ÌF ÌcÌB”ÌN ÌcÌJ”ÌQ ÌcÌM”ÌU ÌcÌQ”ÌV ÌcÌR”ÌW ÌcÌS”ÌY ÌcÌU” Ìd” Ìd” Ìd” Ìd” Ìd”' Ìd!”) Ìe”ÌT Ìe3”Ì_ Ìe>”Ì` Ìe?”Ìd ÌeÌC”Ìh ÌeÌG”Ìp ÌeÌO”Ìr ÌeÌQš” Ìf” Ìf” Ìf”  Ìf”& Ìf”' Ìf”- Ìf%”/ Ìf'”0 Ìf(”1 Ìf)Ÿ” Ìg” Ìg” Ìg” Ìg”% Ìg”& Ìg ”( Ìg"”* Ìh”ÌG Ìh%”ÌR Ìh0”ÌS Ìh1”ÌW Ìh5”Ì[ Ìh9”Ìc ÌhÌA”Ìj ÌhÌHš” Ìi” Ìi”  Ìi”! Ìi”' Ìi”( Ìi ”. Ìi&”ÌI ÌiÌA”ÌJ ÌiÌB”ÌK ÌiÌC‘”	 Ìj’” Ìl” Ìl™” Ìm”
- Ìm” Ìm” Ìm” Ìm” Ìm” Ìm” Ìm” Ìm™” Ìn”
- Ìn” Ìn” Ìn” Ìn” Ìn” Ìn” Ìn” ÌnÜ ” Ìo” Ìo” Ìo” Ìo”% Ìo!”& Ìo"”( Ìo$”) Ìo%”0 Ìo,”2 Ìo.”4 Ìo0”5 Ìo1”Ì@ Ìo<”ÌB Ìo>”ÌD ÌoÌ@”ÌE ÌoÌA”ÌL ÌoÌH”ÌN ÌoÌJ”ÌR ÌoÌN”ÌS ÌoÌO”ÌT ÌoÌP—” Ìp”
- Ìp” Ìp” Ìp” Ìp” Ìp” Ìp—” Ìq” Ìq” Ìq	” Ìq” Ìq” Ìq” Ìq’” Ìr”> Ìr8’” Ìs”: Ìs4’” Ìt”, Ìt&Ü ” Ìu” Ìu” Ìu” Ìu”- Ìu'”. Ìu(”0 Ìu*”1 Ìu+”8 Ìu2”: Ìu4”< Ìu6”= Ìu7”ÌH ÌuÌB”ÌJ ÌuÌD”ÌL ÌuÌF”ÌM ÌuÌG”ÌT ÌuÌN”ÌU ÌuÌO”ÌV ÌuÌP–” Ìv” Ìv
-” Ìv” Ìv” Ìv” Ìv˜” Ìw” Ìw” Ìw” Ìw” Ìw”+ Ìw#”- Ìx
-”Ìh ÌxÌEÜ ” Ìy
-” Ìy”$ Ìy”% Ìy”+ Ìy!”, Ìy"”2 Ìy(”; Ìy1”Ì@ Ìy6”ÌA Ìy7”ÌE Ìy;”ÌF Ìy<”ÌL ÌyÌB”ÌR ÌyÌH”ÌU ÌyÌK”ÌV ÌyÌL”Ì\ ÌyÌR”Ì^ ÌyÌT”Ì_ ÌyÌU”Ì` ÌyÌV•” Ìz” Ìz” Ìz” Ìz” Ìz—” Ì{” Ì{
-” Ì{” Ì{” Ì{”! Ì{”" Ì{‘” Ì|Ü ” Ì|” Ì|” Ì|” Ì|”! Ì|”" Ì|”( Ì|$”+ Ì|'”0 Ì|,”1 Ì|-”5 Ì|1”6 Ì|2”< Ì|8”? Ì|;”ÌB Ì|>”ÌC Ì|?”ÌI Ì|ÌE”ÌJ Ì|ÌF”ÌP Ì|ÌL”ÌS Ì|ÌO”ÌV Ì|ÌR”ÌW Ì|ÌS”Ì[ Ì|ÌW”Ì\ Ì|ÌX”Ìb Ì|Ì^” Ì}” Ì}” Ì}”" Ì}”# Ì}”) Ì}!”, Ì}$”/ Ì}'”0 Ì}(”< Ì}4”= Ì}5”ÌC Ì};”ÌE Ì}=˜” Ì~” Ì~” Ì~” Ì~” Ì~”+ Ì~#”- Ì
-”Ìn ÌÌKÜ ” Ì€
-”  Ì€”# Ì€”$ Ì€”0 Ì€&”1 Ì€'”7 Ì€-”ÌE Ì€;”ÌJ Ì€Ì@”ÌK Ì€ÌA”ÌW Ì€ÌM”ÌX Ì€ÌN”Ì^ Ì€ÌT”Ì` Ì€ÌV”Ìa Ì€ÌW”Ìb Ì€ÌX•” Ì” Ì” Ì” Ì” Ì—” Ì‚” Ì‚
-” Ì‚” Ì‚” Ì‚”! Ì‚”" Ì‚‘” Ìƒ‘” Ìƒ˜” Ì„” Ì„” Ì„” Ì„” Ì„”+ Ì„#”- Ì…
-”Ì_ Ì…<Ü ” Ì†
-”  Ì†”# Ì†”$ Ì†”0 Ì†&”1 Ì†'”7 Ì†-”ÌE Ì†;”ÌJ Ì†Ì@”ÌK Ì†ÌA”ÌW Ì†ÌM”ÌX Ì†ÌN”Ì^ Ì†ÌT”Ì` Ì†ÌV”Ìa Ì†ÌW”Ìb Ì†ÌX‘” Ì‡‘”	 Ìˆ—” Ì‰” Ì‰” Ì‰	” Ì‰” Ì‰” Ì‰” Ì‰š” ÌŠ” ÌŠ” ÌŠ” ÌŠ” ÌŠ”  ÌŠ”+ ÌŠ%”/ ÌŠ)”1 ÌŠ+”2 ÌŠ,Ü ” Ì‹” Ì‹” Ì‹” Ì‹” Ì‹” Ì‹” Ì‹” Ì‹”  Ì‹”' Ì‹!”( Ì‹"”. Ì‹(”2 Ì‹,”3 Ì‹-”6 Ì‹0”7 Ì‹1”9 Ì‹3”: Ì‹4”< Ì‹6”> Ì‹8™” ÌŒ” ÌŒ” ÌŒ” ÌŒ”! ÌŒ”" ÌŒ”# ÌŒ”$ ÌŒ”% ÌŒÜ ” Ì” Ì” Ì” Ì” Ì”+ Ì#”- Ì
-”ÌI Ì&”ÌJ Ì'”ÌK Ì(”ÌR Ì/”ÌV Ì3”ÌW Ì4”ÌX Ì5”Ì] Ì:”Ì_ Ì<Ü ” Ì
-” Ì” Ì” Ì”# Ì”$ Ì”% Ì”& Ì”* Ì ”+ Ì!”, Ì"”- Ì#”1 Ì'”5 Ì+”6 Ì,”; Ì1”< Ì2”= Ì3”> Ì4”ÌB Ì8”ÌC Ì9”ÌD Ì:”ÌE Ì;”ÌI Ì?Ü ” Ì
-” Ì” Ì” Ì”" Ì”# Ì”$ Ì”% Ì”' Ì”( Ì”) Ì”* Ì ”. Ì$”2 Ì(”3 Ì)”8 Ì.”9 Ì/”: Ì0”; Ì1”= Ì3”> Ì4”? Ì5”Ì@ Ì6”ÌC Ì9Ü ” Ì‘
-” Ì‘” Ì‘” Ì‘” Ì‘” Ì‘”  Ì‘”! Ì‘”' Ì‘”( Ì‘”) Ì‘”0 Ì‘&”2 Ì‘(”3 Ì‘)”4 Ì‘*”5 Ì‘+”7 Ì‘-”8 Ì‘.”9 Ì‘/”: Ì‘0‘” Ì’Ü ” Ì“” Ì“
-” Ì“” Ì“” Ì“” Ì“”! Ì“”$ Ì“”% Ì“”) Ì“#”, Ì“&”- Ì“'”1 Ì“+”2 Ì“,”8 Ì“2”; Ì“5”< Ì“6”> Ì“8” Ì””' Ì””( Ì” ”* Ì”"”, Ì”$”/ Ì”'”0 Ì”(”6 Ì”.”8 Ì”0”; Ì”3”< Ì”4”Ì@ Ì”8”ÌA Ì”9”ÌB Ì”:Ü ” Ì•” Ì•” Ì•” Ì•” Ì•”+ Ì•#”- Ì–
-”Ì^ Ì–;”Ìa Ì–>”Ìb Ì–?”Ìh Ì–ÌE”Ìi Ì–ÌF”Ìo Ì–ÌL”Ìu Ì–ÌR”Ìx Ì–ÌU”Ìy Ì–ÌV”Ì Ì–Ì\”Ì Ì–Ì^”Ì‚ Ì–Ì_”Ìƒ Ì–Ì`‘” Ì—‘” Ì—” Ì˜” Ì˜” Ì˜” Ì˜” Ì˜”+ Ì˜#”- Ì˜%”ÌO Ì˜ÌG”ÌR Ì˜ÌJ”ÌS Ì˜ÌK”ÌY Ì˜ÌQ”Ì[ Ì˜ÌS”Ì\ Ì˜ÌT”Ì] Ì˜ÌU‘” Ì™Ü ” Ìš” Ìš” Ìš” Ìš” Ìš” Ìš”  Ìš”& Ìš ”( Ìš"”+ Ìš%”, Ìš&”2 Ìš,”4 Ìš.”Ì@ Ìš:”ÌB Ìš<”ÌO ÌšÌI”ÌQ ÌšÌK”ÌR ÌšÌL‘”	 Ì›” Ìœ” Ìœ”  Ìœ”" Ìœ”$ Ìœ ”' Ìœ#”( Ìœ$”. Ìœ*”0 Ìœ,”3 Ìœ/”4 Ìœ0”8 Ìœ4”9 Ìœ5”: Ìœ6˜” Ì”
- Ì” Ì” Ì” Ì” Ì”  Ì”! ÌÜ ” Ì” Ì
-” Ì” Ì” Ì”# Ì”% ÌŸ”ÌJ ÌŸ+”ÌM ÌŸ.”ÌN ÌŸ/”ÌT ÌŸ5”ÌU ÌŸ6”Ì[ ÌŸ<”Ìd ÌŸÌE”Ìg ÌŸÌH”Ìh ÌŸÌI”Ìl ÌŸÌM”Ìm ÌŸÌN”Ìs ÌŸÌT”Ìu ÌŸÌVÜ ” Ì ” Ì ” Ì ” Ì ” Ì ”  Ì ”$ Ì ”% Ì ”& Ì  ”' Ì !”2 Ì ,”3 Ì -”4 Ì .”5 Ì /”ÌJ Ì ÌD”ÌM Ì ÌG”ÌN Ì ÌH”ÌO Ì ÌIœ” Ì¡” Ì¡” Ì¡” Ì¡” Ì¡” Ì¡” Ì¡”! Ì¡”# Ì¡”' Ì¡#”) Ì¡%”* Ì¡&’” Ì¢” Ì¢‘” Ì¤‘” Ì©–” Ìª
-” Ìª” Ìª” Ìª.” Ìª0” Ìª?Ü ” Ì«” Ì«” Ì«	” Ì«” Ì«” Ì«” Ì«” Ì«” Ì«” Ì«”* Ì«&”. Ì«*”/ Ì«+”1 Ì«-”2 Ì«.”9 Ì«5”; Ì«7œ” Ì¬” Ì¬” Ì¬” Ì¬” Ì¬” Ì¬”  Ì¬”& Ì¬ ”( Ì¬"”ÌD Ì¬>”ÌF Ì¬Ì@”ÌG Ì¬ÌA‘”	 Ì­™” Ì®”
- Ì®” Ì®” Ì®” Ì®” Ì®” Ì®” Ì®” Ì®™” Ì¯”
- Ì¯” Ì¯” Ì¯” Ì¯” Ì¯” Ì¯” Ì¯” Ì¯Ü ” Ì°” Ì°
-” Ì°” Ì°”) Ì°%”* Ì°&”, Ì°(”- Ì°)”4 Ì°0”6 Ì°2”8 Ì°4”9 Ì°5”ÌD Ì°Ì@”ÌF Ì°ÌB”ÌH Ì°ÌD”ÌI Ì°ÌE”ÌP Ì°ÌL”ÌQ Ì°ÌM”ÌR Ì°ÌN—” Ì±”
- Ì±” Ì±” Ì±” Ì±” Ì±” Ì±–” Ì²” Ì²” Ì²” Ì²” Ì²” Ì²” Ì³”# Ì³”$ Ì³”& Ì³ ”( Ì³"”- Ì³'”. Ì³(”4 Ì³.”6 Ì³0”; Ì³5”< Ì³6”Ì@ Ì³:”ÌA Ì³;”ÌB Ì³<˜” Ì´” Ì´” Ì´	” Ì´” Ì´”# Ì´”$ Ì´”% Ì´” Ìµ” Ìµ” Ìµ” Ìµ” Ìµ”' Ìµ!”) Ì¶”Ìb Ì¶ÌA”Ìg Ì¶ÌF”Ìh Ì¶ÌG”Ìn Ì¶ÌM”Ìo Ì¶ÌN”Ìu Ì¶ÌT”Ìw Ì¶ÌVœ” Ì·” Ì·” Ì·” Ì·”# Ì·”$ Ì·”* Ì·"”> Ì·6”ÌE Ì·=”ÌG Ì·?”ÌH Ì·Ì@”ÌI Ì·ÌAœ” Ì¸” Ì¸” Ì¸” Ì¸” Ì¸” Ì¸” Ì¸”% Ì¸”' Ì¸!”+ Ì¸%”- Ì¸'”. Ì¸(‘”	 Ì¹š” Ìº” Ìº
-” Ìº” Ìº” Ìº” Ìº”) Ìº%”- Ìº)”/ Ìº+”0 Ìº,Ü ” Ì»” Ì»	” Ì»” Ì»” Ì»” Ì»” Ì»” Ì»” Ì»”# Ì»”$ Ì» ”* Ì»&”. Ì»*”/ Ì»+”2 Ì».”3 Ì»/”5 Ì»1”6 Ì»2”8 Ì»4”: Ì»6™” Ì¼” Ì¼” Ì¼” Ì¼” Ì¼” Ì¼” Ì¼”  Ì¼”! Ì¼Ü ” Ì½” Ì½” Ì½” Ì½” Ì½”' Ì½!”) Ì¾”ÌE Ì¾$”ÌF Ì¾%”ÌG Ì¾&”ÌN Ì¾-”ÌR Ì¾1”ÌS Ì¾2”ÌT Ì¾3”ÌY Ì¾8”Ì[ Ì¾:Ü ” Ì¿” Ì¿” Ì¿” Ì¿” Ì¿”  Ì¿”! Ì¿”" Ì¿”& Ì¿”' Ì¿”( Ì¿ ”) Ì¿!”- Ì¿%”1 Ì¿)”2 Ì¿*”7 Ì¿/”8 Ì¿0”9 Ì¿1”: Ì¿2”> Ì¿6”? Ì¿7”Ì@ Ì¿8”ÌA Ì¿9”ÌE Ì¿=Ü ” ÌÀ” ÌÀ” ÌÀ” ÌÀ” ÌÀ” ÌÀ”  ÌÀ”! ÌÀ”# ÌÀ”$ ÌÀ”% ÌÀ”& ÌÀ”* ÌÀ"”. ÌÀ&”/ ÌÀ'”4 ÌÀ,”5 ÌÀ-”6 ÌÀ.”7 ÌÀ/”9 ÌÀ1”: ÌÀ2”; ÌÀ3”< ÌÀ4”? ÌÀ7Ü ” ÌÁ” ÌÁ	” ÌÁ
-” ÌÁ” ÌÁ” ÌÁ” ÌÁ” ÌÁ”# ÌÁ”$ ÌÁ”% ÌÁ”, ÌÁ$”. ÌÁ&”/ ÌÁ'”0 ÌÁ(”1 ÌÁ)”3 ÌÁ+”4 ÌÁ,”5 ÌÁ-”6 ÌÁ.‘”	 ÌÂÜ ” ÌÃ” ÌÃ” ÌÃ” ÌÃ” ÌÃ” ÌÃ” ÌÃ”" ÌÃ”# ÌÃ”' ÌÃ#”, ÌÃ(”- ÌÃ)”1 ÌÃ-”2 ÌÃ.”8 ÌÃ4”; ÌÃ7”< ÌÃ8”> ÌÃ:” ÌÄ”# ÌÄ”$ ÌÄ”& ÌÄ ”( ÌÄ"”- ÌÄ'”. ÌÄ(”4 ÌÄ.”6 ÌÄ0”; ÌÄ5”< ÌÄ6”Ì@ ÌÄ:”ÌA ÌÄ;”ÌB ÌÄ<Ü ” ÌÅ” ÌÅ” ÌÅ” ÌÅ” ÌÅ”' ÌÅ!”) ÌÆ”Ì` ÌÆ?”Ìe ÌÆÌD”Ìf ÌÆÌE”Ìl ÌÆÌK”Ìm ÌÆÌL”Ìs ÌÆÌR”Ìy ÌÆÌX”Ì~ ÌÆÌ]”Ì ÌÆÌ^”Ì… ÌÆÌd”Ì‡ ÌÆÌf”Ìˆ ÌÆÌg”Ì‰ ÌÆÌh‘”	 ÌÇ‘” ÌÇÜ ” ÌÈ” ÌÈ” ÌÈ” ÌÈ” ÌÈ”' ÌÈ!”) ÌÉ”ÌK ÌÉ*”ÌP ÌÉ/”ÌQ ÌÉ0”ÌW ÌÉ6”Ìk ÌÉÌJ”Ìr ÌÉÌQ”Ìt ÌÉÌS”Ìu ÌÉÌT”Ìv ÌÉÌU‘”	 ÌÊÜ ” ÌË” ÌË” ÌË” ÌË” ÌË” ÌË” ÌË”" ÌË”$ ÌË ”) ÌË%”* ÌË&”0 ÌË,”2 ÌË.”> ÌË:”Ì@ ÌË<”ÌM ÌËÌI”ÌO ÌËÌK”ÌP ÌËÌL’” ÌÌ” ÌÌ‘” ÌÍÔrH–§version¤file§sources®sourcesContent¥names¨mappingsÀ‘À‘ÀÜ ¶‘”    ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”  	 ‘”  
- ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”    ‘”  ! ‘”  " ‘”  # ‘”  $ ‘”  % ‘”  & ‘”  ' ‘”  ( ‘”  ) ‘”  * ‘”  + ‘”  , ‘”  - ‘”  . ‘”  / ‘”  0 ‘”  1 ‘”  2 ‘”  3 ‘”  4 ‘”  5 ‘”  6 ‘”  7 ‘”  8 ‘”  9 ‘”  : ‘”  ; ‘”  < ‘”  = ‘”  > ‘”  ? ‘”  Ì@ ‘”  ÌA ‘”  ÌB ‘”  ÌC ‘”  ÌD ‘”  ÌE ‘”  ÌF ‘”  ÌG ‘”  ÌH ‘”  ÌI ‘”  ÌJ ‘”  ÌK ‘”  ÌL ‘”  ÌM ‘”  ÌN ‘”  ÌO ‘”  ÌP ‘”  ÌQ ‘”  ÌR ‘”  ÌS ‘”  ÌT ‘”  ÌU ‘”  ÌV ‘”  ÌW ‘”  ÌX ‘”  ÌY ‘”  ÌZ ‘”  Ì[ ‘”  Ì\ ‘”  Ì] ‘”  Ì^ ‘”  Ì_ ‘”  Ì` ‘”  Ìa ‘”  Ìb ‘”  Ìc ‘”  Ìd ‘”  Ìe ‘”  Ìf ‘”  Ìg ‘”  Ìh ‘”  Ìi ‘”  Ìj ‘”  Ìk ‘”  Ìl ‘”  Ìm ‘”  Ìn ‘”  Ìo ‘”  Ìp ‘”  Ìq ‘”  Ìr ‘”  Ìs ‘”  Ìt ‘”  Ìu ‘”  Ìv ‘”  Ìw ‘”  Ìx ‘”  Ìy ‘”  Ìz ‘”  Ì{ ‘”  Ì| ‘”  Ì} ‘”  Ì~ ‘”  Ì ‘”  Ì€ ‘”  Ì ‘”  Ì‚ ‘”  Ìƒ ‘”  Ì„ ‘”  Ì… ‘”  Ì† ‘”  Ì‡ ‘”  Ìˆ ‘”  Ì‰ ‘”  ÌŠ ‘”  Ì‹ ‘”  ÌŒ ‘”  Ì ‘”  Ì ‘”  Ì ‘”  Ì ‘”  Ì‘ ‘”  Ì’ ‘”  Ì“ ‘”  Ì” ‘”  Ì• ‘”  Ì– ‘”  Ì— ‘”  Ì˜ ‘”  Ì™ ‘”  Ìš ‘”  Ì› ‘”  Ìœ ‘”  Ì ‘”  Ì ‘”  ÌŸ ‘”  Ì  ‘”  Ì¡ ‘”  Ì¢ ‘”  Ì£ ‘”  Ì¤ ‘”  Ì¥ ‘”  Ì¦ ‘”  Ì§ ‘”  Ì¨ ‘”  Ì© ‘”  Ìª ‘”  Ì« ‘”  Ì¬ ‘”  Ì­ ‘”  Ì® ‘”  Ì¯ ‘”  Ì° ‘”  Ì± ‘”  Ì² ‘”  Ì³ ‘”  Ì´ ‘”  Ìµ ÔrI’§missing¦pluginÃ¦genAbcÂÔ  ÔrJ”²dynamicImportCache¹exportAllDeclarationCache»exportNamedDeclarationCache«importCache‘ÔrK–¤type¥start£end«declarationªspecifiers¦source¶ExportNamedDeclarationÍÍ%hÔrL–¤type¥start£end¢idªsuperClass¤body°ClassDeclarationÍÍ%hÔrM”¤type¥start£end¤nameªIdentifierÍÍ,°PcbGeometryAgentÀÔrN”¤type¥start£end¤body©ClassBodyÍ-Í%h’ÔrO˜¤type¥start£end¦static¨computed£key¤kind¥value°MethodDefinitionÍ4ÍëÂÂMªIdentifierÍ:Í=£run¦methodÔrP™¤type¥start£end¢idªexpression©generator¥async¦params¤body²FunctionExpressionÍ=ÍëÀÂÂÃ“MªIdentifierÍ>Í@¢bbMªIdentifierÍBÍE£apiMªIdentifierÍGÍT­priorFailHintN®BlockStatementÍVÍëÜ "ÔrQ”¤type¥start£endªexpression³ExpressionStatementÍaÍ±ÔrR–¤type¥start£end¦callee©arguments¨optional®CallExpressionÍaÍ°ÔrS—¤type¥start£end¦object¨property¨computed¨optional°MemberExpressionÍaÍlMªIdentifierÍaÍg¦LoggerMªIdentifierÍhÍl¤infoÂÂ’MªIdentifierÍmÍ|¯INSTR_TRACE_TAGÔrT•¤type¥start£end«expressions¦quasis¯TemplateLiteralÍ~Í¯‘S°MemberExpressionÍ¥Í­MªIdentifierÍ¥Í§¢bbMªIdentifierÍ¨Í­¥runIdÂÂ’ÔrU•¤type¥start£end¥value¤tail¯TemplateElementÍÍ£ÔrV’£raw¦cookedÙ$[AI_PCB] stage=geometry begin runId=Ù$[AI_PCB] stage=geometry begin runId=ÂU¯TemplateElementÍ®Í®V  ÃÂÔrW–¤type¥start£end¤testªconsequent©alternate«IfStatementÍ»ÍCÔrX–¤type¥start£end¤left¨operator¥right±LogicalExpressionÍ¿ÍìX±LogicalExpressionÍ¿ÍİÔrY–¤type¥start£end¨operator¦prefix¨argument¯UnaryExpressionÍ¿ÍÊ¡!ÃS°MemberExpressionÍÀÍÊMªIdentifierÍÀÍÂ¢bbMªIdentifierÍÃÍÊ§workDocÂÂ¢||Y¯UnaryExpressionÍÎÍİ¡!ÃS°MemberExpressionÍÏÍİMªIdentifierÍÏÍÑ¢bbMªIdentifierÍÒÍİ«routePolicyÂÂ¢||Y¯UnaryExpressionÍáÍì¡!ÃS°MemberExpressionÍâÍìMªIdentifierÍâÍä¢bbMªIdentifierÍåÍì§netPlanÂÂN®BlockStatementÍîÍC‘ÔrZ”¤type¥start£end¨argument¯ReturnStatementÍıÍ8Ôr[”¤type¥start£endªproperties°ObjectExpressionÍÍ7’Ôr\™¤type¥start£end¦method©shorthand¨computed£key¥value¤kind¨PropertyÍÍÂÂÂMªIdentifierÍÍ¢okÔr]•¤type¥start£end¥value£raw§LiteralÍ
-ÍÂ¥false¤init\¨PropertyÍÍ5ÂÂÂMªIdentifierÍÍ¦reason]§LiteralÍÍ5ºmissing policy/netPlan/doc¼'missing policy/netPlan/doc'¤initÀW«IfStatementÍMÍÛX±LogicalExpressionÍQÍY¯UnaryExpressionÍQÍh¡!ÃS°MemberExpressionÍRÍhS°MemberExpressionÍRÍ`MªIdentifierÍRÍT¢bbMªIdentifierÍUÍ`«routePolicyÂÂMªIdentifierÍaÍh§fromLlmÂÂ¢||Y¯UnaryExpressionÍlÍ¡!ÃS°MemberExpressionÍmÍS°MemberExpressionÍmÍwMªIdentifierÍmÍo¢bbMªIdentifierÍpÍw§netPlanÂÂMªIdentifierÍxÍ§fromLlmÂÂN®BlockStatementÍÍÛ‘Z¯ReturnStatementÍÍĞ[°ObjectExpressionÍ—ÍÏ’\¨PropertyÍ™Í¢ÂÂÂMªIdentifierÍ™Í›¢ok]§LiteralÍÍ¢Â¥false¤init\¨PropertyÍ¤ÍÍÂÂÂMªIdentifierÍ¤Íª¦reason]§LiteralÍ¬ÍÍ¿geometry refuses non-LLM policyÙ!'geometry refuses non-LLM policy'¤initÀÔr^•¤type¥start£end¬declarations¤kind³VariableDeclarationÍåÍ‘Ôr_•¤type¥start£end¢id¤init²VariableDeclaratorÍëÍMªIdentifierÍëÍî£tplR®CallExpressionÍñÍS°MemberExpressionÍñÍMªIdentifierÍñÍı¬PromptLoaderMªIdentifierÍşÍ¤loadÂÂ‘]§LiteralÍÍ¬pcb_geometry®'pcb_geometry'Â¥constW«IfStatementÍÍŸX±LogicalExpressionÍ!ÍGY¯UnaryExpressionÍ!Í,¡!ÃS°MemberExpressionÍ"Í,MªIdentifierÍ"Í%£tplMªIdentifierÍ&Í,¦systemÂÂ¢||X°BinaryExpressionÍ0ÍGS°MemberExpressionÍ0ÍAS°MemberExpressionÍ0Í:MªIdentifierÍ0Í3£tplMªIdentifierÍ4Í:¦systemÂÂMªIdentifierÍ;ÍA¦lengthÂÂ£===]§LiteralÍFÍG ¡0N®BlockStatementÍIÍŸ‘Z¯ReturnStatementÍXÍ”[°ObjectExpressionÍ_Í“’\¨PropertyÍaÍjÂÂÂMªIdentifierÍaÍc¢ok]§LiteralÍeÍjÂ¥false¤init\¨PropertyÍlÍ‘ÂÂÂMªIdentifierÍlÍr¦reason]§LiteralÍtÍ‘»pcb_geometry prompt missing½'pcb_geometry prompt missing'¤initÀ^³VariableDeclarationÍ©Íš‘_²VariableDeclaratorÍ¯Í™MªIdentifierÍ¯Í¹ªnetSummaryR®CallExpressionÍ¼Í™S°MemberExpressionÍ¼Í”R®CallExpressionÍ¼ÍS°MemberExpressionÍ¼ÍÏS°MemberExpressionÍ¼ÍËS°MemberExpressionÍ¼ÍÆMªIdentifierÍ¼Í¾¢bbMªIdentifierÍ¿ÍÆ§netPlanÂÂMªIdentifierÍÇÍË¤netsÂÂMªIdentifierÍÌÍÏ£mapÂÂ‘P·ArrowFunctionExpressionÍĞÍÀÃÂÂ‘MªIdentifierÍĞÍÑ¡nX°BinaryExpressionÍÕÍX°BinaryExpressionÍÕÍCT¯TemplateLiteralÍÕÍ”S°MemberExpressionÍØÍáMªIdentifierÍØÍÙ¡nMªIdentifierÍÚÍá§netNameÂÂS°MemberExpressionÍåÍëMªIdentifierÍåÍæ¡nMªIdentifierÍçÍë¤kindÂÂS°MemberExpressionÍïÍúMªIdentifierÍïÍğ¡nMªIdentifierÍñÍú©routeModeÂÂS°MemberExpressionÍÿÍ	MªIdentifierÍÿÍ ¡nMªIdentifierÍÍ	¨priorityÂÂ•U¯TemplateElementÍÖÍÖV  ÂU¯TemplateElementÍâÍãV¡:¡:ÂU¯TemplateElementÍìÍíV¡/¡/ÂU¯TemplateElementÍûÍıV¢/p¢/pÂU¯TemplateElementÍ
-Í
-V  Ã¡+WµConditionalExpressionÍÍBS°MemberExpressionÍÍ'MªIdentifierÍÍ¡nMªIdentifierÍÍ'©layerHintÂÂT¯TemplateLiteralÍ*Í=‘S°MemberExpressionÍ0Í;MªIdentifierÍ0Í1¡nMªIdentifierÍ2Í;©layerHintÂÂ’U¯TemplateElementÍ+Í.V£/L=£/L=ÂU¯TemplateElementÍ<Í<V  Ã]§LiteralÍ@ÍB ¢''¡+WµConditionalExpressionÍTÍX°BinaryExpressionÍTÍnS°MemberExpressionÍTÍ`MªIdentifierÍTÍU¡nMªIdentifierÍVÍ`ªbusYOffsetÂÂ£!==MªIdentifierÍeÍn©undefinedT¯TemplateLiteralÍqÍˆ‘S°MemberExpressionÍzÍ†MªIdentifierÍzÍ{¡nMªIdentifierÍ|Í†ªbusYOffsetÂÂ’U¯TemplateElementÍrÍxV¦/busY=¦/busY=ÂU¯TemplateElementÍ‡Í‡V  Ã]§LiteralÍ‹Í ¢''ÂMªIdentifierÍÍ”¤joinÂÂ‘]§LiteralÍ•Í˜¡,£','Â¥const^³VariableDeclarationÍ¤Íá‘_²VariableDeclaratorÍªÍàMªIdentifierÍªÍ´ªlayerRolesR®CallExpressionÍ·ÍàS°MemberExpressionÍ·ÍÅMªIdentifierÍ·Í»¤JSONMªIdentifierÍ¼ÍÅ©stringifyÂÂ‘S°MemberExpressionÍÆÍßS°MemberExpressionÍÆÍÔMªIdentifierÍÆÍÈ¢bbMªIdentifierÍÉÍÔ«routePolicyÂÂMªIdentifierÍÕÍßªlayerRolesÂÂÂ¥const^³VariableDeclarationÍëÍ6‘_²VariableDeclaratorÍïÍ5MªIdentifierÍïÍ÷¨failHintR®CallExpressionÍúÍ5S°MemberExpressionÍúÍMªIdentifierÍúÍ
-°PcbDocSummarizerMªIdentifierÍÍ±boardDiagSnapshotÂÂ’S°MemberExpressionÍÍ'MªIdentifierÍÍ¢bbMªIdentifierÍ Í'§workDocÂÂS°MemberExpressionÍ)Í4MªIdentifierÍ)Í+¢bbMªIdentifierÍ,Í4¨geometryÂÂÂ£let^³VariableDeclarationÍ@Íj‘_²VariableDeclaratorÍFÍiMªIdentifierÍFÍL¦floatNR®CallExpressionÍOÍiMªIdentifierÍOÍ]®countFloatPads‘S°MemberExpressionÍ^ÍhMªIdentifierÍ^Í`¢bbMªIdentifierÍaÍh§workDocÂÂÂ¥constW«IfStatementÍtÍX°BinaryExpressionÍxÍ‚MªIdentifierÍxÍ~¦floatN¡>]§LiteralÍÍ‚ ¡0N®BlockStatementÍ„Í‘Q³ExpressionStatementÍ“ÍÔr`–¤type¥start£end¨operator¤left¥right´AssignmentExpressionÍ“Í¡=MªIdentifierÍ“Í›¨failHintX°BinaryExpressionÍÍT¯TemplateLiteralÍÍæ’MªIdentifierÍ¡Í©¨failHintMªIdentifierÍÄÍÊ¦floatN“U¯TemplateElementÍŸÍŸV  ÂU¯TemplateElementÍªÍÂVÙ.\nã€æ³¨æ„ã€‘æœªç»‘å®šç½‘ç»œç„Šç›˜ floatPads=Ù-
-ã€æ³¨æ„ã€‘æœªç»‘å®šç½‘ç»œç„Šç›˜ floatPads=ÂU¯TemplateElementÍËÍåVÙ,ï¼ŒæŠ˜çº¿é¡»é¿å¼€è¿™äº› pad_block(float)ï¼›Ù,ï¼ŒæŠ˜çº¿é¡»é¿å¼€è¿™äº› pad_block(float)ï¼›Ã¡+T¯TemplateLiteralÍúÍ‘U¯TemplateElementÍûÍVÙ!ç«¯ç‚¹è½åœ¨ç„Šç›˜ä¸­å¿ƒå¯è±å…Ù!ç«¯ç‚¹è½åœ¨ç„Šç›˜ä¸­å¿ƒå¯è±å…ÃÀW«IfStatementÍÍŸX±LogicalExpressionÍ!ÍJMªIdentifierÍ!Í.­priorFailHint¢&&X°BinaryExpressionÍ2ÍJS°MemberExpressionÍ2ÍFMªIdentifierÍ2Í?­priorFailHintMªIdentifierÍ@ÍF¦lengthÂÂ¡>]§LiteralÍIÍJ ¡0N®BlockStatementÍLÍŸ‘Q³ExpressionStatementÍ[Í”`´AssignmentExpressionÍ[Í“¡=MªIdentifierÍ[Íc¨failHintT¯TemplateLiteralÍfÍ“’MªIdentifierÍiÍq¨failHintMªIdentifierÍ„Í‘­priorFailHint“U¯TemplateElementÍgÍgV  ÂU¯TemplateElementÍrÍ‚VÙ*\nã€ä¸Šè½®å¤±è´¥é¡»ä¿®æ­£æŠ˜ç‚¹/è¿‡å­”ã€‘Ù)
-ã€ä¸Šè½®å¤±è´¥é¡»ä¿®æ­£æŠ˜ç‚¹/è¿‡å­”ã€‘ÂU¯TemplateElementÍ’Í’V  ÃÀ^³VariableDeclarationÍ©Í	ğ‘_²VariableDeclaratorÍ¯Í	ïMªIdentifierÍ¯Íµ¦promptR®CallExpressionÍ¸Í	ïS°MemberExpressionÍ¸ÍËMªIdentifierÍ¸ÍÄ¬PromptLoaderMªIdentifierÍÅÍË¦renderÂÂ’MªIdentifierÍÌÍÏ£tplÔra”¤type¥start£end¨elements¯ArrayExpressionÍÑÍ	î—[°ObjectExpressionÍàÍ*’\¨PropertyÍâÍöÂÂÂMªIdentifierÍâÍå£key]§LiteralÍçÍö­board_outline¯'board_outline'¤init\¨PropertyÍøÍ(ÂÂÂMªIdentifierÍøÍı¥valueR®CallExpressionÍÿÍ(S°MemberExpressionÍÿÍMªIdentifierÍÿÍ°PcbDocSummarizerMªIdentifierÍÍ¬boardOutlineÂÂ‘S°MemberExpressionÍÍ'MªIdentifierÍÍ¢bbMªIdentifierÍ Í'§workDocÂÂÂ¤init[°ObjectExpressionÍ9Íƒ’\¨PropertyÍ;ÍOÂÂÂMªIdentifierÍ;Í>£key]§LiteralÍ@ÍO­copper_layers¯'copper_layers'¤init\¨PropertyÍQÍÂÂÂMªIdentifierÍQÍV¥valueR®CallExpressionÍXÍS°MemberExpressionÍXÍuMªIdentifierÍXÍh°PcbDocSummarizerMªIdentifierÍiÍu¬copperLayersÂÂ‘S°MemberExpressionÍvÍ€MªIdentifierÍvÍx¢bbMªIdentifierÍyÍ€§workDocÂÂÂ¤init[°ObjectExpressionÍ’Í»’\¨PropertyÍ”Í¦ÂÂÂMªIdentifierÍ”Í—£key]§LiteralÍ™Í¦«layer_roles­'layer_roles'¤init\¨PropertyÍ¨Í¹ÂÂÂMªIdentifierÍ¨Í­¥valueMªIdentifierÍ¯Í¹ªlayerRoles¤init[°ObjectExpressionÍÊÍø’\¨PropertyÍÌÍãÂÂÂMªIdentifierÍÌÍÏ£key]§LiteralÍÑÍã°net_plan_summary²'net_plan_summary'¤init\¨PropertyÍåÍöÂÂÂMªIdentifierÍåÍê¥valueMªIdentifierÍìÍöªnetSummary¤init[°ObjectExpressionÍ	Í	V’\¨PropertyÍ		Í	ÂÂÂMªIdentifierÍ		Í	£key]§LiteralÍ	Í	ªpad_detail¬'pad_detail'¤init\¨PropertyÍ	Í	TÂÂÂMªIdentifierÍ	Í	!¥valueR®CallExpressionÍ	#Í	TS°MemberExpressionÍ	#Í	DMªIdentifierÍ	#Í	3°PcbDocSummarizerMªIdentifierÍ	4Í	D°padDetailSummaryÂÂ’S°MemberExpressionÍ	EÍ	OMªIdentifierÍ	EÍ	G¢bbMªIdentifierÍ	HÍ	O§workDocÂÂ]§LiteralÍ	QÍ	SÌP¢80Â¤init[°ObjectExpressionÍ	eÍ	¯’\¨PropertyÍ	gÍ	xÂÂÂMªIdentifierÍ	gÍ	j£key]§LiteralÍ	lÍ	xªpad_blocks¬'pad_blocks'¤init\¨PropertyÍ	zÍ	­ÂÂÂMªIdentifierÍ	zÍ	¥valueR®CallExpressionÍ	Í	­S°MemberExpressionÍ	Í	¡MªIdentifierÍ	Í	‘°PcbDocSummarizerMªIdentifierÍ	’Í	¡¯padBlockSummaryÂÂ‘S°MemberExpressionÍ	¢Í	¬MªIdentifierÍ	¢Í	¤¢bbMªIdentifierÍ	¥Í	¬§workDocÂÂÂ¤init[°ObjectExpressionÍ	¾Í	ã’\¨PropertyÍ	ÀÍ	ĞÂÂÂMªIdentifierÍ	ÀÍ	Ã£key]§LiteralÍ	ÅÍ	Ğ©fail_hint«'fail_hint'¤init\¨PropertyÍ	ÒÍ	áÂÂÂMªIdentifierÍ	ÒÍ	×¥valueMªIdentifierÍ	ÙÍ	á¨failHint¤initÂ¥const^³VariableDeclarationÍ	úÍ
-K‘_²VariableDeclaratorÍ
- Í
-JMªIdentifierÍ
- Í
-¦apiResZ¯AwaitExpressionÍ
-	Í
-JR®CallExpressionÍ
-Í
-JS°MemberExpressionÍ
-Í
-MªIdentifierÍ
-Í
-£apiMªIdentifierÍ
-Í
-¤chatÂÂ’MªIdentifierÍ
-Í
-¦promptR®CallExpressionÍ
- Í
-IMªIdentifierÍ
- Í
-0°pcbStageChatOpts’S°MemberExpressionÍ
-1Í
-CMªIdentifierÍ
-1Í
-3¢bbMªIdentifierÍ
-4Í
-C¯enableReasoningÂÂ]§LiteralÍ
-EÍ
-HË?¹™™™™™š£0.1ÂÂ¥constW«IfStatementÍ
-UÍX±LogicalExpressionÍ
-YÍ
-xY¯UnaryExpressionÍ
-YÍ
-h¡!ÃS°MemberExpressionÍ
-ZÍ
-hMªIdentifierÍ
-ZÍ
-`¦apiResMªIdentifierÍ
-aÍ
-h§successÂÂ¢||Y¯UnaryExpressionÍ
-lÍ
-x¡!ÃS°MemberExpressionÍ
-mÍ
-xMªIdentifierÍ
-mÍ
-s¦apiResMªIdentifierÍ
-tÍ
-x¤dataÂÂN®BlockStatementÍ
-zÍ“^³VariableDeclarationÍ
-‰Í
-¾‘_²VariableDeclaratorÍ
-Í
-½MªIdentifierÍ
-Í
-•¦apiErrX±LogicalExpressionÍ
-˜Í
-½S°MemberExpressionÍ
-˜Í
-¤MªIdentifierÍ
-˜Í
-¦apiResMªIdentifierÍ
-ŸÍ
-¤¥errorÂÂ¢??]§LiteralÍ
-¨Í
-½³geometry LLM failedµ'geometry LLM failed'¥constW«IfStatementÍ>ÍÑX°BinaryExpressionÍBÍfR®CallExpressionÍBÍaS°MemberExpressionÍBÍPMªIdentifierÍBÍH¦apiErrMªIdentifierÍIÍP§indexOfÂÂ‘]§LiteralÍQÍ`­empty content¯'empty content'Â¢>=]§LiteralÍeÍf ¡0N®BlockStatementÍhÍÑ‘Z¯ReturnStatementÍ{ÍÂR®CallExpressionÍ‚ÍÁS°MemberExpressionÍ‚Í”Ôrb“¤type¥start£end®ThisExpressionÍ‚Í†MªIdentifierÍ‡Í”­localFallbackÂÂ’MªIdentifierÍ•Í—¢bbT¯TemplateLiteralÍ™ÍÀ‘MªIdentifierÍ¸Í¾¦apiErr’U¯TemplateElementÍšÍ¶V¼geometry LLM empty content: ¼geometry LLM empty content: ÂU¯TemplateElementÍ¿Í¿V  ÃÂÀZ¯ReturnStatementÍßÍ[°ObjectExpressionÍæÍ’\¨PropertyÍèÍñÂÂÂMªIdentifierÍèÍê¢ok]§LiteralÍìÍñÂ¥false¤init\¨PropertyÍóÍÂÂÂMªIdentifierÍóÍù¦reasonMªIdentifierÍûÍ¦apiErr¤initÀQ³ExpressionStatementÍÍ+`´AssignmentExpressionÍÍ*¡=S°MemberExpressionÍÍ#MªIdentifierÍÍ¢bbMªIdentifierÍÍ#§usedLlmÂÂ]§LiteralÍ&Í*Ã¤true^³VariableDeclarationÍ5Ír‘_²VariableDeclaratorÍ;ÍqMªIdentifierÍ;ÍA¦impureR®CallExpressionÍDÍqMªIdentifierÍDÍX´pcbImpureReplyReason’]§LiteralÍYÍc¨geometryª'geometry'S°MemberExpressionÍeÍpMªIdentifierÍeÍk¦apiResMªIdentifierÍlÍp¤dataÂÂÂ¥constW«IfStatementÍ|ÍÈMªIdentifierÍ€Í†¦impureN®BlockStatementÍˆÍÈ‘Z¯ReturnStatementÍ—Í½R®CallExpressionÍÍ¼S°MemberExpressionÍÍ°b®ThisExpressionÍÍ¢MªIdentifierÍ£Í°­localFallbackÂÂ’MªIdentifierÍ±Í³¢bbMªIdentifierÍµÍ»¦impureÂÀ^³VariableDeclarationÍÒÍ‘_²VariableDeclaratorÍØÍ MªIdentifierÍØÍÜ¤planR®CallExpressionÍßÍ MªIdentifierÍßÍó´parsePcbGeometryPlan‘S°MemberExpressionÍôÍÿMªIdentifierÍôÍú¦apiResMªIdentifierÍûÍÿ¤dataÂÂÂ¥constW«IfStatementÍÍÇY¯UnaryExpressionÍÍ¡!ÃMªIdentifierÍÍ¤planN®BlockStatementÍÍÇ’^³VariableDeclarationÍ%Íe‘_²VariableDeclaratorÍ+ÍdMªIdentifierÍ+Í3¨impurityR®CallExpressionÍ6ÍdS°MemberExpressionÍ6ÍWMªIdentifierÍ6ÍB¬PromptLoaderMªIdentifierÍCÍW´describeJsonImpurityÂÂ‘S°MemberExpressionÍXÍcMªIdentifierÍXÍ^¦apiResMªIdentifierÍ_Íc¤dataÂÂÂ¥constZ¯ReturnStatementÍsÍ¼R®CallExpressionÍzÍ»S°MemberExpressionÍzÍŒb®ThisExpressionÍzÍ~MªIdentifierÍÍŒ­localFallbackÂÂ’MªIdentifierÍÍ¢bbT¯TemplateLiteralÍ‘Íº‘MªIdentifierÍ¯Í·¨impurity’U¯TemplateElementÍ’Í­V»geometry LLM JSON invalid (»geometry LLM JSON invalid (ÂU¯TemplateElementÍ¸Í¹V¡)¡)ÃÂÀ^³VariableDeclarationÍÿÍ‘_²VariableDeclaratorÍÍMªIdentifierÍÍ«planNetKeysÔrc•¤type¥start£end¦callee©arguments­NewExpressionÍÍMªIdentifierÍÍ£Set¥constÔrd—¤type¥start£end¤init¤test¦update¤body¬ForStatementÍ'Íh^³VariableDeclarationÍ,Í5‘_²VariableDeclaratorÍ0Í5MªIdentifierÍ0Í1¡i]§LiteralÍ4Í5 ¡0£letX°BinaryExpressionÍ7ÍMMªIdentifierÍ7Í8¡i¡<S°MemberExpressionÍ;ÍMS°MemberExpressionÍ;ÍFMªIdentifierÍ;Í?¤planMªIdentifierÍ@ÍF¦tracksÂÂMªIdentifierÍGÍM¦lengthÂÂY°UpdateExpressionÍOÍR¢++ÂMªIdentifierÍOÍP¡iN®BlockStatementÍTÍh“^³VariableDeclarationÍcÍ|‘_²VariableDeclaratorÍiÍ{MªIdentifierÍiÍj¡tS°MemberExpressionÍmÍ{S°MemberExpressionÍmÍxMªIdentifierÍmÍq¤planMªIdentifierÍrÍx¦tracksÂÂMªIdentifierÍyÍz¡iÃÂ¥const^³VariableDeclarationÍŠÍ‘_²VariableDeclaratorÍÍMªIdentifierÍÍ‘¡kWµConditionalExpressionÍ”ÍX±LogicalExpressionÍ•Í²S°MemberExpressionÍ•ÍœMªIdentifierÍ•Í–¡tMªIdentifierÍ—Íœ¥netIdÂÂ¢&&X°BinaryExpressionÍ Í²S°MemberExpressionÍ Í®S°MemberExpressionÍ Í§MªIdentifierÍ Í¡¡tMªIdentifierÍ¢Í§¥netIdÂÂMªIdentifierÍ¨Í®¦lengthÂÂ¡>]§LiteralÍ±Í² ¡0S°MemberExpressionÍ¶Í½MªIdentifierÍ¶Í·¡tMªIdentifierÍ¸Í½¥netIdÂÂWµConditionalExpressionÍÒÍX±LogicalExpressionÍÓÍôS°MemberExpressionÍÓÍÜMªIdentifierÍÓÍÔ¡tMªIdentifierÍÕÍÜ§netNameÂÂ¢&&X°BinaryExpressionÍàÍôS°MemberExpressionÍàÍğS°MemberExpressionÍàÍéMªIdentifierÍàÍá¡tMªIdentifierÍâÍé§netNameÂÂMªIdentifierÍêÍğ¦lengthÂÂ¡>]§LiteralÍóÍô ¡0S°MemberExpressionÍøÍMªIdentifierÍøÍù¡tMªIdentifierÍúÍ§netNameÂÂ]§LiteralÍÍ ¢''¥constW«IfStatementÍÍ]X°BinaryExpressionÍÍ&S°MemberExpressionÍÍ"MªIdentifierÍÍ¡kMªIdentifierÍÍ"¦lengthÂÂ¡>]§LiteralÍ%Í& ¡0N®BlockStatementÍ(Í]‘Q³ExpressionStatementÍ;ÍNR®CallExpressionÍ;ÍMS°MemberExpressionÍ;ÍJMªIdentifierÍ;ÍF«planNetKeysMªIdentifierÍGÍJ£addÂÂ‘MªIdentifierÍKÍL¡kÂÀd¬ForStatementÍrÍ¯^³VariableDeclarationÍwÍ€‘_²VariableDeclaratorÍ{Í€MªIdentifierÍ{Í|¡i]§LiteralÍÍ€ ¡0£letX°BinaryExpressionÍ‚Í–MªIdentifierÍ‚Íƒ¡i¡<S°MemberExpressionÍ†Í–S°MemberExpressionÍ†ÍMªIdentifierÍ†ÍŠ¤planMªIdentifierÍ‹Í¤viasÂÂMªIdentifierÍÍ–¦lengthÂÂY°UpdateExpressionÍ˜Í›¢++ÂMªIdentifierÍ˜Í™¡iN®BlockStatementÍÍ¯“^³VariableDeclarationÍ¬ÍÃ‘_²VariableDeclaratorÍ²ÍÂMªIdentifierÍ²Í³¡vS°MemberExpressionÍ¶ÍÂS°MemberExpressionÍ¶Í¿MªIdentifierÍ¶Íº¤planMªIdentifierÍ»Í¿¤viasÂÂMªIdentifierÍÀÍÁ¡iÃÂ¥const^³VariableDeclarationÍÑÍO‘_²VariableDeclaratorÍ×ÍNMªIdentifierÍ×ÍØ¡kWµConditionalExpressionÍÛÍNX±LogicalExpressionÍÜÍùS°MemberExpressionÍÜÍãMªIdentifierÍÜÍİ¡vMªIdentifierÍŞÍã¥netIdÂÂ¢&&X°BinaryExpressionÍçÍùS°MemberExpressionÍçÍõS°MemberExpressionÍçÍîMªIdentifierÍçÍè¡vMªIdentifierÍéÍî¥netIdÂÂMªIdentifierÍïÍõ¦lengthÂÂ¡>]§LiteralÍøÍù ¡0S°MemberExpressionÍıÍMªIdentifierÍıÍş¡vMªIdentifierÍÿÍ¥netIdÂÂWµConditionalExpressionÍÍMX±LogicalExpressionÍÍ;S°MemberExpressionÍÍ#MªIdentifierÍÍ¡vMªIdentifierÍÍ#§netNameÂÂ¢&&X°BinaryExpressionÍ'Í;S°MemberExpressionÍ'Í7S°MemberExpressionÍ'Í0MªIdentifierÍ'Í(¡vMªIdentifierÍ)Í0§netNameÂÂMªIdentifierÍ1Í7¦lengthÂÂ¡>]§LiteralÍ:Í; ¡0S°MemberExpressionÍ?ÍHMªIdentifierÍ?Í@¡vMªIdentifierÍAÍH§netNameÂÂ]§LiteralÍKÍM ¢''¥constW«IfStatementÍ]Í¤X°BinaryExpressionÍaÍmS°MemberExpressionÍaÍiMªIdentifierÍaÍb¡kMªIdentifierÍcÍi¦lengthÂÂ¡>]§LiteralÍlÍm ¡0N®BlockStatementÍoÍ¤‘Q³ExpressionStatementÍ‚Í•R®CallExpressionÍ‚Í”S°MemberExpressionÍ‚Í‘MªIdentifierÍ‚Í«planNetKeysMªIdentifierÍÍ‘£addÂÂ‘MªIdentifierÍ’Í“¡kÂÀ^³VariableDeclarationÍ¹Íá‘_²VariableDeclaratorÍ¿ÍàMªIdentifierÍ¿ÍÇ¨needNetsS°MemberExpressionÍÊÍàS°MemberExpressionÍÊÍÙS°MemberExpressionÍÊÍÔMªIdentifierÍÊÍÌ¢bbMªIdentifierÍÍÍÔ§netPlanÂÂMªIdentifierÍÕÍÙ¤netsÂÂMªIdentifierÍÚÍà¦lengthÂÂ¥constW«IfStatementÍëÍ¬X±LogicalExpressionÍïÍ:X°BinaryExpressionÍïÍüMªIdentifierÍïÍ÷¨needNets¢>=]§LiteralÍûÍü¡4¢&&X°BinaryExpressionÍ Í:S°MemberExpressionÍ ÍMªIdentifierÍ Í«planNetKeysMªIdentifierÍÍ¤sizeÂÂ¡<R®CallExpressionÍÍ:S°MemberExpressionÍÍMªIdentifierÍÍ¤MathMªIdentifierÍÍ£maxÂÂ’]§LiteralÍÍ¡2R®CallExpressionÍÍ9S°MemberExpressionÍÍ(MªIdentifierÍÍ#¤MathMªIdentifierÍ$Í(¤ceilÂÂ‘X°BinaryExpressionÍ)Í8MªIdentifierÍ)Í1¨needNets¡*]§LiteralÍ4Í8Ë?Ğ      ¤0.25ÂÂN®BlockStatementÍ<Í¬’Q³ExpressionStatementÍKÍæR®CallExpressionÍKÍåS°MemberExpressionÍKÍVMªIdentifierÍKÍQ¦LoggerMªIdentifierÍRÍV¤warnÂÂ’MªIdentifierÍWÍf¯INSTR_TRACE_TAGX°BinaryExpressionÍhÍäT¯TemplateLiteralÍhÍ±’S°MemberExpressionÍ“Í£MªIdentifierÍ“Í«planNetKeysMªIdentifierÍŸÍ£¤sizeÂÂMªIdentifierÍ§Í¯¨needNets“U¯TemplateElementÍiÍ‘VÙ([AI_PCB] geometry trivial coverage nets=Ù([AI_PCB] geometry trivial coverage nets=ÂU¯TemplateElementÍ¤Í¥V¡/¡/ÂU¯TemplateElementÍ°Í°V  Ã¡+T¯TemplateLiteralÍÅÍä‘S°MemberExpressionÍĞÍâS°MemberExpressionÍĞÍÛMªIdentifierÍĞÍÔ¤planMªIdentifierÍÕÍÛ¦tracksÂÂMªIdentifierÍÜÍâ¦lengthÂÂ’U¯TemplateElementÍÆÍÎV¨ tracks=¨ tracks=ÂU¯TemplateElementÍãÍãV  ÃÂZ¯ReturnStatementÍôÍ¡R®CallExpressionÍûÍ S°MemberExpressionÍûÍb®ThisExpressionÍûÍÿMªIdentifierÍ Í­localFallbackÂÂ’MªIdentifierÍÍ¢bbX°BinaryExpressionÍÍŸT¯TemplateLiteralÍÍR’S°MemberExpressionÍ/Í?MªIdentifierÍ/Í:«planNetKeysMªIdentifierÍ;Í?¤sizeÂÂMªIdentifierÍCÍK¨needNets“U¯TemplateElementÍÍ-Vºgeometry trivial coverage ºgeometry trivial coverage ÂU¯TemplateElementÍ@ÍAV¡/¡/ÂU¯TemplateElementÍLÍQV¥ nets¥ netsÃ¡+T¯TemplateLiteralÍfÍŸ‘S°MemberExpressionÍrÍ„S°MemberExpressionÍrÍ}MªIdentifierÍrÍv¤planMªIdentifierÍwÍ}¦tracksÂÂMªIdentifierÍ~Í„¦lengthÂÂ’U¯TemplateElementÍgÍpV© (tracks=© (tracks=ÂU¯TemplateElementÍ…ÍV») â€” need fuller route set») â€” need fuller route setÃÂÀQ³ExpressionStatementÍÖÍí`´AssignmentExpressionÍÖÍì¡=S°MemberExpressionÍÖÍçS°MemberExpressionÍÖÍàMªIdentifierÍÖÍØ¢bbMªIdentifierÍÙÍà§workDocÂÂMªIdentifierÍáÍç¦tracksÂÂa¯ArrayExpressionÍêÍìQ³ExpressionStatementÍ÷Í`´AssignmentExpressionÍ÷Í¡=S°MemberExpressionÍ÷ÍS°MemberExpressionÍ÷ÍMªIdentifierÍ÷Íù¢bbMªIdentifierÍúÍ§workDocÂÂMªIdentifierÍÍ¤viasÂÂa¯ArrayExpressionÍ	Í^³VariableDeclarationÍÍb‘_²VariableDeclaratorÍÍaMªIdentifierÍÍ£geoR®CallExpressionÍ ÍaMªIdentifierÍ Í3³applyLlmPcbGeometry”S°MemberExpressionÍ4Í>MªIdentifierÍ4Í6¢bbMªIdentifierÍ7Í>§workDocÂÂS°MemberExpressionÍ@ÍNMªIdentifierÍ@ÍB¢bbMªIdentifierÍCÍN«routePolicyÂÂS°MemberExpressionÍPÍZMªIdentifierÍPÍR¢bbMªIdentifierÍSÍZ§netPlanÂÂMªIdentifierÍ\Í`¤planÂ£letQ³ExpressionStatementÍlÍ~`´AssignmentExpressionÍlÍ}¡=S°MemberExpressionÍlÍwMªIdentifierÍlÍn¢bbMªIdentifierÍoÍw¨geometryÂÂMªIdentifierÍzÍ}£geoW«IfStatementÍˆÍŸY¯UnaryExpressionÍŒÍ“¡!ÃS°MemberExpressionÍÍ“MªIdentifierÍÍ£geoMªIdentifierÍ‘Í“¢okÂÂN®BlockStatementÍ•ÍŸ’^³VariableDeclarationÍNÍ˜‘_²VariableDeclaratorÍTÍ—MªIdentifierÍTÍY¥localR®CallExpressionÍ\Í—MªIdentifierÍ\Ío³runPcbGeometryRoute“S°MemberExpressionÍpÍzMªIdentifierÍpÍr¢bbMªIdentifierÍsÍz§workDocÂÂS°MemberExpressionÍ|ÍŠMªIdentifierÍ|Í~¢bbMªIdentifierÍÍŠ«routePolicyÂÂS°MemberExpressionÍŒÍ–MªIdentifierÍŒÍ¢bbMªIdentifierÍÍ–§netPlanÂÂÂ¥constW«IfStatementÍ¦Í”S°MemberExpressionÍªÍ²MªIdentifierÍªÍ¯¥localMªIdentifierÍ°Í²¢okÂÂN®BlockStatementÍ´ÍÔ“Q³ExpressionStatementÍÇÍƒR®CallExpressionÍÇÍ‚S°MemberExpressionÍÇÍÒMªIdentifierÍÇÍÍ¦LoggerMªIdentifierÍÎÍÒ¤warnÂÂ’MªIdentifierÍÓÍâ¯INSTR_TRACE_TAGX°BinaryExpressionÍäÍT¯TemplateLiteralÍäÍ‘U¯TemplateElementÍåÍVÙ;[AI_PCB] stage=geometry LLM fail â†’ local deterministic okÙ;[AI_PCB] stage=geometry LLM fail â†’ local deterministic okÃ¡+T¯TemplateLiteralÍ7Í“S°MemberExpressionÍBÍUS°MemberExpressionÍBÍNMªIdentifierÍBÍG¥localMªIdentifierÍHÍN¦tracksÂÂMªIdentifierÍOÍU¦lengthÂÂS°MemberExpressionÍ^ÍoS°MemberExpressionÍ^ÍhMªIdentifierÍ^Íc¥localMªIdentifierÍdÍh¤viasÂÂMªIdentifierÍiÍo¦lengthÂÂS°MemberExpressionÍuÍMªIdentifierÍuÍx£geoMªIdentifierÍyÍ¦reasonÂÂ”U¯TemplateElementÍ8Í@V¨ tracks=¨ tracks=ÂU¯TemplateElementÍVÍ\V¦ vias=¦ vias=ÂU¯TemplateElementÍpÍsV£ | £ | ÂU¯TemplateElementÍ€Í€V  ÃÂQ³ExpressionStatementÍ•Í¡`´AssignmentExpressionÍ•Í ¡=MªIdentifierÍ•Í˜£geoMªIdentifierÍ›Í ¥localQ³ExpressionStatementÍ³ÍÅ`´AssignmentExpressionÍ³ÍÄ¡=S°MemberExpressionÍ³Í¾MªIdentifierÍ³Íµ¢bbMªIdentifierÍ¶Í¾¨geometryÂÂMªIdentifierÍÁÍÄ£geoW«IfStatementÍçÍ”X±LogicalExpressionÍëÍ€X°BinaryExpressionÍëÍ8X°BinaryExpressionÍëÍS°MemberExpressionÍëÍşS°MemberExpressionÍëÍ÷MªIdentifierÍëÍğ¥localMªIdentifierÍñÍ÷¦tracksÂÂMªIdentifierÍøÍş¦lengthÂÂ¡+S°MemberExpressionÍÍS°MemberExpressionÍÍMªIdentifierÍÍ¥localMªIdentifierÍÍ¤viasÂÂMªIdentifierÍÍ¦lengthÂÂ¡>X°BinaryExpressionÍÍ8S°MemberExpressionÍÍ&S°MemberExpressionÍÍMªIdentifierÍÍ£geoMªIdentifierÍÍ¦tracksÂÂMªIdentifierÍ Í&¦lengthÂÂ¡+S°MemberExpressionÍ)Í8S°MemberExpressionÍ)Í1MªIdentifierÍ)Í,£geoMªIdentifierÍ-Í1¤viasÂÂMªIdentifierÍ2Í8¦lengthÂÂ¢||X°BinaryExpressionÍMÍ€S°MemberExpressionÍMÍfS°MemberExpressionÍMÍ_MªIdentifierÍMÍR¥localMªIdentifierÍSÍ_¬failedNetIdsÂÂMªIdentifierÍ`Íf¦lengthÂÂ¡<S°MemberExpressionÍiÍ€S°MemberExpressionÍiÍyMªIdentifierÍiÍl£geoMªIdentifierÍmÍy¬failedNetIdsÂÂMªIdentifierÍzÍ€¦lengthÂÂN®BlockStatementÍ‚Íª“Q³ExpressionStatementÍ•ÍYR®CallExpressionÍ•ÍXS°MemberExpressionÍ•Í MªIdentifierÍ•Í›¦LoggerMªIdentifierÍœÍ ¤warnÂÂ’MªIdentifierÍ¡Í°¯INSTR_TRACE_TAGX°BinaryExpressionÍ²ÍWT¯TemplateLiteralÍ²Íó‘U¯TemplateElementÍ³ÍòVÙA[AI_PCB] stage=geometry both fail â†’ prefer local (fewer failed)ÙA[AI_PCB] stage=geometry both fail â†’ prefer local (fewer failed)Ã¡+T¯TemplateLiteralÍÍW’S°MemberExpressionÍÍ.S°MemberExpressionÍÍ'MªIdentifierÍÍ£geoMªIdentifierÍÍ'¬failedNetIdsÂÂMªIdentifierÍ(Í.¦lengthÂÂS°MemberExpressionÍ<ÍUS°MemberExpressionÍ<ÍNMªIdentifierÍ<ÍA¥localMªIdentifierÍBÍN¬failedNetIdsÂÂMªIdentifierÍOÍU¦lengthÂÂ“U¯TemplateElementÍÍV© llmFail=© llmFail=ÂU¯TemplateElementÍ/Í:V« localFail=« localFail=ÂU¯TemplateElementÍVÍVV  ÃÂQ³ExpressionStatementÍkÍw`´AssignmentExpressionÍkÍv¡=MªIdentifierÍkÍn£geoMªIdentifierÍqÍv¥localQ³ExpressionStatementÍ‰Í›`´AssignmentExpressionÍ‰Íš¡=S°MemberExpressionÍ‰Í”MªIdentifierÍ‰Í‹¢bbMªIdentifierÍŒÍ”¨geometryÂÂMªIdentifierÍ—Íš£geoN®BlockStatementÍ½Í”‘Q³ExpressionStatementÍĞÍ…R®CallExpressionÍĞÍ„S°MemberExpressionÍĞÍÛMªIdentifierÍĞÍÖ¦LoggerMªIdentifierÍ×ÍÛ¤warnÂÂ’MªIdentifierÍÜÍë¯INSTR_TRACE_TAGX°BinaryExpressionÍíÍƒT¯TemplateLiteralÍíÍ‘U¯TemplateElementÍîÍVÙ0[AI_PCB] stage=geometry local fallback no betterÙ0[AI_PCB] stage=geometry local fallback no betterÃ¡+T¯TemplateLiteralÍ7Íƒ’S°MemberExpressionÍCÍZS°MemberExpressionÍCÍSMªIdentifierÍCÍF£geoMªIdentifierÍGÍS¬failedNetIdsÂÂMªIdentifierÍTÍZ¦lengthÂÂS°MemberExpressionÍhÍS°MemberExpressionÍhÍzMªIdentifierÍhÍm¥localMªIdentifierÍnÍz¬failedNetIdsÂÂMªIdentifierÍ{Í¦lengthÂÂ“U¯TemplateElementÍ8ÍAV© llmFail=© llmFail=ÂU¯TemplateElementÍ[ÍfV« localFail=« localFail=ÂU¯TemplateElementÍ‚Í‚V  ÃÂÀW«IfStatementÍ©ÍY¯UnaryExpressionÍ­Í´¡!ÃS°MemberExpressionÍ®Í´MªIdentifierÍ®Í±£geoMªIdentifierÍ²Í´¢okÂÂN®BlockStatementÍ¶Í”^³VariableDeclarationÍÅÍë‘_²VariableDeclaratorÍËÍêMªIdentifierÍËÍÒ§detailsX±LogicalExpressionÍÕÍêS°MemberExpressionÍÕÍäMªIdentifierÍÕÍØ£geoMªIdentifierÍÙÍä«failDetailsÂÂ¢??a¯ArrayExpressionÍèÍê¥constd¬ForStatementÍùÍ•^³VariableDeclarationÍşÍ‘_²VariableDeclaratorÍÍMªIdentifierÍÍ¡i]§LiteralÍÍ ¡0£letX±LogicalExpressionÍ	Í$X°BinaryExpressionÍ	ÍMªIdentifierÍ	Í
-¡i¡<S°MemberExpressionÍÍMªIdentifierÍÍ§detailsMªIdentifierÍÍ¦lengthÂÂ¢&&X°BinaryExpressionÍÍ$MªIdentifierÍÍ ¡i¡<]§LiteralÍ#Í$¡8Y°UpdateExpressionÍ&Í)¢++ÂMªIdentifierÍ&Í'¡iN®BlockStatementÍ+Í•’^³VariableDeclarationÍ>ÍS‘_²VariableDeclaratorÍDÍRMªIdentifierÍDÍE¡dS°MemberExpressionÍHÍRMªIdentifierÍHÍO§detailsMªIdentifierÍPÍQ¡iÃÂ¥constQ³ExpressionStatementÍeÍ†R®CallExpressionÍeÍ…S°MemberExpressionÍeÍpMªIdentifierÍeÍk¦LoggerMªIdentifierÍlÍp¤warnÂÂ’MªIdentifierÍqÍ€¯INSTR_TRACE_TAGX°BinaryExpressionÍ‚Í„X°BinaryExpressionÍ‚ÍHX°BinaryExpressionÍ‚ÍT¯TemplateLiteralÍ‚Í´’S°MemberExpressionÍÍ§MªIdentifierÍÍŸ¡dMªIdentifierÍ Í§§netNameÂÂS°MemberExpressionÍ«Í²MªIdentifierÍ«Í¬¡dMªIdentifierÍ­Í²¥causeÂÂ“U¯TemplateElementÍƒÍœV¹[AI_PCB] geo_fail_detail ¹[AI_PCB] geo_fail_detail ÂU¯TemplateElementÍ¨Í©V¡ ¡ ÂU¯TemplateElementÍ³Í³V  Ã¡+T¯TemplateLiteralÍÌÍ’R®CallExpressionÍÑÍåS°MemberExpressionÍÑÍÛMªIdentifierÍÑÍÕ¤MathMªIdentifierÍÖÍÛ¥roundÂÂ‘S°MemberExpressionÍÜÍäS°MemberExpressionÍÜÍâMªIdentifierÍÜÍİ¡dMªIdentifierÍŞÍâ¤fromÂÂMªIdentifierÍãÍä¡xÂÂÂR®CallExpressionÍéÍıS°MemberExpressionÍéÍóMªIdentifierÍéÍí¤MathMªIdentifierÍîÍó¥roundÂÂ‘S°MemberExpressionÍôÍüS°MemberExpressionÍôÍúMªIdentifierÍôÍõ¡dMªIdentifierÍöÍú¤fromÂÂMªIdentifierÍûÍü¡yÂÂÂ“U¯TemplateElementÍÍÍÏV¢ (¢ (ÂU¯TemplateElementÍæÍçV¡,¡,ÂU¯TemplateElementÍşÍ V¤)â†’¤)â†’Ã¡+T¯TemplateLiteralÍÍH’R®CallExpressionÍÍ/S°MemberExpressionÍÍ'MªIdentifierÍÍ!¤MathMªIdentifierÍ"Í'¥roundÂÂ‘S°MemberExpressionÍ(Í.S°MemberExpressionÍ(Í,MªIdentifierÍ(Í)¡dMªIdentifierÍ*Í,¢toÂÂMªIdentifierÍ-Í.¡xÂÂÂR®CallExpressionÍ3ÍES°MemberExpressionÍ3Í=MªIdentifierÍ3Í7¤MathMªIdentifierÍ8Í=¥roundÂÂ‘S°MemberExpressionÍ>ÍDS°MemberExpressionÍ>ÍBMªIdentifierÍ>Í?¡dMªIdentifierÍ@ÍB¢toÂÂMªIdentifierÍCÍD¡yÂÂÂ“U¯TemplateElementÍÍV¡(¡(ÂU¯TemplateElementÍ0Í1V¡,¡,ÂU¯TemplateElementÍFÍGV¡)¡)Ã¡+WµConditionalExpressionÍaÍƒS°MemberExpressionÍaÍjMªIdentifierÍaÍb¡dMªIdentifierÍcÍj§blockerÂÂT¯TemplateLiteralÍmÍ~‘S°MemberExpressionÍsÍ|MªIdentifierÍsÍt¡dMªIdentifierÍuÍ|§blockerÂÂ’U¯TemplateElementÍnÍqV£ | £ | ÂU¯TemplateElementÍ}Í}V  Ã]§LiteralÍÍƒ ¢''ÂW«IfStatementÍ£Í0X±LogicalExpressionÍ§ÍÓX°BinaryExpressionÍ§Í¼S°MemberExpressionÍ§Í¸S°MemberExpressionÍ§Í±MªIdentifierÍ§Íª£geoMªIdentifierÍ«Í±¦tracksÂÂMªIdentifierÍ²Í¸¦lengthÂÂ¡>]§LiteralÍ»Í¼ ¡0¢||X°BinaryExpressionÍÀÍÓS°MemberExpressionÍÀÍÏS°MemberExpressionÍÀÍÈMªIdentifierÍÀÍÃ£geoMªIdentifierÍÄÍÈ¤viasÂÂMªIdentifierÍÉÍÏ¦lengthÂÂ¡>]§LiteralÍÒÍÓ ¡0N®BlockStatementÍÕÍ®’Q³ExpressionStatementÍèÍR®CallExpressionÍèÍMªIdentifierÍèÍÿ·commitGeometryToWorkDoc“MªIdentifierÍ Í¢bbS°MemberExpressionÍÍMªIdentifierÍÍ£geoMªIdentifierÍÍ¦tracksÂÂS°MemberExpressionÍÍMªIdentifierÍÍ£geoMªIdentifierÍÍ¤viasÂÂÂQ³ExpressionStatementÍ,ÍŸR®CallExpressionÍ,ÍS°MemberExpressionÍ,Í7MªIdentifierÍ,Í2¦LoggerMªIdentifierÍ3Í7¤warnÂÂ’MªIdentifierÍ8ÍG¯INSTR_TRACE_TAGT¯TemplateLiteralÍIÍ’S°MemberExpressionÍzÍ‹S°MemberExpressionÍzÍ„MªIdentifierÍzÍ}£geoMªIdentifierÍ~Í„¦tracksÂÂMªIdentifierÍ…Í‹¦lengthÂÂS°MemberExpressionÍ‘Í›MªIdentifierÍ‘Í”£geoMªIdentifierÍ•Í›¦reasonÂÂ“U¯TemplateElementÍJÍxVÙ.[AI_PCB] stage=geometry partial commit tracks=Ù.[AI_PCB] stage=geometry partial commit tracks=ÂU¯TemplateElementÍŒÍV£ | £ | ÂU¯TemplateElementÍœÍœV  ÃÂN®BlockStatementÍÁÍ0‘Q³ExpressionStatementÍÔÍ!R®CallExpressionÍÔÍ S°MemberExpressionÍÔÍßMªIdentifierÍÔÍÚ¦LoggerMªIdentifierÍÛÍß¤warnÂÂ’MªIdentifierÍàÍï¯INSTR_TRACE_TAGT¯TemplateLiteralÍñÍ‘S°MemberExpressionÍÍMªIdentifierÍÍ£geoMªIdentifierÍÍ¦reasonÂÂ’U¯TemplateElementÍòÍV¿[AI_PCB] stage=geometry fail | ¿[AI_PCB] stage=geometry fail | ÂU¯TemplateElementÍÍV  ÃÂZ¯ReturnStatementÍ>Í„[°ObjectExpressionÍEÍƒ“\¨PropertyÍGÍPÂÂÂMªIdentifierÍGÍI¢ok]§LiteralÍKÍPÂ¥false¤init\¨PropertyÍRÍdÂÂÂMªIdentifierÍRÍX¦reasonS°MemberExpressionÍZÍdMªIdentifierÍZÍ]£geoMªIdentifierÍ^Íd¦reasonÂÂ¤init\¨PropertyÍfÍÂÂÂMªIdentifierÍfÍr¬residualKind]§LiteralÍtÍ«signal_fail­'signal_fail'¤initÀQ³ExpressionStatementÍ™ÍËR®CallExpressionÍ™ÍÊMªIdentifierÍ™Í°·commitGeometryToWorkDoc“MªIdentifierÍ±Í³¢bbS°MemberExpressionÍµÍ¿MªIdentifierÍµÍ¸£geoMªIdentifierÍ¹Í¿¦tracksÂÂS°MemberExpressionÍÁÍÉMªIdentifierÍÁÍÄ£geoMªIdentifierÍÅÍÉ¤viasÂÂÂQ³ExpressionStatementÍÕÍîR®CallExpressionÍÕÍíS°MemberExpressionÍÕÍáMªIdentifierÍÕÍ×¢bbMªIdentifierÍØÍá©markStageÂÂ‘]§LiteralÍâÍì¨geometryª'geometry'ÂQ³ExpressionStatementÍøÍ¸R®CallExpressionÍøÍ·S°MemberExpressionÍøÍMªIdentifierÍøÍş¦LoggerMªIdentifierÍÿÍ¤infoÂÂ’MªIdentifierÍÍ¯INSTR_TRACE_TAGX°BinaryExpressionÍÍ¶T¯TemplateLiteralÍÍe’S°MemberExpressionÍ:ÍKS°MemberExpressionÍ:ÍDMªIdentifierÍ:Í=£geoMªIdentifierÍ>ÍD¦tracksÂÂMªIdentifierÍEÍK¦lengthÂÂS°MemberExpressionÍTÍcS°MemberExpressionÍTÍ\MªIdentifierÍTÍW£geoMªIdentifierÍXÍ\¤viasÂÂMªIdentifierÍ]Íc¦lengthÂÂ“U¯TemplateElementÍÍ8VÙ"[AI_PCB] stage=geometry ok tracks=Ù"[AI_PCB] stage=geometry ok tracks=ÂU¯TemplateElementÍLÍRV¦ vias=¦ vias=ÂU¯TemplateElementÍdÍdV  Ã¡+T¯TemplateLiteralÍuÍ¶‘WµConditionalExpressionÍzÍ³X°BinaryExpressionÍzÍS°MemberExpressionÍzÍ„MªIdentifierÍzÍ}£geoMªIdentifierÍ~Í„¦reasonÂÂ£===]§LiteralÍ‰Í¢ok¤'ok']§LiteralÍÍ›©LLM paths«'LLM paths']§LiteralÍÍ³³local deterministicµ'local deterministic'’U¯TemplateElementÍvÍxV¢ (¢ (ÂU¯TemplateElementÍ´ÍµV¡)¡)ÃÂZ¯ReturnStatementÍÂÍä[°ObjectExpressionÍÉÍã’\¨PropertyÍËÍÓÂÂÂMªIdentifierÍËÍÍ¢ok]§LiteralÍÏÍÓÃ¤true¤init\¨PropertyÍÕÍáÂÂÂMªIdentifierÍÕÍÛ¦reason]§LiteralÍİÍá¢ok¤'ok'¤initO°MethodDefinitionÍ¹Í%eÂÂMªIdentifierÍ¹ÍÆ­localFallback¦methodP²FunctionExpressionÍÆÍ%eÀÂÂÂ’MªIdentifierÍÇÍÉ¢bbMªIdentifierÍËÍÒ§llmNoteN®BlockStatementÍÔÍ%ešW«IfStatementÍßÍgX±LogicalExpressionÍãÍX±LogicalExpressionÍãÍY¯UnaryExpressionÍãÍî¡!ÃS°MemberExpressionÍäÍîMªIdentifierÍäÍæ¢bbMªIdentifierÍçÍî§workDocÂÂ¢||Y¯UnaryExpressionÍòÍ¡!ÃS°MemberExpressionÍóÍMªIdentifierÍóÍõ¢bbMªIdentifierÍöÍ«routePolicyÂÂ¢||Y¯UnaryExpressionÍÍ¡!ÃS°MemberExpressionÍÍMªIdentifierÍÍ¢bbMªIdentifierÍ	Í§netPlanÂÂN®BlockStatementÍÍg‘Z¯ReturnStatementÍ!Í\[°ObjectExpressionÍ(Í[’\¨PropertyÍ*Í3ÂÂÂMªIdentifierÍ*Í,¢ok]§LiteralÍ.Í3Â¥false¤init\¨PropertyÍ5ÍYÂÂÂMªIdentifierÍ5Í;¦reason]§LiteralÍ=ÍYºmissing policy/netPlan/doc¼'missing policy/netPlan/doc'¤initÀQ³ExpressionStatementÍqÍˆ`´AssignmentExpressionÍqÍ‡¡=S°MemberExpressionÍqÍ‚S°MemberExpressionÍqÍ{MªIdentifierÍqÍs¢bbMªIdentifierÍtÍ{§workDocÂÂMªIdentifierÍ|Í‚¦tracksÂÂa¯ArrayExpressionÍ…Í‡Q³ExpressionStatementÍ’Í§`´AssignmentExpressionÍ’Í¦¡=S°MemberExpressionÍ’Í¡S°MemberExpressionÍ’ÍœMªIdentifierÍ’Í”¢bbMªIdentifierÍ•Íœ§workDocÂÂMªIdentifierÍÍ¡¤viasÂÂa¯ArrayExpressionÍ¤Í¦^³VariableDeclarationÍ±Íû‘_²VariableDeclaratorÍ·ÍúMªIdentifierÍ·Í¼¥localR®CallExpressionÍ¿ÍúMªIdentifierÍ¿ÍÒ³runPcbGeometryRoute“S°MemberExpressionÍÓÍİMªIdentifierÍÓÍÕ¢bbMªIdentifierÍÖÍİ§workDocÂÂS°MemberExpressionÍßÍíMªIdentifierÍßÍá¢bbMªIdentifierÍâÍí«routePolicyÂÂS°MemberExpressionÍïÍùMªIdentifierÍïÍñ¢bbMªIdentifierÍòÍù§netPlanÂÂÂ¥constQ³ExpressionStatementÍ Í `´AssignmentExpressionÍ Í ¡=S°MemberExpressionÍ Í MªIdentifierÍ Í ¢bbMªIdentifierÍ Í ¨geometryÂÂMªIdentifierÍ Í ¥localW«IfStatementÍ #Í!S°MemberExpressionÍ 'Í /MªIdentifierÍ 'Í ,¥localMªIdentifierÍ -Í /¢okÂÂN®BlockStatementÍ 1Í!”Q³ExpressionStatementÍ @Í vR®CallExpressionÍ @Í uMªIdentifierÍ @Í W·commitGeometryToWorkDoc“MªIdentifierÍ XÍ Z¢bbS°MemberExpressionÍ \Í hMªIdentifierÍ \Í a¥localMªIdentifierÍ bÍ h¦tracksÂÂS°MemberExpressionÍ jÍ tMªIdentifierÍ jÍ o¥localMªIdentifierÍ pÍ t¤viasÂÂÂQ³ExpressionStatementÍ „Í R®CallExpressionÍ „Í œS°MemberExpressionÍ „Í MªIdentifierÍ „Í †¢bbMªIdentifierÍ ‡Í ©markStageÂÂ‘]§LiteralÍ ‘Í ›¨geometryª'geometry'ÂQ³ExpressionStatementÍ «Í!cR®CallExpressionÍ «Í!bS°MemberExpressionÍ «Í ¶MªIdentifierÍ «Í ±¦LoggerMªIdentifierÍ ²Í ¶¤warnÂÂ’MªIdentifierÍ ·Í Æ¯INSTR_TRACE_TAGX°BinaryExpressionÍ ÈÍ!aT¯TemplateLiteralÍ ÈÍ!‘S°MemberExpressionÍ!Í!S°MemberExpressionÍ!Í!MªIdentifierÍ!Í!¥localMªIdentifierÍ!Í!¦tracksÂÂMªIdentifierÍ!Í!¦lengthÂÂ’U¯TemplateElementÍ ÉÍ ÿVÙ6[AI_PCB] stage=geometry local deterministic ok tracks=Ù6[AI_PCB] stage=geometry local deterministic ok tracks=ÂU¯TemplateElementÍ!Í!V  Ã¡+T¯TemplateLiteralÍ!*Í!a’S°MemberExpressionÍ!3Í!DS°MemberExpressionÍ!3Í!=MªIdentifierÍ!3Í!8¥localMªIdentifierÍ!9Í!=¤viasÂÂMªIdentifierÍ!>Í!D¦lengthÂÂMªIdentifierÍ!XÍ!_§llmNote“U¯TemplateElementÍ!+Í!1V¦ vias=¦ vias=ÂU¯TemplateElementÍ!EÍ!VV± | LLM unusable: ± | LLM unusable: ÂU¯TemplateElementÍ!`Í!`V  ÃÂZ¯ReturnStatementÍ!qÍ!“[°ObjectExpressionÍ!xÍ!’’\¨PropertyÍ!zÍ!‚ÂÂÂMªIdentifierÍ!zÍ!|¢ok]§LiteralÍ!~Í!‚Ã¤true¤init\¨PropertyÍ!„Í!ÂÂÂMªIdentifierÍ!„Í!Š¦reason]§LiteralÍ!ŒÍ!¢ok¤'ok'¤initÀ^³VariableDeclarationÍ!¨Í!Ğ‘_²VariableDeclaratorÍ!®Í!ÏMªIdentifierÍ!®Í!µ§detailsX±LogicalExpressionÍ!¸Í!ÏS°MemberExpressionÍ!¸Í!ÉMªIdentifierÍ!¸Í!½¥localMªIdentifierÍ!¾Í!É«failDetailsÂÂ¢??a¯ArrayExpressionÍ!ÍÍ!Ï¥constd¬ForStatementÍ!ÚÍ#^^³VariableDeclarationÍ!ßÍ!è‘_²VariableDeclaratorÍ!ãÍ!èMªIdentifierÍ!ãÍ!ä¡i]§LiteralÍ!çÍ!è ¡0£letX±LogicalExpressionÍ!êÍ"X°BinaryExpressionÍ!êÍ!üMªIdentifierÍ!êÍ!ë¡i¡<S°MemberExpressionÍ!îÍ!üMªIdentifierÍ!îÍ!õ§detailsMªIdentifierÍ!öÍ!ü¦lengthÂÂ¢&&X°BinaryExpressionÍ" Í"MªIdentifierÍ" Í"¡i¡<]§LiteralÍ"Í"¡8Y°UpdateExpressionÍ"Í"
-¢++ÂMªIdentifierÍ"Í"¡iN®BlockStatementÍ"Í#^’^³VariableDeclarationÍ"Í"0‘_²VariableDeclaratorÍ"!Í"/MªIdentifierÍ"!Í""¡dS°MemberExpressionÍ"%Í"/MªIdentifierÍ"%Í",§detailsMªIdentifierÍ"-Í".¡iÃÂ¥constQ³ExpressionStatementÍ">Í#SR®CallExpressionÍ">Í#RS°MemberExpressionÍ">Í"IMªIdentifierÍ">Í"D¦LoggerMªIdentifierÍ"EÍ"I¤warnÂÂ’MªIdentifierÍ"JÍ"Y¯INSTR_TRACE_TAGX°BinaryExpressionÍ"[Í#QX°BinaryExpressionÍ"[Í#X°BinaryExpressionÍ"[Í"ÖT¯TemplateLiteralÍ"[Í"’S°MemberExpressionÍ"wÍ"€MªIdentifierÍ"wÍ"x¡dMªIdentifierÍ"yÍ"€§netNameÂÂS°MemberExpressionÍ"„Í"‹MªIdentifierÍ"„Í"…¡dMªIdentifierÍ"†Í"‹¥causeÂÂ“U¯TemplateElementÍ"\Í"uV¹[AI_PCB] geo_fail_detail ¹[AI_PCB] geo_fail_detail ÂU¯TemplateElementÍ"Í"‚V¡ ¡ ÂU¯TemplateElementÍ"ŒÍ"ŒV  Ã¡+T¯TemplateLiteralÍ"¡Í"Ö’R®CallExpressionÍ"¦Í"ºS°MemberExpressionÍ"¦Í"°MªIdentifierÍ"¦Í"ª¤MathMªIdentifierÍ"«Í"°¥roundÂÂ‘S°MemberExpressionÍ"±Í"¹S°MemberExpressionÍ"±Í"·MªIdentifierÍ"±Í"²¡dMªIdentifierÍ"³Í"·¤fromÂÂMªIdentifierÍ"¸Í"¹¡xÂÂÂR®CallExpressionÍ"¾Í"ÒS°MemberExpressionÍ"¾Í"ÈMªIdentifierÍ"¾Í"Â¤MathMªIdentifierÍ"ÃÍ"È¥roundÂÂ‘S°MemberExpressionÍ"ÉÍ"ÑS°MemberExpressionÍ"ÉÍ"ÏMªIdentifierÍ"ÉÍ"Ê¡dMªIdentifierÍ"ËÍ"Ï¤fromÂÂMªIdentifierÍ"ĞÍ"Ñ¡yÂÂÂ“U¯TemplateElementÍ"¢Í"¤V¢ (¢ (ÂU¯TemplateElementÍ"»Í"¼V¡,¡,ÂU¯TemplateElementÍ"ÓÍ"ÕV¤)â†’¤)â†’Ã¡+T¯TemplateLiteralÍ"êÍ#’R®CallExpressionÍ"îÍ# S°MemberExpressionÍ"îÍ"øMªIdentifierÍ"îÍ"ò¤MathMªIdentifierÍ"óÍ"ø¥roundÂÂ‘S°MemberExpressionÍ"ùÍ"ÿS°MemberExpressionÍ"ùÍ"ıMªIdentifierÍ"ùÍ"ú¡dMªIdentifierÍ"ûÍ"ı¢toÂÂMªIdentifierÍ"şÍ"ÿ¡xÂÂÂR®CallExpressionÍ#Í#S°MemberExpressionÍ#Í#MªIdentifierÍ#Í#¤MathMªIdentifierÍ#	Í#¥roundÂÂ‘S°MemberExpressionÍ#Í#S°MemberExpressionÍ#Í#MªIdentifierÍ#Í#¡dMªIdentifierÍ#Í#¢toÂÂMªIdentifierÍ#Í#¡yÂÂÂ“U¯TemplateElementÍ"ëÍ"ìV¡(¡(ÂU¯TemplateElementÍ#Í#V¡,¡,ÂU¯TemplateElementÍ#Í#V¡)¡)Ã¡+WµConditionalExpressionÍ#.Í#PS°MemberExpressionÍ#.Í#7MªIdentifierÍ#.Í#/¡dMªIdentifierÍ#0Í#7§blockerÂÂT¯TemplateLiteralÍ#:Í#K‘S°MemberExpressionÍ#@Í#IMªIdentifierÍ#@Í#A¡dMªIdentifierÍ#BÍ#I§blockerÂÂ’U¯TemplateElementÍ#;Í#>V£ | £ | ÂU¯TemplateElementÍ#JÍ#JV  Ã]§LiteralÍ#NÍ#P ¢''ÂW«IfStatementÍ#hÍ%X±LogicalExpressionÍ#lÍ#œX°BinaryExpressionÍ#lÍ#ƒS°MemberExpressionÍ#lÍ#S°MemberExpressionÍ#lÍ#xMªIdentifierÍ#lÍ#q¥localMªIdentifierÍ#rÍ#x¦tracksÂÂMªIdentifierÍ#yÍ#¦lengthÂÂ¡>]§LiteralÍ#‚Í#ƒ ¡0¢||X°BinaryExpressionÍ#‡Í#œS°MemberExpressionÍ#‡Í#˜S°MemberExpressionÍ#‡Í#‘MªIdentifierÍ#‡Í#Œ¥localMªIdentifierÍ#Í#‘¤viasÂÂMªIdentifierÍ#’Í#˜¦lengthÂÂ¡>]§LiteralÍ#›Í#œ ¡0N®BlockStatementÍ#Í$y’Q³ExpressionStatementÍ#­Í#ãR®CallExpressionÍ#­Í#âMªIdentifierÍ#­Í#Ä·commitGeometryToWorkDoc“MªIdentifierÍ#ÅÍ#Ç¢bbS°MemberExpressionÍ#ÉÍ#ÕMªIdentifierÍ#ÉÍ#Î¥localMªIdentifierÍ#ÏÍ#Õ¦tracksÂÂS°MemberExpressionÍ#×Í#áMªIdentifierÍ#×Í#Ü¥localMªIdentifierÍ#İÍ#á¤viasÂÂÂQ³ExpressionStatementÍ#ñÍ$nR®CallExpressionÍ#ñÍ$mS°MemberExpressionÍ#ñÍ#üMªIdentifierÍ#ñÍ#÷¦LoggerMªIdentifierÍ#øÍ#ü¤warnÂÂ’MªIdentifierÍ#ıÍ$¯INSTR_TRACE_TAGT¯TemplateLiteralÍ$Í$l’S°MemberExpressionÍ$EÍ$XS°MemberExpressionÍ$EÍ$QMªIdentifierÍ$EÍ$J¥localMªIdentifierÍ$KÍ$Q¦tracksÂÂMªIdentifierÍ$RÍ$X¦lengthÂÂS°MemberExpressionÍ$^Í$jMªIdentifierÍ$^Í$c¥localMªIdentifierÍ$dÍ$j¦reasonÂÂ“U¯TemplateElementÍ$Í$CVÙ4[AI_PCB] stage=geometry local partial commit tracks=Ù4[AI_PCB] stage=geometry local partial commit tracks=ÂU¯TemplateElementÍ$YÍ$\V£ | £ | ÂU¯TemplateElementÍ$kÍ$kV  ÃÂN®BlockStatementÍ$ˆÍ%‘Q³ExpressionStatementÍ$—Í%R®CallExpressionÍ$—Í% S°MemberExpressionÍ$—Í$¢MªIdentifierÍ$—Í$¦LoggerMªIdentifierÍ$Í$¢¤warnÂÂ’MªIdentifierÍ$£Í$²¯INSTR_TRACE_TAGT¯TemplateLiteralÍ$´Í$ÿ’S°MemberExpressionÍ$ÖÍ$âMªIdentifierÍ$ÖÍ$Û¥localMªIdentifierÍ$ÜÍ$â¦reasonÂÂMªIdentifierÍ$öÍ$ı§llmNote“U¯TemplateElementÍ$µÍ$ÔV¿[AI_PCB] stage=geometry fail | ¿[AI_PCB] stage=geometry fail | ÂU¯TemplateElementÍ$ãÍ$ôV± | LLM unusable: ± | LLM unusable: ÂU¯TemplateElementÍ$şÍ$şV  ÃÂZ¯ReturnStatementÍ%Í%^[°ObjectExpressionÍ%Í%]“\¨PropertyÍ%Í%(ÂÂÂMªIdentifierÍ%Í%!¢ok]§LiteralÍ%#Í%(Â¥false¤init\¨PropertyÍ%*Í%>ÂÂÂMªIdentifierÍ%*Í%0¦reasonS°MemberExpressionÍ%2Í%>MªIdentifierÍ%2Í%7¥localMªIdentifierÍ%8Í%>¦reasonÂÂ¤init\¨PropertyÍ%@Í%[ÂÂÂMªIdentifierÍ%@Í%L¬residualKind]§LiteralÍ%NÍ%[«signal_fail­'signal_fail'¤initÀ—Ôre•¤type¥start£endªspecifiers¦source±ImportDeclarationÌEÌ ”Ôrf•¤type¥start£end¨imported¥local¯ImportSpecifierÌNÌTMªIdentifierÌNÌT¦LoggerMªIdentifierÌNÌT¦Loggerf¯ImportSpecifierÌVÌeMªIdentifierÌVÌe¯INSTR_TRACE_TAGMªIdentifierÌVÌe¯INSTR_TRACE_TAGf¯ImportSpecifierÌgÌzMªIdentifierÌgÌz³applyLlmPcbGeometryMªIdentifierÌgÌz³applyLlmPcbGeometryf¯ImportSpecifierÌ|ÌMªIdentifierÌ|Ì³runPcbGeometryRouteMªIdentifierÌ|Ì³runPcbGeometryRoute]§LiteralÌ—ÌŸ¦common¨'common'e±ImportDeclarationÌ¢ÌÜ‘f¯ImportSpecifierÌ«Ì·MªIdentifierÌ«Ì·¬PromptLoaderMªIdentifierÌ«Ì·¬PromptLoader]§LiteralÌ¿ÌÛº../../prompts/PromptLoader¼'../../prompts/PromptLoader'e±ImportDeclarationÌŞÍ‘f¯ImportSpecifierÌçÌşMªIdentifierÌçÌş·commitGeometryToWorkDocMªIdentifierÌçÌş·commitGeometryToWorkDoc]§LiteralÍÍ´./PcbRouteBlackboard¶'./PcbRouteBlackboard'e±ImportDeclarationÍÍU‘f¯ImportSpecifierÍ(Í8MªIdentifierÍ(Í8°PcbDocSummarizerMªIdentifierÍ(Í8°PcbDocSummarizer]§LiteralÍ@ÍT²./PcbDocSummarizer´'./PcbDocSummarizer'e±ImportDeclarationÍWÍ‘f¯ImportSpecifierÍ`ÍtMªIdentifierÍ`Ít´parsePcbGeometryPlanMªIdentifierÍ`Ít´parsePcbGeometryPlan]§LiteralÍ|Í¯./PcbLlmParsers±'./PcbLlmParsers'e±ImportDeclarationÍÍÁ‘f¯ImportSpecifierÍ™Í©MªIdentifierÍ™Í©°pcbStageChatOptsMªIdentifierÍ™Í©°pcbStageChatOpts]§LiteralÍ±ÍÀ­./PcbChatOpts¯'./PcbChatOpts'e±ImportDeclarationÍÃÍ’f¯ImportSpecifierÍÌÍÚMªIdentifierÍÌÍÚ®countFloatPadsMªIdentifierÍÌÍÚ®countFloatPadsf¯ImportSpecifierÍÜÍğMªIdentifierÍÜÍğ´pcbImpureReplyReasonMªIdentifierÍÜÍğ´pcbImpureReplyReason]§LiteralÍøÍ²./PcbLlmReplyGuard´'./PcbLlmReplyGuard'

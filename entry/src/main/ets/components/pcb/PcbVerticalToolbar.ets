@@ -23,7 +23,6 @@ export struct PcbVerticalToolbar {
   onUpdatePcb: () => void = () => {};
   onDrc: () => void = () => {};
   onAutoRoute: () => void = () => {};
-  onAiRoute: () => void = () => {};
   onCopy: () => void = () => {};
   onPaste: () => void = () => {};
 
@@ -184,13 +183,6 @@ export struct PcbVerticalToolbar {
           showLabel: false,
           btnSize: 32,
           onAction: () => { this.onAutoRoute(); }
-        })
-        ProteusToolButton({
-          iconName: ProteusIconName.AI_ROUTE,
-          tooltip: 'AI 布线面板 (F9)',
-          showLabel: false,
-          btnSize: 32,
-          onAction: () => { this.onAiRoute(); }
         })
       }
       .width('100%')

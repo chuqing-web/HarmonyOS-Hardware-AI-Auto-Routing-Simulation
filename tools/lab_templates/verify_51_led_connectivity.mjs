@@ -25,11 +25,11 @@ for (let i = 0; i < 8; i++) {
   const hasRl = (a?.pinIds || []).some((r) => /:2:|:1:/.test(r) || r.includes(':2'));
   const hasLedA = (a?.pinIds || []).some((r) => r.includes(':A'));
   if (a && (!hasLedA || a.pinIds.length < 2)) issues.push(`L${i}_A missing R–LED.A`);
-  // cathode: stub+label OK — must still bind LED.K and MCU.P*
+  // cathode: stub+label OK — must still bind LED.K and MCU.P1.i
   const hasLedK = (k?.pinIds || []).some((r) => r.includes(':K'));
-  const hasMcuP = (k?.pinIds || []).some((r) => new RegExp(`:P${i + 1}:`).test(r));
+  const hasMcuP = (k?.pinIds || []).some((r) => new RegExp(`:P1\\.${i}:`).test(r));
   if (k && (!hasLedK || !hasMcuP)) {
-    issues.push(`L${i}_K missing LED.K or MCU.P${i + 1}`);
+    issues.push(`L${i}_K missing LED.K or MCU.P1.${i}`);
   }
 }
 const m1 = doc.components.find((c) => c.refDes === 'M1');

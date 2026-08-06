@@ -8,6 +8,10 @@ export interface PlacementApplyResult {
     placedCount: number;
     reason: string;
 }
+/** revise 模式：允许在现有位姿附近微调，关闭 echo 门禁 */
+export interface PlacementApplyOptions {
+    allowEcho?: boolean;
+}
 interface BoardBounds {
     minX: number;
     minY: number;
@@ -100,8 +104,8 @@ function validateGroups(plan: PcbPlacementPlan, byId: Map<string, PcbFootprintIn
         return '';
     }
     const boardDiag = Math.sqrt(Math.pow(bounds.maxX - bounds.minX, 2) + Math.pow(bounds.maxY - bounds.minY, 2));
-    // 0.55 过严：继电器排等合法功能组常差几 mil 被否（如 1414>1409）
-    const maxSpan = Math.max(boardDiag * 0.72, 400);
+    // 功能组须紧凑：0.48×对角线；过散则否决逼 LLM 重排
+    const maxSpan = Math.max(boardDiag * 0.48, 320);
     for (let gi = 0; gi < groups.length; gi++) {
         const g: PcbPlacementGroup = groups[gi];
         // 安装孔由系统钉四角，对角跨度≈板对角线，禁止按功能组聚集规则否决
@@ -198,7 +202,7 @@ function applyLlmBoardSize(doc: PcbDocument, widthMil: number, heightMil: number
         ` mounts=${Math.min(mounts.length, corners.length)}`);
     return '';
 }
-export function applyPcbPlacementPlan(doc: PcbDocument, plan: PcbPlacementPlan): PlacementApplyResult {
+export function applyPcbPlacementPlan(doc: PcbDocument, plan: PcbPlacementPlan, opts?: PlacementApplyOptions): PlacementApplyResult {
     if (!plan.fromLlm) {
         return { ok: false, placedCount: 0, reason: 'placement plan not from LLM' };
     }
@@ -272,6 +276,17 @@ export function applyPcbPlacementPlan(doc: PcbDocument, plan: PcbPlacementPlan):
                 reason: `LLM placement out of board: ${fp.refDes} (${item.x},${item.y})`
             };
         }
+        // 功能封装远离板边（安装孔除外）
+        const edgeInset = 90;
+        if (!isMountHole(fp) &&
+            (item.x < bounds.minX + edgeInset || item.x > bounds.maxX - edgeInset ||
+                item.y < bounds.minY + edgeInset || item.y > bounds.maxY - edgeInset)) {
+            return {
+                ok: false, placedCount: 0,
+                reason: `LLM placement too close to board edge: ${fp.refDes} ` +
+                    `(${Math.round(item.x)},${Math.round(item.y)}) inset=${edgeInset}`
+            };
+        }
         const pend: PendingPlacement = {
             fp: fp,
             x: item.x,
@@ -291,7 +306,10 @@ export function applyPcbPlacementPlan(doc: PcbDocument, plan: PcbPlacementPlan):
             unlocked++;
         }
     }
-    if (unlocked > 0 && pending.length < unlocked) {
+    const grid = doc.metadata.gridSize ?? 5;
+    const allowEcho = opts?.allowEcho === true;
+    // revise/auto 模式允许增量微调（qa re-place 等场景）；full 模式须全覆盖
+    if (unlocked > 0 && pending.length < unlocked && !allowEcho) {
         const unkHint = skippedUnknown.length > 0
             ? `; skippedUnknown=${skippedUnknown.slice(0, 5).join(',')}` +
                 `${skippedUnknown.length > 5 ? '…' : ''} — footprintId 必须逐字复制列表，禁止编造`
@@ -301,28 +319,28 @@ export function applyPcbPlacementPlan(doc: PcbDocument, plan: PcbPlacementPlan):
             reason: `placement coverage ${pending.length}/${unlocked} unlocked footprints${unkHint}`
         };
     }
-    // 防原位复读：非安装孔中 ≥85% 坐标+旋转未变 → 拒绝
-    const grid = doc.metadata.gridSize ?? 5;
-    let echoable = 0;
-    let echoed = 0;
-    for (let i = 0; i < pending.length; i++) {
-        const p = pending[i];
-        if (isMountHole(p.fp)) {
-            continue;
+    if (!allowEcho) {
+        let echoable = 0;
+        let echoed = 0;
+        for (let i = 0; i < pending.length; i++) {
+            const p = pending[i];
+            if (isMountHole(p.fp)) {
+                continue;
+            }
+            echoable++;
+            const dx = Math.abs(p.x - p.fp.position.x);
+            const dy = Math.abs(p.y - p.fp.position.y);
+            const sameRot = snapRotation(p.fp.rotation) === p.rot;
+            if (dx <= grid && dy <= grid && sameRot) {
+                echoed++;
+            }
         }
-        echoable++;
-        const dx = Math.abs(p.x - p.fp.position.x);
-        const dy = Math.abs(p.y - p.fp.position.y);
-        const sameRot = snapRotation(p.fp.rotation) === p.rot;
-        if (dx <= grid && dy <= grid && sameRot) {
-            echoed++;
+        if (echoable >= 3 && echoed / echoable >= 0.85) {
+            return {
+                ok: false, placedCount: 0,
+                reason: `placement echo ${(echoed)}/${echoable} — refuse copy of current poses; rearrange functional footprints`
+            };
         }
-    }
-    if (echoable >= 3 && echoed / echoable >= 0.85) {
-        return {
-            ok: false, placedCount: 0,
-            reason: `placement echo ${(echoed)}/${echoable} — refuse copy of current poses; rearrange functional footprints`
-        };
     }
     const groupErr = validateGroups(plan, byId, pendingById, bounds);
     if (groupErr.length > 0) {
@@ -331,7 +349,7 @@ export function applyPcbPlacementPlan(doc: PcbDocument, plan: PcbPlacementPlan):
     if ((plan.groups?.length ?? 0) > 0) {
         tracePcb('AI_PLACE_GROUPS', `n=${plan.groups!.length}`);
     }
-    const minDist = Math.max(grid * 8, 40);
+    const minDist = Math.max(grid * 10, 55);
     for (let i = 0; i < pending.length; i++) {
         for (let j = i + 1; j < pending.length; j++) {
             const a: Point2D = { x: pending[i].x, y: pending[i].y };

@@ -438,6 +438,7 @@ export function applyLlmPcbGeometry(
           from: { x: a.x, y: a.y },
           to: { x: b.x, y: b.y },
           cause: block.indexOf('pad_block') === 0 ? 'pad_block' :
+            block.indexOf('body_block') === 0 ? 'body_block' :
             (block.indexOf('track_block') === 0 ? 'track_block' :
               (block.indexOf('via_block') === 0 ? 'via_block' : 'no_path')),
           blocker: block

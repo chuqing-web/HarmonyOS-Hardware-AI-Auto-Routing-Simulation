@@ -237,6 +237,12 @@ struct Index {
   }
 
   aboutToDisappear(): void {
+    // 避免返回首页后 newProject 仍回调已销毁页，引发错乱
+    this.appService.onProjectChanged = () => {};
+    this.appService.onStatusMessage = (_msg: string) => {};
+    this.appService.onErcUpdate = (_errors: ErcError[]) => {};
+    this.appService.onWaveUpdate = (_waves) => {};
+    EventBus.getInstance().unsubscribe(ModuleEvent.SCHEMATIC_CHANGED, this.onSchematicChanged);
     void this.appService.flushProjectProtection(!this.unsavedChanges);
   }
 
@@ -484,6 +490,9 @@ struct Index {
     }
     this.simRunning = false;
     this.simPaused = false;
+    // 立即清掉上一工程的 ERC / 选中态，避免画布残影与侧栏错乱
+    this.ercErrors = [];
+    this.ercCount = 0;
     this.resetAfterProjectChange();
     this.refreshComponentList();
     // Defer ERC — template insert used to block MMI 3s+ with sync DeepErc + log flood
@@ -1333,40 +1342,54 @@ struct Index {
 
   build() {
     Stack() {
-      Column() {
-        this.MenuBar()
-        this.MainToolbar()
-        Row() {
-          // Left edge peel when whole left dock is collapsed — was invisible before
-          if (this.leftLibCollapsed && this.leftNavCollapsed) {
-            this.LeftExpandStrip()
-          }
-          if (!this.leftLibCollapsed || !this.leftNavCollapsed) {
-            this.LeftPanel()
-          }
-          if (!this.leftLibCollapsed || !this.leftNavCollapsed) {
-            ProteusResizer({ side: 'left', onDrag: (d: number) => this.onLeftPanelResize(d) })
-          }
-          this.CanvasArea()
-          if (!this.rightCollapsed) {
-            ProteusResizer({ side: 'right', onDrag: (d: number) => this.onRightPanelResize(d) })
-          }
-          if (!this.rightCollapsed) {
-            this.RightPanel()
-          } else {
-            this.RightExpandStrip()
-          }
+      // 须等工程装载完成再挂画布：否则 AppService 单例仍是上一文件，会出现残影/UI 错乱
+      if (!this.appInitialized) {
+        Column() {
+          Text('正在准备工程…')
+            .fontSize(14)
+            .fontColor(ProteusColors.TEXT_SECONDARY)
         }
-        .layoutWeight(1)
         .width('100%')
-        this.StatusBar()
+        .height('100%')
+        .justifyContent(FlexAlign.Center)
+        .alignItems(HorizontalAlign.Center)
+        .backgroundColor(ProteusColors.MENU_BG)
+      } else {
+        Column() {
+          this.MenuBar()
+          this.MainToolbar()
+          Row() {
+            // Left edge peel when whole left dock is collapsed — was invisible before
+            if (this.leftLibCollapsed && this.leftNavCollapsed) {
+              this.LeftExpandStrip()
+            }
+            if (!this.leftLibCollapsed || !this.leftNavCollapsed) {
+              this.LeftPanel()
+            }
+            if (!this.leftLibCollapsed || !this.leftNavCollapsed) {
+              ProteusResizer({ side: 'left', onDrag: (d: number) => this.onLeftPanelResize(d) })
+            }
+            this.CanvasArea()
+            if (!this.rightCollapsed) {
+              ProteusResizer({ side: 'right', onDrag: (d: number) => this.onRightPanelResize(d) })
+            }
+            if (!this.rightCollapsed) {
+              this.RightPanel()
+            } else {
+              this.RightExpandStrip()
+            }
+          }
+          .layoutWeight(1)
+          .width('100%')
+          this.StatusBar()
+        }
+        .width('100%')
+        .height('100%')
+        // themeRefreshKey 参与 build：用 .key（非 .id）强制整页 remount，重读 ProteusColors
+        .backgroundColor(ProteusColors.MENU_BG)
+        .key(`main_shell_${this.themeRefreshKey}_${this.projectName}`)
+        .onKeyEvent((event: KeyEvent) => this.handleKeyEvent(event))
       }
-      .width('100%')
-      .height('100%')
-      // themeRefreshKey 参与 build：用 .key（非 .id）强制整页 remount，重读 ProteusColors
-      .backgroundColor(ProteusColors.MENU_BG)
-      .key(`main_shell_${this.themeRefreshKey}`)
-      .onKeyEvent((event: KeyEvent) => this.handleKeyEvent(event))
 
       // Overlay dialogs
       if (this.showWelcomeDialog) {

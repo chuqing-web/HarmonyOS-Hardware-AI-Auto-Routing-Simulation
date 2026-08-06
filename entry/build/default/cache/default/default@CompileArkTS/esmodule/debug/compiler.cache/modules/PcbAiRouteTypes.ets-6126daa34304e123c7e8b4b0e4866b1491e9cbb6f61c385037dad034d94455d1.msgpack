@@ -1,4 +1,8 @@
-Ôr@Ÿªassertions¤code´customTransformCache¬dependencies¢id¤meta±moduleSideEffects¬originalCode±originalSourcemap«resolvedIds®sourcemapChainµsyntheticNamedExportsµtransformDependencies®transformFiles¨cacheAstÔrAÚ±export function emptyPcbAiRouteResult(stage, reason, usedLlm) {
+Ôr@Ÿªassertions¤code´customTransformCache¬dependencies¢id¤meta±moduleSideEffects¬originalCode±originalSourcemap«resolvedIds®sourcemapChainµsyntheticNamedExportsµtransformDependencies®transformFiles¨cacheAstÔrAÚW/** ç½‘ç»œè®¡åˆ’/å±‚ç­–ç•¥æ˜¯å¦å¯ä¿¡ï¼ˆLLM æˆ–æœ¬åœ°ç¡®å®šæ€§ï¼‰ */
+export function isTrustedPcbStrategy(plan) {
+    return plan.fromLlm || !!plan.fromLocal;
+}
+export function emptyPcbAiRouteResult(stage, reason, usedLlm) {
     return {
         success: false,
         usedLlm,
@@ -84,7 +88,7 @@ export function validateLayerRoleSemantics(policy, netPlan) {
 export function policyHasStub(policy) {
     return roleInPolicy(policy, 'stub');
 }
-//# sourceMappingURL=PcbAiRouteTypes.js.mapÂÙJC:\Projects\ElecDraw_Harmony\common\src\main\ets\types\PcbAiRouteTypes.etsÔrB›ªmoduleName±isLocalDependency¯isNodeEntryFile§pkgPath±belongProjectPath§pkgNameªpkgVersion±dependencyPkgInfo¯hostModulesInfo°belongModulePath¬shouldEmitJs¦commonÃÂÙ#C:\Projects\ElecDraw_Harmony\common¼C:\Projects\ElecDraw_Harmony¦common¥1.0.0ÔrC’§pkgNameªpkgVersion¦common¥1.0.0’ÔrD’²hostDependencyName®hostModuleNameÙ$./src/main/ets/types/PcbAiRouteTypes¦commonD»../../types/PcbAiRouteTypes¦commonÙ#C:\Projects\ElecDraw_Harmony\commonÃÃÚ/**
+//# sourceMappingURL=PcbAiRouteTypes.js.mapÂÙJC:\Projects\ElecDraw_Harmony\common\src\main\ets\types\PcbAiRouteTypes.etsÔrB›ªmoduleName±isLocalDependency¯isNodeEntryFile§pkgPath±belongProjectPath§pkgNameªpkgVersion±dependencyPkgInfo¯hostModulesInfo°belongModulePath¬shouldEmitJs¦commonÃÂÙ#C:\Projects\ElecDraw_Harmony\common¼C:\Projects\ElecDraw_Harmony¦common¥1.0.0ÔrC’§pkgNameªpkgVersion¦common¥1.0.0’ÔrD’²hostDependencyName®hostModuleNameÙ$./src/main/ets/types/PcbAiRouteTypes¦commonD»../../types/PcbAiRouteTypes¦commonÙ#C:\Projects\ElecDraw_Harmony\commonÃÃÚ#ˆ/**
  * PCB AI å¸ƒçº¿ / å¸ƒå±€ç®¡çº¿ç±»å‹ â€” LLM ç­–ç•¥äº§ç‰© + å‡ ä½•æ‰§è¡Œç»“æœ
  * åæ ‡ç­–ç•¥ï¼šLLM å¯è¾“å‡ºå°è£…ä½å§¿ï¼›ç¦æ­¢è¾“å‡º track/via æŠ˜ç‚¹ã€‚
  */
@@ -102,6 +106,17 @@ export type PcbNetKind = 'power' | 'gnd' | 'signal';
 /** residual åˆ†ç±»ï¼Œä¾› UI / å†™å›ç­–ç•¥åˆ†æµ */
 export type PcbResidualKind =
   'none' | 'drc' | 'unrouted' | 'unused_copper' | 'signal_fail' | 'placement_only';
+
+/**
+ * placement é˜¶æ®µæ¨¡å¼ï¼š
+ * - fullï¼šç©ºæ¿/é¦–æ¬¡ï¼ŒLLM å…¨é‡å®šæ¿+ä½å§¿
+ * - autoï¼šå·²æœ‰åŠŸèƒ½å°è£…ï¼ŒæŠŠç°æ¿æ€åŠ¿å‘ç»™ LLMï¼Œç”±å…¶ decision=keep|revise
+ * - skip / reviseï¼šå†…éƒ¨æˆ–ç¨‹åºåŒ–ï¼›UI ä¸å†è¯¢é—®
+ */
+export type PcbPlacementMode = 'full' | 'auto' | 'skip' | 'revise';
+
+/** auto æ¨¡å¼ä¸‹ LLM è£å®šï¼šæ²¿ç”¨ç°æœ‰ / å¢é‡è°ƒæ•´ */
+export type PcbPlacementDecision = 'keep' | 'revise';
 
 export interface PcbPlacementItem {
   footprintId: string;
@@ -123,6 +138,8 @@ export interface PcbPlacementPlan {
   placements: PcbPlacementItem[];
   groups?: PcbPlacementGroup[];
   lockedIds?: string[];
+  /** autoï¼šLLM è£å®š keep=æ²¿ç”¨ç°ä½å§¿ / revise=å¢é‡æ”¹ */
+  decision?: PcbPlacementDecision;
   /** æ¿æ¡†å®½ï¼ˆmilï¼ŒåŸç‚¹å·¦ä¸‹/å·¦ä¸ŠçŸ©å½¢ï¼‰ï¼Œç”± LLM å†³å®š */
   boardWidthMil?: number;
   /** æ¿æ¡†é«˜ï¼ˆmilï¼‰ */
@@ -142,12 +159,25 @@ export interface PcbNetPlanEntry {
   priority: number;
 }
 
-/** LLM pcb_net_plan è¾“å‡º */
+/** LLM pcb_net_plan è¾“å‡ºï¼›fromLocal=æœ¬åœ°ç¡®å®šæ€§ç­–ç•¥ï¼ˆä¸ fromLlm äºŒé€‰ä¸€å¯ä¿¡ï¼‰ */
 export interface PcbNetPlanResult {
   fromLlm: boolean;
+  /** æœ¬åœ°ç¡®å®šæ€§ builder äº§å‡ºï¼›å‡ ä½•é—¨ç¦æ¥å— fromLlm || fromLocal */
+  fromLocal?: boolean;
   nets: PcbNetPlanEntry[];
   priorityOrder: string[];
   reason?: string;
+}
+
+/** ç­–ç•¥å¯ä¿¡æ ‡è®°ï¼ˆLLM æˆ–æœ¬åœ°ç¡®å®šæ€§ï¼‰ */
+export interface PcbTrustedStrategyFlags {
+  fromLlm: boolean;
+  fromLocal?: boolean;
+}
+
+/** ç½‘ç»œè®¡åˆ’/å±‚ç­–ç•¥æ˜¯å¦å¯ä¿¡ï¼ˆLLM æˆ–æœ¬åœ°ç¡®å®šæ€§ï¼‰ */
+export function isTrustedPcbStrategy(plan: PcbTrustedStrategyFlags): boolean {
+  return plan.fromLlm || !!plan.fromLocal;
 }
 
 export interface PcbViaPreference {
@@ -155,9 +185,11 @@ export interface PcbViaPreference {
   preferThrough: boolean;
 }
 
-/** LLM pcb_route è¾“å‡º â€” å±‚è§’è‰²å¿…é¡»è¦†ç›–æ–‡æ¡£å…¨éƒ¨é“œå±‚ */
+/** LLM / æœ¬åœ° pcb_route è¾“å‡º â€” å±‚è§’è‰²å¿…é¡»è¦†ç›–æ–‡æ¡£å…¨éƒ¨é“œå±‚ */
 export interface PcbRoutePolicy {
   fromLlm: boolean;
+  /** æœ¬åœ°ç¡®å®šæ€§ builder äº§å‡ºï¼›å‡ ä½•é—¨ç¦æ¥å— fromLlm || fromLocal */
+  fromLocal?: boolean;
   layerRoles: Record<string, PcbLayerRole>;
   netPriority: Record<string, number>;
   viaPreference: PcbViaPreference;
@@ -179,7 +211,7 @@ export interface PcbQaRepairPlan {
   routeModePatch?: Record<string, PcbRouteMode>;
   /** ç”µæºæ€»çº¿ Y åç§»è¡¥ä¸ï¼škey=netId|ç½‘åï¼Œvalue=mil */
   busYOffsetPatch?: Record<string, number>;
-  /** å‡é“œå±‚ï¼š2â†’4/6/8ï¼›æ‰§è¡Œåé¡»è¡¥ layerRolePatch è¦†ç›–æ–°å±‚ï¼ˆç¼ºåˆ™æœ¬åœ°å¡«é»˜è®¤ï¼‰ */
+  /** å‡é“œå±‚ï¼ˆå·²åºŸå¼ƒï¼‰ï¼šç”¨æˆ·ç¡®è®¤å±‚æ•°åé”å®šï¼Œç®¡çº¿å¿½ç•¥æ­¤å­—æ®µ */
   raiseCopperTo?: number;
   notes: string;
 }
@@ -363,72 +395,88 @@ export interface PcbPadEndpoint {
   padId: string;
   pos: Point2D;
 }
-ÀA“ÔrE–§version¤fileªsourceRoot§sources¥names¨mappings²PcbAiRouteTypes.js ‘³PcbAiRouteTypes.etsÜ Vš”  Ì³ ” Ì³” Ì³”% Ì³%”& Ì³&”+ Ì³3”- Ì³5”3 Ì³ÌC”5 Ì³ÌE”< Ì³ÌU’” Ì´” Ì´	”” Ìµ” Ìµ” Ìµ” Ìµ’” Ì¶” Ì¶”” Ì·” Ì·” Ì·” Ì·”” Ì¸” Ì¸” Ì¸” Ì¸”” Ì¹” Ì¹” Ì¹” Ì¹”” Ìº” Ìº” Ìº” Ìº”” Ì»” Ì»” Ì»” Ì»”” Ì¼” Ì¼” Ì¼” Ì¼–” Ì½” Ì½” Ì½” Ì½” Ì½” Ì½”” Ì¾” Ì¾” Ì¾” Ì¾’” Ì¿” Ì¿’”  ÌÀ ” ÌÀ–”  ÌÂ ” ÌÂ” ÌÂ” ÌÂ” ÌÂ”$ ÌÂÌB™” ÌÃ” ÌÃ	” ÌÃ” ÌÃ” ÌÃ” ÌÃ” ÌÃ” ÌÃ” ÌÃ’”  ÌÄ ” ÌÄ’”  ÌÆ ” ÌÆ˜”  ÌÇ ” ÌÇ” ÌÇ”( ÌÇ(”) ÌÇ)”/ ÌÇ?”1 ÌÇÌA”= ÌÇÌ[–” ÌÈ”
- ÌÈ” ÌÈ” ÌÈ” ÌÈ” ÌÈÜ ” ÌÉ”	 ÌÉ” ÌÉ” ÌÉ” ÌÉ” ÌÉ” ÌÉ” ÌÉ” ÌÉ”$ ÌÉ"”% ÌÉ#”+ ÌÉ)”- ÌÉ+”. ÌÉ,”0 ÌÉ.”2 ÌÉ0™” ÌÊ” ÌÊ
-” ÌÊ” ÌÊ”  ÌÊ”! ÌÊ”" ÌÊ”# ÌÊ)”$ ÌÊ*š” ÌË” ÌË” ÌË	” ÌË” ÌË” ÌË” ÌË”" ÌË”# ÌË”% ÌË!˜” ÌÌ” ÌÌ” ÌÌ” ÌÌ” ÌÌ” ÌÌ” ÌÌ” ÌÌ‘”	 ÌÍ‘” ÌÎ”” ÌÏ” ÌÏ	” ÌÏ” ÌÏ’”  ÌĞ ” ÌĞ—”  ÌÒ ”	 ÌÒ	” ÌÒ” ÌÒ” ÌÒ,” ÌÒ.”" ÌÒÌ@” ÌÓ”
- ÌÓ” ÌÓ” ÌÓ” ÌÓ” ÌÓ” ÌÓ” ÌÓ”# ÌÓ!”$ ÌÓ"”. ÌÓ,”/ ÌÓ-”0 ÌÓ.Ü ” ÌÔ”	 ÌÔ” ÌÔ” ÌÔ” ÌÔ” ÌÔ” ÌÔ” ÌÔ” ÌÔ” ÌÔ” ÌÔ”# ÌÔ!”% ÌÔ#”& ÌÔ$”( ÌÔ&”* ÌÔ(” ÌÕ” ÌÕ” ÌÕ” ÌÕ” ÌÕ” ÌÕ”" ÌÕ”# ÌÕ”$ ÌÕ ”% ÌÕ!”& ÌÕ"”+ ÌÕ'”/ ÌÕ+”1 ÌÕ-”” ÌÖ” ÌÖ” ÌÖ” ÌÖ‘”	 Ì×‘” ÌØ”” ÌÙ” ÌÙ	” ÌÙ” ÌÙ’”  ÌÚ ” ÌÚ‘”  ÌÜ ‘” Ìß˜”  Ìà ” Ìà” Ìà”* Ìà*”+ Ìá”1 Ìá”3 Ìâ”: Ìâ–” Ìä”
- Ìä” Ìä” Ìä” Ìä” Ìä–” Ìå” Ìå” Ìå” Ìå” Ìå” Ìå–” Ìæ” Ìæ” Ìæ” Ìæ” Ìæ” Ìæ–” Ìç” Ìç” Ìç” Ìç” Ìç” ÌçÜ ” Ìè”	 Ìè” Ìè” Ìè” Ìè” Ìè” Ìè” Ìè” Ìè” Ìè”  Ìè”$ Ìè"”% Ìè#”+ Ìè)”- Ìè+”. Ìè,”0 Ìè.”2 Ìè0›” Ìé” Ìé
-” Ìé” Ìé” Ìé” Ìé” Ìé” Ìé”  Ìé”! Ìé”" Ìé˜” Ìê” Ìê” Ìê	” Ìê
-” Ìê” Ìê”# Ìê”% Ìê!’” Ìë” Ìë‘”	 Ìì˜” Ìí” Ìí” Ìí	” Ìí
-” Ìí” Ìí” Ìí” Ìí•” Ìî” Ìî” Ìî” Ìî” Ìî‘”	 Ìï˜” Ìï” Ìï” Ìï” Ìï” Ìï” Ìï”# Ìï!”% Ìï#•” Ìğ” Ìğ” Ìğ” Ìğ” Ìğ‘”	 Ìñ‘” Ìñ•” Ìò” Ìò” Ìò” Ìò” Ìò‘”	 Ìó‘” ÌôÜ ” Ìõ”
- Ìõ” Ìõ” Ìõ”" Ìõ ”# Ìõ!”) Ìõ'”+ Ìõ)”4 Ìõ2”5 Ìõ3”9 Ìõ7”ÌE ÌõÌC”ÌF ÌõÌD”ÌL ÌõÌJ”ÌN ÌõÌL”ÌW ÌõÌU”ÌX ÌõÌVÜ ” Ìö” Ìö” Ìö” Ìö” Ìö”& Ìö"”' Ìö#”+ Ìö'”7 Ìö3”8 Ìö4”> Ìö:”Ì@ Ìö<”ÌJ ÌöÌF”ÌK ÌöÌG”ÌO ÌöÌK”Ì[ ÌöÌW”Ì\ ÌöÌX”Ìb ÌöÌ^”Ìd ÌöÌ`”Ìj ÌöÌf”Ìk ÌöÌg”Ìl ÌöÌhÜ ” Ì÷”
- Ì÷” Ì÷” Ì÷”" Ì÷ ”# Ì÷!”) Ì÷'”+ Ì÷)”4 Ì÷2”5 Ì÷3”9 Ì÷7”ÌE Ì÷ÌC”ÌF Ì÷ÌD”ÌL Ì÷ÌJ”ÌN Ì÷ÌL”ÌW Ì÷ÌU”ÌX Ì÷ÌVÜ ” Ìø” Ìø” Ìø” Ìø” Ìø”& Ìø"”' Ìø#”+ Ìø'”7 Ìø3”8 Ìø4”> Ìø:”Ì@ Ìø<”ÌJ ÌøÌF”ÌK ÌøÌG”ÌO ÌøÌK”Ì[ ÌøÌW”Ì\ ÌøÌX”Ìb ÌøÌ^”Ìd ÌøÌ`”Ìj ÌøÌf”Ìk ÌøÌg”Ìl ÌøÌh—” Ìù” Ìù” Ìù” Ìù” Ìù” Ìù” Ìù˜” Ìú” Ìú” Ìú	” Ìú” Ìú”8 Ìú4”9 Ìú5”: Ìú6‘” Ìû—” Ìü” Ìü” Ìü” Ìü” Ìü” Ìü”! Ìü˜” Ìı” Ìı” Ìı	” Ìı” Ìı”: Ìı6”; Ìı7”< Ìı8‘” Ìş”” Ìÿ” Ìÿ” Ìÿ” ÌÿÜ ” Í ” Í 
-” Í ” Í ”! Í ”" Í ”( Í $”* Í &”4 Í 0”5 Í 1”9 Í 5”ÌE Í ÌA”ÌF Í ÌB”ÌL Í ÌH”ÌN Í ÌJ”ÌW Í ÌS”ÌX Í ÌTŸ” Í” Í” Í” Í”! Í”* Í$”+ Í%”/ Í)”; Í5”< Í6”ÌB Í<”ÌD Í>”ÌM ÍÌG”ÌN ÍÌH”ÌO ÍÌIÜ ” Í” Í
-” Í” Í”$ Í ”% Í!”+ Í'”- Í)”3 Í/”4 Í0”8 Í4”ÌD ÍÌ@”ÌE ÍÌA”ÌK ÍÌG”ÌM ÍÌI”ÌW ÍÌS”ÌX ÍÌT˜” Í” Í” Í” Í”! Í”+ Í%”, Í&”- Í'˜” Í” Í” Í	” Í” Í” Í” Í” Í˜” Í” Í
-” Í” Í” Í”= Í7”> Í8”? Í9‘”	 Í‘” Í”” Í” Í	” Í” Í’”  Í	 ” Í	’”  Í ”" Í"–”  Í ” Í” Í” Í” Í”$ Í4™” Í” Í	” Í” Í” Í”  Í”& Í$”' Í%”( Í&’”  Í ” ÍÔrF–§version¤file§sources®sourcesContent¥names¨mappingsÀ‘À‘ÀÜ W‘”    ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”  	 ‘”  
- ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”    ‘”  ! ‘”  " ‘”  # ‘”  $ ‘”  % ‘”  & ‘”  ' ‘”  ( ‘”  ) ‘”  * ‘”  + ‘”  , ‘”  - ‘”  . ‘”  / ‘”  0 ‘”  1 ‘”  2 ‘”  3 ‘”  4 ‘”  5 ‘”  6 ‘”  7 ‘”  8 ‘”  9 ‘”  : ‘”  ; ‘”  < ‘”  = ‘”  > ‘”  ? ‘”  Ì@ ‘”  ÌA ‘”  ÌB ‘”  ÌC ‘”  ÌD ‘”  ÌE ‘”  ÌF ‘”  ÌG ‘”  ÌH ‘”  ÌI ‘”  ÌJ ‘”  ÌK ‘”  ÌL ‘”  ÌM ‘”  ÌN ‘”  ÌO ‘”  ÌP ‘”  ÌQ ‘”  ÌR ‘”  ÌS ‘”  ÌT ‘”  ÌU ‘”  ÌV ÔrG’§missing¦pluginÃ¦genAbcÂÔ  ÔrH”²dynamicImportCache¹exportAllDeclarationCache»exportNamedDeclarationCache«importCache•ÔrI–¤type¥start£end«declarationªspecifiers¦source¶ExportNamedDeclaration ÍUÔrJ™¤type¥start£end¢idªexpression©generator¥async¦params¤body³FunctionDeclarationÍUÔrK”¤type¥start£end¤nameªIdentifier%µemptyPcbAiRouteResultÂÂÂ“KªIdentifier&+¥stageKªIdentifier-3¦reasonKªIdentifier5<§usedLlmÔrL”¤type¥start£end¤body®BlockStatement>ÍU‘ÔrM”¤type¥start£end¨argument¯ReturnStatementÌEÍRÔrN”¤type¥start£endªproperties°ObjectExpressionÌLÍQšÔrO™¤type¥start£end¦method©shorthand¨computed£key¥value¤kind¨PropertyÌWÌeÂÂÂKªIdentifierÌWÌ^§successÔrP•¤type¥start£end¥value£raw§LiteralÌ`ÌeÂ¥false¤initÔrQ™¤type¥start£end¦method©shorthand¨computed£key¤kind¥value¨PropertyÌpÌwÂÃÂKªIdentifierÌpÌw§usedLlm¤initKªIdentifierÌpÌw§usedLlmO¨PropertyÌ‚Ì“ÂÂÂKªIdentifierÌ‚ÌŒªabortStageKªIdentifierÌÌ“¥stage¤initO¨PropertyÌÌ±ÂÂÂKªIdentifierÌÌ©«abortReasonKªIdentifierÌ«Ì±¦reason¤initO¨PropertyÌ¼ÌÉÂÂÂKªIdentifierÌ¼ÌÆªtrackCountP§LiteralÌÈÌÉ ¡0¤initO¨PropertyÌÔÌßÂÂÂKªIdentifierÌÔÌÜ¨viaCountP§LiteralÌŞÌß ¡0¤initO¨PropertyÌêÌõÂÂÂKªIdentifierÌêÌò¨netCountP§LiteralÌôÌõ ¡0¤initO¨PropertyÍ ÍÂÂÂKªIdentifierÍ Í«placedCountP§LiteralÍÍ ¡0¤initO¨PropertyÍÍ+ÂÂÂKªIdentifierÍÍ!¨messagesÔrR”¤type¥start£end¨elements¯ArrayExpressionÍ#Í+‘KªIdentifierÍ$Í*¦reason¤initO¨PropertyÍ6ÍJÂÂÂKªIdentifierÍ6ÍB¬residualKindP§LiteralÍDÍJ¤none¦'none'¤initÀI¶ExportNamedDeclarationÍWÍ¡J³FunctionDeclarationÍ^Í¡KªIdentifierÍgÍu®copperRoleKeysÂÂÂ‘KªIdentifierÍvÍ{¥rolesL®BlockStatementÍ}Í¡‘M¯ReturnStatementÍ„ÍÔrS–¤type¥start£end¦callee©arguments¨optional®CallExpressionÍ‹ÍÔrT—¤type¥start£end¦object¨property¨computed¨optional°MemberExpressionÍ‹Í–KªIdentifierÍ‹Í‘¦ObjectKªIdentifierÍ’Í–¤keysÂÂ‘KªIdentifierÍ—Íœ¥rolesÂÀI¶ExportNamedDeclarationÍÃÍéJ³FunctionDeclarationÍÊÍéKªIdentifierÍÓÍë¸policyCoversCopperLayersÂÂÂ’KªIdentifierÍìÍò¦policyKªIdentifierÍôÍ ¬copperLayersL®BlockStatementÍÍé“ÔrU•¤type¥start£end¬declarations¤kind³VariableDeclarationÍ	Í‘ÔrV•¤type¥start£end¢id¤init²VariableDeclaratorÍÍKªIdentifierÍÍ§missingR¯ArrayExpressionÍÍ¥constÔrW—¤type¥start£end¤init¤test¦update¤body¬ForStatementÍ"ÍÑU³VariableDeclarationÍ'Í0‘V²VariableDeclaratorÍ+Í0KªIdentifierÍ+Í,¡iP§LiteralÍ/Í0 ¡0£letÔrX–¤type¥start£end¤left¨operator¥right°BinaryExpressionÍ2ÍIKªIdentifierÍ2Í3¡i¡<T°MemberExpressionÍ6ÍIKªIdentifierÍ6ÍB¬copperLayersKªIdentifierÍCÍI¦lengthÂÂÔrY–¤type¥start£end¨operator¦prefix¨argument°UpdateExpressionÍKÍN¢++ÂKªIdentifierÍKÍL¡iL®BlockStatementÍPÍÑ’U³VariableDeclarationÍ[Íw‘V²VariableDeclaratorÍaÍvKªIdentifierÍaÍd£lidT°MemberExpressionÍgÍvKªIdentifierÍgÍs¬copperLayersKªIdentifierÍtÍu¡iÃÂ¥constÔrZ–¤type¥start£end¤testªconsequent©alternate«IfStatementÍÍÊY¯UnaryExpressionÍ…Íœ¡!ÃT°MemberExpressionÍ†ÍœT°MemberExpressionÍ†Í—KªIdentifierÍ†ÍŒ¦policyKªIdentifierÍÍ—ªlayerRolesÂÂKªIdentifierÍ˜Í›£lidÃÂL®BlockStatementÍÍÊ‘Ôr[”¤type¥start£endªexpression³ExpressionStatementÍ­Í¿S®CallExpressionÍ­Í¾T°MemberExpressionÍ­Í¹KªIdentifierÍ­Í´§missingKªIdentifierÍµÍ¹¤pushÂÂ‘KªIdentifierÍºÍ½£lidÂÀM¯ReturnStatementÍ×ÍæKªIdentifierÍŞÍå§missingÀI¶ExportNamedDeclarationÍ)Í
-J³FunctionDeclarationÍ0Í
-KªIdentifierÍ9ÍSºvalidateLayerRoleSemanticsÂÂÂ’KªIdentifierÍTÍZ¦policyKªIdentifierÍ\Íc§netPlanL®BlockStatementÍeÍ
-›U³VariableDeclarationÍlÍ|‘V²VariableDeclaratorÍrÍ{KªIdentifierÍrÍv¤errsR¯ArrayExpressionÍyÍ{¥constU³VariableDeclarationÍ‚Í–‘V²VariableDeclaratorÍ†Í•KªIdentifierÍ†Í§needGndP§LiteralÍÍ•Â¥false£letU³VariableDeclarationÍœÍ²‘V²VariableDeclaratorÍ Í±KªIdentifierÍ Í©©needPowerP§LiteralÍ¬Í±Â¥false£letU³VariableDeclarationÍ¸ÍÏ‘V²VariableDeclaratorÍ¼ÍÎKªIdentifierÍ¼ÍÆªneedSignalP§LiteralÍÉÍÎÂ¥false£letW¬ForStatementÍÕÍOU³VariableDeclarationÍÚÍã‘V²VariableDeclaratorÍŞÍãKªIdentifierÍŞÍß¡iP§LiteralÍâÍã ¡0£letX°BinaryExpressionÍåÍüKªIdentifierÍåÍæ¡i¡<T°MemberExpressionÍéÍüT°MemberExpressionÍéÍõKªIdentifierÍéÍğ§netPlanKªIdentifierÍñÍõ¤netsÂÂKªIdentifierÍöÍü¦lengthÂÂY°UpdateExpressionÍşÍ¢++ÂKªIdentifierÍşÍÿ¡iL®BlockStatementÍÍO“U³VariableDeclarationÍÍ(‘V²VariableDeclaratorÍÍ'KªIdentifierÍÍ¡nT°MemberExpressionÍÍ'T°MemberExpressionÍÍ$KªIdentifierÍÍ§netPlanKªIdentifierÍ Í$¤netsÂÂKªIdentifierÍ%Í&¡iÃÂ¥constZ«IfStatementÍ2ÍrX°BinaryExpressionÍ6ÍMT°MemberExpressionÍ6ÍAKªIdentifierÍ6Í7¡nKªIdentifierÍ8ÍA©routeModeÂÂ£===P§LiteralÍFÍM¥defer§'defer'L®BlockStatementÍOÍr‘Ôr\”¤type¥start£end¥label±ContinueStatementÍ^ÍgÀÀZ«IfStatementÍ|ÍHX°BinaryExpressionÍ€ÍT°MemberExpressionÍ€Í†KªIdentifierÍ€Í¡nKªIdentifierÍ‚Í†¤kindÂÂ£===P§LiteralÍ‹Í£gnd¥'gnd'L®BlockStatementÍ’Í»‘[³ExpressionStatementÍ¡Í°Ôr]–¤type¥start£end¨operator¤left¥right´AssignmentExpressionÍ¡Í¯¡=KªIdentifierÍ¡Í¨§needGndP§LiteralÍ«Í¯Ã¤trueZ«IfStatementÍÊÍHX°BinaryExpressionÍÎÍàT°MemberExpressionÍÎÍÔKªIdentifierÍÎÍÏ¡nKªIdentifierÍĞÍÔ¤kindÂÂ£===P§LiteralÍÙÍà¥power§'power'L®BlockStatementÍâÍ‘[³ExpressionStatementÍñÍ]´AssignmentExpressionÍñÍ¡=KªIdentifierÍñÍú©needPowerP§LiteralÍıÍÃ¤trueL®BlockStatementÍÍH‘[³ExpressionStatementÍ+Í=]´AssignmentExpressionÍ+Í<¡=KªIdentifierÍ+Í5ªneedSignalP§LiteralÍ8Í<Ã¤trueU³VariableDeclarationÍUÍ‘V²VariableDeclaratorÍ[ÍKªIdentifierÍ[Íd©hasGndBusX±LogicalExpressionÍgÍX±LogicalExpressionÍgÍùX±LogicalExpressionÍgÍÕX±LogicalExpressionÍgÍ©S®CallExpressionÍgÍ†KªIdentifierÍgÍs¬roleInPolicy’KªIdentifierÍtÍz¦policyP§LiteralÍ|Í…§gnd_bus©'gnd_bus'Â¢||S®CallExpressionÍŠÍ©KªIdentifierÍŠÍ–¬roleInPolicy’KªIdentifierÍ—Í¦policyP§LiteralÍŸÍ¨§power_h©'power_h'Â¢||S®CallExpressionÍ¶ÍÕKªIdentifierÍ¶ÍÂ¬roleInPolicy’KªIdentifierÍÃÍÉ¦policyP§LiteralÍËÍÔ§power_v©'power_v'Â¢||S®CallExpressionÍÙÍùKªIdentifierÍÙÍå¬roleInPolicy’KªIdentifierÍæÍì¦policyP§LiteralÍîÍø¨signal_hª'signal_h'Â¢||S®CallExpressionÍıÍKªIdentifierÍıÍ	¬roleInPolicy’KªIdentifierÍ
-Í¦policyP§LiteralÍÍ¤stub¦'stub'Â¥constU³VariableDeclarationÍ Íå‘V²VariableDeclaratorÍ&ÍäKªIdentifierÍ&Í/©hasVccBusX±LogicalExpressionÍ2ÍäX±LogicalExpressionÍ2ÍÄX±LogicalExpressionÍ2Í X±LogicalExpressionÍ2ÍtS®CallExpressionÍ2ÍQKªIdentifierÍ2Í>¬roleInPolicy’KªIdentifierÍ?ÍE¦policyP§LiteralÍGÍP§vcc_bus©'vcc_bus'Â¢||S®CallExpressionÍUÍtKªIdentifierÍUÍa¬roleInPolicy’KªIdentifierÍbÍh¦policyP§LiteralÍjÍs§power_v©'power_v'Â¢||S®CallExpressionÍÍ KªIdentifierÍÍ¬roleInPolicy’KªIdentifierÍÍ”¦policyP§LiteralÍ–ÍŸ§power_h©'power_h'Â¢||S®CallExpressionÍ¤ÍÄKªIdentifierÍ¤Í°¬roleInPolicy’KªIdentifierÍ±Í·¦policyP§LiteralÍ¹ÍÃ¨signal_hª'signal_h'Â¢||S®CallExpressionÍÈÍäKªIdentifierÍÈÍÔ¬roleInPolicy’KªIdentifierÍÕÍÛ¦policyP§LiteralÍİÍã¤stub¦'stub'Â¥constZ«IfStatementÍëÍJX±LogicalExpressionÍïÍKªIdentifierÍïÍö§needGnd¢&&Y¯UnaryExpressionÍúÍ¡!ÃKªIdentifierÍûÍ©hasGndBusL®BlockStatementÍÍJ‘[³ExpressionStatementÍÍCS®CallExpressionÍÍBT°MemberExpressionÍÍKªIdentifierÍÍ¤errsKªIdentifierÍÍ¤pushÂÂ‘P§LiteralÍÍAÙ$missing gnd_bus|power_h for gnd netsÙ&'missing gnd_bus|power_h for gnd nets'ÂÀZ«IfStatementÍPÍ³X±LogicalExpressionÍTÍkKªIdentifierÍTÍ]©needPower¢&&Y¯UnaryExpressionÍaÍk¡!ÃKªIdentifierÍbÍk©hasVccBusL®BlockStatementÍmÍ³‘[³ExpressionStatementÍxÍ¬S®CallExpressionÍxÍ«T°MemberExpressionÍxÍKªIdentifierÍxÍ|¤errsKªIdentifierÍ}Í¤pushÂÂ‘P§LiteralÍ‚ÍªÙ&missing vcc_bus|power_h for power netsÙ('missing vcc_bus|power_h for power nets'ÂÀZ«IfStatementÍ¹Í
-yKªIdentifierÍ½ÍÇªneedSignalL®BlockStatementÍÉÍ
-y“U³VariableDeclarationÍÔÍ	x‘V²VariableDeclaratorÍÚÍ	wKªIdentifierÍÚÍŞ¤hasHX±LogicalExpressionÍáÍ	wX±LogicalExpressionÍáÍ	TX±LogicalExpressionÍáÍ	$S®CallExpressionÍáÍ	KªIdentifierÍáÍí¬roleInPolicy’KªIdentifierÍîÍô¦policyP§LiteralÍöÍ	 ¨signal_hª'signal_h'Â¢||S®CallExpressionÍ	Í	$KªIdentifierÍ	Í	¬roleInPolicy’KªIdentifierÍ	Í	¦policyP§LiteralÍ	Í	#§power_h©'power_h'Â¢||S®CallExpressionÍ	5Í	TKªIdentifierÍ	5Í	A¬roleInPolicy’KªIdentifierÍ	BÍ	H¦policyP§LiteralÍ	JÍ	S§gnd_bus©'gnd_bus'Â¢||S®CallExpressionÍ	XÍ	wKªIdentifierÍ	XÍ	d¬roleInPolicy’KªIdentifierÍ	eÍ	k¦policyP§LiteralÍ	mÍ	v§vcc_bus©'vcc_bus'Â¥constU³VariableDeclarationÍ	‚Í
-‘V²VariableDeclaratorÍ	ˆÍ
-KªIdentifierÍ	ˆÍ	§hasStubX±LogicalExpressionÍ	’Í
-X±LogicalExpressionÍ	’Í	ÒS®CallExpressionÍ	’Í	®KªIdentifierÍ	’Í	¬roleInPolicy’KªIdentifierÍ	ŸÍ	¥¦policyP§LiteralÍ	§Í	­¤stub¦'stub'Â¢||S®CallExpressionÍ	²Í	ÒKªIdentifierÍ	²Í	¾¬roleInPolicy’KªIdentifierÍ	¿Í	Å¦policyP§LiteralÍ	ÇÍ	Ñ¨signal_vª'signal_v'Â¢||S®CallExpressionÍ	ãÍ
-KªIdentifierÍ	ãÍ	ï¬roleInPolicy’KªIdentifierÍ	ğÍ	ö¦policyP§LiteralÍ	øÍ
-¨signal_hª'signal_h'Â¥constZ«IfStatementÍ
-Í
-rX±LogicalExpressionÍ
+ÀA“ÔrE–§version¤fileªsourceRoot§sources¥names¨mappings²PcbAiRouteTypes.js ‘³PcbAiRouteTypes.etsÜ Z’”  ÌW ” ÌW–”  ÌX ” ÌX” ÌX”$ ÌX$”% ÌX%”) ÌXÌBœ” ÌY” ÌY	” ÌY” ÌY” ÌY” ÌY” ÌY” ÌY”! ÌY”" ÌY ”+ ÌY)”, ÌY*’”  ÌZ ” ÌZš”  ÌÏ ” ÌÏ” ÌÏ”% ÌÏ%”& ÌÏ&”+ ÌÏ3”- ÌÏ5”3 ÌÏÌC”5 ÌÏÌE”< ÌÏÌU’” ÌĞ” ÌĞ	”” ÌÑ” ÌÑ” ÌÑ” ÌÑ’” ÌÒ” ÌÒ”” ÌÓ” ÌÓ” ÌÓ” ÌÓ”” ÌÔ” ÌÔ” ÌÔ” ÌÔ”” ÌÕ” ÌÕ” ÌÕ” ÌÕ”” ÌÖ” ÌÖ” ÌÖ” ÌÖ”” Ì×” Ì×” Ì×” Ì×”” ÌØ” ÌØ” ÌØ” ÌØ–” ÌÙ” ÌÙ” ÌÙ” ÌÙ” ÌÙ” ÌÙ”” ÌÚ” ÌÚ” ÌÚ” ÌÚ’” ÌÛ” ÌÛ’”  ÌÜ ” ÌÜ–”  ÌŞ ” ÌŞ” ÌŞ” ÌŞ” ÌŞ”$ ÌŞÌB™” Ìß” Ìß	” Ìß” Ìß” Ìß” Ìß” Ìß” Ìß” Ìß’”  Ìà ” Ìà’”  Ìâ ” Ìâ˜”  Ìã ” Ìã” Ìã”( Ìã(”) Ìã)”/ Ìã?”1 ÌãÌA”= ÌãÌ[–” Ìä”
+ Ìä” Ìä” Ìä” Ìä” ÌäÜ ” Ìå”	 Ìå” Ìå” Ìå” Ìå” Ìå” Ìå” Ìå” Ìå”$ Ìå"”% Ìå#”+ Ìå)”- Ìå+”. Ìå,”0 Ìå.”2 Ìå0™” Ìæ” Ìæ
+” Ìæ” Ìæ”  Ìæ”! Ìæ”" Ìæ”# Ìæ)”$ Ìæ*š” Ìç” Ìç” Ìç	” Ìç” Ìç” Ìç” Ìç”" Ìç”# Ìç”% Ìç!˜” Ìè” Ìè” Ìè” Ìè” Ìè” Ìè” Ìè” Ìè‘”	 Ìé‘” Ìê”” Ìë” Ìë	” Ìë” Ìë’”  Ìì ” Ìì—”  Ìî ”	 Ìî	” Ìî” Ìî” Ìî,” Ìî.”" ÌîÌ@” Ìï”
+ Ìï” Ìï” Ìï” Ìï” Ìï” Ìï” Ìï”# Ìï!”$ Ìï"”. Ìï,”/ Ìï-”0 Ìï.Ü ” Ìğ”	 Ìğ” Ìğ” Ìğ” Ìğ” Ìğ” Ìğ” Ìğ” Ìğ” Ìğ” Ìğ”# Ìğ!”% Ìğ#”& Ìğ$”( Ìğ&”* Ìğ(” Ìñ” Ìñ” Ìñ” Ìñ” Ìñ” Ìñ”" Ìñ”# Ìñ”$ Ìñ ”% Ìñ!”& Ìñ"”+ Ìñ'”/ Ìñ+”1 Ìñ-”” Ìò” Ìò” Ìò” Ìò‘”	 Ìó‘” Ìô”” Ìõ” Ìõ	” Ìõ” Ìõ’”  Ìö ” Ìö‘”  Ìø ‘” Ìû˜”  Ìü ” Ìü” Ìü”* Ìü*”+ Ìı”1 Ìı”3 Ìş”: Ìş–” Í ”
+ Í ” Í ” Í ” Í ” Í –” Í” Í” Í” Í” Í” Í–” Í” Í” Í” Í” Í” Í–” Í” Í” Í” Í” Í” ÍÜ ” Í”	 Í” Í” Í” Í” Í” Í” Í” Í” Í”  Í”$ Í"”% Í#”+ Í)”- Í+”. Í,”0 Í.”2 Í0›” Í” Í
+” Í” Í” Í” Í” Í” Í”  Í”! Í”" Í˜” Í” Í” Í	” Í
+” Í” Í”# Í”% Í!’” Í” Í‘”	 Í˜” Í	” Í	” Í		” Í	
+” Í	” Í	” Í	” Í	•” Í
+” Í
+” Í
+” Í
+” Í
+‘”	 Í˜” Í” Í” Í” Í” Í” Í”# Í!”% Í#•” Í” Í” Í” Í” Í‘”	 Í‘” Í•” Í” Í” Í” Í” Í‘”	 Í‘” ÍÜ ” Í”
+ Í” Í” Í”" Í ”# Í!”) Í'”+ Í)”4 Í2”5 Í3”9 Í7”ÌE ÍÌC”ÌF ÍÌD”ÌL ÍÌJ”ÌN ÍÌL”ÌW ÍÌU”ÌX ÍÌVÜ ” Í” Í” Í” Í” Í”& Í"”' Í#”+ Í'”7 Í3”8 Í4”> Í:”Ì@ Í<”ÌJ ÍÌF”ÌK ÍÌG”ÌO ÍÌK”Ì[ ÍÌW”Ì\ ÍÌX”Ìb ÍÌ^”Ìd ÍÌ`”Ìj ÍÌf”Ìk ÍÌg”Ìl ÍÌhÜ ” Í”
+ Í” Í” Í”" Í ”# Í!”) Í'”+ Í)”4 Í2”5 Í3”9 Í7”ÌE ÍÌC”ÌF ÍÌD”ÌL ÍÌJ”ÌN ÍÌL”ÌW ÍÌU”ÌX ÍÌVÜ ” Í” Í” Í” Í” Í”& Í"”' Í#”+ Í'”7 Í3”8 Í4”> Í:”Ì@ Í<”ÌJ ÍÌF”ÌK ÍÌG”ÌO ÍÌK”Ì[ ÍÌW”Ì\ ÍÌX”Ìb ÍÌ^”Ìd ÍÌ`”Ìj ÍÌf”Ìk ÍÌg”Ìl ÍÌh—” Í” Í” Í” Í” Í” Í” Í˜” Í” Í” Í	” Í” Í”8 Í4”9 Í5”: Í6‘” Í—” Í” Í” Í” Í” Í” Í”! Í˜” Í” Í” Í	” Í” Í”: Í6”; Í7”< Í8‘” Í”” Í” Í” Í” ÍÜ ” Í” Í
+” Í” Í”! Í”" Í”( Í$”* Í&”4 Í0”5 Í1”9 Í5”ÌE ÍÌA”ÌF ÍÌB”ÌL ÍÌH”ÌN ÍÌJ”ÌW ÍÌS”ÌX ÍÌTŸ” Í” Í” Í” Í”! Í”* Í$”+ Í%”/ Í)”; Í5”< Í6”ÌB Í<”ÌD Í>”ÌM ÍÌG”ÌN ÍÌH”ÌO ÍÌIÜ ” Í” Í
+” Í” Í”$ Í ”% Í!”+ Í'”- Í)”3 Í/”4 Í0”8 Í4”ÌD ÍÌ@”ÌE ÍÌA”ÌK ÍÌG”ÌM ÍÌI”ÌW ÍÌS”ÌX ÍÌT˜” Í” Í” Í” Í”! Í”+ Í%”, Í&”- Í'˜” Í ” Í ” Í 	” Í ” Í ” Í ” Í ” Í ˜” Í!” Í!
+” Í!” Í!” Í!”= Í!7”> Í!8”? Í!9‘”	 Í"‘” Í#”” Í$” Í$	” Í$” Í$’”  Í% ” Í%’”  Í' ”" Í'"–”  Í( ” Í(” Í(” Í(” Í(”$ Í(4™” Í)” Í)	” Í)” Í)” Í)”  Í)”& Í)$”' Í)%”( Í)&’”  Í* ” Í*ÔrF–§version¤file§sources®sourcesContent¥names¨mappingsÀ‘À‘ÀÜ [‘”    ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”  	 ‘”  
+ ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”    ‘”  ! ‘”  " ‘”  # ‘”  $ ‘”  % ‘”  & ‘”  ' ‘”  ( ‘”  ) ‘”  * ‘”  + ‘”  , ‘”  - ‘”  . ‘”  / ‘”  0 ‘”  1 ‘”  2 ‘”  3 ‘”  4 ‘”  5 ‘”  6 ‘”  7 ‘”  8 ‘”  9 ‘”  : ‘”  ; ‘”  < ‘”  = ‘”  > ‘”  ? ‘”  Ì@ ‘”  ÌA ‘”  ÌB ‘”  ÌC ‘”  ÌD ‘”  ÌE ‘”  ÌF ‘”  ÌG ‘”  ÌH ‘”  ÌI ‘”  ÌJ ‘”  ÌK ‘”  ÌL ‘”  ÌM ‘”  ÌN ‘”  ÌO ‘”  ÌP ‘”  ÌQ ‘”  ÌR ‘”  ÌS ‘”  ÌT ‘”  ÌU ‘”  ÌV ‘”  ÌW ‘”  ÌX ‘”  ÌY ‘”  ÌZ ÔrG’§missing¦pluginÃ¦genAbcÂÔ  ÔrH”²dynamicImportCache¹exportAllDeclarationCache»exportNamedDeclarationCache«importCache–ÔrI–¤type¥start£end«declarationªspecifiers¦source¶ExportNamedDeclaration!Ì~ÔrJ™¤type¥start£end¢idªexpression©generator¥async¦params¤body³FunctionDeclaration(Ì~ÔrK”¤type¥start£end¤nameªIdentifier1ÌE´isTrustedPcbStrategyÂÂÂ‘KªIdentifierÌFÌJ¤planÔrL”¤type¥start£end¤body®BlockStatementÌLÌ~‘ÔrM”¤type¥start£end¨argument¯ReturnStatementÌSÌ{ÔrN–¤type¥start£end¤left¨operator¥right±LogicalExpressionÌZÌzÔrO—¤type¥start£end¦object¨property¨computed¨optional°MemberExpressionÌZÌfKªIdentifierÌZÌ^¤planKªIdentifierÌ_Ìf§fromLlmÂÂ¢||ÔrP–¤type¥start£end¨operator¦prefix¨argument¯UnaryExpressionÌjÌz¡!ÃP¯UnaryExpressionÌkÌz¡!ÃO°MemberExpressionÌlÌzKªIdentifierÌlÌp¤planKªIdentifierÌqÌz©fromLocalÂÂÀI¶ExportNamedDeclarationÌ€ÍÕJ³FunctionDeclarationÌ‡ÍÕKªIdentifierÌÌ¥µemptyPcbAiRouteResultÂÂÂ“KªIdentifierÌ¦Ì«¥stageKªIdentifierÌ­Ì³¦reasonKªIdentifierÌµÌ¼§usedLlmL®BlockStatementÌ¾ÍÕ‘M¯ReturnStatementÌÅÍÒÔrQ”¤type¥start£endªproperties°ObjectExpressionÌÌÍÑšÔrR™¤type¥start£end¦method©shorthand¨computed£key¥value¤kind¨PropertyÌ×ÌåÂÂÂKªIdentifierÌ×ÌŞ§successÔrS•¤type¥start£end¥value£raw§LiteralÌàÌåÂ¥false¤initÔrT™¤type¥start£end¦method©shorthand¨computed£key¤kind¥value¨PropertyÌğÌ÷ÂÃÂKªIdentifierÌğÌ÷§usedLlm¤initKªIdentifierÌğÌ÷§usedLlmR¨PropertyÍÍÂÂÂKªIdentifierÍÍªabortStageKªIdentifierÍÍ¥stage¤initR¨PropertyÍÍ1ÂÂÂKªIdentifierÍÍ)«abortReasonKªIdentifierÍ+Í1¦reason¤initR¨PropertyÍ<ÍIÂÂÂKªIdentifierÍ<ÍFªtrackCountS§LiteralÍHÍI ¡0¤initR¨PropertyÍTÍ_ÂÂÂKªIdentifierÍTÍ\¨viaCountS§LiteralÍ^Í_ ¡0¤initR¨PropertyÍjÍuÂÂÂKªIdentifierÍjÍr¨netCountS§LiteralÍtÍu ¡0¤initR¨PropertyÍ€ÍÂÂÂKªIdentifierÍ€Í‹«placedCountS§LiteralÍÍ ¡0¤initR¨PropertyÍ™Í«ÂÂÂKªIdentifierÍ™Í¡¨messagesÔrU”¤type¥start£end¨elements¯ArrayExpressionÍ£Í«‘KªIdentifierÍ¤Íª¦reason¤initR¨PropertyÍ¶ÍÊÂÂÂKªIdentifierÍ¶ÍÂ¬residualKindS§LiteralÍÄÍÊ¤none¦'none'¤initÀI¶ExportNamedDeclarationÍ×Í!J³FunctionDeclarationÍŞÍ!KªIdentifierÍçÍõ®copperRoleKeysÂÂÂ‘KªIdentifierÍöÍû¥rolesL®BlockStatementÍıÍ!‘M¯ReturnStatementÍÍÔrV–¤type¥start£end¦callee©arguments¨optional®CallExpressionÍÍO°MemberExpressionÍÍKªIdentifierÍÍ¦ObjectKªIdentifierÍÍ¤keysÂÂ‘KªIdentifierÍÍ¥rolesÂÀI¶ExportNamedDeclarationÍCÍiJ³FunctionDeclarationÍJÍiKªIdentifierÍSÍk¸policyCoversCopperLayersÂÂÂ’KªIdentifierÍlÍr¦policyKªIdentifierÍtÍ€¬copperLayersL®BlockStatementÍ‚Íi“ÔrW•¤type¥start£end¬declarations¤kind³VariableDeclarationÍ‰Íœ‘ÔrX•¤type¥start£end¢id¤init²VariableDeclaratorÍÍ›KªIdentifierÍÍ–§missingU¯ArrayExpressionÍ™Í›¥constÔrY—¤type¥start£end¤init¤test¦update¤body¬ForStatementÍ¢ÍQW³VariableDeclarationÍ§Í°‘X²VariableDeclaratorÍ«Í°KªIdentifierÍ«Í¬¡iS§LiteralÍ¯Í° ¡0£letN°BinaryExpressionÍ²ÍÉKªIdentifierÍ²Í³¡i¡<O°MemberExpressionÍ¶ÍÉKªIdentifierÍ¶ÍÂ¬copperLayersKªIdentifierÍÃÍÉ¦lengthÂÂP°UpdateExpressionÍËÍÎ¢++ÂKªIdentifierÍËÍÌ¡iL®BlockStatementÍĞÍQ’W³VariableDeclarationÍÛÍ÷‘X²VariableDeclaratorÍáÍöKªIdentifierÍáÍä£lidO°MemberExpressionÍçÍöKªIdentifierÍçÍó¬copperLayersKªIdentifierÍôÍõ¡iÃÂ¥constÔrZ–¤type¥start£end¤testªconsequent©alternate«IfStatementÍÍJP¯UnaryExpressionÍÍ¡!ÃO°MemberExpressionÍÍO°MemberExpressionÍÍKªIdentifierÍÍ¦policyKªIdentifierÍÍªlayerRolesÂÂKªIdentifierÍÍ£lidÃÂL®BlockStatementÍÍJ‘Ôr[”¤type¥start£endªexpression³ExpressionStatementÍ-Í?V®CallExpressionÍ-Í>O°MemberExpressionÍ-Í9KªIdentifierÍ-Í4§missingKªIdentifierÍ5Í9¤pushÂÂ‘KªIdentifierÍ:Í=£lidÂÀM¯ReturnStatementÍWÍfKªIdentifierÍ^Íe§missingÀI¶ExportNamedDeclarationÍ©ÍJ³FunctionDeclarationÍ°ÍKªIdentifierÍ¹ÍÓºvalidateLayerRoleSemanticsÂÂÂ’KªIdentifierÍÔÍÚ¦policyKªIdentifierÍÜÍã§netPlanL®BlockStatementÍåÍ›W³VariableDeclarationÍìÍü‘X²VariableDeclaratorÍòÍûKªIdentifierÍòÍö¤errsU¯ArrayExpressionÍùÍû¥constW³VariableDeclarationÍÍ‘X²VariableDeclaratorÍÍKªIdentifierÍÍ§needGndS§LiteralÍÍÂ¥false£letW³VariableDeclarationÍÍ2‘X²VariableDeclaratorÍ Í1KªIdentifierÍ Í)©needPowerS§LiteralÍ,Í1Â¥false£letW³VariableDeclarationÍ8ÍO‘X²VariableDeclaratorÍ<ÍNKªIdentifierÍ<ÍFªneedSignalS§LiteralÍIÍNÂ¥false£letY¬ForStatementÍUÍÏW³VariableDeclarationÍZÍc‘X²VariableDeclaratorÍ^ÍcKªIdentifierÍ^Í_¡iS§LiteralÍbÍc ¡0£letN°BinaryExpressionÍeÍ|KªIdentifierÍeÍf¡i¡<O°MemberExpressionÍiÍ|O°MemberExpressionÍiÍuKªIdentifierÍiÍp§netPlanKªIdentifierÍqÍu¤netsÂÂKªIdentifierÍvÍ|¦lengthÂÂP°UpdateExpressionÍ~Í¢++ÂKªIdentifierÍ~Í¡iL®BlockStatementÍƒÍÏ“W³VariableDeclarationÍÍ¨‘X²VariableDeclaratorÍ”Í§KªIdentifierÍ”Í•¡nO°MemberExpressionÍ˜Í§O°MemberExpressionÍ˜Í¤KªIdentifierÍ˜ÍŸ§netPlanKªIdentifierÍ Í¤¤netsÂÂKªIdentifierÍ¥Í¦¡iÃÂ¥constZ«IfStatementÍ²ÍòN°BinaryExpressionÍ¶ÍÍO°MemberExpressionÍ¶ÍÁKªIdentifierÍ¶Í·¡nKªIdentifierÍ¸ÍÁ©routeModeÂÂ£===S§LiteralÍÆÍÍ¥defer§'defer'L®BlockStatementÍÏÍò‘Ôr\”¤type¥start£end¥label±ContinueStatementÍŞÍçÀÀZ«IfStatementÍüÍÈN°BinaryExpressionÍ ÍO°MemberExpressionÍ ÍKªIdentifierÍ Í¡nKªIdentifierÍÍ¤kindÂÂ£===S§LiteralÍÍ£gnd¥'gnd'L®BlockStatementÍÍ;‘[³ExpressionStatementÍ!Í0Ôr]–¤type¥start£end¨operator¤left¥right´AssignmentExpressionÍ!Í/¡=KªIdentifierÍ!Í(§needGndS§LiteralÍ+Í/Ã¤trueZ«IfStatementÍJÍÈN°BinaryExpressionÍNÍ`O°MemberExpressionÍNÍTKªIdentifierÍNÍO¡nKªIdentifierÍPÍT¤kindÂÂ£===S§LiteralÍYÍ`¥power§'power'L®BlockStatementÍbÍ‘[³ExpressionStatementÍqÍ‚]´AssignmentExpressionÍqÍ¡=KªIdentifierÍqÍz©needPowerS§LiteralÍ}ÍÃ¤trueL®BlockStatementÍœÍÈ‘[³ExpressionStatementÍ«Í½]´AssignmentExpressionÍ«Í¼¡=KªIdentifierÍ«ÍµªneedSignalS§LiteralÍ¸Í¼Ã¤trueW³VariableDeclarationÍÕÍš‘X²VariableDeclaratorÍÛÍ™KªIdentifierÍÛÍä©hasGndBusN±LogicalExpressionÍçÍ™N±LogicalExpressionÍçÍyN±LogicalExpressionÍçÍUN±LogicalExpressionÍçÍ)V®CallExpressionÍçÍKªIdentifierÍçÍó¬roleInPolicy’KªIdentifierÍôÍú¦policyS§LiteralÍüÍ§gnd_bus©'gnd_bus'Â¢||V®CallExpressionÍ
+Í)KªIdentifierÍ
+Í¬roleInPolicy’KªIdentifierÍÍ¦policyS§LiteralÍÍ(§power_h©'power_h'Â¢||V®CallExpressionÍ6ÍUKªIdentifierÍ6ÍB¬roleInPolicy’KªIdentifierÍCÍI¦policyS§LiteralÍKÍT§power_v©'power_v'Â¢||V®CallExpressionÍYÍyKªIdentifierÍYÍe¬roleInPolicy’KªIdentifierÍfÍl¦policyS§LiteralÍnÍx¨signal_hª'signal_h'Â¢||V®CallExpressionÍ}Í™KªIdentifierÍ}Í‰¬roleInPolicy’KªIdentifierÍŠÍ¦policyS§LiteralÍ’Í˜¤stub¦'stub'Â¥constW³VariableDeclarationÍ Íe‘X²VariableDeclaratorÍ¦ÍdKªIdentifierÍ¦Í¯©hasVccBusN±LogicalExpressionÍ²ÍdN±LogicalExpressionÍ²ÍDN±LogicalExpressionÍ²Í N±LogicalExpressionÍ²ÍôV®CallExpressionÍ²ÍÑKªIdentifierÍ²Í¾¬roleInPolicy’KªIdentifierÍ¿ÍÅ¦policyS§LiteralÍÇÍĞ§vcc_bus©'vcc_bus'Â¢||V®CallExpressionÍÕÍôKªIdentifierÍÕÍá¬roleInPolicy’KªIdentifierÍâÍè¦policyS§LiteralÍêÍó§power_v©'power_v'Â¢||V®CallExpressionÍÍ KªIdentifierÍÍ¬roleInPolicy’KªIdentifierÍÍ¦policyS§LiteralÍÍ§power_h©'power_h'Â¢||V®CallExpressionÍ$ÍDKªIdentifierÍ$Í0¬roleInPolicy’KªIdentifierÍ1Í7¦policyS§LiteralÍ9ÍC¨signal_hª'signal_h'Â¢||V®CallExpressionÍHÍdKªIdentifierÍHÍT¬roleInPolicy’KªIdentifierÍUÍ[¦policyS§LiteralÍ]Íc¤stub¦'stub'Â¥constZ«IfStatementÍkÍÊN±LogicalExpressionÍoÍ„KªIdentifierÍoÍv§needGnd¢&&P¯UnaryExpressionÍzÍ„¡!ÃKªIdentifierÍ{Í„©hasGndBusL®BlockStatementÍ†ÍÊ‘[³ExpressionStatementÍ‘ÍÃV®CallExpressionÍ‘ÍÂO°MemberExpressionÍ‘ÍšKªIdentifierÍ‘Í•¤errsKªIdentifierÍ–Íš¤pushÂÂ‘S§LiteralÍ›ÍÁÙ$missing gnd_bus|power_h for gnd netsÙ&'missing gnd_bus|power_h for gnd nets'ÂÀZ«IfStatementÍĞÍ	3N±LogicalExpressionÍÔÍëKªIdentifierÍÔÍİ©needPower¢&&P¯UnaryExpressionÍáÍë¡!ÃKªIdentifierÍâÍë©hasVccBusL®BlockStatementÍíÍ	3‘[³ExpressionStatementÍøÍ	,V®CallExpressionÍøÍ	+O°MemberExpressionÍøÍ	KªIdentifierÍøÍü¤errsKªIdentifierÍıÍ	¤pushÂÂ‘S§LiteralÍ	Í	*Ù&missing vcc_bus|power_h for power netsÙ('missing vcc_bus|power_h for power nets'ÂÀZ«IfStatementÍ	9Í
+ùKªIdentifierÍ	=Í	GªneedSignalL®BlockStatementÍ	IÍ
+ù“W³VariableDeclarationÍ	TÍ	ø‘X²VariableDeclaratorÍ	ZÍ	÷KªIdentifierÍ	ZÍ	^¤hasHN±LogicalExpressionÍ	aÍ	÷N±LogicalExpressionÍ	aÍ	ÔN±LogicalExpressionÍ	aÍ	¤V®CallExpressionÍ	aÍ	KªIdentifierÍ	aÍ	m¬roleInPolicy’KªIdentifierÍ	nÍ	t¦policyS§LiteralÍ	vÍ	€¨signal_hª'signal_h'Â¢||V®CallExpressionÍ	…Í	¤KªIdentifierÍ	…Í	‘¬roleInPolicy’KªIdentifierÍ	’Í	˜¦policyS§LiteralÍ	šÍ	£§power_h©'power_h'Â¢||V®CallExpressionÍ	µÍ	ÔKªIdentifierÍ	µÍ	Á¬roleInPolicy’KªIdentifierÍ	ÂÍ	È¦policyS§LiteralÍ	ÊÍ	Ó§gnd_bus©'gnd_bus'Â¢||V®CallExpressionÍ	ØÍ	÷KªIdentifierÍ	ØÍ	ä¬roleInPolicy’KªIdentifierÍ	åÍ	ë¦policyS§LiteralÍ	íÍ	ö§vcc_bus©'vcc_bus'Â¥constW³VariableDeclarationÍ
+Í
+„‘X²VariableDeclaratorÍ
+Í
+ƒKªIdentifierÍ
+Í
+§hasStubN±LogicalExpressionÍ
 Í
-#Y¯UnaryExpressionÍ
+ƒN±LogicalExpressionÍ
 Í
-¡!ÃKªIdentifierÍ
-Í
-¤hasH¢||Y¯UnaryExpressionÍ
-Í
-#¡!ÃKªIdentifierÍ
-Í
-#§hasStubL®BlockStatementÍ
-%Í
-r‘[³ExpressionStatementÍ
-4Í
-gS®CallExpressionÍ
-4Í
-fT°MemberExpressionÍ
-4Í
-=KªIdentifierÍ
-4Í
-8¤errsKªIdentifierÍ
-9Í
-=¤pushÂÂ‘P§LiteralÍ
->Í
-eÙ%missing signal_h/stub for signal netsÙ''missing signal_h/stub for signal nets'ÂÀÀM¯ReturnStatementÍ
-Í
-‹KªIdentifierÍ
-†Í
-Š¤errsÀI¶ExportNamedDeclarationÍ
-´ÍJ³FunctionDeclarationÍ
-»ÍKªIdentifierÍ
-ÄÍ
-Ñ­policyHasStubÂÂÂ‘KªIdentifierÍ
-ÒÍ
-Ø¦policyL®BlockStatementÍ
-ÚÍ‘M¯ReturnStatementÍ
-áÍS®CallExpressionÍ
-èÍKªIdentifierÍ
-èÍ
-ô¬roleInPolicy’KªIdentifierÍ
-õÍ
-û¦policyP§LiteralÍ
-ıÍ¤stub¦'stub'ÂÀ
+RV®CallExpressionÍ
+Í
+.KªIdentifierÍ
+Í
+¬roleInPolicy’KªIdentifierÍ
+Í
+%¦policyS§LiteralÍ
+'Í
+-¤stub¦'stub'Â¢||V®CallExpressionÍ
+2Í
+RKªIdentifierÍ
+2Í
+>¬roleInPolicy’KªIdentifierÍ
+?Í
+E¦policyS§LiteralÍ
+GÍ
+Q¨signal_vª'signal_v'Â¢||V®CallExpressionÍ
+cÍ
+ƒKªIdentifierÍ
+cÍ
+o¬roleInPolicy’KªIdentifierÍ
+pÍ
+v¦policyS§LiteralÍ
+xÍ
+‚¨signal_hª'signal_h'Â¥constZ«IfStatementÍ
+Í
+òN±LogicalExpressionÍ
+’Í
+£P¯UnaryExpressionÍ
+’Í
+—¡!ÃKªIdentifierÍ
+“Í
+—¤hasH¢||P¯UnaryExpressionÍ
+›Í
+£¡!ÃKªIdentifierÍ
+œÍ
+£§hasStubL®BlockStatementÍ
+¥Í
+ò‘[³ExpressionStatementÍ
+´Í
+çV®CallExpressionÍ
+´Í
+æO°MemberExpressionÍ
+´Í
+½KªIdentifierÍ
+´Í
+¸¤errsKªIdentifierÍ
+¹Í
+½¤pushÂÂ‘S§LiteralÍ
+¾Í
+åÙ%missing signal_h/stub for signal netsÙ''missing signal_h/stub for signal nets'ÂÀÀM¯ReturnStatementÍ
+ÿÍKªIdentifierÍÍ
+¤errsÀI¶ExportNamedDeclarationÍ4ÍˆJ³FunctionDeclarationÍ;ÍˆKªIdentifierÍDÍQ­policyHasStubÂÂÂ‘KªIdentifierÍRÍX¦policyL®BlockStatementÍZÍˆ‘M¯ReturnStatementÍaÍ…V®CallExpressionÍhÍ„KªIdentifierÍhÍt¬roleInPolicy’KªIdentifierÍuÍ{¦policyS§LiteralÍ}Íƒ¤stub¦'stub'ÂÀ

@@ -6,7 +6,7 @@
  * 约束：强制正交；用户 Waypoint 刚性锚点；选中区/既有导线为硬障碍（不可穿越）。
  */
 import { Point2D } from '../types/CommonTypes';
-import { DeviceHitGeometry, WorldHitRect } from './DeviceHitGeometry';
+import { DeviceHitGeometry, WorldHitRect, FOREIGN_PIN_CLEARANCE } from './DeviceHitGeometry';
 import { MainThreadYield } from './MainThreadYield';
 
 /** WAR 预览 / 落线路径结果（与编辑器 ISchematicEditor 对齐） */
@@ -281,6 +281,7 @@ export class WireAutoRouter {
 
   private static anchorsOutsideForeignHits(anchors: Point2D[], ctx: WarRouteContext): boolean {
     const exclude = WireAutoRouter.excludeSet(ctx);
+    const pinClear = FOREIGN_PIN_CLEARANCE;
     // 中间人工拐点
     for (let i = 1; i < anchors.length - 1; i++) {
       const p = anchors[i];
@@ -291,6 +292,12 @@ export class WireAutoRouter {
         }
         const banned = WireAutoRouter.expandHit(obs.hitRect, ctx.gridSize);
         if (DeviceHitGeometry.pointInRect(p.x, p.y, banned)) {
+          return false;
+        }
+      }
+      for (let fi = 0; fi < ctx.foreignPins.length; fi++) {
+        const fp = ctx.foreignPins[fi];
+        if (Math.hypot(p.x - fp.x, p.y - fp.y) < pinClear) {
           return false;
         }
       }
@@ -1267,7 +1274,8 @@ export class WireAutoRouter {
     wx: number, wy: number, obs: WarCompObstacle, ctx: WarRouteContext
   ): boolean {
     const escape = WireAutoRouter.escapePinsOf(obs);
-    const clearR = Math.max(ctx.gridSize * 0.9, 8);
+    // 与 FOREIGN_PIN_CLEARANCE 对齐：邻脚 20mil 内硬挡（旧 clearR≈9 仍会贴脚而过）
+    const clearR = Math.max(FOREIGN_PIN_CLEARANCE, ctx.gridSize * 0.9);
     for (let pi = 0; pi < obs.pinWorlds.length; pi++) {
       const p = obs.pinWorlds[pi];
       if (Math.hypot(wx - p.x, wy - p.y) > clearR) {
@@ -1353,6 +1361,15 @@ export class WireAutoRouter {
         }
       }
     }
+
+    // 无关引脚硬禁行（含邻器件脚尖伸出选中区外；端点目标脚不在 foreignPins）
+    const pinClear = FOREIGN_PIN_CLEARANCE;
+    for (let fi = 0; fi < ctx.foreignPins.length; fi++) {
+      const fp = ctx.foreignPins[fi];
+      if (Math.hypot(wx - fp.x, wy - fp.y) < pinClear) {
+        return true;
+      }
+    }
     return false;
   }
 
@@ -1434,6 +1451,12 @@ export class WireAutoRouter {
           return false;
         }
       }
+    }
+
+    // 无关引脚：中段不得压过/贴近（FOREIGN_PIN_CLEARANCE）；端点邻域豁免
+    if (!DeviceHitGeometry.segmentClearsForeignPins(
+      a, b, ctx.foreignPins, FOREIGN_PIN_CLEARANCE)) {
+      return false;
     }
     return true;
   }

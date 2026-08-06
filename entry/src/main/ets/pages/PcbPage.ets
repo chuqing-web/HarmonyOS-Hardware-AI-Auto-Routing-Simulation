@@ -9,7 +9,7 @@ import { PcbRightPanel } from '../components/pcb/PcbRightPanel';
 import { PcbStatusBar } from '../components/pcb/PcbStatusBar';
 import {
   ProteusResizer, ProteusMenuTrigger, ProteusMenuEntry,
-  ProteusToolButton, ProteusToolGroup
+  ProteusToolButton, ProteusToolGroup, ProteusClassicBtn, ProteusChipTab
 } from '../components/proteus/ProteusWidgets';
 import { ProteusIcon, ProteusIconName } from '../components/proteus/ProteusIcons';
 import { ProteusColors, ProteusDimens, ProteusFonts } from '../theme/ProteusTheme';
@@ -53,10 +53,6 @@ struct PcbPage {
   @State statusMessage: string = '';
   @State canvasVersion: number = 0;
   @State gerberDocRev: number = 0;
-  @State aiBusy: boolean = false;
-  @State aiProgress: number = 0;
-  @State aiStage: string = '';
-  @State aiTabFocusTick: number = 0;
   @State selectedFootprintId: string = '';
   @State selectedTrackId: string = '';
   @State selectedViaId: string = '';
@@ -93,10 +89,17 @@ struct PcbPage {
   @State stackHighlightCopperIds: PcbLayerId[] = [];
   /** 由原理图跳转进入：Home/返回 回到原理图 */
   @State fromSchematic: boolean = false;
+  /** F8 自动布线前确认铜层数 */
+  @State private showAutoRouteLayerConfirm: boolean = false;
+  @State private autoRouteBoardCopper: number = 2;
+  @State private autoRouteConfirmCopper: number = 2;
+  /** 经典自动布线进行中（主线程协作让出，画布只读） */
+  @State private autoRouteBusy: boolean = false;
   /** bit0=Ctrl, bit1=Shift — 页面级快捷键 */
   private pageModifierKeys: number = 0;
+  private readonly autoRouteCopperOptions: number[] = [2, 4, 6, 8];
+  private readonly autoRouteCopperLabels: string[] = ['2L', '4L', '6L', '8L'];
   private userProjectDir: string = '';
-  private prevAiGeneratingChanged: ((busy: boolean) => void) | null = null;
 
   private appService: AppService = AppService.getInstance();
 
@@ -104,28 +107,11 @@ struct PcbPage {
     EventBus.getInstance().subscribe(ModuleEvent.PCB_CHANGED, this.onPcbChanged);
     EventBus.getInstance().subscribe(ModuleEvent.VIEWPORT_CHANGED, this.onViewportChanged);
     EventBus.getInstance().subscribe(ModuleEvent.SELECTION_CHANGED, this.onSelectionChanged);
-    // 链式挂钩：PCB AI 布线时同步 aiBusy，并保留原回调（如原理图页）
-    this.prevAiGeneratingChanged = this.appService.onAiGeneratingChanged;
-    this.appService.onAiGeneratingChanged = (busy: boolean): void => {
-      this.aiBusy = busy;
-      if (busy) {
-        this.toolMode = PcbToolMode.SELECT;
-        this.statusMessage = 'PCB AI 布线中，画布已锁定';
-      }
-      if (this.prevAiGeneratingChanged) {
-        this.prevAiGeneratingChanged(busy);
-      }
-    };
-    this.aiBusy = this.appService.isAiGenerating();
     void this.initPage();
   }
 
   aboutToDisappear(): void {
     this.syncPcbToProject();
-    if (this.prevAiGeneratingChanged !== null) {
-      this.appService.onAiGeneratingChanged = this.prevAiGeneratingChanged;
-      this.prevAiGeneratingChanged = null;
-    }
     EventBus.getInstance().unsubscribe(ModuleEvent.PCB_CHANGED, this.onPcbChanged);
     EventBus.getInstance().unsubscribe(ModuleEvent.VIEWPORT_CHANGED, this.onViewportChanged);
     EventBus.getInstance().unsubscribe(ModuleEvent.SELECTION_CHANGED, this.onSelectionChanged);
@@ -351,9 +337,17 @@ struct PcbPage {
     this.selectedFootprintInfo = '';
   }
 
+  /** 自动布线进行中：拦截工具栏/快捷键编辑与视口操作 */
+  private guardAutoRouteBusy(): boolean {
+    if (!this.autoRouteBusy) {
+      return false;
+    }
+    this.statusMessage = '自动布线中，画布已锁定';
+    return true;
+  }
+
   private deleteSelected(): void {
-    if (this.appService.isAiGenerating()) {
-      this.statusMessage = 'PCB AI 布线中，画布已锁定';
+    if (this.guardAutoRouteBusy()) {
       return;
     }
     const sel = this.getEditor().getSelection();
@@ -370,37 +364,171 @@ struct PcbPage {
     this.canvasVersion++;
   }
 
-  private runAutoRoute(): void {
-    if (this.appService.isAiGenerating()) {
-      this.statusMessage = 'PCB AI 布线中，画布已锁定';
+  private normalizeAutoRouteCopper(n: number): number {
+    if (n === 4 || n === 6 || n === 8) {
+      return n;
+    }
+    return 2;
+  }
+
+  /** F8 / 工具栏：先确认铜层数，再执行经典自动布线 */
+  private requestAutoRoute(): void {
+    if (this.autoRouteBusy) {
+      this.statusMessage = '自动布线进行中…';
       return;
     }
-    tracePcbUi('AUTO_ROUTE', 'start');
-    const result = this.getEditor().runAutoRoute();
-    if (result.success && result.data !== undefined) {
-      this.syncPcbToProject();
-      this.canvasVersion++;
-      const d = result.data;
-      const hint = d.messages.length > 0 ? d.messages[0] : '';
-      this.statusMessage = `自动布线: ${d.netCount} 网络, ${d.trackCount} 段走线${hint.length > 0 ? ' — ' + hint : ''}`;
-      this.unsavedChanges = true;
-      tracePcbOp('AUTO_ROUTE', `ok nets=${d.netCount} tracks=${d.trackCount}`);
+    const cur = this.getEditor().getLayerStackCopperCount();
+    this.autoRouteBoardCopper = cur;
+    this.autoRouteConfirmCopper = this.normalizeAutoRouteCopper(cur);
+    this.showAutoRouteLayerConfirm = true;
+    this.statusMessage = `确认自动布线铜层（当前 ${cur}）…`;
+    tracePcbUi('AUTO_ROUTE', `confirm_open Cu=${cur}`);
+  }
+
+  private cancelAutoRouteLayerConfirm(): void {
+    this.showAutoRouteLayerConfirm = false;
+    this.statusMessage = '已取消自动布线';
+    tracePcbUi('AUTO_ROUTE', 'confirm_cancel');
+  }
+
+  private confirmAutoRouteLayerAndRun(): void {
+    if (this.autoRouteBusy) {
+      return;
+    }
+    const target = this.normalizeAutoRouteCopper(this.autoRouteConfirmCopper);
+    const prev = this.autoRouteBoardCopper;
+    this.showAutoRouteLayerConfirm = false;
+    if (target !== prev) {
+      if (this.getEditor().setCopperLayerCount(target)) {
+        this.refreshLayers();
+        this.syncActiveLayerFromEditor();
+        this.syncStackUiFromEditor();
+        this.canvasVersion++;
+      }
+      tracePcbUi('AUTO_ROUTE', `copper confirm ${prev}→${target}`);
     } else {
-      this.statusMessage = result.error ?? '自动布线失败';
-      tracePcbOp('AUTO_ROUTE', `fail ${result.error ?? 'unknown'}`);
+      tracePcbUi('AUTO_ROUTE', `copper confirm keep ${target}`);
+    }
+    // 立即占位，防止确认连点；实际计算推迟到下一任务，先让 MMITask 结束
+    this.autoRouteBusy = true;
+    this.getEditor().setReadOnly(true);
+    this.statusMessage = `自动布线中（Cu=${target}）…`;
+    setTimeout((): void => {
+      this.runAutoRoute(target);
+    }, 0);
+  }
+
+  private async runAutoRoute(confirmedCopper?: number): Promise<void> {
+    const cu = confirmedCopper !== undefined
+      ? confirmedCopper
+      : this.getEditor().getLayerStackCopperCount();
+    this.autoRouteBusy = true;
+    this.getEditor().setReadOnly(true);
+    this.statusMessage = `自动布线中（Cu=${cu}）…`;
+    tracePcbUi('AUTO_ROUTE', `start Cu=${cu}`);
+    try {
+      const result = await this.getEditor().runAutoRoute();
+      if (result.success && result.data !== undefined) {
+        this.syncPcbToProject();
+        this.canvasVersion++;
+        const d = result.data;
+        const hint = d.messages.length > 0 ? d.messages[0] : '';
+        this.statusMessage =
+          `自动布线: ${d.netCount} 网络, ${d.trackCount} 段 · Cu=${cu}` +
+          `${hint.length > 0 ? ' — ' + hint : ''}`;
+        this.unsavedChanges = true;
+        tracePcbOp('AUTO_ROUTE', `ok nets=${d.netCount} tracks=${d.trackCount} Cu=${cu}`);
+      } else {
+        this.statusMessage = result.error ?? '自动布线失败';
+        tracePcbOp('AUTO_ROUTE', `fail ${result.error ?? 'unknown'}`);
+      }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : `${e}`;
+      this.statusMessage = `自动布线异常: ${msg}`;
+      tracePcbOp('AUTO_ROUTE', `exception ${msg}`);
+    } finally {
+      this.getEditor().setReadOnly(false);
+      this.autoRouteBusy = false;
+      this.canvasVersion++;
     }
   }
 
-  /** 打开右侧「AI布线」页签（与原理图 AI 助手同风格；运行在面板内） */
-  private openAiRouteTab(): void {
-    this.aiTabFocusTick++;
-    this.statusMessage = 'AI 布线面板已打开 — 可配置 API 并开始布线';
-    tracePcbUi('AI_PCB_TAB', 'open');
-  }
+  @Builder
+  private autoRouteLayerConfirmDialog() {
+    Column() {
+      Column({ space: 10 }) {
+        Text('自动布线 · 铜层')
+          .fontSize(ProteusFonts.TITLE)
+          .fontColor(ProteusColors.TEXT_PRIMARY)
+          .fontWeight(FontWeight.Medium)
+          .width('100%')
+          .textAlign(TextAlign.Center)
 
-  /** 兼容 F9 / 工具栏：切到 AI 页签（布线动作在面板内点「开始 AI 布线」） */
-  private async runAiAutoRoute(): Promise<void> {
-    this.openAiRouteTab();
+        Text(`当前板 ${this.autoRouteBoardCopper} 层 · 选择本次层数`)
+          .fontSize(10)
+          .fontColor(ProteusColors.TEXT_SECONDARY)
+          .width('100%')
+          .textAlign(TextAlign.Center)
+          .maxLines(2)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+
+        Row({ space: 4 }) {
+          ForEach(this.autoRouteCopperOptions, (n: number, idx: number) => {
+            ProteusChipTab({
+              label: this.autoRouteCopperLabels[idx],
+              selected: this.autoRouteConfirmCopper === n,
+              fillWidth: true,
+              onSelect: () => { this.autoRouteConfirmCopper = n; }
+            })
+          }, (n: number) => `ar_cu_${n}`)
+        }
+        .width('100%')
+
+        Text('≥4 层时水平/垂直分铜层布线')
+          .fontSize(9)
+          .fontColor(ProteusColors.TEXT_SECONDARY)
+          .width('100%')
+          .textAlign(TextAlign.Center)
+
+        Row({ space: 8 }) {
+          Column() {
+            ProteusClassicBtn({
+              label: '取消',
+              widthVal: '100%',
+              onAction: () => { this.cancelAutoRouteLayerConfirm(); }
+            })
+          }
+          .layoutWeight(1)
+          Column() {
+            ProteusClassicBtn({
+              label: '确认布线',
+              widthVal: '100%',
+              onAction: () => { this.confirmAutoRouteLayerAndRun(); }
+            })
+          }
+          .layoutWeight(1)
+        }
+        .width('100%')
+      }
+      .width('100%')
+      .constraintSize({ maxWidth: 300 })
+      .padding({ left: 12, right: 12, top: 12, bottom: 12 })
+      .alignItems(HorizontalAlign.Center)
+      .backgroundColor(ProteusColors.CANVAS_BG)
+      .border({ width: 1, color: ProteusColors.DIVIDER })
+      .shadow({ radius: 8, color: '#44000000', offsetX: 0, offsetY: 2 })
+      .clip(true)
+    }
+    .width('100%')
+    .height('100%')
+    .justifyContent(FlexAlign.Center)
+    .alignItems(HorizontalAlign.Center)
+    .padding({ left: 24, right: 24 })
+    .backgroundColor('#99000000')
+    .hitTestBehavior(HitTestMode.Default)
+    .onClick(() => {
+      // 点击遮罩不关闭，避免误触
+    })
   }
 
   private adjustSelectedZonePriority(delta: number): void {
@@ -1141,8 +1269,7 @@ struct PcbPage {
   }
 
   private setToolMode(mode: PcbToolMode): void {
-    if (this.appService.isAiGenerating()) {
-      this.statusMessage = 'PCB AI 布线中，画布已锁定';
+    if (this.guardAutoRouteBusy()) {
       return;
     }
     const prev = this.toolMode;
@@ -1160,6 +1287,9 @@ struct PcbPage {
   }
 
   private doUndo(): void {
+    if (this.guardAutoRouteBusy()) {
+      return;
+    }
     if (this.getEditor().undo()) {
       this.syncPcbToProject();
       this.refreshSelectedInfo();
@@ -1169,6 +1299,9 @@ struct PcbPage {
   }
 
   private doRedo(): void {
+    if (this.guardAutoRouteBusy()) {
+      return;
+    }
     if (this.getEditor().redo()) {
       this.syncPcbToProject();
       this.refreshSelectedInfo();
@@ -1178,6 +1311,9 @@ struct PcbPage {
   }
 
   private doRotate(): void {
+    if (this.guardAutoRouteBusy()) {
+      return;
+    }
     this.getEditor().rotateSelected(true);
     this.refreshSelectedInfo();
     this.syncPcbToProject();
@@ -1186,6 +1322,9 @@ struct PcbPage {
   }
 
   private doFlip(): void {
+    if (this.guardAutoRouteBusy()) {
+      return;
+    }
     this.getEditor().flipSelected();
     this.refreshSelectedInfo();
     this.syncPcbToProject();
@@ -1194,6 +1333,9 @@ struct PcbPage {
   }
 
   private doFit(): void {
+    if (this.guardAutoRouteBusy()) {
+      return;
+    }
     this.getEditor().fitBoardInView();
     this.zoomPercent = Math.round(this.getEditor().getViewport().zoom * 100);
     this.canvasVersion++;
@@ -1201,17 +1343,26 @@ struct PcbPage {
   }
 
   private doZoom(factor: number): void {
+    if (this.guardAutoRouteBusy()) {
+      return;
+    }
     this.getEditor().zoomAt(factor, 400, 300);
     this.zoomPercent = Math.round(this.getEditor().getViewport().zoom * 100);
     this.canvasVersion++;
   }
 
   private doCopy(): void {
+    if (this.guardAutoRouteBusy()) {
+      return;
+    }
     const ok = this.getEditor().copySelected();
     this.statusMessage = ok ? '已复制' : '无选中对象';
   }
 
   private doPaste(): void {
+    if (this.guardAutoRouteBusy()) {
+      return;
+    }
     const count = this.getEditor().pasteClipboard();
     this.statusMessage = count > 0 ? `已粘贴 ${count} 个` : '剪贴板为空';
     if (count > 0) {
@@ -1245,8 +1396,8 @@ struct PcbPage {
     if (event.type !== KeyType.Down) {
       return;
     }
-    if (this.appService.isAiGenerating()) {
-      this.statusMessage = 'PCB AI 布线中，画布已锁定';
+    if (this.autoRouteBusy) {
+      this.statusMessage = '自动布线中，画布已锁定';
       return;
     }
     const ctrl = (this.pageModifierKeys & 1) !== 0;
@@ -1361,20 +1512,30 @@ struct PcbPage {
       return;
     }
     if (kt === 'f8' || event.keyCode === 299) {
-      this.runAutoRoute();
-      return;
-    }
-    if (kt === 'f9' || event.keyCode === 300) {
-      this.openAiRouteTab();
+      this.requestAutoRoute();
       return;
     }
   }
 
   build() {
-    Column() {
-      this.buildMenuBar()
-      this.buildMainToolbar()
-      Row() {
+    Stack() {
+      // 须等工程装载完成再挂画布，避免 AppService 单例上一 PCB 残影
+      if (!this.appInitialized) {
+        Column() {
+          Text('正在准备 PCB 工程…')
+            .fontSize(14)
+            .fontColor(ProteusColors.TEXT_SECONDARY)
+        }
+        .width('100%')
+        .height('100%')
+        .justifyContent(FlexAlign.Center)
+        .alignItems(HorizontalAlign.Center)
+        .backgroundColor(ProteusColors.MENU_BG)
+      } else {
+      Column() {
+        this.buildMenuBar()
+        this.buildMainToolbar()
+        Row() {
         Column() {
           PcbVerticalToolbar({
             toolMode: this.toolMode,
@@ -1395,8 +1556,7 @@ struct PcbPage {
             },
             onUpdatePcb: () => { void this.updateFromSchematic(); },
             onDrc: () => { this.runDrc(); },
-            onAutoRoute: () => { this.runAutoRoute(); },
-            onAiRoute: () => { this.openAiRouteTab(); },
+            onAutoRoute: () => { this.requestAutoRoute(); },
             onCopy: () => { this.doCopy(); },
             onPaste: () => { this.doPaste(); }
           })
@@ -1475,21 +1635,16 @@ struct PcbPage {
             .width('100%')
             .height('100%')
 
-          if (this.aiBusy) {
+          // 对标原理图 AI 生图：全屏遮罩吞掉触摸/鼠标，禁止平移缩放编辑
+          if (this.autoRouteBusy) {
             Column({ space: 10 }) {
-              Text('PCB AI 布线中')
+              Text('自动布线中')
                 .fontSize(18)
                 .fontColor('#FFFFFF')
                 .fontWeight(FontWeight.Medium)
-              Text(this.aiStage.length > 0 ? `${this.aiStage}  ${this.aiProgress}%` : `${this.aiProgress}%`)
-                .fontSize(13)
-                .fontColor('#E0E0E0')
-              Text('画布已锁定 · 仅允许 AI 自动放置与布线')
+              Text('画布已锁定 · 请等待布线完成')
                 .fontSize(12)
                 .fontColor('#BDBDBD')
-              Text('详见右侧 AI 布线面板')
-                .fontSize(11)
-                .fontColor('#9E9E9E')
             }
             .width('100%')
             .height('100%')
@@ -1498,7 +1653,13 @@ struct PcbPage {
             .backgroundColor('#CC1A1A1A')
             .hitTestBehavior(HitTestMode.Default)
             .onTouch((_e: TouchEvent) => {
-              // 吞掉触摸，禁止平移/缩放/放置
+              // 吞掉全部触摸，禁止平移/缩放/放置
+            })
+            .onMouse((_e: MouseEvent) => {
+              // 吞掉鼠标，避免穿透到下方 Canvas
+            })
+            .onClick(() => {
+              // 吞掉点击
             })
           }
         }
@@ -1525,28 +1686,8 @@ struct PcbPage {
           stackFocusTick: this.stackFocusTick,
           stackHighlightCopperIds: this.stackHighlightCopperIds,
           gerberDocRev: this.gerberDocRev,
-          aiTabFocusTick: this.aiTabFocusTick,
-          statusMessage: $statusMessage,
-          aiBusy: $aiBusy,
-          aiProgress: $aiProgress,
-          aiStage: $aiStage,
           getPcbDocument: () => this.getEditor().getDocument(),
           onExportGerber: () => { this.exportGerber(); },
-          onAiRouteDone: () => {
-            this.refreshLayers();
-            this.syncActiveLayerFromEditor();
-            this.syncStackUiFromEditor();
-            this.syncPcbToProject();
-            this.canvasVersion++;
-            this.unsavedChanges = true;
-            this.refreshSelectedInfo();
-            const doc = this.getEditor().getDocument();
-            const tc = doc?.tracks.length ?? 0;
-            const vc = doc?.vias.length ?? 0;
-            const cu = doc?.layerStack?.copperCount ?? this.copperCount;
-            this.statusMessage = `PCB AI 布线完成: ${tc} 段, ${vc} 过孔 · Cu=${cu}`;
-            tracePcbOp('AI_PCB_ROUTE', `ok tracks=${tc} vias=${vc} cu=${cu}`);
-          },
           onZonePriority: (delta: number) => { this.adjustSelectedZonePriority(delta); },
           onZoneThermal: () => { this.toggleSelectedZoneThermal(); },
           onZoneRefreshCutouts: () => { this.refreshSelectedZoneCutouts(); },
@@ -1626,13 +1767,21 @@ struct PcbPage {
         gridVisible: this.gridVisible,
         hoverNetName: this.hoverNetName
       })
+      }
+      .width('100%')
+      .height('100%')
+      .backgroundColor(ProteusColors.MENU_BG)
+      .focusable(true)
+      .defaultFocus(true)
+      .onKeyEvent((event: KeyEvent) => { this.handlePageKeyEvent(event); })
+      }
+
+      if (this.showAutoRouteLayerConfirm) {
+        this.autoRouteLayerConfirmDialog()
+      }
     }
     .width('100%')
     .height('100%')
-    .backgroundColor(ProteusColors.MENU_BG)
-    .focusable(true)
-    .defaultFocus(true)
-    .onKeyEvent((event: KeyEvent) => { this.handlePageKeyEvent(event); })
   }
 
   @Builder
@@ -1808,13 +1957,7 @@ struct PcbPage {
           iconName: ProteusIconName.WIRE,
           tooltip: '自动布线 (F8)',
           showLabel: false,
-          onAction: () => { this.runAutoRoute(); }
-        })
-        ProteusToolButton({
-          iconName: ProteusIconName.AI_ROUTE,
-          tooltip: 'AI 布线面板 (F9)',
-          showLabel: false,
-          onAction: () => { this.openAiRouteTab(); }
+          onAction: () => { this.requestAutoRoute(); }
         })
         ProteusToolButton({
           iconName: ProteusIconName.LAYER,
@@ -2074,8 +2217,7 @@ struct PcbPage {
       { label: '回写原理图（反向标注）', action: () => { this.reverseToSchematic(); } },
       { label: 'DRC 检查', action: () => { this.runDrc(); } },
       { label: 'instr_trace: 2D/3D 诊断转储', action: () => { this.dumpPcbInstrTrace(); } },
-      { label: '自动布线 (F8)', action: () => { this.runAutoRoute(); } },
-      { label: 'AI 布线面板 (F9)', action: () => { this.openAiRouteTab(); } },
+      { label: '自动布线 (F8)', action: () => { this.requestAutoRoute(); } },
       { label: '复制 (Ctrl+C) / 粘贴 (Ctrl+V)', action: () => {
         const count = this.getEditor().pasteClipboard();
         this.statusMessage = count > 0 ? `已粘贴 ${count} 个` : '剪贴板为空，先 Ctrl+C 复制';

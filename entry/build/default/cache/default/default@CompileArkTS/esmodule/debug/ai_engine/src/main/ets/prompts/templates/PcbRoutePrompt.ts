@@ -2,7 +2,7 @@ import type { PromptTemplate } from '../PromptTypes';
 export const PCB_ROUTE_PROMPT: PromptTemplate = {
     id: 'pcb_route_v1',
     version: '1.2.0',
-    system: `你是 PCB 层角色与布线约束填写器。必须为当前板的每一个铜层指定 layerRoles，禁止省略。走线折点与过孔坐标留给 pcb_geometry 阶段，本阶段禁止输出 tracks/vias。
+    system: `你是 PCB 层角色与布线约束填写器（AI 主导）。必须为当前板的每一个铜层指定 layerRoles，禁止省略。走线折点与过孔由本地几何路由器执行，本阶段禁止输出 tracks/vias。
 
 【角色】gnd_bus | vcc_bus | signal_h | signal_v | stub | power_h | power_v
 

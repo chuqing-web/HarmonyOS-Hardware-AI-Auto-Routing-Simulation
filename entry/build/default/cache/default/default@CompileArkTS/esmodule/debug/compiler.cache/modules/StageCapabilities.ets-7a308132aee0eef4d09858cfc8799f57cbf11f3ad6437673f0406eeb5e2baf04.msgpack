@@ -1,4 +1,4 @@
-Ôr@Ÿªassertions¤code´customTransformCache¬dependencies¢id¤meta±moduleSideEffects¬originalCode±originalSourcemap«resolvedIds®sourcemapChainµsyntheticNamedExportsµtransformDependencies®transformFiles¨cacheAstÔrAÚ w/**
+Ôr@Ÿªassertions¤code´customTransformCache¬dependencies¢id¤meta±moduleSideEffects¬originalCode±originalSourcemap«resolvedIds®sourcemapChainµsyntheticNamedExportsµtransformDependencies®transformFiles¨cacheAstÔrAÚí/**
  * å„æµæ°´çº¿é˜¶æ®µã€Œèƒ½åšä»€ä¹ˆã€â€” æ³¨å…¥ Promptï¼Œé¿å…æ··ç”¨ fixAction / å»ºç½‘è¯æ±‡ã€‚
  * æ³¨æ„ï¼šä»… self_review /ï¼ˆéƒ¨åˆ†ï¼‰ç¡®å®šæ€§å›é€€å¯æ‰§è¡Œ fixActionï¼›å…¶å®ƒé˜¶æ®µè¾“å‡ºå„è‡ª JSON å¥‘çº¦ã€‚
  * ArkTSï¼šç¦æ­¢æœªæ ‡æ³¨ç±»å‹çš„å¯¹è±¡å­—é¢é‡ä½œ Recordï¼Œæ”¹ç”¨ switchã€‚
@@ -62,61 +62,9 @@ export function stageCapabilityBlurb(stage) {
             '- éç”Ÿäº§æ•´å›¾è·¯å¾„ï¼›ç”Ÿäº§è¯·èµ° full pipeline\n' +
             '- ä¸å¯ç”¨ï¼šå½“ä½œæ¨¡æ¿å›é€€å…¥å£';
     }
-    else if (key === 'pcb_placement') {
-        body = 'ã€æœ¬é˜¶æ®µèƒ½åŠ› â€” pcb_placementã€‘:\n' +
-            '- è¾“å‡ºï¼šboardWidthMil/boardHeightMilï¼ˆå¿…å¡«ï¼Œå®šæ¿å°ºå¯¸ï¼‰+ placements + groups + lockedIds\n' +
-            '- å½“å‰æ¿æ¡†ä»…ä¾›å‚è€ƒï¼›é¡»ç”±æ¨¡å‹é‡æ–°ç»™å‡ºå®½é«˜ï¼ˆmilï¼‰\n' +
-            '- å®‰è£…å­”å†™å…¥ lockedIdsï¼ˆç³»ç»ŸæŒ‰æ–°æ¿å››è§’é‡é’‰ï¼‰ï¼›ç¦æ­¢åŸä½å¤è¯»ï¼ˆecho é—¨ç¦ï¼‰\n' +
-            '- footprintId å¿…é¡»é€å­—å¤åˆ¶åˆ—è¡¨ idï¼Œç¦æ­¢ç¼–é€ \n' +
-            '- groups ä»…åŠŸèƒ½åˆ†ç»„ä¸”é¡»ç©ºé—´èšé›†ï¼›ç¦æ­¢æŠŠå®‰è£…å­”/MOUNT æ”¾å…¥ groups\n' +
-            '- å·¥å…·ï¼šç„Šç›˜è¯¦è¡¨ï¼ˆxy/layers/typeï¼‰å·²æ³¨å…¥ï¼›å¼‚ç½‘ç„Šç›˜å‹¿å…±çº¿å †å \n' +
-            '- ä¸å¯ç”¨ï¼štrack/via æŠ˜ç‚¹åæ ‡ï¼›æœ¬åœ°ç½‘æ ¼å†’å……å¸ƒå±€\n' +
-            '- å·¥å…·è¾¹ç•Œï¼šå®šæ¿+ä½å§¿ï¼›å±‚ç­–ç•¥ pcb_routeï¼›æŠ˜çº¿/è¿‡å­” pcb_geometry';
-    }
-    else if (key === 'pcb_net_plan') {
-        body = 'ã€æœ¬é˜¶æ®µèƒ½åŠ› â€” pcb_net_planã€‘:\n' +
-            '- è¾“å‡ºï¼šnets[] kind/routeMode/priority/layerHint/busYOffset + priorityOrder\n' +
-            '- Cu=2 æœ‰ä¿¡å·æ—¶ç”µæº/åœ°ä¼˜å…ˆ forceTrackï¼ˆå‹¿ forcePourï¼‰\n' +
-            '- busYOffsetï¼šåŒå±‚å¤šç”µæº Y é”™å¼€ï¼›layerHint ä¾›å‡ ä½•é€‰å±‚\n' +
-            '- å·¥å…·ï¼šç„Šç›˜æ‘˜è¦+è¯¦è¡¨ï¼ˆå« MOUNT æ ‡è®°ï¼‰ï¼›å®‰è£…å­”ä¸å¼ºåˆ¶è¿é€š\n' +
-            '- ä¸å¯ç”¨ï¼šå‘æ˜æ–°ç”µæ°”ç½‘ï¼›è¾“å‡ºé“œçº¿åæ ‡\n' +
-            '- å·¥å…·è¾¹ç•Œï¼šè¦†ç›–å·²æœ‰ç½‘ç»œç­–ç•¥ï¼›å±‚è§’è‰²ç•™ç»™ pcb_route';
-    }
-    else if (key === 'pcb_route') {
-        body = 'ã€æœ¬é˜¶æ®µèƒ½åŠ› â€” pcb_routeã€‘:\n' +
-            '- è¾“å‡ºï¼šlayerRolesï¼ˆè¦†ç›–æ¯ä¸€é“œå±‚ï¼‰+ viaPreference + netPriority\n' +
-            '- netPriority ä¾›å¸ƒçº¿å…ˆåå‚è€ƒï¼ˆè¶Šå¤§è¶Šå…ˆï¼‰\n' +
-            '- gnd/power é defer æ—¶éœ€ gnd_bus|vcc_bus|power_h|power_vï¼ˆCu=2 å¯ B.Cu=signal_h å…¼ç”¨ï¼‰\n' +
-            '- Cuâ‰¥4/6/8ï¼šç¦æ­¢ç©ºå±‚ï¼›æ¯å±‚é¡»æœ‰çœŸå®è§’è‰²ï¼›ä¿ç•™è‡³å°‘ä¸€å±‚ stub\n' +
-            '- å·¥å…·ï¼šæ¿æ€å¿«ç…§ï¼ˆé“œä½¿ç”¨/ç„Šç›˜è¯¦è¡¨/ä¸Šè½® geo å¤±è´¥åæ ‡ï¼‰\n' +
-            '- ä¸å¯ç”¨ï¼šè·³è¿‡æœ¬é˜¶æ®µï¼›ç”¨æœ¬åœ° Cu é»˜è®¤è¡¨å†’å……ï¼›è¾“å‡ºèµ°çº¿æŠ˜ç‚¹\n' +
-            '- å·¥å…·è¾¹ç•Œï¼šç­–ç•¥å¡«å†™ï¼›æŠ˜çº¿æ‹å¼¯ä¸è¿‡å­”ç”± pcb_geometry LLM å†³å®š';
-    }
-    else if (key === 'pcb_geometry') {
-        body = 'ã€æœ¬é˜¶æ®µèƒ½åŠ› â€” pcb_geometryã€‘:\n' +
-            '- è¾“å‡ºï¼štracks[].{netId|netName,layer,points[]} + vias[].{x,y,fromLayer,toLayer}\n' +
-            '- å¿…é¡»å†³å®šæ¯ç½‘æ€ä¹ˆæ‹ã€è¿‡å­”æ‰“å“ªï¼›points æ­£äº¤æŠ˜çº¿ï¼Œå•ä½ mil\n' +
-            '- åŒç½‘åŠŸèƒ½/è¿æ¥å™¨ç„Šç›˜å¿…é¡»é“œè¿é€šï¼›orphan stub æœ¬åœ°æ’•æ‰å¹¶å¤±è´¥ï¼›MOUNT å¯ä¸è¿\n' +
-            '- éµå®ˆ layerRolesï¼›Cu=2 ä¸»å¹² B.Cuã€F.Cu çŸ­ stub+via\n' +
-            '- å·¥å…·ï¼šç„Šç›˜è¯¦è¡¨ä¸–ç•Œåæ ‡ + å±‚è§’è‰² + ä¸Šè½® clearance/è¿é€šå¤±è´¥æ˜ç»†\n' +
-            '- æœ¬åœ°åªåšæ­£äº¤åŒ–/clearance/è¿é€šé—¨ç¦è½é“œï¼Œç¦æ­¢æœ¬åœ°è‡ªåˆ›å¸ƒçº¿ç­–ç•¥å†’å……\n' +
-            '- ä¸å¯ç”¨ï¼šç©º tracksï¼›çœç•¥åº”å¸ƒç½‘ï¼›è·³è¿‡æœ¬é˜¶æ®µ';
-    }
-    else if (key === 'pcb_qa_repair') {
-        body = 'ã€æœ¬é˜¶æ®µèƒ½åŠ› â€” pcb_qa_repairã€‘:\n' +
-            '- è¾“å‡ºï¼šripNetIds / layerRolePatch / routeModePatch / busYOffsetPatch / raiseCopperTo / rePlaceFootprintIds\n' +
-            '- å·¥å…·ï¼šå‡ ä½•å¤±è´¥æ˜ç»†ï¼ˆç„Šç›˜å¯¹åæ ‡+pad_block éšœç¢ï¼‰+ æ¿æ€ç„Šç›˜è¯¦è¡¨\n' +
-            '- layerRolePatch çš„ key=é“œå±‚å(F.Cu/B.Cu)ï¼Œvalue=åˆæ³•è§’è‰²ï¼›ç¦æ­¢ç½‘ç»œåä½œ key\n' +
-            '- power bus clearanceï¼šä¼˜å…ˆ routeModePatch forcePourâ†’forceTrackï¼Œæˆ– busYOffsetPatch é”™å¼€ï¼›å‹¿åå¤ç¿»å±‚è§’è‰²\n' +
-            '- Cu=2 å¤šç½‘ clearance æŒç»­å¤±è´¥ï¼šraiseCopperTo=4 å¹¶è¡¥é½æ–°å±‚è§’è‰²ï¼ˆç¦æ­¢åª rip ç©ºè½¬ï¼‰\n' +
-            '- pad_block å…±çº¿ï¼šä¼˜å…ˆ rePlaceFootprintIdsï¼›ç¦æ­¢åˆ å”¯ä¸€ stub\n' +
-            '- ä¸å¯ç”¨ï¼šå¿½ç•¥è¿è§„ç»§ç»­äº¤ä»˜ï¼›æ—  LLM çš„ç›²é‡è¯•å‡ ä½•\n' +
-            '- å·¥å…·è¾¹ç•Œï¼šåªå†³å®šä¿®å¤æ–¹æ¡ˆï¼›é‡å¸ƒèµ° pcb_geometry LLMï¼ˆæŠ˜ç‚¹/è¿‡å­”ï¼‰\n' +
-            '- æ‰¹åˆ¤è€—å°½ç”±ç®¡çº¿ KEEP_RETRY/ACCEPT residualï¼ˆé¡»æœ‰é“œï¼‰ï¼Œç¦æ­¢å› æœ¬é˜¶æ®µä¸»åŠ¨ ABORT';
-    }
     return body.length > 0 ? `\n${body}\n` : '';
 }
-//# sourceMappingURL=StageCapabilities.js.mapÂÙdC:\Projects\ElecDraw_Harmony\features\ai_engine\src\main\ets\prompts\templates\StageCapabilities.etsÔrB›ªmoduleName±isLocalDependency¯isNodeEntryFile§pkgPath±belongProjectPath§pkgNameªpkgVersion±dependencyPkgInfo¯hostModulesInfo°belongModulePath¬shouldEmitJs©ai_engineÃÂÙ/C:\Projects\ElecDraw_Harmony\features\ai_engine¼C:\Projects\ElecDraw_Harmony©ai_engine¥1.0.0ÔrC’§pkgNameªpkgVersion©ai_engine¥1.0.0‘ÔrD’²hostDependencyName®hostModuleName½./templates/StageCapabilities©ai_engineÙ/C:\Projects\ElecDraw_Harmony\features\ai_engineÃÃÚÉ/**
+//# sourceMappingURL=StageCapabilities.js.mapÂÙdC:\Projects\ElecDraw_Harmony\features\ai_engine\src\main\ets\prompts\templates\StageCapabilities.etsÔrB›ªmoduleName±isLocalDependency¯isNodeEntryFile§pkgPath±belongProjectPath§pkgNameªpkgVersion±dependencyPkgInfo¯hostModulesInfo°belongModulePath¬shouldEmitJs©ai_engineÃÂÙ/C:\Projects\ElecDraw_Harmony\features\ai_engine¼C:\Projects\ElecDraw_Harmony©ai_engine¥1.0.0ÔrC’§pkgNameªpkgVersion©ai_engine¥1.0.0‘ÔrD’²hostDependencyName®hostModuleName½./templates/StageCapabilities©ai_engineÙ/C:\Projects\ElecDraw_Harmony\features\ai_engineÃÃÚƒ/**
  * å„æµæ°´çº¿é˜¶æ®µã€Œèƒ½åšä»€ä¹ˆã€â€” æ³¨å…¥ Promptï¼Œé¿å…æ··ç”¨ fixAction / å»ºç½‘è¯æ±‡ã€‚
  * æ³¨æ„ï¼šä»… self_review /ï¼ˆéƒ¨åˆ†ï¼‰ç¡®å®šæ€§å›é€€å¯æ‰§è¡Œ fixActionï¼›å…¶å®ƒé˜¶æ®µè¾“å‡ºå„è‡ª JSON å¥‘çº¦ã€‚
  * ArkTSï¼šç¦æ­¢æœªæ ‡æ³¨ç±»å‹çš„å¯¹è±¡å­—é¢é‡ä½œ Recordï¼Œæ”¹ç”¨ switchã€‚
@@ -172,89 +120,42 @@ export function stageCapabilityBlurb(stage: string): string {
     body = 'ã€æœ¬é˜¶æ®µèƒ½åŠ› â€” gen_schï¼ˆé—ç•™ï¼‰ã€‘:\n' +
       '- éç”Ÿäº§æ•´å›¾è·¯å¾„ï¼›ç”Ÿäº§è¯·èµ° full pipeline\n' +
       '- ä¸å¯ç”¨ï¼šå½“ä½œæ¨¡æ¿å›é€€å…¥å£';
-  } else if (key === 'pcb_placement') {
-    body = 'ã€æœ¬é˜¶æ®µèƒ½åŠ› â€” pcb_placementã€‘:\n' +
-      '- è¾“å‡ºï¼šboardWidthMil/boardHeightMilï¼ˆå¿…å¡«ï¼Œå®šæ¿å°ºå¯¸ï¼‰+ placements + groups + lockedIds\n' +
-      '- å½“å‰æ¿æ¡†ä»…ä¾›å‚è€ƒï¼›é¡»ç”±æ¨¡å‹é‡æ–°ç»™å‡ºå®½é«˜ï¼ˆmilï¼‰\n' +
-      '- å®‰è£…å­”å†™å…¥ lockedIdsï¼ˆç³»ç»ŸæŒ‰æ–°æ¿å››è§’é‡é’‰ï¼‰ï¼›ç¦æ­¢åŸä½å¤è¯»ï¼ˆecho é—¨ç¦ï¼‰\n' +
-      '- footprintId å¿…é¡»é€å­—å¤åˆ¶åˆ—è¡¨ idï¼Œç¦æ­¢ç¼–é€ \n' +
-      '- groups ä»…åŠŸèƒ½åˆ†ç»„ä¸”é¡»ç©ºé—´èšé›†ï¼›ç¦æ­¢æŠŠå®‰è£…å­”/MOUNT æ”¾å…¥ groups\n' +
-      '- å·¥å…·ï¼šç„Šç›˜è¯¦è¡¨ï¼ˆxy/layers/typeï¼‰å·²æ³¨å…¥ï¼›å¼‚ç½‘ç„Šç›˜å‹¿å…±çº¿å †å \n' +
-      '- ä¸å¯ç”¨ï¼štrack/via æŠ˜ç‚¹åæ ‡ï¼›æœ¬åœ°ç½‘æ ¼å†’å……å¸ƒå±€\n' +
-      '- å·¥å…·è¾¹ç•Œï¼šå®šæ¿+ä½å§¿ï¼›å±‚ç­–ç•¥ pcb_routeï¼›æŠ˜çº¿/è¿‡å­” pcb_geometry';
-  } else if (key === 'pcb_net_plan') {
-    body = 'ã€æœ¬é˜¶æ®µèƒ½åŠ› â€” pcb_net_planã€‘:\n' +
-      '- è¾“å‡ºï¼šnets[] kind/routeMode/priority/layerHint/busYOffset + priorityOrder\n' +
-      '- Cu=2 æœ‰ä¿¡å·æ—¶ç”µæº/åœ°ä¼˜å…ˆ forceTrackï¼ˆå‹¿ forcePourï¼‰\n' +
-      '- busYOffsetï¼šåŒå±‚å¤šç”µæº Y é”™å¼€ï¼›layerHint ä¾›å‡ ä½•é€‰å±‚\n' +
-      '- å·¥å…·ï¼šç„Šç›˜æ‘˜è¦+è¯¦è¡¨ï¼ˆå« MOUNT æ ‡è®°ï¼‰ï¼›å®‰è£…å­”ä¸å¼ºåˆ¶è¿é€š\n' +
-      '- ä¸å¯ç”¨ï¼šå‘æ˜æ–°ç”µæ°”ç½‘ï¼›è¾“å‡ºé“œçº¿åæ ‡\n' +
-      '- å·¥å…·è¾¹ç•Œï¼šè¦†ç›–å·²æœ‰ç½‘ç»œç­–ç•¥ï¼›å±‚è§’è‰²ç•™ç»™ pcb_route';
-  } else if (key === 'pcb_route') {
-    body = 'ã€æœ¬é˜¶æ®µèƒ½åŠ› â€” pcb_routeã€‘:\n' +
-      '- è¾“å‡ºï¼šlayerRolesï¼ˆè¦†ç›–æ¯ä¸€é“œå±‚ï¼‰+ viaPreference + netPriority\n' +
-      '- netPriority ä¾›å¸ƒçº¿å…ˆåå‚è€ƒï¼ˆè¶Šå¤§è¶Šå…ˆï¼‰\n' +
-      '- gnd/power é defer æ—¶éœ€ gnd_bus|vcc_bus|power_h|power_vï¼ˆCu=2 å¯ B.Cu=signal_h å…¼ç”¨ï¼‰\n' +
-      '- Cuâ‰¥4/6/8ï¼šç¦æ­¢ç©ºå±‚ï¼›æ¯å±‚é¡»æœ‰çœŸå®è§’è‰²ï¼›ä¿ç•™è‡³å°‘ä¸€å±‚ stub\n' +
-      '- å·¥å…·ï¼šæ¿æ€å¿«ç…§ï¼ˆé“œä½¿ç”¨/ç„Šç›˜è¯¦è¡¨/ä¸Šè½® geo å¤±è´¥åæ ‡ï¼‰\n' +
-      '- ä¸å¯ç”¨ï¼šè·³è¿‡æœ¬é˜¶æ®µï¼›ç”¨æœ¬åœ° Cu é»˜è®¤è¡¨å†’å……ï¼›è¾“å‡ºèµ°çº¿æŠ˜ç‚¹\n' +
-      '- å·¥å…·è¾¹ç•Œï¼šç­–ç•¥å¡«å†™ï¼›æŠ˜çº¿æ‹å¼¯ä¸è¿‡å­”ç”± pcb_geometry LLM å†³å®š';
-  } else if (key === 'pcb_geometry') {
-    body = 'ã€æœ¬é˜¶æ®µèƒ½åŠ› â€” pcb_geometryã€‘:\n' +
-      '- è¾“å‡ºï¼štracks[].{netId|netName,layer,points[]} + vias[].{x,y,fromLayer,toLayer}\n' +
-      '- å¿…é¡»å†³å®šæ¯ç½‘æ€ä¹ˆæ‹ã€è¿‡å­”æ‰“å“ªï¼›points æ­£äº¤æŠ˜çº¿ï¼Œå•ä½ mil\n' +
-      '- åŒç½‘åŠŸèƒ½/è¿æ¥å™¨ç„Šç›˜å¿…é¡»é“œè¿é€šï¼›orphan stub æœ¬åœ°æ’•æ‰å¹¶å¤±è´¥ï¼›MOUNT å¯ä¸è¿\n' +
-      '- éµå®ˆ layerRolesï¼›Cu=2 ä¸»å¹² B.Cuã€F.Cu çŸ­ stub+via\n' +
-      '- å·¥å…·ï¼šç„Šç›˜è¯¦è¡¨ä¸–ç•Œåæ ‡ + å±‚è§’è‰² + ä¸Šè½® clearance/è¿é€šå¤±è´¥æ˜ç»†\n' +
-      '- æœ¬åœ°åªåšæ­£äº¤åŒ–/clearance/è¿é€šé—¨ç¦è½é“œï¼Œç¦æ­¢æœ¬åœ°è‡ªåˆ›å¸ƒçº¿ç­–ç•¥å†’å……\n' +
-      '- ä¸å¯ç”¨ï¼šç©º tracksï¼›çœç•¥åº”å¸ƒç½‘ï¼›è·³è¿‡æœ¬é˜¶æ®µ';
-  } else if (key === 'pcb_qa_repair') {
-    body = 'ã€æœ¬é˜¶æ®µèƒ½åŠ› â€” pcb_qa_repairã€‘:\n' +
-      '- è¾“å‡ºï¼šripNetIds / layerRolePatch / routeModePatch / busYOffsetPatch / raiseCopperTo / rePlaceFootprintIds\n' +
-      '- å·¥å…·ï¼šå‡ ä½•å¤±è´¥æ˜ç»†ï¼ˆç„Šç›˜å¯¹åæ ‡+pad_block éšœç¢ï¼‰+ æ¿æ€ç„Šç›˜è¯¦è¡¨\n' +
-      '- layerRolePatch çš„ key=é“œå±‚å(F.Cu/B.Cu)ï¼Œvalue=åˆæ³•è§’è‰²ï¼›ç¦æ­¢ç½‘ç»œåä½œ key\n' +
-      '- power bus clearanceï¼šä¼˜å…ˆ routeModePatch forcePourâ†’forceTrackï¼Œæˆ– busYOffsetPatch é”™å¼€ï¼›å‹¿åå¤ç¿»å±‚è§’è‰²\n' +
-      '- Cu=2 å¤šç½‘ clearance æŒç»­å¤±è´¥ï¼šraiseCopperTo=4 å¹¶è¡¥é½æ–°å±‚è§’è‰²ï¼ˆç¦æ­¢åª rip ç©ºè½¬ï¼‰\n' +
-      '- pad_block å…±çº¿ï¼šä¼˜å…ˆ rePlaceFootprintIdsï¼›ç¦æ­¢åˆ å”¯ä¸€ stub\n' +
-      '- ä¸å¯ç”¨ï¼šå¿½ç•¥è¿è§„ç»§ç»­äº¤ä»˜ï¼›æ—  LLM çš„ç›²é‡è¯•å‡ ä½•\n' +
-      '- å·¥å…·è¾¹ç•Œï¼šåªå†³å®šä¿®å¤æ–¹æ¡ˆï¼›é‡å¸ƒèµ° pcb_geometry LLMï¼ˆæŠ˜ç‚¹/è¿‡å­”ï¼‰\n' +
-      '- æ‰¹åˆ¤è€—å°½ç”±ç®¡çº¿ KEEP_RETRY/ACCEPT residualï¼ˆé¡»æœ‰é“œï¼‰ï¼Œç¦æ­¢å› æœ¬é˜¶æ®µä¸»åŠ¨ ABORT';
   }
   return body.length > 0 ? `\n${body}\n` : '';
 }
-ÀA“ÔrE–§version¤fileªsourceRoot§sources¥names¨mappings´StageCapabilities.js ‘µStageCapabilities.etsÜ v‘”    ‘” –”   ” ” ”$ $”% %”* 2Ü ” ”
+ÀA“ÔrE–§version¤fileªsourceRoot§sources¥names¨mappings´StageCapabilities.js ‘µStageCapabilities.etsÜ B‘”    ‘” –”   ” ” ”$ $”% %”* 2Ü ” ”
  ” ” ” ” ” ” ” ” ”"  ”$ "”% #”0 .”2 0”3 1–” ” ” 
 ” ” ” –” 	” 	” 		” 	” 	”! 	”” 
 ” 
 ” 
 ”+ 
-'’” ”2 ,’” ”9 3“” ”) #”* $‘” –”	 	” ” ” ” ” ”” ” ” ”$  ’” ”( "’” ”< 6“” ”. (”/ )‘” –”	 	” ” ” ” ”! !”” ” ” ”& "’” ”ÌR ÌL’” ”> 8’” ”ÌH ÌB“” ”< 6”= 7‘” –”	 	” ” ” ” ” ”” ” ” ”# ’” ”ÌD >’” ”6 0“” ”ÌD >”ÌE ?‘” –”	 	” ” ” ”" "”$ $”” ” ” ”) %’”  ”7  1’” !”ÌG !ÌA’” "”> "8’” #”ÌZ #ÌT“” $”ÌG $ÌA”ÌH $ÌB‘” %–”	 %	” %” %” %” %” %”” &” &” &”" &’” '”2 ',’” (”> (8“” )”3 )-”4 ).‘” *–”	 *	” *” *” *”# *#”% *%”” +” +” +”* +&’” ,”1 ,+’” -”1 -+“” .”4 ..”5 ./‘” /–”	 /	” /” /” /”  / ”" /"”” 0” 0” 0”' 0#’” 1”ÌD 1>’” 2”9 23“” 3”, 3&”- 3'‘” 4–”	 4	” 4” 4” 4” 4”  4 ”” 5” 5” 5”) 5%’” 6”, 6&“” 7” 7” 7‘” 8–”	 8	” 8” 8” 8”$ 8$”& 8&”” 9” 9” 9”+ 9'’” :”Ì[ :ÌU’” ;”* ;$’” <”< <6’” =”. =(’” >”; >5’” ?”6 ?0’” Ì@”- Ì@'“” ÌA”; ÌA5”< ÌA6‘” ÌB–”	 ÌB	” ÌB” ÌB” ÌB”# ÌB#”% ÌB%”” ÌC” ÌC” ÌC”* ÌC&’” ÌD”ÌX ÌDÌR’” ÌE”9 ÌE3’” ÌF”7 ÌF1’” ÌG”1 ÌG+’” ÌH”# ÌH“” ÌI”- ÌI'”. ÌI(‘” ÌJ–”	 ÌJ	” ÌJ” ÌJ” ÌJ”  ÌJ ”" ÌJ"”” ÌK” ÌK” ÌK”' ÌK#’” ÌL”ÌD ÌL>’” ÌM”+ ÌM%’” ÌN”Ì_ ÌNÌY’” ÌO”4 ÌO.’” ÌP”/ ÌP)’” ÌQ”/ ÌQ)“” ÌR”6 ÌR0”7 ÌR1‘” ÌS–”	 ÌS	” ÌS” ÌS” ÌS”# ÌS#”% ÌS%”” ÌT” ÌT” ÌT”* ÌT&’” ÌU”Ì] ÌUÌW’” ÌV”3 ÌV-’” ÌW”? ÌW9’” ÌX”< ÌX6’” ÌY”9 ÌY3’” ÌZ”7 ÌZ1“” Ì[”( Ì["”) Ì[#‘” Ì\–”	 Ì\	” Ì\” Ì\” Ì\”$ Ì\$”& Ì\&”” Ì]” Ì]” Ì]”+ Ì]'’” Ì^”Ìx Ì^Ìr’” Ì_”7 Ì_1’” Ì`”ÌK Ì`ÌE’” Ìa”Ìi ÌaÌc’” Ìb”ÌL ÌbÌF’” Ìc”Ì@ Ìc:’” Ìd”+ Ìd%’” Ìe”: Ìe4“” Ìf”ÌF ÌfÌ@”ÌG ÌfÌA‘” ÌgÜ ” Ìh” Ìh	” Ìh” Ìh” Ìh” Ìh” Ìh” Ìh” Ìh” Ìh”" Ìh ”& Ìh$”* Ìh(”+ Ìh)”, Ìh*”- Ìh+”/ Ìh-”0 Ìh.’”  Ìi ” ÌiÔrF–§version¤file§sources®sourcesContent¥names¨mappingsÀ‘À‘ÀÜ w‘”    ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”  	 ‘”  
- ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”    ‘”  ! ‘”  " ‘”  # ‘”  $ ‘”  % ‘”  & ‘”  ' ‘”  ( ‘”  ) ‘”  * ‘”  + ‘”  , ‘”  - ‘”  . ‘”  / ‘”  0 ‘”  1 ‘”  2 ‘”  3 ‘”  4 ‘”  5 ‘”  6 ‘”  7 ‘”  8 ‘”  9 ‘”  : ‘”  ; ‘”  < ‘”  = ‘”  > ‘”  ? ‘”  Ì@ ‘”  ÌA ‘”  ÌB ‘”  ÌC ‘”  ÌD ‘”  ÌE ‘”  ÌF ‘”  ÌG ‘”  ÌH ‘”  ÌI ‘”  ÌJ ‘”  ÌK ‘”  ÌL ‘”  ÌM ‘”  ÌN ‘”  ÌO ‘”  ÌP ‘”  ÌQ ‘”  ÌR ‘”  ÌS ‘”  ÌT ‘”  ÌU ‘”  ÌV ‘”  ÌW ‘”  ÌX ‘”  ÌY ‘”  ÌZ ‘”  Ì[ ‘”  Ì\ ‘”  Ì] ‘”  Ì^ ‘”  Ì_ ‘”  Ì` ‘”  Ìa ‘”  Ìb ‘”  Ìc ‘”  Ìd ‘”  Ìe ‘”  Ìf ‘”  Ìg ‘”  Ìh ‘”  Ìi ‘”  Ìj ‘”  Ìk ‘”  Ìl ‘”  Ìm ‘”  Ìn ‘”  Ìo ‘”  Ìp ‘”  Ìq ‘”  Ìr ‘”  Ìs ‘”  Ìt ‘”  Ìu ‘”  Ìv ÔrG’§missing¦pluginÃ¦genAbcÂÔ  ÔrH”²dynamicImportCache¹exportAllDeclarationCache»exportNamedDeclarationCache«importCache‘ÔrI–¤type¥start£end«declarationªspecifiers¦source¶ExportNamedDeclarationÌ§Í€ÔrJ™¤type¥start£end¢idªexpression©generator¥async¦params¤body³FunctionDeclarationÌ®Í€ÔrK”¤type¥start£end¤nameªIdentifierÌ·ÌË´stageCapabilityBlurbÂÂÂ‘KªIdentifierÌÌÌÑ¥stageÔrL”¤type¥start£end¤body®BlockStatementÌÓÍ€”ÔrM•¤type¥start£end¬declarations¤kind³VariableDeclarationÌÚÍ	‘ÔrN•¤type¥start£end¢id¤init²VariableDeclaratorÌàÍKªIdentifierÌàÌã£keyÔrO–¤type¥start£end¦callee©arguments¨optional®CallExpressionÌæÍÔrP—¤type¥start£end¦object¨property¨computed¨optional°MemberExpressionÌæÍO®CallExpressionÌæÌúP°MemberExpressionÌæÌøÔrQ–¤type¥start£end¤left¨operator¥right±LogicalExpressionÌçÌòKªIdentifierÌçÌì¥stage¢??ÔrR•¤type¥start£end¥value£raw§LiteralÌğÌò ¢''KªIdentifierÌôÌø¤trimÂÂÂKªIdentifierÌûÍ«toLowerCaseÂÂÂ¥constM³VariableDeclarationÍÍ‘N²VariableDeclaratorÍÍKªIdentifierÍÍ¤bodyR§LiteralÍÍ ¢''£letÔrS–¤type¥start£end¤testªconsequent©alternate«IfStatementÍ#ÍKQ°BinaryExpressionÍ'Í>KªIdentifierÍ'Í*£key£===R§LiteralÍ/Í>­device_select¯'device_select'L®BlockStatementÍ@Í‘ÔrT”¤type¥start£endªexpression³ExpressionStatementÍKÍÔrU–¤type¥start£end¨operator¤left¥right´AssignmentExpressionÍKÍ¡=KªIdentifierÍKÍO¤bodyQ°BinaryExpressionÍRÍQ°BinaryExpressionÍRÍáQ°BinaryExpressionÍRÍ¤R§LiteralÍRÍnÙ)ã€æœ¬é˜¶æ®µèƒ½åŠ› â€” device_selectã€‘:
+'’” ”2 ,’” ”9 3“” ”) #”* $‘” –”	 	” ” ” ” ” ”” ” ” ”$  ’” ”( "’” ”< 6“” ”. (”/ )‘” –”	 	” ” ” ” ”! !”” ” ” ”& "’” ”ÌR ÌL’” ”> 8’” ”ÌH ÌB“” ”< 6”= 7‘” –”	 	” ” ” ” ” ”” ” ” ”# ’” ”ÌD >’” ”6 0“” ”ÌD >”ÌE ?‘” –”	 	” ” ” ”" "”$ $”” ” ” ”) %’”  ”7  1’” !”ÌG !ÌA’” "”> "8’” #”ÌZ #ÌT“” $”ÌG $ÌA”ÌH $ÌB‘” %–”	 %	” %” %” %” %” %”” &” &” &”" &’” '”2 ',’” (”> (8“” )”3 )-”4 ).‘” *–”	 *	” *” *” *”# *#”% *%”” +” +” +”* +&’” ,”1 ,+’” -”1 -+“” .”4 ..”5 ./‘” /–”	 /	” /” /” /”  / ”" /"”” 0” 0” 0”' 0#’” 1”ÌD 1>’” 2”9 23“” 3”, 3&”- 3'‘” 4–”	 4	” 4” 4” 4” 4”  4 ”” 5” 5” 5”) 5%’” 6”, 6&“” 7” 7” 7‘” 8Ü ” 9” 9	” 9” 9” 9” 9” 9” 9” 9” 9”" 9 ”& 9$”* 9(”+ 9)”, 9*”- 9+”/ 9-”0 9.’”  : ” :ÔrF–§version¤file§sources®sourcesContent¥names¨mappingsÀ‘À‘ÀÜ C‘”    ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”  	 ‘”  
+ ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”   ‘”    ‘”  ! ‘”  " ‘”  # ‘”  $ ‘”  % ‘”  & ‘”  ' ‘”  ( ‘”  ) ‘”  * ‘”  + ‘”  , ‘”  - ‘”  . ‘”  / ‘”  0 ‘”  1 ‘”  2 ‘”  3 ‘”  4 ‘”  5 ‘”  6 ‘”  7 ‘”  8 ‘”  9 ‘”  : ‘”  ; ‘”  < ‘”  = ‘”  > ‘”  ? ‘”  Ì@ ‘”  ÌA ‘”  ÌB ÔrG’§missing¦pluginÃ¦genAbcÂÔ  ÔrH”²dynamicImportCache¹exportAllDeclarationCache»exportNamedDeclarationCache«importCache‘ÔrI–¤type¥start£end«declarationªspecifiers¦source¶ExportNamedDeclarationÌ§Í>ÔrJ™¤type¥start£end¢idªexpression©generator¥async¦params¤body³FunctionDeclarationÌ®Í>ÔrK”¤type¥start£end¤nameªIdentifierÌ·ÌË´stageCapabilityBlurbÂÂÂ‘KªIdentifierÌÌÌÑ¥stageÔrL”¤type¥start£end¤body®BlockStatementÌÓÍ>”ÔrM•¤type¥start£end¬declarations¤kind³VariableDeclarationÌÚÍ	‘ÔrN•¤type¥start£end¢id¤init²VariableDeclaratorÌàÍKªIdentifierÌàÌã£keyÔrO–¤type¥start£end¦callee©arguments¨optional®CallExpressionÌæÍÔrP—¤type¥start£end¦object¨property¨computed¨optional°MemberExpressionÌæÍO®CallExpressionÌæÌúP°MemberExpressionÌæÌøÔrQ–¤type¥start£end¤left¨operator¥right±LogicalExpressionÌçÌòKªIdentifierÌçÌì¥stage¢??ÔrR•¤type¥start£end¥value£raw§LiteralÌğÌò ¢''KªIdentifierÌôÌø¤trimÂÂÂKªIdentifierÌûÍ«toLowerCaseÂÂÂ¥constM³VariableDeclarationÍÍ‘N²VariableDeclaratorÍÍKªIdentifierÍÍ¤bodyR§LiteralÍÍ ¢''£letÔrS–¤type¥start£end¤testªconsequent©alternate«IfStatementÍ#Í	Q°BinaryExpressionÍ'Í>KªIdentifierÍ'Í*£key£===R§LiteralÍ/Í>­device_select¯'device_select'L®BlockStatementÍ@Í‘ÔrT”¤type¥start£endªexpression³ExpressionStatementÍKÍÔrU–¤type¥start£end¨operator¤left¥right´AssignmentExpressionÍKÍ¡=KªIdentifierÍKÍO¤bodyQ°BinaryExpressionÍRÍQ°BinaryExpressionÍRÍáQ°BinaryExpressionÍRÍ¤R§LiteralÍRÍnÙ)ã€æœ¬é˜¶æ®µèƒ½åŠ› â€” device_selectã€‘:
 Ù,'ã€æœ¬é˜¶æ®µèƒ½åŠ› â€” device_selectã€‘:\n'¡+R§LiteralÍ~Í¤Ù=- è¾“å‡ºï¼šé€‰å‹ BOM JSONï¼ˆlibDevId/æ•°é‡/æ„å›¾çº¦æŸï¼‰
 Ù@'- è¾“å‡ºï¼šé€‰å‹ BOM JSONï¼ˆlibDevId/æ•°é‡/æ„å›¾çº¦æŸï¼‰\n'¡+R§LiteralÍ´ÍáÙF- ä¸å¯ç”¨ï¼šfixAction ä¿®å¤å·¥å…·ã€å»ºç½‘ netsã€å¸ƒçº¿ waypoints
-ÙI'- ä¸å¯ç”¨ï¼šfixAction ä¿®å¤å·¥å…·ã€å»ºç½‘ netsã€å¸ƒçº¿ waypoints\n'¡+R§LiteralÍñÍÙM- å·¥å…·è¾¹ç•Œï¼šåªèƒ½ä»åº“å†…é€‰å‹ï¼›ç¦æ­¢è¾“å‡ºæ•´å›¾æ‹“æ‰‘æˆ–å‡æ¨¡æ¿ÙO'- å·¥å…·è¾¹ç•Œï¼šåªèƒ½ä»åº“å†…é€‰å‹ï¼›ç¦æ­¢è¾“å‡ºæ•´å›¾æ‹“æ‰‘æˆ–å‡æ¨¡æ¿'S«IfStatementÍ!ÍKQ°BinaryExpressionÍ%Í5KªIdentifierÍ%Í(£key£===R§LiteralÍ-Í5¦layout¨'layout'L®BlockStatementÍ7Í‘T³ExpressionStatementÍBÍıU´AssignmentExpressionÍBÍü¡=KªIdentifierÍBÍF¤bodyQ°BinaryExpressionÍIÍüQ°BinaryExpressionÍIÍÊQ°BinaryExpressionÍIÍŠR§LiteralÍIÍ^Ù"ã€æœ¬é˜¶æ®µèƒ½åŠ› â€” layoutã€‘:
+ÙI'- ä¸å¯ç”¨ï¼šfixAction ä¿®å¤å·¥å…·ã€å»ºç½‘ netsã€å¸ƒçº¿ waypoints\n'¡+R§LiteralÍñÍÙM- å·¥å…·è¾¹ç•Œï¼šåªèƒ½ä»åº“å†…é€‰å‹ï¼›ç¦æ­¢è¾“å‡ºæ•´å›¾æ‹“æ‰‘æˆ–å‡æ¨¡æ¿ÙO'- å·¥å…·è¾¹ç•Œï¼šåªèƒ½ä»åº“å†…é€‰å‹ï¼›ç¦æ­¢è¾“å‡ºæ•´å›¾æ‹“æ‰‘æˆ–å‡æ¨¡æ¿'S«IfStatementÍ!Í	Q°BinaryExpressionÍ%Í5KªIdentifierÍ%Í(£key£===R§LiteralÍ-Í5¦layout¨'layout'L®BlockStatementÍ7Í‘T³ExpressionStatementÍBÍıU´AssignmentExpressionÍBÍü¡=KªIdentifierÍBÍF¤bodyQ°BinaryExpressionÍIÍüQ°BinaryExpressionÍIÍÊQ°BinaryExpressionÍIÍŠR§LiteralÍIÍ^Ù"ã€æœ¬é˜¶æ®µèƒ½åŠ› â€” layoutã€‘:
 Ù%'ã€æœ¬é˜¶æ®µèƒ½åŠ› â€” layoutã€‘:\n'¡+R§LiteralÍnÍŠÙ7- è¾“å‡ºï¼šå¸ƒå±€çº¦æŸ JSONï¼ˆåˆ†ç»„/é—´è·/ç¦åŒºï¼‰
 Ù:'- è¾“å‡ºï¼šå¸ƒå±€çº¦æŸ JSONï¼ˆåˆ†ç»„/é—´è·/ç¦åŒºï¼‰\n'¡+R§LiteralÍšÍÊÙ=- ä¸å¯ç”¨ï¼šfixActionã€nets å»ºç½‘ã€forceWire/forceLabel
-Ù@'- ä¸å¯ç”¨ï¼šfixActionã€nets å»ºç½‘ã€forceWire/forceLabel\n'¡+R§LiteralÍÚÍüÙ>- å·¥å…·è¾¹ç•Œï¼šåªçº¦æŸæ‘†æ”¾ï¼›è¿çº¿ç•™ç»™ net_plan/routeÙ@'- å·¥å…·è¾¹ç•Œï¼šåªçº¦æŸæ‘†æ”¾ï¼›è¿çº¿ç•™ç»™ net_plan/route'S«IfStatementÍÍKQ°BinaryExpressionÍÍ%KªIdentifierÍÍ£key£===R§LiteralÍÍ%¨net_planª'net_plan'L®BlockStatementÍ'Í|‘T³ExpressionStatementÍ2ÍuU´AssignmentExpressionÍ2Ít¡=KªIdentifierÍ2Í6¤bodyQ°BinaryExpressionÍ9ÍtQ°BinaryExpressionÍ9Í4Q°BinaryExpressionÍ9ÍèQ°BinaryExpressionÍ9Í¦R§LiteralÍ9ÍPÙ$ã€æœ¬é˜¶æ®µèƒ½åŠ› â€” net_planã€‘:
+Ù@'- ä¸å¯ç”¨ï¼šfixActionã€nets å»ºç½‘ã€forceWire/forceLabel\n'¡+R§LiteralÍÚÍüÙ>- å·¥å…·è¾¹ç•Œï¼šåªçº¦æŸæ‘†æ”¾ï¼›è¿çº¿ç•™ç»™ net_plan/routeÙ@'- å·¥å…·è¾¹ç•Œï¼šåªçº¦æŸæ‘†æ”¾ï¼›è¿çº¿ç•™ç»™ net_plan/route'S«IfStatementÍÍ	Q°BinaryExpressionÍÍ%KªIdentifierÍÍ£key£===R§LiteralÍÍ%¨net_planª'net_plan'L®BlockStatementÍ'Í|‘T³ExpressionStatementÍ2ÍuU´AssignmentExpressionÍ2Ít¡=KªIdentifierÍ2Í6¤bodyQ°BinaryExpressionÍ9ÍtQ°BinaryExpressionÍ9Í4Q°BinaryExpressionÍ9ÍèQ°BinaryExpressionÍ9Í¦R§LiteralÍ9ÍPÙ$ã€æœ¬é˜¶æ®µèƒ½åŠ› â€” net_planã€‘:
 Ù''ã€æœ¬é˜¶æ®µèƒ½åŠ› â€” net_planã€‘:\n'¡+R§LiteralÍ`Í¦ÙI- è¾“å‡ºï¼šnets[] + connections.mode=joinWired|joinByLabel + wiringHints
 ÙL'- è¾“å‡ºï¼šnets[] + connections.mode=joinWired|joinByLabel + wiringHints\n'¡+R§LiteralÍ¶ÍèÙE- å¯ç”¨è¿æ¥åŸè¯­ï¼šjoinWired / joinByLabelï¼ˆä¸æ˜¯ fixActionï¼‰
 ÙH'- å¯ç”¨è¿æ¥åŸè¯­ï¼šjoinWired / joinByLabelï¼ˆä¸æ˜¯ fixActionï¼‰\n'¡+R§LiteralÍøÍ4ÙG- ä¸å¯ç”¨ï¼šself_review çš„ fixActionï¼ˆdemote_*/wire_*/rebuild_*ï¼‰
-ÙJ'- ä¸å¯ç”¨ï¼šself_review çš„ fixActionï¼ˆdemote_*/wire_*/rebuild_*ï¼‰\n'¡+R§LiteralÍDÍtÙX- å·¥å…·è¾¹ç•Œï¼šä¸€è„šä¸€ç½‘ï¼›ç¦æ­¢å•è„š joinWired ç½‘ï¼›ä»ªå™¨è„šä¼˜å…ˆ joinByLabelÙZ'- å·¥å…·è¾¹ç•Œï¼šä¸€è„šä¸€ç½‘ï¼›ç¦æ­¢å•è„š joinWired ç½‘ï¼›ä»ªå™¨è„šä¼˜å…ˆ joinByLabel'S«IfStatementÍ‡ÍKQ°BinaryExpressionÍ‹ÍšKªIdentifierÍ‹Í£key£===R§LiteralÍ“Íš¥route§'route'L®BlockStatementÍœÍ”‘T³ExpressionStatementÍ§ÍU´AssignmentExpressionÍ§ÍŒ¡=KªIdentifierÍ§Í«¤bodyQ°BinaryExpressionÍ®ÍŒQ°BinaryExpressionÍ®ÍDQ°BinaryExpressionÍ®Í
+ÙJ'- ä¸å¯ç”¨ï¼šself_review çš„ fixActionï¼ˆdemote_*/wire_*/rebuild_*ï¼‰\n'¡+R§LiteralÍDÍtÙX- å·¥å…·è¾¹ç•Œï¼šä¸€è„šä¸€ç½‘ï¼›ç¦æ­¢å•è„š joinWired ç½‘ï¼›ä»ªå™¨è„šä¼˜å…ˆ joinByLabelÙZ'- å·¥å…·è¾¹ç•Œï¼šä¸€è„šä¸€ç½‘ï¼›ç¦æ­¢å•è„š joinWired ç½‘ï¼›ä»ªå™¨è„šä¼˜å…ˆ joinByLabel'S«IfStatementÍ‡Í	Q°BinaryExpressionÍ‹ÍšKªIdentifierÍ‹Í£key£===R§LiteralÍ“Íš¥route§'route'L®BlockStatementÍœÍ”‘T³ExpressionStatementÍ§ÍU´AssignmentExpressionÍ§ÍŒ¡=KªIdentifierÍ§Í«¤bodyQ°BinaryExpressionÍ®ÍŒQ°BinaryExpressionÍ®ÍDQ°BinaryExpressionÍ®Í
 R§LiteralÍ®ÍÂÙ!ã€æœ¬é˜¶æ®µèƒ½åŠ› â€” routeã€‘:
 Ù$'ã€æœ¬é˜¶æ®µèƒ½åŠ› â€” routeã€‘:\n'¡+R§LiteralÍÒÍ
 ÙM- è¾“å‡ºï¼šå¸ƒçº¿çº¦æŸ JSONï¼ˆforceLabelNets / forceWireNets / ç¦ç©¿åŒºï¼‰
 ÙP'- è¾“å‡ºï¼šå¸ƒçº¿çº¦æŸ JSONï¼ˆforceLabelNets / forceWireNets / ç¦ç©¿åŒºï¼‰\n'¡+R§LiteralÍÍDÙC- ä¸å¯ç”¨ï¼šfixAction æ‹“æ‰‘ä¿®å¤ï¼›æ”¹æ‹“æ‰‘è¯·ç­‰ self_review
-ÙF'- ä¸å¯ç”¨ï¼šfixAction æ‹“æ‰‘ä¿®å¤ï¼›æ”¹æ‹“æ‰‘è¯·ç­‰ self_review\n'¡+R§LiteralÍTÍŒÙ`- å·¥å…·è¾¹ç•Œï¼šçº¯ä»ªå™¨ç½‘ forceLabelï¼›DUTâ‰¥2 æ¢é’ˆå¹¶ç½‘å¯ forceWireï¼ˆä»ªå™¨è„š stubï¼‰Ùb'- å·¥å…·è¾¹ç•Œï¼šçº¯ä»ªå™¨ç½‘ forceLabelï¼›DUTâ‰¥2 æ¢é’ˆå¹¶ç½‘å¯ forceWireï¼ˆä»ªå™¨è„š stubï¼‰'S«IfStatementÍŸÍKQ°BinaryExpressionÍ£Í¸KªIdentifierÍ£Í¦£key£===R§LiteralÍ«Í¸«self_review­'self_review'L®BlockStatementÍºÍ_‘T³ExpressionStatementÍÅÍXU´AssignmentExpressionÍÅÍW¡=KªIdentifierÍÅÍÉ¤bodyQ°BinaryExpressionÍÌÍWQ°BinaryExpressionÍÌÍQ°BinaryExpressionÍÌÍ®Q°BinaryExpressionÍÌÍlQ°BinaryExpressionÍÌÍ!R§LiteralÍÌÍæÙ'ã€æœ¬é˜¶æ®µèƒ½åŠ› â€” self_reviewã€‘:
+ÙF'- ä¸å¯ç”¨ï¼šfixAction æ‹“æ‰‘ä¿®å¤ï¼›æ”¹æ‹“æ‰‘è¯·ç­‰ self_review\n'¡+R§LiteralÍTÍŒÙ`- å·¥å…·è¾¹ç•Œï¼šçº¯ä»ªå™¨ç½‘ forceLabelï¼›DUTâ‰¥2 æ¢é’ˆå¹¶ç½‘å¯ forceWireï¼ˆä»ªå™¨è„š stubï¼‰Ùb'- å·¥å…·è¾¹ç•Œï¼šçº¯ä»ªå™¨ç½‘ forceLabelï¼›DUTâ‰¥2 æ¢é’ˆå¹¶ç½‘å¯ forceWireï¼ˆä»ªå™¨è„š stubï¼‰'S«IfStatementÍŸÍ	Q°BinaryExpressionÍ£Í¸KªIdentifierÍ£Í¦£key£===R§LiteralÍ«Í¸«self_review­'self_review'L®BlockStatementÍºÍ_‘T³ExpressionStatementÍÅÍXU´AssignmentExpressionÍÅÍW¡=KªIdentifierÍÅÍÉ¤bodyQ°BinaryExpressionÍÌÍWQ°BinaryExpressionÍÌÍQ°BinaryExpressionÍÌÍ®Q°BinaryExpressionÍÌÍlQ°BinaryExpressionÍÌÍ!R§LiteralÍÌÍæÙ'ã€æœ¬é˜¶æ®µèƒ½åŠ› â€” self_reviewã€‘:
 Ù*'ã€æœ¬é˜¶æ®µèƒ½åŠ› â€” self_reviewã€‘:\n'¡+R§LiteralÍöÍ!ÙN- è¾“å‡ºï¼šissues[].fixActionï¼ˆå¿…é¡»æ¥è‡ªã€Œå¯ç”¨ä¿®å¤å·¥å…·ã€ç›®å½•ï¼‰
 ÙQ'- è¾“å‡ºï¼šissues[].fixActionï¼ˆå¿…é¡»æ¥è‡ªã€Œå¯ç”¨ä¿®å¤å·¥å…·ã€ç›®å½•ï¼‰\n'¡+R§LiteralÍ1ÍlÙZ- å¯ç”¨ï¼šå…¨éƒ¨ llmVisible fixActionï¼ˆè§ç›®å½•ï¼‰ï¼›ç”±æœåŠ¡ç«¯ applyOneAiFix æ‰§è¡Œ
 Ù]'- å¯ç”¨ï¼šå…¨éƒ¨ llmVisible fixActionï¼ˆè§ç›®å½•ï¼‰ï¼›ç”±æœåŠ¡ç«¯ applyOneAiFix æ‰§è¡Œ\n'¡+R§LiteralÍ|Í®Ù]- ä¸å¯ç”¨ï¼šç¼–é€ ç›®å½•å¤–åŠ¨ä½œï¼›ä¸å¯æ”¹ç”¨ net_plan çš„ joinWired å­—æ®µå†’å……ä¿®å¤
-Ù`'- ä¸å¯ç”¨ï¼šç¼–é€ ç›®å½•å¤–åŠ¨ä½œï¼›ä¸å¯æ”¹ç”¨ net_plan çš„ joinWired å­—æ®µå†’å……ä¿®å¤\n'¡+R§LiteralÍ¾ÍÙl- å·¥å…·è¾¹ç•Œï¼šçº¯å‡ ä½•â†’demote_*ï¼›ä»ªå™¨â†’rebuild_instrumentï¼›555â†’wire_555_monostable/reconnectï¼›Ùn'- å·¥å…·è¾¹ç•Œï¼šçº¯å‡ ä½•â†’demote_*ï¼›ä»ªå™¨â†’rebuild_instrumentï¼›555â†’wire_555_monostable/reconnectï¼›'¡+R§LiteralÍÍWÙ_è¿æ”¾è‡ªæ¿€â†’wire_opamp_self_oscï¼›RCå……æ”¾ç”µâ†’wire_series_rcï¼ˆç¦æ­¢è‡ªæ¿€åœºæ™¯ç”¨ RCï¼‰Ùa'è¿æ”¾è‡ªæ¿€â†’wire_opamp_self_oscï¼›RCå……æ”¾ç”µâ†’wire_series_rcï¼ˆç¦æ­¢è‡ªæ¿€åœºæ™¯ç”¨ RCï¼‰'S«IfStatementÍjÍKQ°BinaryExpressionÍnÍ|KªIdentifierÍnÍq£key£===R§LiteralÍvÍ|¤diag¦'diag'L®BlockStatementÍ~ÍZ‘T³ExpressionStatementÍ‰ÍSU´AssignmentExpressionÍ‰ÍR¡=KªIdentifierÍ‰Í¤bodyQ°BinaryExpressionÍÍRQ°BinaryExpressionÍÍQ°BinaryExpressionÍÍÙR§LiteralÍÍ£Ù ã€æœ¬é˜¶æ®µèƒ½åŠ› â€” diagã€‘:
+Ù`'- ä¸å¯ç”¨ï¼šç¼–é€ ç›®å½•å¤–åŠ¨ä½œï¼›ä¸å¯æ”¹ç”¨ net_plan çš„ joinWired å­—æ®µå†’å……ä¿®å¤\n'¡+R§LiteralÍ¾ÍÙl- å·¥å…·è¾¹ç•Œï¼šçº¯å‡ ä½•â†’demote_*ï¼›ä»ªå™¨â†’rebuild_instrumentï¼›555â†’wire_555_monostable/reconnectï¼›Ùn'- å·¥å…·è¾¹ç•Œï¼šçº¯å‡ ä½•â†’demote_*ï¼›ä»ªå™¨â†’rebuild_instrumentï¼›555â†’wire_555_monostable/reconnectï¼›'¡+R§LiteralÍÍWÙ_è¿æ”¾è‡ªæ¿€â†’wire_opamp_self_oscï¼›RCå……æ”¾ç”µâ†’wire_series_rcï¼ˆç¦æ­¢è‡ªæ¿€åœºæ™¯ç”¨ RCï¼‰Ùa'è¿æ”¾è‡ªæ¿€â†’wire_opamp_self_oscï¼›RCå……æ”¾ç”µâ†’wire_series_rcï¼ˆç¦æ­¢è‡ªæ¿€åœºæ™¯ç”¨ RCï¼‰'S«IfStatementÍjÍ	Q°BinaryExpressionÍnÍ|KªIdentifierÍnÍq£key£===R§LiteralÍvÍ|¤diag¦'diag'L®BlockStatementÍ~ÍZ‘T³ExpressionStatementÍ‰ÍSU´AssignmentExpressionÍ‰ÍR¡=KªIdentifierÍ‰Í¤bodyQ°BinaryExpressionÍÍRQ°BinaryExpressionÍÍQ°BinaryExpressionÍÍÙR§LiteralÍÍ£Ù ã€æœ¬é˜¶æ®µèƒ½åŠ› â€” diagã€‘:
 Ù#'ã€æœ¬é˜¶æ®µèƒ½åŠ› â€” diagã€‘:\n'¡+R§LiteralÍ³ÍÙÙ?- è¾“å‡ºï¼šè¯Šæ–­å»ºè®® JSONï¼ˆå« fixPriority æ–‡æœ¬å»ºè®®ï¼‰
 ÙB'- è¾“å‡ºï¼šè¯Šæ–­å»ºè®® JSONï¼ˆå« fixPriority æ–‡æœ¬å»ºè®®ï¼‰\n'¡+R§LiteralÍéÍÙY- ä¸å¯ç”¨ï¼šç›´æ¥æ‰§è¡Œ fixActionï¼›å»ºè®®ååº”å°½é‡å¯¹é½ self_review å·¥å…·ç›®å½•
-Ù\'- ä¸å¯ç”¨ï¼šç›´æ¥æ‰§è¡Œ fixActionï¼›å»ºè®®ååº”å°½é‡å¯¹é½ self_review å·¥å…·ç›®å½•\n'¡+R§LiteralÍ+ÍRÙI- å·¥å…·è¾¹ç•Œï¼šè¯Šæ–­åªæŠ¥å‘Šï¼Œä¿®å¤èµ° self_review æˆ–ç¡®å®šæ€§ kitÙK'- å·¥å…·è¾¹ç•Œï¼šè¯Šæ–­åªæŠ¥å‘Šï¼Œä¿®å¤èµ° self_review æˆ–ç¡®å®šæ€§ kit'S«IfStatementÍeÍKQ°BinaryExpressionÍiÍKªIdentifierÍiÍl£key£===R§LiteralÍqÍ¬modular_plan®'modular_plan'L®BlockStatementÍÍ	X‘T³ExpressionStatementÍŒÍ	QU´AssignmentExpressionÍŒÍ	P¡=KªIdentifierÍŒÍ¤bodyQ°BinaryExpressionÍ“Í	PQ°BinaryExpressionÍ“Í	Q°BinaryExpressionÍ“ÍãR§LiteralÍ“Í®Ù(ã€æœ¬é˜¶æ®µèƒ½åŠ› â€” modular_planã€‘:
+Ù\'- ä¸å¯ç”¨ï¼šç›´æ¥æ‰§è¡Œ fixActionï¼›å»ºè®®ååº”å°½é‡å¯¹é½ self_review å·¥å…·ç›®å½•\n'¡+R§LiteralÍ+ÍRÙI- å·¥å…·è¾¹ç•Œï¼šè¯Šæ–­åªæŠ¥å‘Šï¼Œä¿®å¤èµ° self_review æˆ–ç¡®å®šæ€§ kitÙK'- å·¥å…·è¾¹ç•Œï¼šè¯Šæ–­åªæŠ¥å‘Šï¼Œä¿®å¤èµ° self_review æˆ–ç¡®å®šæ€§ kit'S«IfStatementÍeÍ	Q°BinaryExpressionÍiÍKªIdentifierÍiÍl£key£===R§LiteralÍqÍ¬modular_plan®'modular_plan'L®BlockStatementÍÍ	X‘T³ExpressionStatementÍŒÍ	QU´AssignmentExpressionÍŒÍ	P¡=KªIdentifierÍŒÍ¤bodyQ°BinaryExpressionÍ“Í	PQ°BinaryExpressionÍ“Í	Q°BinaryExpressionÍ“ÍãR§LiteralÍ“Í®Ù(ã€æœ¬é˜¶æ®µèƒ½åŠ› â€” modular_planã€‘:
 Ù+'ã€æœ¬é˜¶æ®µèƒ½åŠ› â€” modular_planã€‘:\n'¡+R§LiteralÍ¾ÍãÙ0- è¾“å‡ºï¼šæ¨¡å—åˆ’åˆ† + boundaryPins + joints
 Ù3'- è¾“å‡ºï¼šæ¨¡å—åˆ’åˆ† + boundaryPins + joints\n'¡+R§LiteralÍóÍ	Ù<- ä¸å¯ç”¨ï¼šfixActionï¼›å­æ¨¡å—å»ºç½‘åœ¨å„è‡ª net_plan
-Ù?'- ä¸å¯ç”¨ï¼šfixActionï¼›å­æ¨¡å—å»ºç½‘åœ¨å„è‡ª net_plan\n'¡+R§LiteralÍ	(Í	PÙD- å·¥å…·è¾¹ç•Œï¼šjoints ç”¨ä½å·ï¼›ç”µæºå…³èŠ‚å¿…æœ‰ POWER.VCC/GNDÙF'- å·¥å…·è¾¹ç•Œï¼šjoints ç”¨ä½å·ï¼›ç”µæºå…³èŠ‚å¿…æœ‰ POWER.VCC/GND'S«IfStatementÍ	cÍKQ°BinaryExpressionÍ	gÍ	zKªIdentifierÍ	gÍ	j£key£===R§LiteralÍ	oÍ	z©edit_plan«'edit_plan'L®BlockStatementÍ	|Í
+Ù?'- ä¸å¯ç”¨ï¼šfixActionï¼›å­æ¨¡å—å»ºç½‘åœ¨å„è‡ª net_plan\n'¡+R§LiteralÍ	(Í	PÙD- å·¥å…·è¾¹ç•Œï¼šjoints ç”¨ä½å·ï¼›ç”µæºå…³èŠ‚å¿…æœ‰ POWER.VCC/GNDÙF'- å·¥å…·è¾¹ç•Œï¼šjoints ç”¨ä½å·ï¼›ç”µæºå…³èŠ‚å¿…æœ‰ POWER.VCC/GND'S«IfStatementÍ	cÍ	Q°BinaryExpressionÍ	gÍ	zKªIdentifierÍ	gÍ	j£key£===R§LiteralÍ	oÍ	z©edit_plan«'edit_plan'L®BlockStatementÍ	|Í
 c‘T³ExpressionStatementÍ	‡Í
 \U´AssignmentExpressionÍ	‡Í
 [¡=KªIdentifierÍ	‡Í	‹¤bodyQ°BinaryExpressionÍ	Í
@@ -266,7 +167,7 @@ c‘T³ExpressionStatementÍ	‡Í
 ÙO'- ä¸å¯ç”¨ï¼šself_review fixAction æšä¸¾ï¼ˆç”¨ç¼–è¾‘å­—æ®µè¡¨è¾¾å˜æ›´ï¼‰\n'¡+R§LiteralÍ
 ;Í
 [Ù@- å·¥å…·è¾¹ç•Œï¼šnets èµ°å¢é‡ mergeï¼›ç¦æ­¢æ•´å›¾æ¨¡æ¿æ›¿æ¢ÙB'- å·¥å…·è¾¹ç•Œï¼šnets èµ°å¢é‡ mergeï¼›ç¦æ­¢æ•´å›¾æ¨¡æ¿æ›¿æ¢'S«IfStatementÍ
-nÍKQ°BinaryExpressionÍ
+nÍ	Q°BinaryExpressionÍ
 rÍ
 ƒKªIdentifierÍ
 rÍ
@@ -287,43 +188,6 @@ zÍ
 ÁÍ
 áÙ5- éç”Ÿäº§æ•´å›¾è·¯å¾„ï¼›ç”Ÿäº§è¯·èµ° full pipeline
 Ù8'- éç”Ÿäº§æ•´å›¾è·¯å¾„ï¼›ç”Ÿäº§è¯·èµ° full pipeline\n'¡+R§LiteralÍ
-ñÍÙ&- ä¸å¯ç”¨ï¼šå½“ä½œæ¨¡æ¿å›é€€å…¥å£Ù('- ä¸å¯ç”¨ï¼šå½“ä½œæ¨¡æ¿å›é€€å…¥å£'S«IfStatementÍÍKQ°BinaryExpressionÍÍ/KªIdentifierÍÍ£key£===R§LiteralÍ Í/­pcb_placement¯'pcb_placement'L®BlockStatementÍ1ÍO‘T³ExpressionStatementÍ<ÍHU´AssignmentExpressionÍ<ÍG¡=KªIdentifierÍ<Í@¤bodyQ°BinaryExpressionÍCÍGQ°BinaryExpressionÍCÍQ°BinaryExpressionÍCÍ×Q°BinaryExpressionÍCÍQ°BinaryExpressionÍCÍ^Q°BinaryExpressionÍCÍ,Q°BinaryExpressionÍCÍìQ°BinaryExpressionÍCÍ¾R§LiteralÍCÍ_Ù)ã€æœ¬é˜¶æ®µèƒ½åŠ› â€” pcb_placementã€‘:
-Ù,'ã€æœ¬é˜¶æ®µèƒ½åŠ› â€” pcb_placementã€‘:\n'¡+R§LiteralÍoÍ¾Ùd- è¾“å‡ºï¼šboardWidthMil/boardHeightMilï¼ˆå¿…å¡«ï¼Œå®šæ¿å°ºå¯¸ï¼‰+ placements + groups + lockedIds
-Ùg'- è¾“å‡ºï¼šboardWidthMil/boardHeightMilï¼ˆå¿…å¡«ï¼Œå®šæ¿å°ºå¯¸ï¼‰+ placements + groups + lockedIds\n'¡+R§LiteralÍÎÍìÙE- å½“å‰æ¿æ¡†ä»…ä¾›å‚è€ƒï¼›é¡»ç”±æ¨¡å‹é‡æ–°ç»™å‡ºå®½é«˜ï¼ˆmilï¼‰
-ÙH'- å½“å‰æ¿æ¡†ä»…ä¾›å‚è€ƒï¼›é¡»ç”±æ¨¡å‹é‡æ–°ç»™å‡ºå®½é«˜ï¼ˆmilï¼‰\n'¡+R§LiteralÍüÍ,Ùc- å®‰è£…å­”å†™å…¥ lockedIdsï¼ˆç³»ç»ŸæŒ‰æ–°æ¿å››è§’é‡é’‰ï¼‰ï¼›ç¦æ­¢åŸä½å¤è¯»ï¼ˆecho é—¨ç¦ï¼‰
-Ùf'- å®‰è£…å­”å†™å…¥ lockedIdsï¼ˆç³»ç»ŸæŒ‰æ–°æ¿å››è§’é‡é’‰ï¼‰ï¼›ç¦æ­¢åŸä½å¤è¯»ï¼ˆecho é—¨ç¦ï¼‰\n'¡+R§LiteralÍ<Í^Ù9- footprintId å¿…é¡»é€å­—å¤åˆ¶åˆ—è¡¨ idï¼Œç¦æ­¢ç¼–é€ 
-Ù<'- footprintId å¿…é¡»é€å­—å¤åˆ¶åˆ—è¡¨ idï¼Œç¦æ­¢ç¼–é€ \n'¡+R§LiteralÍnÍÙT- groups ä»…åŠŸèƒ½åˆ†ç»„ä¸”é¡»ç©ºé—´èšé›†ï¼›ç¦æ­¢æŠŠå®‰è£…å­”/MOUNT æ”¾å…¥ groups
-ÙW'- groups ä»…åŠŸèƒ½åˆ†ç»„ä¸”é¡»ç©ºé—´èšé›†ï¼›ç¦æ­¢æŠŠå®‰è£…å­”/MOUNT æ”¾å…¥ groups\n'¡+R§LiteralÍ­Í×ÙS- å·¥å…·ï¼šç„Šç›˜è¯¦è¡¨ï¼ˆxy/layers/typeï¼‰å·²æ³¨å…¥ï¼›å¼‚ç½‘ç„Šç›˜å‹¿å…±çº¿å †å 
-ÙV'- å·¥å…·ï¼šç„Šç›˜è¯¦è¡¨ï¼ˆxy/layers/typeï¼‰å·²æ³¨å…¥ï¼›å¼‚ç½‘ç„Šç›˜å‹¿å…±çº¿å †å \n'¡+R§LiteralÍçÍÙ@- ä¸å¯ç”¨ï¼štrack/via æŠ˜ç‚¹åæ ‡ï¼›æœ¬åœ°ç½‘æ ¼å†’å……å¸ƒå±€
-ÙC'- ä¸å¯ç”¨ï¼štrack/via æŠ˜ç‚¹åæ ‡ï¼›æœ¬åœ°ç½‘æ ¼å†’å……å¸ƒå±€\n'¡+R§LiteralÍÍGÙQ- å·¥å…·è¾¹ç•Œï¼šå®šæ¿+ä½å§¿ï¼›å±‚ç­–ç•¥ pcb_routeï¼›æŠ˜çº¿/è¿‡å­” pcb_geometryÙS'- å·¥å…·è¾¹ç•Œï¼šå®šæ¿+ä½å§¿ï¼›å±‚ç­–ç•¥ pcb_routeï¼›æŠ˜çº¿/è¿‡å­” pcb_geometry'S«IfStatementÍZÍKQ°BinaryExpressionÍ^ÍtKªIdentifierÍ^Ía£key£===R§LiteralÍfÍt¬pcb_net_plan®'pcb_net_plan'L®BlockStatementÍvÍ‘T³ExpressionStatementÍÍU´AssignmentExpressionÍÍ¡=KªIdentifierÍÍ…¤bodyQ°BinaryExpressionÍˆÍQ°BinaryExpressionÍˆÍÓQ°BinaryExpressionÍˆÍ¬Q°BinaryExpressionÍˆÍwQ°BinaryExpressionÍˆÍ<Q°BinaryExpressionÍˆÍÿR§LiteralÍˆÍ£Ù(ã€æœ¬é˜¶æ®µèƒ½åŠ› â€” pcb_net_planã€‘:
-Ù+'ã€æœ¬é˜¶æ®µèƒ½åŠ› â€” pcb_net_planã€‘:\n'¡+R§LiteralÍ³ÍÿÙO- è¾“å‡ºï¼šnets[] kind/routeMode/priority/layerHint/busYOffset + priorityOrder
-ÙR'- è¾“å‡ºï¼šnets[] kind/routeMode/priority/layerHint/busYOffset + priorityOrder\n'¡+R§LiteralÍÍ<ÙB- Cu=2 æœ‰ä¿¡å·æ—¶ç”µæº/åœ°ä¼˜å…ˆ forceTrackï¼ˆå‹¿ forcePourï¼‰
-ÙE'- Cu=2 æœ‰ä¿¡å·æ—¶ç”µæº/åœ°ä¼˜å…ˆ forceTrackï¼ˆå‹¿ forcePourï¼‰\n'¡+R§LiteralÍLÍwÙD- busYOffsetï¼šåŒå±‚å¤šç”µæº Y é”™å¼€ï¼›layerHint ä¾›å‡ ä½•é€‰å±‚
-ÙG'- busYOffsetï¼šåŒå±‚å¤šç”µæº Y é”™å¼€ï¼›layerHint ä¾›å‡ ä½•é€‰å±‚\n'¡+R§LiteralÍ‡Í¬ÙP- å·¥å…·ï¼šç„Šç›˜æ‘˜è¦+è¯¦è¡¨ï¼ˆå« MOUNT æ ‡è®°ï¼‰ï¼›å®‰è£…å­”ä¸å¼ºåˆ¶è¿é€š
-ÙS'- å·¥å…·ï¼šç„Šç›˜æ‘˜è¦+è¯¦è¡¨ï¼ˆå« MOUNT æ ‡è®°ï¼‰ï¼›å®‰è£…å­”ä¸å¼ºåˆ¶è¿é€š\n'¡+R§LiteralÍ¼ÍÓÙ6- ä¸å¯ç”¨ï¼šå‘æ˜æ–°ç”µæ°”ç½‘ï¼›è¾“å‡ºé“œçº¿åæ ‡
-Ù9'- ä¸å¯ç”¨ï¼šå‘æ˜æ–°ç”µæ°”ç½‘ï¼›è¾“å‡ºé“œçº¿åæ ‡\n'¡+R§LiteralÍãÍÙE- å·¥å…·è¾¹ç•Œï¼šè¦†ç›–å·²æœ‰ç½‘ç»œç­–ç•¥ï¼›å±‚è§’è‰²ç•™ç»™ pcb_routeÙG'- å·¥å…·è¾¹ç•Œï¼šè¦†ç›–å·²æœ‰ç½‘ç»œç­–ç•¥ï¼›å±‚è§’è‰²ç•™ç»™ pcb_route'S«IfStatementÍÍKQ°BinaryExpressionÍÍ.KªIdentifierÍÍ£key£===R§LiteralÍ#Í.©pcb_route«'pcb_route'L®BlockStatementÍ0Í‘T³ExpressionStatementÍ;ÍU´AssignmentExpressionÍ;Í¡=KªIdentifierÍ;Í?¤bodyQ°BinaryExpressionÍBÍQ°BinaryExpressionÍBÍÒQ°BinaryExpressionÍBÍŸQ°BinaryExpressionÍBÍlQ°BinaryExpressionÍBÍ4Q°BinaryExpressionÍBÍÑQ°BinaryExpressionÍBÍ¢R§LiteralÍBÍZÙ%ã€æœ¬é˜¶æ®µèƒ½åŠ› â€” pcb_routeã€‘:
-Ù('ã€æœ¬é˜¶æ®µèƒ½åŠ› â€” pcb_routeã€‘:\n'¡+R§LiteralÍjÍ¢ÙK- è¾“å‡ºï¼šlayerRolesï¼ˆè¦†ç›–æ¯ä¸€é“œå±‚ï¼‰+ viaPreference + netPriority
-ÙN'- è¾“å‡ºï¼šlayerRolesï¼ˆè¦†ç›–æ¯ä¸€é“œå±‚ï¼‰+ viaPreference + netPriority\n'¡+R§LiteralÍ²ÍÑÙ6- netPriority ä¾›å¸ƒçº¿å…ˆåå‚è€ƒï¼ˆè¶Šå¤§è¶Šå…ˆï¼‰
-Ù9'- netPriority ä¾›å¸ƒçº¿å…ˆåå‚è€ƒï¼ˆè¶Šå¤§è¶Šå…ˆï¼‰\n'¡+R§LiteralÍáÍ4Ù`- gnd/power é defer æ—¶éœ€ gnd_bus|vcc_bus|power_h|power_vï¼ˆCu=2 å¯ B.Cu=signal_h å…¼ç”¨ï¼‰
-Ùc'- gnd/power é defer æ—¶éœ€ gnd_bus|vcc_bus|power_h|power_vï¼ˆCu=2 å¯ B.Cu=signal_h å…¼ç”¨ï¼‰\n'¡+R§LiteralÍDÍlÙQ- Cuâ‰¥4/6/8ï¼šç¦æ­¢ç©ºå±‚ï¼›æ¯å±‚é¡»æœ‰çœŸå®è§’è‰²ï¼›ä¿ç•™è‡³å°‘ä¸€å±‚ stub
-ÙT'- Cuâ‰¥4/6/8ï¼šç¦æ­¢ç©ºå±‚ï¼›æ¯å±‚é¡»æœ‰çœŸå®è§’è‰²ï¼›ä¿ç•™è‡³å°‘ä¸€å±‚ stub\n'¡+R§LiteralÍ|ÍŸÙL- å·¥å…·ï¼šæ¿æ€å¿«ç…§ï¼ˆé“œä½¿ç”¨/ç„Šç›˜è¯¦è¡¨/ä¸Šè½® geo å¤±è´¥åæ ‡ï¼‰
-ÙO'- å·¥å…·ï¼šæ¿æ€å¿«ç…§ï¼ˆé“œä½¿ç”¨/ç„Šç›˜è¯¦è¡¨/ä¸Šè½® geo å¤±è´¥åæ ‡ï¼‰\n'¡+R§LiteralÍ¯ÍÒÙR- ä¸å¯ç”¨ï¼šè·³è¿‡æœ¬é˜¶æ®µï¼›ç”¨æœ¬åœ° Cu é»˜è®¤è¡¨å†’å……ï¼›è¾“å‡ºèµ°çº¿æŠ˜ç‚¹
-ÙU'- ä¸å¯ç”¨ï¼šè·³è¿‡æœ¬é˜¶æ®µï¼›ç”¨æœ¬åœ° Cu é»˜è®¤è¡¨å†’å……ï¼›è¾“å‡ºèµ°çº¿æŠ˜ç‚¹\n'¡+R§LiteralÍâÍÙP- å·¥å…·è¾¹ç•Œï¼šç­–ç•¥å¡«å†™ï¼›æŠ˜çº¿æ‹å¼¯ä¸è¿‡å­”ç”± pcb_geometry LLM å†³å®šÙR'- å·¥å…·è¾¹ç•Œï¼šç­–ç•¥å¡«å†™ï¼›æŠ˜çº¿æ‹å¼¯ä¸è¿‡å­”ç”± pcb_geometry LLM å†³å®š'S«IfStatementÍÍKQ°BinaryExpressionÍ#Í9KªIdentifierÍ#Í&£key£===R§LiteralÍ+Í9¬pcb_geometry®'pcb_geometry'L®BlockStatementÍ;Í/‘T³ExpressionStatementÍFÍ(U´AssignmentExpressionÍFÍ'¡=KªIdentifierÍFÍJ¤bodyQ°BinaryExpressionÍMÍ'Q°BinaryExpressionÍMÍûQ°BinaryExpressionÍMÍÀQ°BinaryExpressionÍMÍƒQ°BinaryExpressionÍMÍCQ°BinaryExpressionÍMÍ Q°BinaryExpressionÍMÍÉR§LiteralÍMÍhÙ(ã€æœ¬é˜¶æ®µèƒ½åŠ› â€” pcb_geometryã€‘:
-Ù+'ã€æœ¬é˜¶æ®µèƒ½åŠ› â€” pcb_geometryã€‘:\n'¡+R§LiteralÍxÍÉÙT- è¾“å‡ºï¼štracks[].{netId|netName,layer,points[]} + vias[].{x,y,fromLayer,toLayer}
-ÙW'- è¾“å‡ºï¼štracks[].{netId|netName,layer,points[]} + vias[].{x,y,fromLayer,toLayer}\n'¡+R§LiteralÍÙÍ ÙP- å¿…é¡»å†³å®šæ¯ç½‘æ€ä¹ˆæ‹ã€è¿‡å­”æ‰“å“ªï¼›points æ­£äº¤æŠ˜çº¿ï¼Œå•ä½ mil
-ÙS'- å¿…é¡»å†³å®šæ¯ç½‘æ€ä¹ˆæ‹ã€è¿‡å­”æ‰“å“ªï¼›points æ­£äº¤æŠ˜çº¿ï¼Œå•ä½ mil\n'¡+R§LiteralÍÍCÙd- åŒç½‘åŠŸèƒ½/è¿æ¥å™¨ç„Šç›˜å¿…é¡»é“œè¿é€šï¼›orphan stub æœ¬åœ°æ’•æ‰å¹¶å¤±è´¥ï¼›MOUNT å¯ä¸è¿
-Ùg'- åŒç½‘åŠŸèƒ½/è¿æ¥å™¨ç„Šç›˜å¿…é¡»é“œè¿é€šï¼›orphan stub æœ¬åœ°æ’•æ‰å¹¶å¤±è´¥ï¼›MOUNT å¯ä¸è¿\n'¡+R§LiteralÍSÍƒÙ;- éµå®ˆ layerRolesï¼›Cu=2 ä¸»å¹² B.Cuã€F.Cu çŸ­ stub+via
-Ù>'- éµå®ˆ layerRolesï¼›Cu=2 ä¸»å¹² B.Cuã€F.Cu çŸ­ stub+via\n'¡+R§LiteralÍ“ÍÀÙV- å·¥å…·ï¼šç„Šç›˜è¯¦è¡¨ä¸–ç•Œåæ ‡ + å±‚è§’è‰² + ä¸Šè½® clearance/è¿é€šå¤±è´¥æ˜ç»†
-ÙY'- å·¥å…·ï¼šç„Šç›˜è¯¦è¡¨ä¸–ç•Œåæ ‡ + å±‚è§’è‰² + ä¸Šè½® clearance/è¿é€šå¤±è´¥æ˜ç»†\n'¡+R§LiteralÍĞÍûÙ\- æœ¬åœ°åªåšæ­£äº¤åŒ–/clearance/è¿é€šé—¨ç¦è½é“œï¼Œç¦æ­¢æœ¬åœ°è‡ªåˆ›å¸ƒçº¿ç­–ç•¥å†’å……
-Ù_'- æœ¬åœ°åªåšæ­£äº¤åŒ–/clearance/è¿é€šé—¨ç¦è½é“œï¼Œç¦æ­¢æœ¬åœ°è‡ªåˆ›å¸ƒçº¿ç­–ç•¥å†’å……\n'¡+R§LiteralÍÍ'Ù<- ä¸å¯ç”¨ï¼šç©º tracksï¼›çœç•¥åº”å¸ƒç½‘ï¼›è·³è¿‡æœ¬é˜¶æ®µÙ>'- ä¸å¯ç”¨ï¼šç©º tracksï¼›çœç•¥åº”å¸ƒç½‘ï¼›è·³è¿‡æœ¬é˜¶æ®µ'S«IfStatementÍ:ÍKQ°BinaryExpressionÍ>ÍUKªIdentifierÍ>ÍA£key£===R§LiteralÍFÍU­pcb_qa_repair¯'pcb_qa_repair'L®BlockStatementÍWÍK‘T³ExpressionStatementÍbÍDU´AssignmentExpressionÍbÍC¡=KªIdentifierÍbÍf¤bodyQ°BinaryExpressionÍiÍCQ°BinaryExpressionÍiÍùQ°BinaryExpressionÍiÍ»Q°BinaryExpressionÍiÍŒQ°BinaryExpressionÍiÍHQ°BinaryExpressionÍiÍøQ°BinaryExpressionÍiÍ‹Q°BinaryExpressionÍiÍ<Q°BinaryExpressionÍiÍR§LiteralÍiÍ…Ù)ã€æœ¬é˜¶æ®µèƒ½åŠ› â€” pcb_qa_repairã€‘:
-Ù,'ã€æœ¬é˜¶æ®µèƒ½åŠ› â€” pcb_qa_repairã€‘:\n'¡+R§LiteralÍ•ÍÙo- è¾“å‡ºï¼šripNetIds / layerRolePatch / routeModePatch / busYOffsetPatch / raiseCopperTo / rePlaceFootprintIds
-Ùr'- è¾“å‡ºï¼šripNetIds / layerRolePatch / routeModePatch / busYOffsetPatch / raiseCopperTo / rePlaceFootprintIds\n'¡+R§LiteralÍÍ<ÙX- å·¥å…·ï¼šå‡ ä½•å¤±è´¥æ˜ç»†ï¼ˆç„Šç›˜å¯¹åæ ‡+pad_block éšœç¢ï¼‰+ æ¿æ€ç„Šç›˜è¯¦è¡¨
-Ù['- å·¥å…·ï¼šå‡ ä½•å¤±è´¥æ˜ç»†ï¼ˆç„Šç›˜å¯¹åæ ‡+pad_block éšœç¢ï¼‰+ æ¿æ€ç„Šç›˜è¯¦è¡¨\n'¡+R§LiteralÍLÍ‹Ù\- layerRolePatch çš„ key=é“œå±‚å(F.Cu/B.Cu)ï¼Œvalue=åˆæ³•è§’è‰²ï¼›ç¦æ­¢ç½‘ç»œåä½œ key
-Ù_'- layerRolePatch çš„ key=é“œå±‚å(F.Cu/B.Cu)ï¼Œvalue=åˆæ³•è§’è‰²ï¼›ç¦æ­¢ç½‘ç»œåä½œ key\n'¡+R§LiteralÍ›ÍøÙz- power bus clearanceï¼šä¼˜å…ˆ routeModePatch forcePourâ†’forceTrackï¼Œæˆ– busYOffsetPatch é”™å¼€ï¼›å‹¿åå¤ç¿»å±‚è§’è‰²
-Ù}'- power bus clearanceï¼šä¼˜å…ˆ routeModePatch forcePourâ†’forceTrackï¼Œæˆ– busYOffsetPatch é”™å¼€ï¼›å‹¿åå¤ç¿»å±‚è§’è‰²\n'¡+R§LiteralÍÍHÙg- Cu=2 å¤šç½‘ clearance æŒç»­å¤±è´¥ï¼šraiseCopperTo=4 å¹¶è¡¥é½æ–°å±‚è§’è‰²ï¼ˆç¦æ­¢åª rip ç©ºè½¬ï¼‰
-Ùj'- Cu=2 å¤šç½‘ clearance æŒç»­å¤±è´¥ï¼šraiseCopperTo=4 å¹¶è¡¥é½æ–°å±‚è§’è‰²ï¼ˆç¦æ­¢åª rip ç©ºè½¬ï¼‰\n'¡+R§LiteralÍXÍŒÙG- pad_block å…±çº¿ï¼šä¼˜å…ˆ rePlaceFootprintIdsï¼›ç¦æ­¢åˆ å”¯ä¸€ stub
-ÙJ'- pad_block å…±çº¿ï¼šä¼˜å…ˆ rePlaceFootprintIdsï¼›ç¦æ­¢åˆ å”¯ä¸€ stub\n'¡+R§LiteralÍœÍ»ÙD- ä¸å¯ç”¨ï¼šå¿½ç•¥è¿è§„ç»§ç»­äº¤ä»˜ï¼›æ—  LLM çš„ç›²é‡è¯•å‡ ä½•
-ÙG'- ä¸å¯ç”¨ï¼šå¿½ç•¥è¿è§„ç»§ç»­äº¤ä»˜ï¼›æ—  LLM çš„ç›²é‡è¯•å‡ ä½•\n'¡+R§LiteralÍËÍùÙW- å·¥å…·è¾¹ç•Œï¼šåªå†³å®šä¿®å¤æ–¹æ¡ˆï¼›é‡å¸ƒèµ° pcb_geometry LLMï¼ˆæŠ˜ç‚¹/è¿‡å­”ï¼‰
-ÙZ'- å·¥å…·è¾¹ç•Œï¼šåªå†³å®šä¿®å¤æ–¹æ¡ˆï¼›é‡å¸ƒèµ° pcb_geometry LLMï¼ˆæŠ˜ç‚¹/è¿‡å­”ï¼‰\n'¡+R§LiteralÍ	ÍCÙb- æ‰¹åˆ¤è€—å°½ç”±ç®¡çº¿ KEEP_RETRY/ACCEPT residualï¼ˆé¡»æœ‰é“œï¼‰ï¼Œç¦æ­¢å› æœ¬é˜¶æ®µä¸»åŠ¨ ABORTÙd'- æ‰¹åˆ¤è€—å°½ç”±ç®¡çº¿ KEEP_RETRY/ACCEPT residualï¼ˆé¡»æœ‰é“œï¼‰ï¼Œç¦æ­¢å› æœ¬é˜¶æ®µä¸»åŠ¨ ABORT'ÀÔrV”¤type¥start£end¨argument¯ReturnStatementÍQÍ}SµConditionalExpressionÍXÍ|Q°BinaryExpressionÍXÍgP°MemberExpressionÍXÍcKªIdentifierÍXÍ\¤bodyKªIdentifierÍ]Íc¦lengthÂÂ¡>R§LiteralÍfÍg ¡0ÔrW•¤type¥start£end«expressions¦quasis¯TemplateLiteralÍjÍw‘KªIdentifierÍoÍs¤body’ÔrX•¤type¥start£end¥value¤tail¯TemplateElementÍkÍmÔrY’£raw¦cooked¢\n¡
-ÂX¯TemplateElementÍtÍvY¢\n¡
-ÃR§LiteralÍzÍ| ¢''À
+ñÍÙ&- ä¸å¯ç”¨ï¼šå½“ä½œæ¨¡æ¿å›é€€å…¥å£Ù('- ä¸å¯ç”¨ï¼šå½“ä½œæ¨¡æ¿å›é€€å…¥å£'ÀÔrV”¤type¥start£end¨argument¯ReturnStatementÍÍ;SµConditionalExpressionÍÍ:Q°BinaryExpressionÍÍ%P°MemberExpressionÍÍ!KªIdentifierÍÍ¤bodyKªIdentifierÍÍ!¦lengthÂÂ¡>R§LiteralÍ$Í% ¡0ÔrW•¤type¥start£end«expressions¦quasis¯TemplateLiteralÍ(Í5‘KªIdentifierÍ-Í1¤body’ÔrX•¤type¥start£end¥value¤tail¯TemplateElementÍ)Í+ÔrY’£raw¦cooked¢\n¡
+ÂX¯TemplateElementÍ2Í4Y¢\n¡
+ÃR§LiteralÍ8Í: ¢''À

@@ -1049,35 +1049,40 @@ class HomePage extends ViewPU {
         this.sampleEntries = this.buildSampleEntries();
     }
     private buildRecentEntries(): HomeProjectEntry[] {
-        const merged: string[] = [];
+        // 顺序：getRecentFiles() 已是最近打开优先；未进最近列表的沙箱/恢复文件追加在后
+        const ordered: HomeProjectEntry[] = [];
         const seen: Set<string> = new Set();
-        const push = (p: string): void => {
-            if (!seen.has(p)) {
-                seen.add(p);
-                merged.push(p);
+        const appendIfExists = (path: string): void => {
+            if (seen.has(path) || !this.fileExists(path)) {
+                return;
             }
+            seen.add(path);
+            ordered.push(this.entryFromPath(path, this.recoveryFiles.includes(path)));
         };
         const recents = this.appService.filePersistence.getRecentFiles();
         for (let i = 0; i < recents.length; i++) {
-            push(recents[i]);
+            appendIfExists(recents[i]);
         }
+        const rest: HomeProjectEntry[] = [];
+        const pushRest = (path: string): void => {
+            if (seen.has(path) || !this.fileExists(path)) {
+                return;
+            }
+            seen.add(path);
+            rest.push(this.entryFromPath(path, this.recoveryFiles.includes(path)));
+        };
         const sandbox = this.appService.listUserProjectFiles();
         for (let i = 0; i < sandbox.length; i++) {
-            push(sandbox[i]);
+            pushRest(sandbox[i]);
         }
         for (let i = 0; i < this.recoveryFiles.length; i++) {
-            push(this.recoveryFiles[i]);
+            pushRest(this.recoveryFiles[i]);
         }
-        const entries: HomeProjectEntry[] = [];
-        for (let i = 0; i < merged.length; i++) {
-            const path = merged[i];
-            if (!this.fileExists(path)) {
-                continue;
-            }
-            entries.push(this.entryFromPath(path, this.recoveryFiles.includes(path)));
+        rest.sort((a, b) => b.modifiedMs - a.modifiedMs);
+        for (let i = 0; i < rest.length; i++) {
+            ordered.push(rest[i]);
         }
-        entries.sort((a, b) => b.modifiedMs - a.modifiedMs);
-        return entries;
+        return ordered;
     }
     private buildSampleEntries(): HomeProjectEntry[] {
         const entries: HomeProjectEntry[] = [];
@@ -1192,6 +1197,8 @@ class HomePage extends ViewPU {
             this.refreshLists();
             return;
         }
+        // 首页点击即记入最近打开顺序（加载成功后 loadProject 会再写一次，幂等）
+        this.appService.filePersistence.addRecentFile(path);
         if (ProjectPaths.isPcbProjectPath(path)) {
             this.goToPcbEditor({ launchMode: 'open', projectPath: path });
             return;
@@ -1408,7 +1415,7 @@ class HomePage extends ViewPU {
                                             titleLine: 'Schematic & Simulation Suite',
                                             versionLabel: `Version ${APP_VERSION_NAME}`,
                                             showUpdateBadge: this.hasNewsUpdate
-                                        }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 925, col: 11 });
+                                        }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 941, col: 11 });
                                         ViewPU.create(componentCall);
                                         let paramsLambda = () => {
                                             return {
@@ -1448,7 +1455,7 @@ class HomePage extends ViewPU {
                             {
                                 this.observeComponentCreation2((elmtId, isInitialRender) => {
                                     if (isInitialRender) {
-                                        let componentCall = new ProteusHomeBottomStrip(this, { statusLine: this.aboutInfo.platformLine }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 944, col: 11 });
+                                        let componentCall = new ProteusHomeBottomStrip(this, { statusLine: this.aboutInfo.platformLine }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 960, col: 11 });
                                         ViewPU.create(componentCall);
                                         let paramsLambda = () => {
                                             return {
@@ -1466,7 +1473,7 @@ class HomePage extends ViewPU {
                             }
                             Column.pop();
                         }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 923, col: 7 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 939, col: 7 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -1484,7 +1491,7 @@ class HomePage extends ViewPU {
                                                 titleLine: 'Schematic & Simulation Suite',
                                                 versionLabel: `Version ${APP_VERSION_NAME}`,
                                                 showUpdateBadge: this.hasNewsUpdate
-                                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 925, col: 11 });
+                                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 941, col: 11 });
                                             ViewPU.create(componentCall);
                                             let paramsLambda = () => {
                                                 return {
@@ -1524,7 +1531,7 @@ class HomePage extends ViewPU {
                                 {
                                     this.observeComponentCreation2((elmtId, isInitialRender) => {
                                         if (isInitialRender) {
-                                            let componentCall = new ProteusHomeBottomStrip(this, { statusLine: this.aboutInfo.platformLine }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 944, col: 11 });
+                                            let componentCall = new ProteusHomeBottomStrip(this, { statusLine: this.aboutInfo.platformLine }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 960, col: 11 });
                                             ViewPU.create(componentCall);
                                             let paramsLambda = () => {
                                                 return {
@@ -1572,7 +1579,7 @@ class HomePage extends ViewPU {
                                     onBack: () => { this.wizardStep = 0; },
                                     onNext: () => { this.wizardStep = 1; },
                                     onFinish: () => { this.confirmWizardFinish(); }
-                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 952, col: 9 });
+                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 968, col: 9 });
                                 ViewPU.create(componentCall);
                                 let paramsLambda = () => {
                                     return {
@@ -1623,7 +1630,7 @@ class HomePage extends ViewPU {
                                     title: 'Migration Guide',
                                     body: MIGRATION_GUIDE_TEXT,
                                     onClose: () => { this.showMigrationGuide = false; }
-                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 970, col: 9 });
+                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 986, col: 9 });
                                 ViewPU.create(componentCall);
                                 let paramsLambda = () => {
                                     return {
@@ -1663,7 +1670,7 @@ class HomePage extends ViewPU {
                                     primaryLabel: this.helpDialogPrimaryLabel,
                                     onPrimary: () => { this.runHelpDialogPrimary(); },
                                     onClose: () => { this.closeHelpDialog(); }
-                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 978, col: 9 });
+                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 994, col: 9 });
                                 ViewPU.create(componentCall);
                                 let paramsLambda = () => {
                                     return {
@@ -1816,7 +1823,7 @@ class HomePage extends ViewPU {
                                     primary: true,
                                     btnEnabled: !this.githubUnlockBusy,
                                     onAction: () => { void this.switchGitHubAccount(); }
-                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 1049, col: 17 });
+                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 1065, col: 17 });
                                 ViewPU.create(componentCall);
                                 let paramsLambda = () => {
                                     return {
@@ -1845,7 +1852,7 @@ class HomePage extends ViewPU {
                                     primary: false,
                                     btnEnabled: !this.githubUnlockBusy,
                                     onAction: () => { void this.clearRememberedGitHubAccount(); }
-                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 1055, col: 17 });
+                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 1071, col: 17 });
                                 ViewPU.create(componentCall);
                                 let paramsLambda = () => {
                                     return {
@@ -2009,7 +2016,7 @@ class HomePage extends ViewPU {
                                     primary: true,
                                     btnEnabled: !this.githubUnlockBusy,
                                     onAction: () => { void this.recheckGitHubStar(false); }
-                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 1151, col: 13 });
+                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 1167, col: 13 });
                                 ViewPU.create(componentCall);
                                 let paramsLambda = () => {
                                     return {
@@ -2038,7 +2045,7 @@ class HomePage extends ViewPU {
                                     primary: false,
                                     btnEnabled: true,
                                     onAction: () => this.openExternalUrl(GitHubOAuthConfig.REPO_URL)
-                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 1157, col: 13 });
+                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 1173, col: 13 });
                                 ViewPU.create(componentCall);
                                 let paramsLambda = () => {
                                     return {
@@ -2071,7 +2078,7 @@ class HomePage extends ViewPU {
                                     primary: true,
                                     btnEnabled: !this.githubUnlockBusy,
                                     onAction: () => { void this.startGitHubDeviceFlow(); }
-                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 1164, col: 13 });
+                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 1180, col: 13 });
                                 ViewPU.create(componentCall);
                                 let paramsLambda = () => {
                                     return {
@@ -2100,7 +2107,7 @@ class HomePage extends ViewPU {
                                     primary: false,
                                     btnEnabled: this.githubVerifyUri.length > 0 && !this.githubUnlockBusy,
                                     onAction: () => this.openExternalUrl(this.githubVerifyUri)
-                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 1170, col: 13 });
+                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 1186, col: 13 });
                                 ViewPU.create(componentCall);
                                 let paramsLambda = () => {
                                     return {
@@ -2129,7 +2136,7 @@ class HomePage extends ViewPU {
                                     primary: false,
                                     btnEnabled: true,
                                     onAction: () => this.openExternalUrl(GitHubOAuthConfig.REPO_URL)
-                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 1176, col: 13 });
+                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 1192, col: 13 });
                                 ViewPU.create(componentCall);
                                 let paramsLambda = () => {
                                     return {
@@ -2174,7 +2181,7 @@ class HomePage extends ViewPU {
                         primary: false,
                         btnEnabled: true,
                         onAction: () => this.closeGitHubUnlockDialog()
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 1190, col: 11 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 1206, col: 11 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -2241,7 +2248,7 @@ class HomePage extends ViewPU {
         {
             this.observeComponentCreation2((elmtId, isInitialRender) => {
                 if (isInitialRender) {
-                    let componentCall = new ProteusHomeSectionTitle(this, { title: 'Getting Started' }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 1237, col: 7 });
+                    let componentCall = new ProteusHomeSectionTitle(this, { title: 'Getting Started' }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 1253, col: 7 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -2278,7 +2285,7 @@ class HomePage extends ViewPU {
                         label: 'Simulation',
                         requireDoubleClick: true,
                         onAction: () => this.openSimulation()
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 1244, col: 9 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 1260, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -2304,7 +2311,7 @@ class HomePage extends ViewPU {
                         label: 'PCB Layout',
                         requireDoubleClick: true,
                         onAction: () => { this.openPcbLayout(); }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 1249, col: 9 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 1265, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -2327,7 +2334,7 @@ class HomePage extends ViewPU {
         {
             this.observeComponentCreation2((elmtId, isInitialRender) => {
                 if (isInitialRender) {
-                    let componentCall = new ProteusHomeSectionDivider(this, {}, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 1259, col: 7 });
+                    let componentCall = new ProteusHomeSectionDivider(this, {}, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 1275, col: 7 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {};
@@ -2342,7 +2349,7 @@ class HomePage extends ViewPU {
         {
             this.observeComponentCreation2((elmtId, isInitialRender) => {
                 if (isInitialRender) {
-                    let componentCall = new ProteusHomeSectionTitle(this, { title: 'Start' }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 1260, col: 7 });
+                    let componentCall = new ProteusHomeSectionTitle(this, { title: 'Start' }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 1276, col: 7 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -2384,7 +2391,7 @@ class HomePage extends ViewPU {
                                 let componentCall = new ProteusHomeInlineLink(this, {
                                     label: 'Back to Recent Projects',
                                     onAction: () => this.backToRecentList()
-                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 1267, col: 13 });
+                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 1283, col: 13 });
                                 ViewPU.create(componentCall);
                                 let paramsLambda = () => {
                                     return {
@@ -2475,7 +2482,7 @@ class HomePage extends ViewPU {
                                             let componentCall = new ProteusHomeInlineLink(this, {
                                                 label: 'New Project…',
                                                 onAction: () => this.startNewProjectWizard()
-                                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 1298, col: 17 });
+                                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 1314, col: 17 });
                                             ViewPU.create(componentCall);
                                             let paramsLambda = () => {
                                                 return {
@@ -2531,7 +2538,7 @@ class HomePage extends ViewPU {
                                             warn: e.isRecovery,
                                             onSelect: () => { this.selectedPath = e.path; },
                                             onOpen: () => { this.openProjectPath(e.path, e.isRecovery); }
-                                        }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 1313, col: 19 });
+                                        }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 1329, col: 19 });
                                         ViewPU.create(componentCall);
                                         let paramsLambda = () => {
                                             return {
@@ -2577,7 +2584,7 @@ class HomePage extends ViewPU {
                         primary: true,
                         btnEnabled: this.canOpenSelected(),
                         onAction: () => this.openSelected()
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 1341, col: 11 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 1357, col: 11 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -2604,7 +2611,7 @@ class HomePage extends ViewPU {
         {
             this.observeComponentCreation2((elmtId, isInitialRender) => {
                 if (isInitialRender) {
-                    let componentCall = new ProteusHomeSectionDivider(this, {}, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 1355, col: 7 });
+                    let componentCall = new ProteusHomeSectionDivider(this, {}, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 1371, col: 7 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {};
@@ -2619,7 +2626,7 @@ class HomePage extends ViewPU {
         {
             this.observeComponentCreation2((elmtId, isInitialRender) => {
                 if (isInitialRender) {
-                    let componentCall = new ProteusHomeSectionTitle(this, { title: 'Help' }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 1356, col: 7 });
+                    let componentCall = new ProteusHomeSectionTitle(this, { title: 'Help' }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 1372, col: 7 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -2644,7 +2651,7 @@ class HomePage extends ViewPU {
         {
             this.observeComponentCreation2((elmtId, isInitialRender) => {
                 if (isInitialRender) {
-                    let componentCall = new ProteusHomeIconLink(this, { label: 'Help Home', onAction: () => this.openHelpHome() }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 1358, col: 9 });
+                    let componentCall = new ProteusHomeIconLink(this, { label: 'Help Home', onAction: () => this.openHelpHome() }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 1374, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -2665,7 +2672,7 @@ class HomePage extends ViewPU {
         {
             this.observeComponentCreation2((elmtId, isInitialRender) => {
                 if (isInitialRender) {
-                    let componentCall = new ProteusHomeSectionDivider(this, {}, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 1364, col: 7 });
+                    let componentCall = new ProteusHomeSectionDivider(this, {}, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 1380, col: 7 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {};
@@ -2680,7 +2687,7 @@ class HomePage extends ViewPU {
         {
             this.observeComponentCreation2((elmtId, isInitialRender) => {
                 if (isInitialRender) {
-                    let componentCall = new ProteusHomeSectionTitle(this, { title: 'About' }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 1365, col: 7 });
+                    let componentCall = new ProteusHomeSectionTitle(this, { title: 'About' }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 1381, col: 7 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -2744,7 +2751,7 @@ class HomePage extends ViewPU {
                         label: 'Licence',
                         value: this.aboutInfo.licenseTierLine,
                         warn: this.aboutInfo.isEvaluation
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 1389, col: 11 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 1405, col: 11 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -2771,7 +2778,7 @@ class HomePage extends ViewPU {
                         label: 'Registered To',
                         value: this.aboutInfo.registeredToLine,
                         warn: this.aboutInfo.isEvaluation
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 1394, col: 11 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 1410, col: 11 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -2798,7 +2805,7 @@ class HomePage extends ViewPU {
                         label: 'Customer No.',
                         value: this.aboutInfo.customerNumberLine,
                         warn: this.aboutInfo.isEvaluation
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 1399, col: 11 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 1415, col: 11 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -2825,7 +2832,7 @@ class HomePage extends ViewPU {
                         label: 'Licence Expires',
                         value: this.aboutInfo.licenseExpiresLine,
                         warn: this.aboutInfo.isEvaluation
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 1404, col: 11 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 1420, col: 11 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -2881,7 +2888,7 @@ class HomePage extends ViewPU {
         {
             this.observeComponentCreation2((elmtId, isInitialRender) => {
                 if (isInitialRender) {
-                    let componentCall = new ProteusHomeInlineLink(this, { label: 'Open Project', onAction: () => { void this.handleOpenProject(); } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 1447, col: 7 });
+                    let componentCall = new ProteusHomeInlineLink(this, { label: 'Open Project', onAction: () => { void this.handleOpenProject(); } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 1463, col: 7 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -2907,7 +2914,7 @@ class HomePage extends ViewPU {
         {
             this.observeComponentCreation2((elmtId, isInitialRender) => {
                 if (isInitialRender) {
-                    let componentCall = new ProteusHomeInlineLink(this, { label: 'New Project', onAction: () => this.startNewProjectWizard() }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 1451, col: 7 });
+                    let componentCall = new ProteusHomeInlineLink(this, { label: 'New Project', onAction: () => this.startNewProjectWizard() }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 1467, col: 7 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -2933,7 +2940,7 @@ class HomePage extends ViewPU {
         {
             this.observeComponentCreation2((elmtId, isInitialRender) => {
                 if (isInitialRender) {
-                    let componentCall = new ProteusHomeInlineLink(this, { label: 'Open Sample', onAction: () => this.openSampleList() }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 1455, col: 7 });
+                    let componentCall = new ProteusHomeInlineLink(this, { label: 'Open Sample', onAction: () => this.openSampleList() }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 1471, col: 7 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -2969,7 +2976,7 @@ class HomePage extends ViewPU {
                         publishedAt: this.announcement.publishedAt,
                         loading: this.announcementLoading,
                         panelWeight: 2.6
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 1464, col: 7 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 1480, col: 7 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -3099,7 +3106,7 @@ class HomePage extends ViewPU {
                                                     btnEnabled: item.actionLabel !== 'Unavailable' &&
                                                         this.newsBusyTag.length === 0,
                                                     onAction: () => { this.handleNewsAction(item); }
-                                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 1517, col: 17 });
+                                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 1533, col: 17 });
                                                 ViewPU.create(componentCall);
                                                 let paramsLambda = () => {
                                                     return {
@@ -3164,7 +3171,7 @@ class HomePage extends ViewPU {
                             Row.pop();
                             Column.pop();
                         }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 1473, col: 7 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 1489, col: 7 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -3268,7 +3275,7 @@ class HomePage extends ViewPU {
                                                         btnEnabled: item.actionLabel !== 'Unavailable' &&
                                                             this.newsBusyTag.length === 0,
                                                         onAction: () => { this.handleNewsAction(item); }
-                                                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 1517, col: 17 });
+                                                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/HomePage.ets", line: 1533, col: 17 });
                                                     ViewPU.create(componentCall);
                                                     let paramsLambda = () => {
                                                         return {

@@ -720,11 +720,11 @@ export class TemplateSchematicKit {
     const rstRPin = rstNearPin2 ? '2' : '1';
     const vccRPin = rstNearPin2 ? '1' : '2';
     const nrstName = `${prefix}NRST`;
-    const nrstNetId = TemplateSchematicKit.join(doc, nrstName, NetType.SIGNAL, [
+    // 标号并网：避免复位长导线横切 GPIO/晶振 stub → T 结误并 / NET_COLLAPSE
+    const nrstNetId = TemplateSchematicKit.joinByLabel(doc, nrstName, NetType.SIGNAL, [
       { comp: rRst, pinId: rstRPin, pinName: rstRPin },
       { comp: mcu, pinId: rstPin, pinName: rstPin }
     ]);
-    // Named label survives WireNetTopology rename (NET_N) via applyNetLabelConnectivity
     if (nrstNetId.length > 0 && !doc.netLabels.some(l => l.text === nrstName)) {
       const rstPos = TemplateSchematicKit.pinWorld(mcu, rstPin, rstPin);
       TemplateSchematicKit.netLabel(doc, nrstNetId, nrstName,

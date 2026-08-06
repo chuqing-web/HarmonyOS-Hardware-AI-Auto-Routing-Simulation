@@ -1,4 +1,4 @@
-import type { PcbDocument, PcbTrack, PcbVia, PcbPad, PcbFootprintInst, PcbZone, Point2D, PcbPlacementPlan, PcbNetPlanResult, PcbRoutePolicy, PcbGeometryResult } from 'common';
+import type { PcbDocument, PcbTrack, PcbVia, PcbPad, PcbFootprintInst, PcbZone, Point2D, PcbPlacementPlan, PcbNetPlanResult, PcbRoutePolicy, PcbGeometryResult, PcbPlacementMode } from 'common';
 export class PcbRouteBlackboard {
     runId: string = '';
     usedLlm: boolean = false;
@@ -12,8 +12,12 @@ export class PcbRouteBlackboard {
     geometry: PcbGeometryResult | null = null;
     /** 与原理图 aiEnableReasoning 同步：开则允许 thinking */
     enableReasoning: boolean = false;
+    /** skip=沿用导出位姿；revise=现有基础上改；full=全量 */
+    placementMode: PcbPlacementMode = 'full';
+    /** 用户确认铜层数后整管线锁定，禁止 geometry/QA 升层 */
+    copperLocked: boolean = false;
     logs: string[] = [];
-    reset(runId: string, doc: PcbDocument, enableReasoning: boolean = false): void {
+    reset(runId: string, doc: PcbDocument, enableReasoning: boolean = false, placementMode: PcbPlacementMode = 'full'): void {
         this.runId = runId;
         this.usedLlm = false;
         this.stageCompleted = '';
@@ -25,6 +29,8 @@ export class PcbRouteBlackboard {
         this.routePolicy = null;
         this.geometry = null;
         this.enableReasoning = enableReasoning;
+        this.placementMode = placementMode;
+        this.copperLocked = false;
         this.logs = [];
     }
     log(msg: string): void {

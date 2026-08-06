@@ -29,8 +29,14 @@ body = body.replace(
   'function placeXtalCaps(doc: SchematicDocument, xtalX: number, xtalY: number, tag: string): XtalCaps {'
 );
 body = body.replace(
+  /function tieUnusedDualOpAmpB\(doc, opa, tieInPlusToGnd = true\) \{/,
+  'function tieUnusedDualOpAmpB(doc: SchematicDocument, opa: ComponentInstance,\n' +
+  '  tieInPlusToGnd: boolean = true): void {'
+);
+body = body.replace(
   /function tieUnusedDualOpAmpB\(doc, opa\) \{/,
-  'function tieUnusedDualOpAmpB(doc: SchematicDocument, opa: ComponentInstance): void {'
+  'function tieUnusedDualOpAmpB(doc: SchematicDocument, opa: ComponentInstance,\n' +
+  '  tieInPlusToGnd: boolean = true): void {'
 );
 body = body.replace(
   /return \{ c1, c2 \};/,

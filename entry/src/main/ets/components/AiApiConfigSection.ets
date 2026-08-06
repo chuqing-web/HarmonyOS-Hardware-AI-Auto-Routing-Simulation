@@ -1,5 +1,5 @@
 /**
- * 共享 AI API 配置区 — 原理图 AiSettingsPanel / PCB AI 布线面板共用
+ * 共享 AI API 配置区 — 原理图 AiSettingsPanel 等复用
  * 读写同一 AppService.aiApiManager + 金库，两边配置互通
  */
 import { AppService } from '../services/AppService';

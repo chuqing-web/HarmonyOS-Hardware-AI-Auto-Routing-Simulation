@@ -6,7 +6,7 @@ import {
   SimulationResult, ErcViolation, Result,
   SchTopology, AiTaskType, AiTaskResult, DiagError, BomOptResult,
   WaveData, ProgressCallback, ApiResult, RouteResult,
-  DeviceSelectResult, AiPipelineResult, PcbDocument, PcbAiRouteResult, PcbDrcViolation
+  DeviceSelectResult, AiPipelineResult
 } from 'common';
 import { AiTaskExtra } from '../internal/AiEngineTypes';
 
@@ -26,9 +26,6 @@ export interface IAiEngine {
   aiAutoRouteGlobal(topo: SchTopology, onProgress?: ProgressCallback): Promise<ApiResult<RouteResult>>;
   aiAutoRouteSelect(topo: SchTopology, devUuids: string[], onProgress?: ProgressCallback): Promise<ApiResult<RouteResult>>;
   aiOptimizeExistRoute(topo: SchTopology): Promise<ApiResult<RouteResult>>;
-  /** PCB AI 布局+布线（多 Agent，零回退）；enableReasoning 对齐原理图「推理开」 */
-  aiPcbAutoRoute(doc: PcbDocument, runDrc: (d: PcbDocument) => PcbDrcViolation[],
-    onProgress?: ProgressCallback, enableReasoning?: boolean): Promise<ApiResult<PcbAiRouteResult>>;
   aiStaticDiagnose(topo: SchTopology): Promise<ApiResult<DiagError[]>>;
   aiDynamicDiagnose(topo: SchTopology, waves: WaveData[]): Promise<ApiResult<DiagError[]>>;
   aiGenFullSchematic(prompt: string, extra?: AiTaskExtra): Promise<ApiResult<SchTopology>>;

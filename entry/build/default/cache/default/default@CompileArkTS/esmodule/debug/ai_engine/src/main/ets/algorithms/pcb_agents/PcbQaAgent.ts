@@ -1,5 +1,5 @@
 import { Logger, INSTR_TRACE_TAG, PcbDrcSeverity, copperLayersFromStack, ensureAllCopperUsed, policyHasStub, applyCopperLayerCount, netCopperConnectsPads } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
-import type { PcbDocument, PcbDrcViolation, PcbLayerRole, PcbResidualKind, PcbRouteMode, PcbLayerId, PcbQaRepairPlan } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
+import type { PcbDocument, PcbDrcViolation, PcbLayerRole, PcbResidualKind, PcbRouteMode, PcbQaRepairPlan } from "@bundle:com.elecdraw.aischsim/entry@common/Index";
 import type { IAiApiManager } from 'ai_api_manager';
 import { PromptLoader } from "@bundle:com.elecdraw.aischsim/entry@ai_engine/ets/prompts/PromptLoader";
 import type { PcbRouteBlackboard } from './PcbRouteBlackboard';
@@ -10,6 +10,7 @@ import type { PcbAgentStageResult } from "@bundle:com.elecdraw.aischsim/entry@ai
 import { PcbGeometryAgent } from "@bundle:com.elecdraw.aischsim/entry@ai_engine/ets/algorithms/pcb_agents/PcbGeometryAgent";
 import { pcbStageChatOpts } from "@bundle:com.elecdraw.aischsim/entry@ai_engine/ets/algorithms/pcb_agents/PcbChatOpts";
 import { normalizeRePlaceFootprintIds, pcbImpureReplyReason } from "@bundle:com.elecdraw.aischsim/entry@ai_engine/ets/algorithms/pcb_agents/PcbLlmReplyGuard";
+import { fillDefaultRolesAfterRaise, localDemotePowerPour, localApplyBusYOffset, localRaiseCopperIfCrowded, localNudgePadBlockers, isSignalRouteFailReason, onlyPadOrViaBlocks } from "@bundle:com.elecdraw.aischsim/entry@ai_engine/ets/algorithms/pcb_agents/PcbLocalEscalate";
 const PCB_QA_FIX_ROUNDS: number = 3;
 export type PcbDrcRunner = (doc: PcbDocument) => PcbDrcViolation[];
 function roleExists(roles: Record<string, PcbLayerRole>, role: PcbLayerRole): boolean {
@@ -78,24 +79,6 @@ function resolveRipNetIds(doc: PcbDocument, keys: string[]): Set<string> {
 function matchNetKey(netId: string, netName: string, key: string): boolean {
     return netId === key || netName === key;
 }
-/** Cu 升层后为缺失铜层填默认角色（保留已有；保证 stub） */
-function fillDefaultRolesAfterRaise(roles: Record<string, PcbLayerRole>, copper: PcbLayerId[]): void {
-    const defaults: PcbLayerRole[] = [
-        'stub', 'signal_h', 'gnd_bus', 'vcc_bus', 'signal_v', 'power_h', 'power_v', 'stub'
-    ];
-    let di = 0;
-    for (let i = 0; i < copper.length; i++) {
-        const lid = copper[i] as string;
-        if (roles[lid] !== undefined) {
-            continue;
-        }
-        roles[lid] = defaults[Math.min(di, defaults.length - 1)];
-        di++;
-    }
-    if (!roleExists(roles, 'stub') && copper.length > 0) {
-        roles[copper[0] as string] = 'stub';
-    }
-}
 export class PcbQaAgent {
     private placementAgent: PcbPlacementAgent = new PcbPlacementAgent();
     private geometryAgent: PcbGeometryAgent = new PcbGeometryAgent();
@@ -131,33 +114,81 @@ export class PcbQaAgent {
                 return { ok: false, reason: report.reason, residualKind: lastKind };
             }
             Logger.info(INSTR_TRACE_TAG, `[AI_PCB] stage=qa_repair begin round=${round}`);
+            // 加固：本地 escalate → 立即重布 → 同轮复检；仍失败再 LLM（勿空耗一轮）
+            let activeReport = report;
+            let localFixed = false;
+            if (activeReport.reason.indexOf('power bus clearance') >= 0 && this.autoDemotePowerPour(bb)) {
+                Logger.warn(INSTR_TRACE_TAG, '[AI_PCB] qa_repair local-first demote forcePour→forceTrack');
+                localFixed = true;
+            }
+            else if (this.autoEscalateOnSignalFail(bb, activeReport.reason, round)) {
+                Logger.warn(INSTR_TRACE_TAG, `[AI_PCB] qa_repair local-first escalate round=${round}`);
+                localFixed = true;
+            }
+            if (localFixed) {
+                const geoRes = await this.geometryAgent.run(bb, api, activeReport.reason);
+                if (!geoRes.ok) {
+                    Logger.warn(INSTR_TRACE_TAG, `[AI_PCB] qa local-first re-geometry fail | ${geoRes.reason}`);
+                    lastReason = geoRes.reason;
+                    lastKind = geoRes.residualKind ?? 'signal_fail';
+                }
+                const afterLocal = this.buildReport(bb, runDrc);
+                if (afterLocal.ok) {
+                    bb.markStage('qa');
+                    Logger.info(INSTR_TRACE_TAG, `[AI_PCB] stage=qa ok after local escalate round=${round}`);
+                    return { ok: true, reason: 'ok' };
+                }
+                activeReport = afterLocal;
+                lastReason = afterLocal.reason;
+                lastKind = afterLocal.residualKind ?? 'drc';
+                Logger.info(INSTR_TRACE_TAG, `[AI_PCB] qa local escalate insufficient → next | ${afterLocal.reason}`);
+            }
+            // Cu≥4 且仅 pad/via_block：再强挪一次后跳过 QA LLM（Agnes 长 reasoning 极慢且帮不上）
+            const cuNow = bb.workDoc.layerStack?.copperCount ?? 2;
+            if (cuNow >= 4 && onlyPadOrViaBlocks(bb.geometry?.failDetails)) {
+                if (localNudgePadBlockers(bb, bb.geometry?.failDetails, 100, true)) {
+                    Logger.warn(INSTR_TRACE_TAG, '[AI_PCB] qa skip-LLM: Cu≥4 pad_block → strong nudge + re-geo');
+                    const geo2 = await this.geometryAgent.run(bb, api, activeReport.reason);
+                    const after2 = this.buildReport(bb, runDrc);
+                    if (after2.ok) {
+                        bb.markStage('qa');
+                        return { ok: true, reason: 'ok' };
+                    }
+                    activeReport = after2;
+                    lastReason = after2.reason;
+                    lastKind = after2.residualKind ?? 'signal_fail';
+                    if (!geo2.ok) {
+                        lastReason = geo2.reason;
+                        lastKind = geo2.residualKind ?? 'signal_fail';
+                    }
+                }
+                Logger.warn(INSTR_TRACE_TAG, `[AI_PCB] qa skip LLM (Cu=${cuNow} pad/via_block only) → residual | ${lastReason}`);
+                continue;
+            }
             const tpl = PromptLoader.load('pcb_qa_repair');
             if (!tpl.system || tpl.system.length === 0) {
                 lastReason = 'pcb_qa_repair prompt missing';
                 continue;
             }
             const roles = JSON.stringify(bb.routePolicy.layerRoles);
-            const geoReport = PcbDocSummarizer.geoFailReport(bb.geometry);
-            const diag = PcbDocSummarizer.boardDiagSnapshot(bb.workDoc, bb.geometry);
-            const failDetailLines = PcbDocSummarizer.formatFailDetails(bb.geometry?.failDetails);
-            const drcFull = `${report.reason}\n【几何失败明细】${geoReport}` +
-                (failDetailLines.length > 0 ? `\n${failDetailLines}` : '') +
-                `\n【板态】\n${diag}`;
+            // 短诊断：勿注入整板焊盘详表（原 promptLen≈4.5k，Agnes 易拖数分钟）
+            const drcFull = `${activeReport.reason}\n${PcbDocSummarizer.qaFailBrief(bb.workDoc, bb.geometry)}`;
             const prompt = PromptLoader.render(tpl, [
                 { key: 'copper_layers', value: PcbDocSummarizer.copperLayers(bb.workDoc) },
                 { key: 'layer_roles', value: roles },
                 { key: 'drc_report', value: drcFull },
                 { key: 'failed_nets', value: (bb.geometry?.failedNetIds ?? []).join(',') }
             ]);
-            const apiRes = await api.chat(prompt, pcbStageChatOpts(bb.enableReasoning, 0.05));
+            Logger.info(INSTR_TRACE_TAG, `[AI_PCB] qa_repair LLM promptLen≈${prompt.length} (compact diag)`);
+            const apiRes = await api.chat(prompt, pcbStageChatOpts(false, 0.05));
             if (!apiRes.success || !apiRes.data) {
                 Logger.warn(INSTR_TRACE_TAG, `[AI_PCB] KEEP_RETRY qa_repair LLM fail | ${apiRes.error ?? 'unknown'}`);
                 lastReason = apiRes.error ?? 'qa_repair LLM failed';
                 // 电源总线 clearance：本地自动 demote forcePour→forceTrack 再试
-                if (report.reason.indexOf('power bus clearance') >= 0 && this.autoDemotePowerPour(bb)) {
+                if (activeReport.reason.indexOf('power bus clearance') >= 0 && this.autoDemotePowerPour(bb)) {
                     Logger.warn(INSTR_TRACE_TAG, '[AI_PCB] qa_repair auto routeModePatch forcePour→forceTrack');
                 }
-                else if (this.autoEscalateOnSignalFail(bb, report.reason, round)) {
+                else if (this.autoEscalateOnSignalFail(bb, activeReport.reason, round)) {
                     Logger.warn(INSTR_TRACE_TAG, '[AI_PCB] qa_repair local escalate after LLM fail');
                 }
                 else {
@@ -171,10 +202,10 @@ export class PcbQaAgent {
                 if (impure) {
                     Logger.warn(INSTR_TRACE_TAG, `[AI_PCB] KEEP_RETRY qa_repair | ${impure}`);
                     lastReason = impure;
-                    if (report.reason.indexOf('power bus clearance') >= 0 && this.autoDemotePowerPour(bb)) {
+                    if (activeReport.reason.indexOf('power bus clearance') >= 0 && this.autoDemotePowerPour(bb)) {
                         Logger.warn(INSTR_TRACE_TAG, '[AI_PCB] qa_repair auto demote after impure JSON');
                     }
-                    else if (this.autoEscalateOnSignalFail(bb, report.reason, round)) {
+                    else if (this.autoEscalateOnSignalFail(bb, activeReport.reason, round)) {
                         Logger.warn(INSTR_TRACE_TAG, '[AI_PCB] qa_repair local escalate after impure JSON');
                     }
                     else {
@@ -186,10 +217,10 @@ export class PcbQaAgent {
                     if (!repair || !repair.fromLlm) {
                         Logger.warn(INSTR_TRACE_TAG, '[AI_PCB] KEEP_RETRY qa_repair JSON invalid');
                         lastReason = `qa_repair LLM JSON invalid (${PromptLoader.describeJsonImpurity(apiRes.data)})`;
-                        if (report.reason.indexOf('power bus clearance') >= 0 && this.autoDemotePowerPour(bb)) {
+                        if (activeReport.reason.indexOf('power bus clearance') >= 0 && this.autoDemotePowerPour(bb)) {
                             Logger.warn(INSTR_TRACE_TAG, '[AI_PCB] qa_repair auto demote after invalid JSON');
                         }
-                        else if (this.autoEscalateOnSignalFail(bb, report.reason, round)) {
+                        else if (this.autoEscalateOnSignalFail(bb, activeReport.reason, round)) {
                             Logger.warn(INSTR_TRACE_TAG, '[AI_PCB] qa_repair local escalate after invalid JSON');
                         }
                         else {
@@ -205,11 +236,16 @@ export class PcbQaAgent {
                     if (repair.raiseCopperTo !== undefined && bb.workDoc) {
                         const cur = bb.workDoc.layerStack?.copperCount ?? 2;
                         if (repair.raiseCopperTo > cur) {
-                            applyCopperLayerCount(bb.workDoc, repair.raiseCopperTo);
-                            const copper = copperLayersFromStack(bb.workDoc.layerStack);
-                            fillDefaultRolesAfterRaise(bb.routePolicy.layerRoles, copper);
-                            Logger.info(INSTR_TRACE_TAG, `[AI_PCB] qa_repair raiseCopper ${cur}→${repair.raiseCopperTo}`);
-                            mutated = true;
+                            if (bb.copperLocked) {
+                                Logger.warn(INSTR_TRACE_TAG, `[AI_PCB] qa_repair ignore raiseCopper ${cur}→${repair.raiseCopperTo} — copper locked`);
+                            }
+                            else {
+                                applyCopperLayerCount(bb.workDoc, repair.raiseCopperTo);
+                                const copper = copperLayersFromStack(bb.workDoc.layerStack);
+                                fillDefaultRolesAfterRaise(bb.routePolicy.layerRoles, copper);
+                                Logger.info(INSTR_TRACE_TAG, `[AI_PCB] qa_repair raiseCopper ${cur}→${repair.raiseCopperTo}`);
+                                mutated = true;
+                            }
                         }
                     }
                     if (repair.layerRolePatch) {
@@ -259,7 +295,7 @@ export class PcbQaAgent {
                         }
                     }
                     // 电源总线失败且 LLM 未改 routeMode：自动 demote
-                    if (report.reason.indexOf('power bus clearance') >= 0 &&
+                    if (activeReport.reason.indexOf('power bus clearance') >= 0 &&
                         !repair.routeModePatch && this.autoDemotePowerPour(bb)) {
                         mutated = true;
                         Logger.warn(INSTR_TRACE_TAG, '[AI_PCB] qa_repair auto demote power forcePour→forceTrack (bus clearance)');
@@ -273,8 +309,8 @@ export class PcbQaAgent {
                         mutated = true;
                     }
                     else if (bb.geometry && bb.geometry.failedNetIds.length > 0 &&
-                        (report.reason.indexOf('signal nets failed') >= 0 ||
-                            report.reason.indexOf('unrouted') >= 0)) {
+                        (activeReport.reason.indexOf('signal nets failed') >= 0 ||
+                            activeReport.reason.indexOf('unrouted') >= 0)) {
                         const rip = new Set(bb.geometry.failedNetIds);
                         Logger.warn(INSTR_TRACE_TAG, `[AI_PCB] qa_repair auto-rip failed nets n=${rip.size}`);
                         bb.workDoc.tracks = bb.workDoc.tracks.filter(t => !rip.has(t.netId));
@@ -304,9 +340,7 @@ export class PcbQaAgent {
                             if (!place.ok) {
                                 Logger.warn(INSTR_TRACE_TAG, `[AI_PCB] KEEP_RETRY qa re-place fail | ${place.reason}`);
                                 lastReason = `qa re-place failed: ${place.reason}`;
-                                // re-place 复读（echo）说明 LLM 无法重摆：本地升级（busYOffset/升层）
-                                // 让几何阶段拿到更宽松的约束，而不是空转下一轮 LLM re-place
-                                if (this.autoEscalateOnSignalFail(bb, report.reason, round)) {
+                                if (this.autoEscalateOnSignalFail(bb, activeReport.reason, round)) {
                                     Logger.warn(INSTR_TRACE_TAG, '[AI_PCB] qa_repair local escalate after re-place fail');
                                 }
                                 else {
@@ -324,7 +358,7 @@ export class PcbQaAgent {
                         (repair.raiseCopperTo === undefined || repair.raiseCopperTo <= 0) &&
                         (!repair.rePlaceFootprintIds || repair.rePlaceFootprintIds.length === 0);
                     if ((onlyRip || !mutated) &&
-                        this.autoEscalateOnSignalFail(bb, report.reason, round)) {
+                        this.autoEscalateOnSignalFail(bb, activeReport.reason, round)) {
                         mutated = true;
                         Logger.warn(INSTR_TRACE_TAG, `[AI_PCB] qa_repair local escalate round=${round} (LLM rip-only/empty)`);
                     }
@@ -334,110 +368,63 @@ export class PcbQaAgent {
                     }
                 }
             }
-            // 策略/布局有变，或上轮几何失败 → 重跑 LLM 几何；无变化且几何已 ok 则跳过
+            // 策略/布局有变，或上轮几何失败 → 重跑本地几何；无变化且几何已 ok 则跳过
             const needReGeo = !(bb.geometry?.ok) ||
                 (bb.workDoc.tracks.length === 0 && bb.workDoc.vias.length === 0);
             if (!needReGeo) {
+                const mid = this.buildReport(bb, runDrc);
+                if (mid.ok) {
+                    bb.markStage('qa');
+                    Logger.info(INSTR_TRACE_TAG, `[AI_PCB] stage=qa ok mid-round=${round}`);
+                    return { ok: true, reason: 'ok' };
+                }
                 continue;
             }
-            const geoRes = await this.geometryAgent.run(bb, api, report.reason);
+            const geoRes = await this.geometryAgent.run(bb, api, activeReport.reason);
             if (!geoRes.ok) {
                 Logger.warn(INSTR_TRACE_TAG, `[AI_PCB] qa re-geometry fail | ${geoRes.reason}`);
                 lastReason = geoRes.reason;
                 lastKind = geoRes.residualKind ?? 'signal_fail';
             }
+            else {
+                const afterGeo = this.buildReport(bb, runDrc);
+                if (afterGeo.ok) {
+                    bb.markStage('qa');
+                    Logger.info(INSTR_TRACE_TAG, `[AI_PCB] stage=qa ok after re-geometry round=${round}`);
+                    return { ok: true, reason: 'ok' };
+                }
+                lastReason = afterGeo.reason;
+                lastKind = afterGeo.residualKind ?? 'drc';
+            }
         }
         return { ok: false, reason: lastReason, residualKind: lastKind };
     }
     /**
-     * 信号 clearance 反复失败且 LLM 无实质补丁时：
-     * round0 → busYOffset 错开电源/地；round≥1 → Cu=2 升到 4 并填角色
+     * QA 本地 escalate（与 geometry 共用逻辑）：
+     * round0：busY + 轻挪（层数已锁定，升层无效）；round≥1 再补未用手段
      */
     private autoEscalateOnSignalFail(bb: PcbRouteBlackboard, reason: string, round: number): boolean {
         if (!bb.workDoc || !bb.netPlan || !bb.routePolicy) {
             return false;
         }
-        if (reason.indexOf('signal nets failed') < 0 && reason.indexOf('clearance') < 0 &&
-            reason.indexOf('disconnected') < 0 && reason.indexOf('unrouted') < 0) {
+        if (!isSignalRouteFailReason(reason)) {
             return false;
         }
-        let changed = false;
-        // 同层多电源 Y 错开
-        if (bb.netPlan) {
-            let slot = 0;
-            for (let i = 0; i < bb.netPlan.nets.length; i++) {
-                const ne = bb.netPlan.nets[i];
-                if (ne.kind !== 'gnd' && ne.kind !== 'power') {
-                    continue;
-                }
-                const want = ne.kind === 'gnd' ? -80 - slot * 40 : 80 + slot * 40;
-                if (ne.busYOffset === undefined || ne.busYOffset === 0) {
-                    ne.busYOffset = want;
-                    changed = true;
-                    Logger.info(INSTR_TRACE_TAG, `[AI_PCB] qa local busYOffset ${ne.netName}=${want}`);
-                }
-                slot++;
-            }
-        }
-        const cur = bb.workDoc.layerStack?.copperCount ?? 2;
         const failN = bb.geometry?.failedNetIds?.length ?? 0;
-        // 多网同时失败：首轮即可升层；单网失败留给 round≥1
-        if (cur <= 2 && (round >= 1 || failN >= 3)) {
-            applyCopperLayerCount(bb.workDoc, 4);
-            const copper = copperLayersFromStack(bb.workDoc.layerStack);
-            // Cu=4 推荐：F=stub, B=signal_h, In1=gnd_bus, In2=vcc_bus
-            const roles = bb.routePolicy.layerRoles;
-            for (let i = 0; i < copper.length; i++) {
-                const lid = copper[i] as string;
-                if (roles[lid] === undefined) {
-                    if (lid === 'F.Cu') {
-                        roles[lid] = 'stub';
-                    }
-                    else if (lid === 'B.Cu') {
-                        roles[lid] = 'signal_h';
-                    }
-                    else if (lid.indexOf('In1') >= 0) {
-                        roles[lid] = 'gnd_bus';
-                    }
-                    else if (lid.indexOf('In2') >= 0) {
-                        roles[lid] = 'vcc_bus';
-                    }
-                    else {
-                        roles[lid] = 'signal_v';
-                    }
-                }
-            }
-            fillDefaultRolesAfterRaise(roles, copper);
-            if (!roleExists(roles, 'stub') && copper.length > 0) {
-                roles[copper[0] as string] = 'stub';
-            }
-            Logger.warn(INSTR_TRACE_TAG, `[AI_PCB] qa local raiseCopper ${cur}→4`);
+        const details = bb.geometry?.failDetails;
+        let changed = localApplyBusYOffset(bb);
+        const raiseFailN = round >= 1 ? Math.max(failN, 2) : failN;
+        if (localRaiseCopperIfCrowded(bb, raiseFailN, details, reason)) {
             changed = true;
         }
-        if (changed) {
-            bb.workDoc.tracks = [];
-            bb.workDoc.vias = [];
+        // round0 法向50；round≥1 换轴强挪（浮空焊盘挡水平走廊）
+        if (localNudgePadBlockers(bb, details, round >= 1 ? 100 : 50, round >= 1)) {
+            changed = true;
         }
         return changed;
     }
-    /** Cu=2 多电源总线 clearance：把 forcePour 电源/地改为 forceTrack */
     private autoDemotePowerPour(bb: PcbRouteBlackboard): boolean {
-        if (!bb.netPlan) {
-            return false;
-        }
-        let changed = false;
-        for (let i = 0; i < bb.netPlan.nets.length; i++) {
-            const ne = bb.netPlan.nets[i];
-            if ((ne.kind === 'gnd' || ne.kind === 'power') && ne.routeMode === 'forcePour') {
-                ne.routeMode = 'forceTrack';
-                changed = true;
-            }
-        }
-        if (changed && bb.workDoc) {
-            bb.workDoc.tracks = [];
-            bb.workDoc.vias = [];
-        }
-        return changed;
+        return localDemotePowerPour(bb);
     }
     private buildReport(bb: PcbRouteBlackboard, runDrc: PcbDrcRunner): PcbAgentStageResult {
         if (!bb.workDoc || !bb.geometry) {

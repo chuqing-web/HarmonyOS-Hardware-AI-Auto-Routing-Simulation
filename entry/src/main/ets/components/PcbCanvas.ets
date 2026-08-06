@@ -1677,7 +1677,8 @@ export struct PcbCanvas {
         .gesture(
           PinchGesture()
             .onActionStart((event: GestureEvent) => {
-              if (this.appService.isAiGenerating()) {
+              if (this.getEditor().isReadOnly()) {
+                this.onStatusChange('自动布线中，画布已锁定');
                 return;
               }
               this.pinchStartZoom = this.getEditor().getViewport().zoom;
@@ -1685,7 +1686,7 @@ export struct PcbCanvas {
               this.pinchCenterY = event.pinchCenterY;
             })
             .onActionUpdate((event: GestureEvent) => {
-              if (this.appService.isAiGenerating()) {
+              if (this.getEditor().isReadOnly()) {
                 return;
               }
               const editor = this.getEditor();
@@ -1698,6 +1699,15 @@ export struct PcbCanvas {
         )
         .onTouch((event: TouchEvent) => {
           this.isTouchActive = true;
+          if (this.getEditor().isReadOnly()) {
+            if (event.type === TouchType.Down) {
+              this.onStatusChange('自动布线中，画布已锁定');
+            }
+            if (event.type === TouchType.Up) {
+              setTimeout(() => { this.isTouchActive = false; }, 300);
+            }
+            return;
+          }
           if (event.type === TouchType.Down && event.touches.length === 1) {
             this.lastTouchX = event.touches[0].x;
             this.lastTouchY = event.touches[0].y;
@@ -1786,9 +1796,9 @@ export struct PcbCanvas {
   }
 
   private handlePointerDown(sx: number, sy: number, rightBtn: boolean, middleBtn: boolean, ctrlKey: boolean): void {
-    // AI 布线期间锁定编辑（中键/双指平移仍允许看图）
-    if (this.appService.isAiGenerating() && !middleBtn) {
-      this.onStatusChange('PCB AI 布线中，画布已锁定');
+    // 自动布线等只读期间全锁画布（含中键平移）
+    if (this.getEditor().isReadOnly()) {
+      this.onStatusChange('自动布线中，画布已锁定');
       return;
     }
     this.pointerDown = true;
@@ -2100,6 +2110,9 @@ export struct PcbCanvas {
   }
 
   private handlePointerMove(sx: number, sy: number): void {
+    if (this.getEditor().isReadOnly()) {
+      return;
+    }
     this.mouseX = sx; this.mouseY = sy;
     const editor = this.getEditor();
     const world = editor.screenToWorld(sx, sy);
@@ -2253,8 +2266,8 @@ export struct PcbCanvas {
   }
 
   private handleKeyEvent(event: KeyEvent): void {
-    if (this.appService.isAiGenerating()) {
-      this.onStatusChange('PCB AI 布线中，画布已锁定');
+    if (this.getEditor().isReadOnly()) {
+      this.onStatusChange('自动布线中，画布已锁定');
       return;
     }
     if (event.type === KeyType.Down) {
@@ -2459,7 +2472,8 @@ export struct PcbCanvas {
 
   /** 滚轮：以鼠标位置为中心缩放 */
   private handleAxisZoom(event: AxisEvent): void {
-    if (this.appService.isAiGenerating()) {
+    if (this.getEditor().isReadOnly()) {
+      this.onStatusChange('自动布线中，画布已锁定');
       return;
     }
     const v = event.getVerticalAxisValue();

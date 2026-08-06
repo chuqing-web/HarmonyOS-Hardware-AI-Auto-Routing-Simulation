@@ -175,7 +175,7 @@ export class PcbDocSummarizer {
         }
         return parts.join(' | ');
     }
-    /** 板态快照：供 QA / route_policy 注入 */
+    /** 板态快照：供 route_policy 注入 */
     static boardDiagSnapshot(doc: PcbDocument, geo?: PcbGeometryResult | null): string {
         const lines: string[] = [];
         lines.push(`board=${PcbDocSummarizer.boardSummary(doc)}`);
@@ -185,6 +185,24 @@ export class PcbDocSummarizer {
         lines.push(`geo=${PcbDocSummarizer.geoFailReport(geo)}`);
         lines.push('pads:');
         lines.push(PcbDocSummarizer.padDetailSummary(doc, 24));
+        return lines.join('\n');
+    }
+    /** QA 专用短诊断：避免整板焊盘表把 prompt 撑到 4k+（Agnes 极慢） */
+    static qaFailBrief(doc: PcbDocument, geo?: PcbGeometryResult | null): string {
+        const lines: string[] = [];
+        lines.push(`board=${PcbDocSummarizer.boardSummary(doc)}`);
+        lines.push(`copper=${PcbDocSummarizer.copperLayers(doc)}`);
+        lines.push(`geo=${PcbDocSummarizer.geoFailReport(geo)}`);
+        const details = geo?.failDetails ?? [];
+        if (details.length > 0) {
+            lines.push('fails:');
+            for (let i = 0; i < details.length && i < 8; i++) {
+                const d = details[i];
+                lines.push(`${d.netName}|${d.cause}|` +
+                    `${Math.round(d.from.x)},${Math.round(d.from.y)}→` +
+                    `${Math.round(d.to.x)},${Math.round(d.to.y)}|${d.blocker ?? ''}`);
+            }
+        }
         return lines.join('\n');
     }
     static boardSummary(doc: PcbDocument): string {

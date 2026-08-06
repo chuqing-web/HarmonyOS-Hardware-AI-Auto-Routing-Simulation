@@ -51,23 +51,24 @@ export function buildLabPower(doc: SchematicDocument): void {
 
 /** lab_amp: LM358 同相放大器 + VAC 激励 */
 export function buildLabAmp(doc: SchematicDocument): void {
-  // VAC 脚同行易被 SIG 横穿；信号链分 y，GND/VCC 符号作 hub
   // 单电源 5V：小信号 + 偏置，增益 1+Rf/Rg=11 → Vout≈2.2±1.1V
-  const vac = K.place(doc, 'VAC', 'AC1', { x: 60, y: 220 });
+  // 布局：VAC 下沉与 R1 错开 y；反馈 Rf 上跨 / Rg 下地；仪器右列；
+  // 异网端点/廊道 ≥40，避免 WireNetTopology 并网把反馈拆掉（开环误报）
+  const vac = K.place(doc, 'VAC', 'AC1', { x: 60, y: 300 });
   vac.parameters.set('amplitude', '0.1V');
   vac.parameters.set('frequency', '1kHz');
   vac.parameters.set('offset', '0.2V');
-  const ri = R(doc, 'R_10k', 'R1', 160, 160);
-  const opa = K.place(doc, 'LM358', 'U1', { x: 340, y: 180 });
-  const rf = R(doc, 'R_100k', 'Rf', 340, 60);
-  const rg = R(doc, 'R_10k', 'Rg', 240, 300);
-  const vcc = K.place(doc, 'VCC', 'PWR1', { x: 340, y: 20 });
+  const ri = R(doc, 'R_10k', 'R1', 180, 120);
+  const opa = K.place(doc, 'LM358', 'U1', { x: 380, y: 180 });
+  const rf = R(doc, 'R_100k', 'Rf', 380, 40);
+  const rg = R(doc, 'R_10k', 'Rg', 260, 360);
+  const vcc = K.place(doc, 'VCC', 'PWR1', { x: 380, y: 0 });
   vcc.parameters.set('voltage', '5V');
-  const gnd = K.place(doc, 'GND', 'GND1', { x: 240, y: 400 });
-  const vm = K.place(doc, 'VOLTMETER_DC', 'M1', { x: 520, y: 140 });
-  const osc = K.place(doc, 'OSCILLOSCOPE', 'OSC1', { x: 520, y: 300 });
+  const gnd = K.place(doc, 'GND', 'GND1', { x: 260, y: 460 });
+  const vm = K.place(doc, 'VOLTMETER_DC', 'M1', { x: 580, y: 120 });
+  const osc = K.place(doc, 'OSCILLOSCOPE', 'OSC1', { x: 580, y: 320 });
 
-  // 以 R1 为 hub，竖线落到 VAC.1，不横穿 VAC.2
+  // R1 hub：竖落到 VAC.1，不横穿 VAC.2
   K.join(doc, 'SIG_SRC', NetType.SIGNAL, [p(ri, '1'), p(vac, '1')]);
   K.join(doc, 'SIG_IN', NetType.SIGNAL, [p(ri, '2'), p(opa, 'IN+1', 'IN+1')]);
   K.join(doc, 'FB', NetType.SIGNAL, [
@@ -77,22 +78,26 @@ export function buildLabAmp(doc: SchematicDocument): void {
     p(opa, 'OUT1', 'OUT1'), p(rf, '2'), p(vm, 'V+', 'V+'), p(osc, 'CH1', 'CH1')
   ]);
   K.join(doc, 'VCC', NetType.POWER, [p(vcc, '1', 'VCC'), p(opa, 'V+', 'V+')]);
+  // IN+2 并入 GND 主网（勿单独 stub，避免与 B_FB stub 端点相挤）
   K.join(doc, 'GND', NetType.GROUND, [
-    p(gnd, '1', 'GND'), p(vac, '2'), p(opa, 'V-', 'V-'), p(rg, '2'),
-    p(vm, 'COM', 'COM'), p(osc, 'GND', 'GND')
+    p(gnd, '1', 'GND'), p(vac, '2'), p(opa, 'V-', 'V-'), p(opa, 'IN+2', 'IN+2'),
+    p(rg, '2'), p(vm, 'COM', 'COM'), p(osc, 'GND', 'GND')
   ]);
-  // 未用 B 通道：跟随器 + IN+ 接地，避免浮空
-  tieUnusedDualOpAmpB(doc, opa);
+  // 未用 B 通道：OUT2↔IN-2 跟随（标号，避开 A 通道廊道）
+  tieUnusedDualOpAmpB(doc, opa, false);
 }
 
-/** 双运放未用通道：OUT2↔IN-2 跟随，IN+2→GND（标号并网，避免挤占 A 通道布线） */
-function tieUnusedDualOpAmpB(doc: SchematicDocument, opa: ComponentInstance): void {
+/** 双运放未用通道：OUT2↔IN-2 跟随；默认 IN+2→GND（lab_amp 可关，改并主 GND） */
+function tieUnusedDualOpAmpB(doc: SchematicDocument, opa: ComponentInstance,
+  tieInPlusToGnd: boolean = true): void {
   K.joinByLabel(doc, `${opa.refDes}_B_FB`, NetType.SIGNAL, [
     p(opa, 'OUT2', 'OUT2'), p(opa, 'IN-2', 'IN-2')
   ]);
-  K.joinByLabel(doc, 'GND', NetType.GROUND, [
-    p(opa, 'IN+2', 'IN+2')
-  ]);
+  if (tieInPlusToGnd) {
+    K.joinByLabel(doc, 'GND', NetType.GROUND, [
+      p(opa, 'IN+2', 'IN+2')
+    ]);
+  }
 }
 
 /** lab_filter: RC 低通 + LM358 电压跟随 */
@@ -150,7 +155,8 @@ export function buildLab51Led(doc: SchematicDocument): void {
   const c1 = _caps.c1;
   const c2 = _caps.c2;
   const cDec = C(doc, 'C_100nF', 'C3', 1060, 480);
-  const rRst = R(doc, 'R_10k', 'R1', 720, 260);
+  // R1 勿与 P1.x 同 y（P1 在 MCU.y-100..-30=240..310）：否则 NRST stub 与 L*_K 对撞
+  const rRst = R(doc, 'R_10k', 'R1', 720, 180);
   const vcc = K.place(doc, 'VCC', 'PWR1', { x: 40, y: 20 });
   const gnd = K.place(doc, 'GND', 'GND1', { x: 40, y: 700 });
   const rPwr = R(doc, 'R_1k', 'R_PWR', 1080, 40);
@@ -158,7 +164,15 @@ export function buildLab51Led(doc: SchematicDocument): void {
   const vm = K.place(doc, 'VOLTMETER_DC', 'M1', { x: 1160, y: 640 });
 
   K.crystal(doc, mcu, xtal, c1, c2, 'XTAL1', 'XTAL2', '', gnd);
-  K.mcuCore(doc, mcu, vcc, gnd, rRst, cDec, 'VCC', 'GND', 'RST', '', true);
+  // NRST 用标号：避免 R1→RST 竖线（x≈750）切过 P1 stub（如 L5_K@y≈290）形成 T 结
+  K.joinByLabel(doc, 'NRST', NetType.SIGNAL, [
+    p(rRst, '2'), p(mcu, 'RST', 'RST')
+  ]);
+  K.powerRails(doc,
+    p(vcc, '1', 'VCC'), p(gnd, '1', 'GND'),
+    [p(mcu, 'VCC', 'VCC'), p(rRst, '1'), p(cDec, '1')],
+    [p(mcu, 'GND', 'GND'), p(cDec, '2')]
+  );
   // EA / 表笔：标号并入电源轨，勿拉跨板长线
   K.joinByLabel(doc, 'VCC', NetType.POWER, [
     p(vcc, '1', 'VCC'), p(mcu, 'EA', 'EA'), p(vm, 'V+', 'V+')
@@ -707,9 +721,11 @@ export function buildLabMcuStm32(doc: SchematicDocument): void {
     const vccPin = 'VDD';
     const gndPin = 'VSS';
     const mcu = K.place(doc, id, `U${i + 1}`, { x: ox + (isF407 ? 260 : 160), y: 240 });
-    const xtal = K.place(doc, 'XTAL_8M', `Y${i + 1}`, { x: ox + 40, y: 40 });
+    // OSC_IN/OUT ≈ mcu.y-60/-50；晶振贴同高，避免 y=40 长竖线擦过 Y.2（dist≈16）误挂网
+    const xtalY = 180;
+    const xtal = K.place(doc, 'XTAL_8M', `Y${i + 1}`, { x: ox + 40, y: xtalY });
     // DeepErcEngine：两侧负载电容须 |Δx|<80（placeXtalCaps = ±60）
-    const _caps = placeXtalCaps(doc, ox + 40, 40, `CX${i}`);
+    const _caps = placeXtalCaps(doc, ox + 40, xtalY, `CX${i}`);
   const c1 = _caps.c1;
   const c2 = _caps.c2;
     const cDec = C(doc, 'C_10uF', `CD${i + 1}`, ox + 300, 460);
@@ -915,8 +931,9 @@ export function buildLabInstruments(doc: SchematicDocument): void {
   K.joinByLabel(doc, 'VCC', NetType.POWER, [p(rAmp, '1')]);
   K.series2(doc, 'DMM_A', p(rAmp, '2'), p(ledAmp, 'A', 'A'));
   K.series2(doc, 'DMM_A_RET', p(ledAmp, 'K', 'K'), p(dmm, 'A', 'A'));
-  const rOhm = R(doc, 'R_1k', 'ROHM', 620, 340);
-  const dOhm = K.place(doc, '1N4148', 'DOHM', { x: 700, y: 340 });
+  const rOhm = R(doc, 'R_1k', 'ROHM', 620, 320);
+  // 二极管下移：与 ROHM 同行时对脚仅 20px，GND↔DMM_OHM stub 会 T 结并网
+  const dOhm = K.place(doc, '1N4148', 'DOHM', { x: 700, y: 400 });
   K.joinByLabel(doc, 'DMM_OHM', NetType.SIGNAL, [
     p(dmm, 'OHM', 'OHM'), p(rOhm, '1'), p(dOhm, 'A', 'A')
   ]);
@@ -924,7 +941,7 @@ export function buildLabInstruments(doc: SchematicDocument): void {
     p(dmm, 'COM', 'COM'), p(rOhm, '2'), p(dOhm, 'K', 'K')
   ]);
 
-  const fc = K.place(doc, 'FREQ_COUNTER', 'FC1', { x: 700, y: 420 });
+  const fc = K.place(doc, 'FREQ_COUNTER', 'FC1', { x: 700, y: 480 });
   K.joinByLabel(doc, 'CLK', NetType.SIGNAL, [p(fc, 'IN', 'IN')]);
   K.joinByLabel(doc, 'GND', NetType.GROUND, [p(fc, 'GND', 'GND')]);
 
@@ -1120,6 +1137,45 @@ export function buildLabIntegrator(doc: SchematicDocument): void {
 }
 
 /**
+ * lab_differentiator: UA741 反相 RC 微分器 + 三角/方波激励 → 示波器观尖峰/方波边沿
+ * 串联 C1=100nF → IN-；Rf=10k 反馈；Cf=1nF 并联 Rf 作实用阻尼（抑高频打轨）
+ * CH1=激励 CH2=微分输出；全部 joinByLabel
+ */
+export function buildLabDifferentiator(doc: SchematicDocument): void {
+  const vcc = K.place(doc, 'VCC', 'PWR1', { x: 360, y: 40 });
+  vcc.parameters.set('voltage', '12V');
+  const vee = K.place(doc, 'VEE', 'VEE1', { x: 360, y: 360 });
+  vee.parameters.set('voltage', '-12V');
+  const gnd = K.place(doc, 'GND', 'GND1', { x: 60, y: 360 });
+  const sig = K.place(doc, 'SIGNAL_GEN', 'SG1', { x: 60, y: 180 });
+  sig.parameters.set('waveform', 'triangle');
+  sig.parameters.set('amplitude', '5V');
+  sig.parameters.set('frequency', '1kHz');
+  sig.parameters.set('offset', '0V');
+  const cIn = C(doc, 'C_100nF', 'C1', 180, 180);
+  const opa = K.place(doc, 'UA741', 'U1', { x: 360, y: 180 });
+  const rf = R(doc, 'R_10k', 'Rf', 500, 40);
+  const cf = C(doc, 'C_1nF', 'Cf', 500, 100);
+  const osc = K.place(doc, 'OSCILLOSCOPE', 'OSC1', { x: 680, y: 180 });
+
+  K.joinByLabel(doc, 'INPUT_SIG', NetType.SIGNAL, [
+    p(sig, 'OUT', 'OUT'), p(cIn, '1'), p(osc, 'CH1', 'CH1')
+  ]);
+  K.joinByLabel(doc, 'DIFF_NODE', NetType.SIGNAL, [
+    p(cIn, '2'), p(opa, 'IN-', 'IN-'), p(rf, '1'), p(cf, '1')
+  ]);
+  K.joinByLabel(doc, 'OUTPUT_SIG', NetType.SIGNAL, [
+    p(opa, 'OUT', 'OUT'), p(rf, '2'), p(cf, '2'), p(osc, 'CH2', 'CH2')
+  ]);
+  K.joinByLabel(doc, 'VCC', NetType.POWER, [p(vcc, '1', 'VCC'), p(opa, 'VCC', 'VCC')]);
+  K.joinByLabel(doc, 'VEE', NetType.POWER, [p(vee, '1', 'VEE'), p(opa, 'VEE', 'VEE')]);
+  K.joinByLabel(doc, 'GND', NetType.GROUND, [
+    p(gnd, '1', 'GND'), p(sig, 'GND', 'GND'), p(opa, 'IN+', 'IN+')
+  ]);
+  K.stubLabel(doc, p(osc, 'GND', 'GND'), 'GND', NetType.GROUND);
+}
+
+/**
  * lab_555_astable: LM555（E555 同类）无稳态多谐振荡 + OUT→R→LED，示波器观方波
  * f≈1.44/((RA+2·RB)·C)≈69Hz（RA=1k RB=10k C=1µF）；默认示波器 10ms/div 可看方波
  * （10µF≈7Hz 时 1ms/div 整屏只有 10ms，波形会被截成平线）
@@ -1173,9 +1229,10 @@ export function buildLab555Monostable(doc: SchematicDocument): void {
   const gnd = K.place(doc, 'GND', 'GND1', { x: 40, y: 360 });
   const t555 = K.place(doc, 'LM555', 'U1', { x: 320, y: 160 });
   const rt = R(doc, 'R_100k', 'RT', 160, 60);
-  const rp = R(doc, 'R_10k', 'RP', 160, 200);
+  const rp = R(doc, 'R_10k', 'RP', 160, 160);
   const ct = C(doc, 'C_10uF', 'CT', 160, 320);
-  const sw = K.place(doc, 'SW_PUSH', 'SW1', { x: 40, y: 200 });
+  // SW 下移：勿与 RP 同 y=200，否则 VCC stub(RP.1) 与 TRIG stub(SW.2) 对撞 T 结
+  const sw = K.place(doc, 'SW_PUSH', 'SW1', { x: 40, y: 260 });
   const cDec = C(doc, 'C_100nF', 'CD1', 480, 40);
   const cCtrl = C(doc, 'C_100nF', 'CC1', 480, 300);
   const rLed = R(doc, 'R_330', 'RLED', 540, 160);

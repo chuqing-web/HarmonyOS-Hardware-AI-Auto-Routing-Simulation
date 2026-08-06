@@ -110,7 +110,18 @@ function resolveSignalLayers(policy: PcbRoutePolicy, copper: PcbLayerId[]): Laye
     findLayerForRole(policy, 'power_v');
   const stub = findLayerForRole(policy, 'stub') ??
     (h ? findAlternateCopperRole(policy, h) : null);
-  let v = findLayerForRole(policy, 'signal_v') ?? stub;
+  let v = findLayerForRole(policy, 'signal_v') ??
+    findLayerForRole(policy, 'power_v');
+  // Cu≥4 且无 signal_v：竖直层优先选非 stub 层，避免同列焊盘（DIP）
+  // 的 stub 出线叠加成墙堵死后序网络。
+  if (!v && copper.length >= 4 && h !== stub) {
+    v = findLayerForRole(policy, 'vcc_bus') ??
+      findLayerForRole(policy, 'gnd_bus') ??
+      findLayerForRole(policy, 'power_h');
+  }
+  if (!v) {
+    v = stub;
+  }
   if (!h || !stub || !v) {
     return null;
   }
@@ -305,7 +316,7 @@ function routePairOrtho(
       b
     ]);
   }
-  // 板边走廊：沿板框内侧绕行（躲开器件密集区）
+  // 仅板心/分位走廊；禁止板边环形绕行（贴边由 ClearanceOracle 硬拒）
   const outline = doc.boardOutline?.points ?? [];
   if (outline.length >= 2) {
     let minX = outline[0].x;
@@ -326,13 +337,16 @@ function routePairOrtho(
         maxY = outline[oi].y;
       }
     }
-    const m = grid * 8;
-    const corridors = [
-      snap(minY + m, grid), snap(maxY - m, grid),
-      snap((minY + maxY) / 2, grid)
-    ];
-    for (let ci = 0; ci < corridors.length; ci++) {
-      const cy = corridors[ci];
+    const midY = snap((minY + maxY) / 2, grid);
+    const midX = snap((minX + maxX) / 2, grid);
+    const y13 = snap(minY + (maxY - minY) / 3, grid);
+    const y23 = snap(minY + (maxY - minY) * 2 / 3, grid);
+    const x13 = snap(minX + (maxX - minX) / 3, grid);
+    const x23 = snap(minX + (maxX - minX) * 2 / 3, grid);
+    const yList = [midY, y13, y23];
+    const xList = [midX, x13, x23];
+    for (let ci = 0; ci < yList.length; ci++) {
+      const cy = yList[ci];
       polylines.push([
         a,
         { x: snap(a.x, grid), y: cy },
@@ -340,9 +354,8 @@ function routePairOrtho(
         b
       ]);
     }
-    const xCorridors = [snap(minX + m, grid), snap(maxX - m, grid)];
-    for (let ci = 0; ci < xCorridors.length; ci++) {
-      const cx = xCorridors[ci];
+    for (let ci = 0; ci < xList.length; ci++) {
+      const cx = xList[ci];
       polylines.push([
         a,
         { x: cx, y: snap(a.y, grid) },
@@ -350,27 +363,6 @@ function routePairOrtho(
         b
       ]);
     }
-    // 板框环形绕行（躲开中部器件/已布铜丛林）
-    const left = snap(minX + m, grid);
-    const right = snap(maxX - m, grid);
-    const top = snap(minY + m, grid);
-    const bot = snap(maxY - m, grid);
-    polylines.push([
-      a, { x: snap(a.x, grid), y: top }, { x: left, y: top },
-      { x: left, y: snap(b.y, grid) }, b
-    ]);
-    polylines.push([
-      a, { x: snap(a.x, grid), y: bot }, { x: right, y: bot },
-      { x: right, y: snap(b.y, grid) }, b
-    ]);
-    polylines.push([
-      a, { x: snap(a.x, grid), y: bot }, { x: left, y: bot },
-      { x: left, y: snap(b.y, grid) }, b
-    ]);
-    polylines.push([
-      a, { x: snap(a.x, grid), y: top }, { x: right, y: top },
-      { x: right, y: snap(b.y, grid) }, b
-    ]);
   }
 
   for (let ci = 0; ci < polylines.length; ci++) {
@@ -512,12 +504,9 @@ export function runPcbGeometryRoute(
     missingCopperLayers: [], reason: '', failDetails: []
   };
 
-  if (!policy.fromLlm) {
-    empty.reason = 'route policy not from LLM';
-    return empty;
-  }
-  if (!netPlan.fromLlm) {
-    empty.reason = 'net plan not from LLM';
+  // 生产路径：策略须 LLM（禁止本地冒充策略进布线）
+  if (!policy.fromLlm || !netPlan.fromLlm) {
+    empty.reason = 'geometry router requires fromLlm net_plan + route_policy';
     return empty;
   }
 
