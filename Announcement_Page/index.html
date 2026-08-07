@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="AI-SCH Simulator — HarmonyOS-native schematic simulation, AI schematic generation, and PCB auto-routing." />
+  <title>AI-SCH Simulator · Schematic Simulation · AI Schematics · PCB Auto-Routing</title>
+  <link rel="icon" type="image/png" href="favicon.png" />
+  <link rel="apple-touch-icon" href="assets/images/app-icon.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;600;700&family=Sora:wght@500;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="css/styles.css?v=20260807a" />
+</head>
+<body>
+  <header class="site-header">
+    <div class="container nav">
+      <a class="brand" href="#top" aria-label="AI-SCH home">
+        <img class="brand-mark" src="assets/images/app-icon.png" alt="" width="32" height="32" />
+        AI-SCH
+      </a>
+      <ul class="nav-links">
+        <li><a href="#features" data-i18n="nav.features">Features</a></li>
+        <li><a href="#simulation" data-i18n="nav.simulation">Simulation</a></li>
+        <li><a href="#pcb" data-i18n="nav.pcb">PCB</a></li>
+        <li><a href="#pipeline" data-i18n="nav.pipeline">Pipeline</a></li>
+        <li><a href="#labs" data-i18n="nav.labs">Labs</a></li>
+        <li><a href="#announcement" data-i18n="nav.announcement">News</a></li>
+      </ul>
+      <div class="lang-switch" role="group" aria-label="Language">
+        <button type="button" data-lang-btn="en" class="is-active" aria-pressed="true">EN</button>
+        <button type="button" data-lang-btn="zh" aria-pressed="false">中</button>
+      </div>
+    </div>
+  </header>
+
+  <main id="top">
+    <section class="hero">
+      <div class="hero-media" aria-hidden="true">
+        <img class="hero-media-img" src="assets/images/hero-poster.png" alt="" width="1920" height="1080" />
+        <div class="hero-scrim"></div>
+      </div>
+      <div class="container hero-copy">
+        <p class="brand-hero reveal">AI-SCH</p>
+        <h1 class="reveal d1" data-i18n="hero.title">Schematic simulation, AI schematics, and PCB auto-routing — on HarmonyOS</h1>
+        <p class="hero-sub reveal d2" data-i18n="hero.sub">Edit and simulate circuits, generate schematics from natural language, then auto-route copper on board — one native toolchain from idea to layout.</p>
+        <div class="cta-row reveal d3">
+          <a class="btn btn-primary" href="#features" data-i18n="hero.ctaPrimary">Explore capabilities</a>
+          <a class="btn btn-ghost" href="#pcb" data-i18n="hero.ctaSecondary">PCB auto-routing</a>
+        </div>
+      </div>
+    </section>
+
+    <section id="features" class="features">
+      <div class="container">
+        <div class="section-head reveal">
+          <p class="eyebrow" data-i18n="why.eyebrow">Three core capabilities</p>
+          <h2 data-i18n="why.title">Simulate · Generate · Route — built for real circuits</h2>
+        </div>
+        <ol class="feature-list">
+          <li class="feature-item reveal">
+            <span class="feature-num">01</span>
+            <div>
+              <h3 data-i18n="why.card1.title">Schematic simulation</h3>
+              <p data-i18n="why.card1.body">Mixed-signal kernel with virtual instruments — run topology, watch waveforms, and verify behavior before you build.</p>
+            </div>
+          </li>
+          <li class="feature-item reveal d1">
+            <span class="feature-num">02</span>
+            <div>
+              <h3 data-i18n="why.card2.title">AI schematic generation</h3>
+              <p data-i18n="why.card2.body">Natural language becomes structured constraints; local engines place, net, and ERC-gate — never “text pretending to be a circuit.”</p>
+            </div>
+          </li>
+          <li class="feature-item reveal d2">
+            <span class="feature-num">03</span>
+            <div>
+              <h3 data-i18n="why.card3.title">PCB auto-routing</h3>
+              <p data-i18n="why.card3.body">Forward annotation from schematic, copper-aware maze routing, then inspect layers in 2D and the board in 3D.</p>
+            </div>
+          </li>
+          <li class="feature-item reveal d3">
+            <span class="feature-num">04</span>
+            <div>
+              <h3 data-i18n="why.card4.title">HarmonyOS native</h3>
+              <p data-i18n="why.card4.body">Built for 2-in-1 / tablet on HarmonyOS NEXT with modular HAR architecture and familiar schematic UX.</p>
+            </div>
+          </li>
+        </ol>
+      </div>
+    </section>
+
+    <section class="pcb-showcase" id="pcb">
+      <div class="container">
+        <div class="section-head reveal section-head-wide">
+          <p class="eyebrow" data-i18n="pcb.eyebrow">PCB auto-routing</p>
+          <h2 data-i18n="pcb.title">From netlist to copper — then inspect in 2D &amp; 3D</h2>
+          <p class="section-sub" data-i18n="pcb.sub">Auto-route after schematic capture, review copper layers in 2D, and validate the physical board in 3D — the same HarmonyOS-native toolchain.</p>
+        </div>
+      </div>
+      <div class="pcb-bleed">
+        <figure class="pcb-panel reveal">
+          <img src="assets/images/pcb-2d.png" alt="PCB 2D copper layout preview" width="1200" height="800" loading="lazy" />
+          <figcaption>
+            <span data-i18n="pcb.tag2d">2D copper &amp; placement</span>
+            <p data-i18n="pcb.note2d">Multi-layer traces, pads, and silk for teaching boards</p>
+          </figcaption>
+        </figure>
+        <figure class="pcb-panel reveal d2">
+          <img src="assets/images/pcb-3d.png" alt="PCB 3D board preview" width="1200" height="800" loading="lazy" />
+          <figcaption>
+            <span data-i18n="pcb.tag3d">3D board preview</span>
+            <p data-i18n="pcb.note3d">Spatial check of packages and board outline</p>
+          </figcaption>
+        </figure>
+      </div>
+    </section>
+
+    <section class="cap-section" id="simulation">
+      <div class="container">
+        <div class="section-head reveal">
+          <p class="eyebrow" data-i18n="cap.eyebrow">Flagship capability family</p>
+          <h2 data-i18n="cap.title">From idea to routed board</h2>
+        </div>
+        <div class="cap-stack">
+          <article class="cap-row reveal">
+            <div class="cap-visual">
+              <img src="assets/images/feature-ai.png" alt="AI schematic generation" width="640" height="360" loading="lazy" />
+            </div>
+            <div class="cap-copy">
+              <h3 data-i18n="cap.ai.title">AI schematic generation</h3>
+              <p data-i18n="cap.ai.body">Clarify → select → layout → net → route → QA. Versioned prompts and a multi-agent loop land editable, simulatable topology.</p>
+            </div>
+          </article>
+          <article class="cap-row reverse reveal d1">
+            <div class="cap-visual">
+              <img src="assets/images/feature-instruments.png" alt="Schematic simulation with virtual instruments" width="640" height="360" loading="lazy" />
+            </div>
+            <div class="cap-copy">
+              <h3 data-i18n="cap.sim.title">Schematic simulation</h3>
+              <p data-i18n="cap.sim.body">Analog MNA, event-driven digital, MCU teaching paths — with scope, logic analyzer, and sources live-bound to nets.</p>
+            </div>
+          </article>
+          <article class="cap-row reveal d2">
+            <div class="cap-visual">
+              <img src="assets/images/feature-mcu.png" alt="PCB auto-routing workflow" width="640" height="360" loading="lazy" />
+            </div>
+            <div class="cap-copy">
+              <h3 data-i18n="cap.pcb.title">PCB auto-routing</h3>
+              <p data-i18n="cap.pcb.body">Same routing engine as the editor: obstacle-aware path search, multi-layer copper, teaching-board layouts ready for 2D/3D review.</p>
+            </div>
+          </article>
+          <article class="cap-row reverse reveal" id="labs">
+            <div class="cap-visual">
+              <img src="assets/images/feature-labs.png" alt="Lab templates" width="640" height="360" loading="lazy" />
+            </div>
+            <div class="cap-copy">
+              <h3 data-i18n="cap.lab.title">Lab templates</h3>
+              <p data-i18n="cap.lab.body">Dozens of .schsim / .pcbsim experiments spanning passives, op-amps, digital gates, MCU, and UART.</p>
+            </div>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section id="pipeline" class="pipeline">
+      <div class="container">
+        <div class="section-head section-head-pipe reveal">
+          <p class="eyebrow" data-i18n="pipe.eyebrow">AI schematic pipeline</p>
+          <h2 class="pipe-title" data-i18n="pipe.title">Clarify → Select → Layout → Net → Route → QA</h2>
+        </div>
+        <ol class="pipe-track">
+          <li class="pipe-step reveal"><span class="pipe-idx">1</span><h3 data-i18n="pipe.s1">Clarify</h3><p data-i18n="pipe.s1d">Topology-critical questions only</p></li>
+          <li class="pipe-step reveal d1"><span class="pipe-idx">2</span><h3 data-i18n="pipe.s2">Select</h3><p data-i18n="pipe.s2d">Library BOM, no hallucinated parts</p></li>
+          <li class="pipe-step reveal d2"><span class="pipe-idx">3</span><h3 data-i18n="pipe.s3">Layout</h3><p data-i18n="pipe.s3d">Region adjacency → GA place</p></li>
+          <li class="pipe-step reveal d3"><span class="pipe-idx">4</span><h3 data-i18n="pipe.s4">Net</h3><p data-i18n="pipe.s4d">Pin nets + usage manuals</p></li>
+          <li class="pipe-step reveal d4"><span class="pipe-idx">5</span><h3 data-i18n="pipe.s5">Route</h3><p data-i18n="pipe.s5d">Editor-grade auto-router</p></li>
+          <li class="pipe-step reveal"><span class="pipe-idx">6</span><h3 data-i18n="pipe.s6">QA</h3><p data-i18n="pipe.s6d">ERC &amp; geometry hard gates</p></li>
+        </ol>
+      </div>
+    </section>
+
+    <section class="announcement" id="announcement">
+      <div class="container">
+        <div class="section-head reveal">
+          <p class="eyebrow" data-i18n="ann.eyebrow">Latest announcement</p>
+          <h2 data-i18n="ann.title">AI-SCH News</h2>
+        </div>
+        <article class="ann-card reveal d1" id="announcement-panel">
+          <div class="ann-media">
+            <img data-ann-image src="assets/images/Announcement.png" alt="" width="800" height="600" />
+          </div>
+          <div class="ann-body">
+            <p class="ann-status" data-ann-status data-i18n="ann.loading">Loading announcement…</p>
+            <p class="ann-meta" data-ann-meta></p>
+            <h3 data-ann-title></h3>
+            <p class="ann-text" data-ann-body></p>
+            <a class="btn btn-primary" data-ann-link href="#" hidden data-i18n="ann.openLink">Open details</a>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <section class="platform">
+      <div class="container platform-grid">
+        <div class="reveal">
+          <p class="eyebrow" data-i18n="plat.eyebrow">Platform</p>
+          <h2 data-i18n="plat.title">Native on HarmonyOS NEXT</h2>
+          <p data-i18n="plat.body">AI-SCH Simulator (com.elecdraw.aischsim) targets SDK API 12+, Stage model ArkUI, and classroom / contest / pre-validation workflows — filling the gap left by Windows-only EDA toolchains.</p>
+        </div>
+        <ul class="reveal d2">
+          <li data-i18n="plat.li1">Bundle · com.elecdraw.aischsim</li>
+          <li data-i18n="plat.li2">License · Apache-2.0</li>
+          <li data-i18n="plat.li3">Vendor · ElecDraw</li>
+        </ul>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="container">
+      <div class="footer-row">
+        <div>
+          <div class="brand brand-on-dark">
+            <img class="brand-mark" src="assets/images/app-icon.png" alt="" width="32" height="32" />
+            AI-SCH
+          </div>
+          <div data-i18n="footer.tag">Schematic simulation · AI schematics · PCB auto-routing on HarmonyOS</div>
+        </div>
+        <div class="footer-links">
+          <a href="api/announcement.json" data-i18n="footer.api">Announcement API</a>
+          <a href="https://github.com/chuqing-web/HarmonyOS-Hardware-AI-Auto-Routing-Simulation-Web" data-i18n="footer.github">Deploy repository</a>
+        </div>
+      </div>
+      <div class="footer-copy" data-i18n="footer.copy">© 2024–2026 ElecDraw · AI-SCH Simulator</div>
+    </div>
+  </footer>
+
+  <script src="js/i18n.js?v=20260807a"></script>
+  <script src="js/main.js?v=20260807a"></script>
+</body>
+</html>
