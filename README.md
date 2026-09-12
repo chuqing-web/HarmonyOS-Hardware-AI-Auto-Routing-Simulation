@@ -2,7 +2,7 @@
 
 **Schematic-centric hardware simulation, PCB layout, and AI-assisted circuit design on HarmonyOS NEXT**
 
-Native HarmonyOS mixed-signal editing and simulation—8051/STM32 HEX debugging, virtual instruments, **PCB 2D layout & 3D board preview**, and a closed loop driven by **engineered AI Prompts** and a **multi-agent quality bus**: schematic **clarify → select → place → net-plan → WAR route → QA**. PCB workspace ships **forward/reverse annotate**, multilayer copper, DRC, Gerber / exchange export, and a **classic orthogonal auto-router** (`autoRoutePcb`). Built for university labs, contest training, and early design verification.
+Native HarmonyOS mixed-signal editing and simulation—8051/STM32 HEX debugging, virtual instruments, **PCB 2D layout & 3D board preview**, and a closed loop driven by **engineered AI Prompts** and a **multi-agent quality bus**: schematic **clarify → select → place → net-plan → WAR route → QA**. PCB workspace ships **forward/reverse annotate**, multilayer copper, DRC, Gerber / exchange export, and a **classic auto-router stack** (`autoRoutePcb` / `orchestratePcbAutoRoute` + `pcb_route/`). External agents can live-drive the running app via **Agent Bridge + MCP**. Built for university labs, contest training, and early design verification.
 
 [简体中文](./README.zh-CN.md) | English
 
@@ -74,12 +74,13 @@ The differentiator is not “another chatbot”—it is **constraining LLMs into
 | 7 | **Native mixed-signal kernel** | In-house MNA analog, event-driven digital, 8051 / in-process Cortex-M3 teaching paths, global nanosecond scheduler |
 | 8 | **Teach–sim–diagnose loop** | 20 paired `.schsim` / `.pcbsim` labs + HEX + knowledge tips + staged power-on + fault injection + coverage dashboard; live instrument ↔ net binding |
 | 9 | **Multi-vendor AI governance** | **17** provider templates, per-task API binding, quota dashboard, offline / proxy / degrade policies |
-| 10 | **PCB 2D/3D + classic auto-route** | Multilayer copper (F/B + In1…In6); SCH↔PCB annotate; **`autoRoutePcb`** orthogonal L-chain (Cu≥4: H/V on separate layers + corner vias); DRC; Gerber / PCB exchange / STEP preview; interactive 3D |
+| 10 | **PCB 2D/3D + classic auto-route stack** | Multilayer copper (F/B + In1…In6); SCH↔PCB annotate; **`autoRoutePcb`** + **`orchestratePcbAutoRoute`** (maze / clearance / congestion / MCU column helpers under `common/.../pcb_route/`); DRC; Gerber / PCB exchange / STEP preview; interactive 3D |
+| 11 | **Agent Bridge + MCP (live control)** | `features/agent_bridge` localhost JSON-RPC + `tools/elecdraw-mcp` stdio MCP: external agents (Cursor / OpenClaw) drive atomic SCH/PCB edits on a **running** app—no in-app auto-route tools exposed |
 
 **Versus classic desktop EDA:** native HarmonyOS + executable SCH AI + SCH/PCB teaching loop.  
 **Versus chat-only assistants:** staged Prompt engineering, multi-agent gates, topology landing, ERC / sim verification, diagnosable failures.
 
-> **Note:** An earlier PCB multi-agent LLM copper path (`PcbRouteCoordinator`, skill prompts 10–14, `aiPcbAutoRoute`) has been **removed from the working tree**. Production PCB auto-route is the classic engine above. A residual `pcb_route/` stack (`PcbLocalStrategy`, geometry apply helpers, etc.) remains in `common` for future wiring—it is **not** hooked to the UI today.
+> **Note:** An earlier PCB **LLM copper** path (skill prompts 10–14 / `aiPcbAutoRoute` chat geometry) is **gone**. Production PCB auto-route stays **classic / deterministic**, now backed by the in-tree `pcb_route/` toolkit (maze, clearance oracle, orchestrator place↔route loops, etc.) via `PcbEditorImpl.runAutoRoute`.
 
 ---
 
@@ -150,11 +151,12 @@ Runtime fragments also exist: `IntentPromptFragments`, `DeviceInstrumentFragment
 
 ### 4.1 App shell & home
 
-- `SplashPage` → `HomePage` → schematic (`Index`) or PCB (`PcbPage`)  
+- Neon hyperboloid **SplashPage** (Canvas wireframe + brand HUD) → **HomePage** → schematic (`Index`) or PCB (`PcbPage`)  
+- Cold start maximizes the window before Splash so first layout / canvas fit sees a settled size  
 - Home: Getting Started / Start / Help / About; announcement panel; GitHub release news (`HomeAnnouncementService` / `HomeReleaseService`)  
 - Project wizard for `.schsim` / `.pcbsim`; recent projects; recovery prompts  
 - Licensing strip: Free by default; Pro unlock via GitHub Star + OAuth Device Flow  
-
+- **AI Settings → Agent Bridge**: localhost RPC status, token, copyable MCP snippet for Cursor / OpenClaw
 ### 4.2 Schematic editing
 
 - Canvas interaction, layers, grid snap, undo/redo, batch align/distribute  
@@ -241,7 +243,7 @@ PCB workspace (`features/pcb_editor` + `entry` `PcbPage` / `PcbCanvas`):
 | Layers | F.Cu / B.Cu, In1…In6, silk / mask / paste, Edge.Cuts; configurable copper count (2 / 4 / 6 / 8) |
 | Edit tools | Select, route (90° / 45° / arc), via (through / blind / buried), pour & polygon zones, outline, measure, place footprint |
 | SCH↔PCB | `forwardAnnotateFromSchematic` / `reverseAnnotateToSchematic`; ratsnest; pad–net binding (`PcbPinBindUtil`) |
-| Auto-route | **Classic** `runAutoRoute` → `autoRoutePcb`: orthogonal multi-strategy L-chains; Cu≥4 splits H/V across copper + corner vias; clearance checks; async UI slices |
+| Auto-route | **Classic stack**: `runAutoRoute` → `orchestratePcbAutoRoute` (optional agents) or **`autoRoutePcb`**; maze + L-chain candidates; Cu≥4 H/V split + corner vias; clearance (`PcbClearanceOracle`); congestion rip-up / placement nudge; async UI slices |
 | DRC | Clearance, shorts, unconnected; teaching helpers in `pcb_route/` (e.g. `ensureAllCopperUsed`) |
 | 2D view | Layer solo / dim / overlay, net highlight, shove & serpentine helpers |
 | 3D view | Orbit / presets / ortho, realistic · x-ray · explode · cutaway · heightmap; optional STEP bind & PBR/MSAA |
@@ -255,6 +257,25 @@ PCB workspace (`features/pcb_editor` + `entry` `PcbPage` / `PcbCanvas`):
   <img src="./picture/pcb-3D.png" alt="PCB 3D board preview" width="900">
 </p>
 
+### 4.9 Agent Bridge & MCP
+
+External AI agents can **live-control** a running ElecDraw instance (atomic SCH/PCB ops; reasoning stays outside the app):
+
+```
+Cursor / OpenClaw  --MCP/stdio-->  tools/elecdraw-mcp (Node)
+                                      |
+                               HTTP JSON-RPC + Bearer token
+                                      |
+                         features/agent_bridge (ArkTS) @ 127.0.0.1
+                                      |
+              IComponentLibrary / ISchematicEditor / IPcbEditor
+```
+
+- Start/status/token/MCP snippet: **AI Settings → Agent Bridge** (`AppService.ensureAgentBridgeStarted`)  
+- Drawing-session UX reuses the in-app “generating” mask + `[Agent]` log lines  
+- **Not** exposed: in-app AI full pipeline, WAR / PCB auto-route tools  
+- Docs: `docs/superpowers/specs/2026-09-12-agent-bridge-mcp-design.md`, `tools/elecdraw-mcp/README.md`
+
 ---
 
 ## 5. Architecture
@@ -265,17 +286,20 @@ PCB workspace (`features/pcb_editor` + `entry` `PcbPage` / `PcbCanvas`):
 ┌─────────────────────────────────────────────────────────────┐
 │  entry (HAP)                                                 │
 │  Splash → Home → Index / PcbPage · AppService · SimWorker    │
+│  Agent Bridge host (settings UI + ensureAgentBridgeStarted)  │
 ├─────────────────────────────────────────────────────────────┤
-│  features/* (HAR) × 10                                        │
+│  features/* (HAR)                                            │
 │  schematic_editor │ pcb_editor │ component_library            │
 │  simulation_kernel │ hex_debugger │ instruments               │
 │  ai_engine │ ai_api_manager │ file_persistence │ plugin_system│
+│  agent_bridge (localhost JSON-RPC for MCP)                    │
 ├─────────────────────────────────────────────────────────────┤
 │  common (HAR)  SchTopology · PcbDocument · ERC/DRC helpers    │
-│               WAR · autoRoutePcb · pcb_route · Gerber / License│
+│               WAR · autoRoutePcb · pcb_route toolkit · Gerber │
 ├─────────────────────────────────────────────────────────────┤
 │  Assets  DeviceLibrary · skill/prompts · Test_Template        │
 │          (.schsim + .pcbsim) · hex_files · picture            │
+│  tools/elecdraw-mcp  (Node MCP ↔ Agent Bridge)                │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -312,6 +336,7 @@ entry
 ├── instruments           → common
 ├── file_persistence      → common
 ├── plugin_system         → common
+├── agent_bridge          → common (+ editor / library APIs via AppService host)
 ├── ai_api_manager        → common
 └── ai_engine             → common, ai_api_manager, component_library
     └── algorithms/agents/       # SCH multi-agent quality bus
@@ -325,7 +350,7 @@ Modules are declared in `build-profile.json5` (local copy from `.example`). Root
 
 Production path: `AiEngineImpl.runFullPipeline` → **`AgentPipelineCoordinator`**. Legacy `AiPipelineOrchestrator` remains the shared executor / modular merge backend and the `skipLlm` fallback.
 
-PCB auto-route path (non-LLM): `PcbPage` → `PcbEditorImpl.runAutoRoute` → **`autoRoutePcb`**.
+PCB auto-route path (non-LLM): `PcbPage` → `PcbEditorImpl.runAutoRoute` → **`orchestratePcbAutoRoute`** (when agents provided) or **`autoRoutePcb`** (maze + L-chain + `pcb_route/` helpers).
 
 ### 6.1 Oneshot (multi-agent)
 
@@ -377,17 +402,18 @@ PcbDocument (after forward annotate / load .pcbsim)
 PcbPage confirms copper count (optional)
     │
     ▼
-autoRoutePcb(doc, layer, schHints)
-    · group pads by net; nearest-neighbor order
-    · orthogonal L-chain candidates + clearance (ClearanceOracle)
+runAutoRoute → orchestratePcbAutoRoute? / autoRoutePcb
+    · group pads by net; nearest-neighbor / escape order
+    · maze + orthogonal L-chain candidates + ClearanceOracle
     · Cu≥4: horizontal / vertical on different copper + corner vias
+    · congestion rip-up / placement nudge; MCU column helpers when needed
     · async slices (yield) to keep UI responsive
     │
     ▼
 Routable PcbDocument (2D edit + 3D preview + DRC / Gerber)
 ```
 
-Residual (not UI-wired): `pcb_route/PcbLocalStrategy` (`buildLocalNetPlan` / `buildLocalRoutePolicy`), `runPcbGeometryRoute`, `applyLlmPcbGeometry`, `PcbPlacementExecutor`—library helpers left after the former LLM copper pipeline was removed.
+Supporting toolkit (wired through the classic path): `pcb_route/PcbMazeRouter`, `PcbClearanceOracle`, `PcbRouteOrchestrator`, `PcbCongestion*`, `PcbMcuColumnPlacer` / `PcbMcuHandCopper`, `PcbLocalStrategy`, geometry apply helpers, etc. **No** production LLM copper pipeline.
 
 ### 6.4 API highlights
 
@@ -401,8 +427,9 @@ Residual (not UI-wired): `pcb_route/PcbLocalStrategy` (`buildLocalNetPlan` / `bu
 | Incremental edit | `generationMode: 'edit'` |
 | Diagnosis | `aiStaticDiagnose` / `aiDynamicDiagnose` / `aiAnalyzeWave` |
 | Engineering aids | `aiRecommendParam` / `aiGetReplaceDevice` / `aiOptimizeBom` |
-| PCB auto-route | `PcbEditorImpl.runAutoRoute` → `autoRoutePcb` / `rerouteNets` |
+| PCB auto-route | `PcbEditorImpl.runAutoRoute` → `orchestratePcbAutoRoute` / `autoRoutePcb` / `rerouteNets` |
 | SCH↔PCB | `forwardAnnotateFromSchematic` / `reverseAnnotateToSchematic` |
+| Agent Bridge | `AppService.ensureAgentBridgeStarted` · `tools/elecdraw-mcp` |
 
 Provider templates (**17**): Doubao, Qwen, DeepSeek, Wenxin, Zhipu, Kimi, Yi, Baichuan, SiliconFlow, OpenAI, Claude, Gemini, Mistral, Groq, OpenRouter, Ollama, Custom.
 
@@ -419,7 +446,7 @@ Provider templates (**17**): Doubao, Qwen, DeepSeek, Wenxin, Zhipu, Kimi, Yi, Ba
 | Faults | 9 enum types; wave/batch engines cover a common subset |
 | Debug | HEX load, address/data breakpoints, stepping, registers/memory, UART |
 | Instruments | Live waves, protocol decode, meter↔net binding; scope full-history expand |
-| PCB board | Forward/reverse annotate, classic `autoRoutePcb`, DRC, 2D/3D preview, Gerber / PCB exchange export |
+| PCB board | Forward/reverse annotate, classic `autoRoutePcb` / orchestrator stack, DRC, 2D/3D preview, Gerber / PCB exchange export |
 | Threading | Default main-thread budget pump; ThreadWorker implemented but off by default |
 
 ---
@@ -507,12 +534,12 @@ ElecDraw_Harmony/
 │   └── src/main/ets/
 │       ├── types/               # SchTopology · PcbDocument · AI / License types
 │       ├── utils/               # ERC/DRC · WAR · autoRoutePcb · Gerber · annotators
-│       │   └── pcb_route/       # Clearance · local strategy · residual geometry helpers
+│       │   └── pcb_route/       # Maze · clearance · orchestrator · congestion · MCU helpers
 │       ├── security/            # License · FeatureGate · GitHub OAuth / Star
 │       └── engines/             # Shared MCU teaching helpers
-├── features/                    # 10 feature HARs (see build-profile modules)
+├── features/                    # Feature HARs (see build-profile modules + entry deps)
 │   ├── schematic_editor/        # Schematic edit + WAR
-│   ├── pcb_editor/              # IPcbEditor / PcbEditorImpl
+│   ├── pcb_editor/              # IPcbEditor / PcbEditorImpl (+ runAutoRoute)
 │   ├── component_library/       # BuiltinComponents + loaders
 │   ├── simulation_kernel/       # Mixed-signal kernel (+ native SPICE NAPI stub)
 │   ├── hex_debugger/            # HEX / MCU debug
@@ -520,7 +547,8 @@ ElecDraw_Harmony/
 │   ├── ai_api_manager/          # 17 provider templates & quotas
 │   ├── file_persistence/        # Projects / import-export / collab skeleton
 │   ├── instruments/             # Virtual instrument engines
-│   └── plugin_system/           # Plugin sandbox
+│   ├── plugin_system/           # Plugin sandbox
+│   └── agent_bridge/            # Localhost JSON-RPC for external MCP agents
 ├── skill/                       # ★ AI rule book + Prompt authority (SCH 00–09)
 │   ├── SKILL.md
 │   ├── prompts/                 # 00–09 → templates/*.ets
@@ -533,6 +561,7 @@ ElecDraw_Harmony/
 ├── hex_files/                   # 7 lab firmware HEX
 ├── picture/                     # README / brief screenshots
 ├── tools/                       # Builders, verify, audit, PCB/SCH smoke
+│   ├── elecdraw-mcp/            # Node MCP adapter ↔ Agent Bridge
 │   ├── lab_templates/
 │   └── pcb_templates/
 ├── docs/                        # Competition brief + design plans/specs
@@ -549,10 +578,10 @@ ElecDraw_Harmony/
 
 | Module | Role |
 |--------|------|
-| `entry` | UI shell, home / announcements / releases, orchestration, worker host, theme & shortcuts; instrument panels; **PcbPage / PcbCanvas / 3D** |
-| `common` | `SchTopology`, `PcbDocument`, ERC/DRC, EventBus, License / FeatureGate / GitHub auth, WAR, **`autoRoutePcb`**, pcb_route helpers, Gerber / exchange exporters / annotators |
+| `entry` | UI shell, home / announcements / releases, orchestration, worker host, theme & shortcuts; instrument panels; **PcbPage / PcbCanvas / 3D**; Agent Bridge settings |
+| `common` | `SchTopology`, `PcbDocument`, ERC/DRC, EventBus, License / FeatureGate / GitHub auth, WAR, **`autoRoutePcb`**, **`pcb_route/` toolkit**, Gerber / exchange exporters / annotators |
 | `schematic_editor` | Edit commands, layers, topology I/O, sim interlock, WireAutoRouter |
-| `pcb_editor` | Layers, route, via, zone, DRC, annotate, classic auto-route apply |
+| `pcb_editor` | Layers, route, via, zone, DRC, annotate, classic auto-route (`runAutoRoute`) |
 | `component_library` | Built-in catalog, SVG cache, component aliases |
 | `simulation_kernel` | Three engines + scheduler + fault injection + SpiceRunner |
 | `hex_debugger` | HEX, 8051 / Cortex-M3, breakpoints & behavior sim |
@@ -561,6 +590,7 @@ ElecDraw_Harmony/
 | `file_persistence` | `.schsim` / `.pcbsim`, crash guard, export, third-party import parsers, collab skeleton |
 | `instruments` | `VirtualInstrumentsImpl`, scope/LA/meter engines |
 | `plugin_system` | Plugin lifecycle & sandbox |
+| `agent_bridge` | Localhost JSON-RPC server; MCP discovery file; drawing-session hooks |
 
 **SCH agents:** `AgentPipelineCoordinator`, `CircuitBlackboard`, `RequirementsAgent`, `SelectAgent`, `LayoutAgent`, `NetAgent`, `RouteAgent`, `QaAgent`, `StageCritic`, `StageHooks`, `ModularModuleAgent`.
 
@@ -627,15 +657,16 @@ node tools/war_route_order_smoke.mjs
 
 Suggested 5–10 minute recording emphasizing **engineered Prompt → multi-agent gates → simulatable topology → PCB board → teachable verification**:
 
-1. **Launch & home** — Splash → Home; announcements / releases; open library & navigator.  
+1. **Launch & home** — Neon Splash → Home; announcements / releases; open library & navigator.  
 2. **Teaching template** — Load `lab_uart` / `lab_555_astable`; show coverage and tips.  
 3. **HEX debug** — Burn companion HEX, run sim, UART echo / LED chase.  
 4. **Instruments** — Open `lab_amp` / `lab_filter`; observe on the scope; double-click wave to **fit-all**, then zoom/pan.  
 5. **AI Prompt loop** — Prompt “STM32 min-system + LED”; show clarify / select / layout / net-plan / WAR / QA and ERC.  
-6. **PCB 2D / 3D** — Open paired `.pcbsim` or forward-annotate; copper layers, ratsnest, classic auto-route (F8 / toolbar); **3D** orbit / cutaway.  
+6. **PCB 2D / 3D** — Open paired `.pcbsim` or forward-annotate; copper layers, ratsnest, classic auto-route (F8 / toolbar; maze + orchestrator stack); **3D** orbit / cutaway.  
 7. **Modular parallel (bonus)** — Complex request with “modular”; plan → parallel sub-gens → joint merge.  
-8. **Self-check / fault injection** — AI self-check, or inject resistor-open and compare waves / diagnosis.  
-9. **Project polish** — Save `.schsim` / `.pcbsim`, Gerber preview, theme toggle, AI quota / offline mode (optional).  
+8. **Agent Bridge (bonus)** — AI Settings → Agent Bridge running; optional Cursor MCP place/wire demo (`tools/elecdraw-mcp`).  
+9. **Self-check / fault injection** — AI self-check, or inject resistor-open and compare waves / diagnosis.  
+10. **Project polish** — Save `.schsim` / `.pcbsim`, Gerber preview, theme toggle, AI quota / offline mode (optional).  
 
 ---
 
@@ -657,7 +688,8 @@ Suggested 5–10 minute recording emphasizing **engineered Prompt → multi-agen
 |------|-------------|
 | AI acceptance suite | `AiPipelineValidator` via `runValidationSuite()` |
 | Multi-agent gates | `qualityHardFail`, stage critique, QA residual abort, `usedLlm` commit gates |
-| PCB route | Classic `autoRoutePcb` clearance + DRC; residual `pcb_route/` helpers |
+| PCB route | Classic `autoRoutePcb` / `orchestratePcbAutoRoute` + `pcb_route/` toolkit (maze, clearance, congestion) + DRC |
+| Agent Bridge | Localhost RPC + MCP smoke via `tools/elecdraw-mcp` |
 | Engineering verify | `tools/lab_templates/verify_*.mjs` |
 | PCB template tooling | `tools/pcb_templates/` hand-layout / splice / export; `tools/test_pcb_*.mjs` |
 | SCH↔PCB pin tables | `verify_pin_bind.mjs` (where present): pad-bind assertions + drift checks |
@@ -674,7 +706,8 @@ Suggested 5–10 minute recording emphasizing **engineered Prompt → multi-agen
 - MCU: in-process Thumb / 8051 teaching models; **external full-system MCU emulator** is roadmap  
 - Sim thread: default main-thread budget pump; ThreadWorker off by default  
 - PCB 3D is a Canvas approximation (not full CAD kernel)  
-- **PCB auto-route is classic / deterministic**—no production LLM copper pipeline in the current tree  
+- **PCB auto-route is classic / deterministic**—maze + orchestrator stack in `pcb_route/`; **no** production LLM copper pipeline  
+- **Agent Bridge** listens on `127.0.0.1` only; token required; does not expose WAR / auto-route tools to MCP  
 - **SCH↔PCB forward annotate**: footprints bind nets via pin tables (8051/STM32/74xx/op-amp/555/memory/instruments); unknown footprints may fall back with audit (`FP_FALLBACK_0805`) and leave unbound pads (float preferred over wrong bind)  
 - **PCB reverse annotate**: writes back refDes / rotation / value / footprint name—not full net rewrite (teaching scope)  
 - Fault injection / plugin sandbox / live collab: skeleton or subset  
@@ -688,12 +721,13 @@ Suggested 5–10 minute recording emphasizing **engineered Prompt → multi-agen
 2. **External MCU emulator** — Fuller STM32 peripheral-level simulation  
 3. **Prompt / Skill toolchain** — Semi-auto md→ets sync and regression diffs (SCH 00–09)  
 4. **Library growth** — Bulk tri-part import; richer footprint / STEP library  
-5. **PCB depth** — Stronger classic / geometry routing, blind/buried via flows, fab-ready Gerber QA; optional re-wire of local/LLM copper strategy  
+5. **PCB depth** — Stronger maze / geometry routing, blind/buried via flows, fab-ready Gerber QA  
 6. **Performance** — Enable ThreadWorker stably (frame diffs); large-board rendering  
 7. **Collab & cloud** — Real-time co-edit and lab report sync  
-8. **Testing** — Broader Hypium automation  
+8. **Testing** — Broader Hypium automation; Agent Bridge / MCP integration tests  
 9. **Fault injection / plugin sandbox** — Complete coverage  
-10. **Product site / announcements** — Continue bilingual homepage + release feed polish (see `docs/superpowers/plans/`)  
+10. **Agent Bridge** — Harden discovery, emulator port-forward docs, richer atomic tools (still no in-app auto-route tools)  
+11. **Product site / announcements** — Continue bilingual homepage + release feed polish (see `docs/superpowers/plans/`)  
 
 ---
 

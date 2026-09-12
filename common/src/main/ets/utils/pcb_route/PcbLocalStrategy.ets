@@ -7,6 +7,8 @@ import {
   PcbLayerRole, PcbNetKind, PcbNetPlanEntry, PcbNetPlanResult, PcbRoutePolicy,
   policyCoversCopperLayers, validateLayerRoleSemantics
 } from '../../types/PcbAiRouteTypes';
+import { detectMcuColumnClusters } from './PcbMcuColumnPlacer';
+import { buildMcuHandLayerRoles } from './PcbMcuHandCopper';
 
 function classifyNetKind(name: string): PcbNetKind {
   const u = (name ?? '').toUpperCase();
@@ -123,22 +125,19 @@ function assignRolesForCopper(
     }
     return roles;
   }
-  // Cu≥4：F=stub, B=signal_h, In1=gnd_bus, In2=vcc_bus，其余 signal_v/power_h/power_v
-  const defaults: PcbLayerRole[] = [
-    'stub', 'signal_h', 'gnd_bus', 'vcc_bus', 'signal_v', 'power_h', 'power_v', 'stub'
-  ];
+  // Cu≥3：每层都参与走线 — 首层 stub，中间 H/V（Cu=3 中间用 signal_v），末层 power_h
   for (let i = 0; i < copper.length; i++) {
     const lid = copper[i] as string;
-    if (lid === 'F.Cu') {
+    if (i === 0) {
       roles[lid] = 'stub';
-    } else if (lid === 'B.Cu') {
+    } else if (i === copper.length - 1) {
+      roles[lid] = 'power_h';
+    } else if (copper.length === 3) {
+      roles[lid] = 'signal_v';
+    } else if ((i % 2) === 1) {
       roles[lid] = 'signal_h';
-    } else if (lid.indexOf('In1') >= 0) {
-      roles[lid] = 'gnd_bus';
-    } else if (lid.indexOf('In2') >= 0) {
-      roles[lid] = 'vcc_bus';
     } else {
-      roles[lid] = defaults[Math.min(i, defaults.length - 1)];
+      roles[lid] = 'signal_v';
     }
   }
   // 保证至少一层 stub
@@ -179,15 +178,22 @@ export function buildLocalRoutePolicy(
       hasPowerOrGnd = true;
     }
   }
-  const layerRoles = assignRolesForCopper(copper, hasSignal, hasPowerOrGnd);
+  const mcuHand = detectMcuColumnClusters(doc) > 0;
+  const layerRoles = mcuHand
+    ? buildMcuHandLayerRoles(copper)
+    : assignRolesForCopper(copper, hasSignal, hasPowerOrGnd);
   const policy: PcbRoutePolicy = {
     fromLlm: false,
     fromLocal: true,
     layerRoles,
     netPriority,
     viaPreference: { kind: PcbViaKind.THROUGH, preferThrough: true },
-    globalConstraint: 'local: Cu stub+signal_h; power on bus or shared signal_h',
-    reason: 'local deterministic route_policy'
+    globalConstraint: mcuHand
+      ? 'mcu_hand: In1/In2 power H trunks; In3/In4 column feeds; F stub; B hops'
+      : 'local: Cu stub+signal_h; power on bus or shared signal_h',
+    reason: mcuHand
+      ? 'local mcu hand layer roles'
+      : 'local deterministic route_policy'
   };
   const missing = policyCoversCopperLayers(policy, copper);
   if (missing.length > 0) {
@@ -196,7 +202,7 @@ export function buildLocalRoutePolicy(
     }
   }
   const sem = validateLayerRoleSemantics(policy, netPlan);
-  if (sem.length > 0) {
+  if (sem.length > 0 && !mcuHand) {
     // 语义缺口时兜底：确保 B.Cu 或末层为 signal_h，F 为 stub
     if (copper.length >= 1) {
       policy.layerRoles[copper[0] as string] = 'stub';
@@ -205,6 +211,8 @@ export function buildLocalRoutePolicy(
       policy.layerRoles[copper[copper.length - 1] as string] = 'signal_h';
     }
     policy.reason = `local route_policy (sem-fix: ${sem.join('; ')})`;
+  } else if (sem.length > 0 && mcuHand) {
+    policy.reason = `local mcu hand layer roles (sem-note: ${sem.join('; ')})`;
   }
   return policy;
 }

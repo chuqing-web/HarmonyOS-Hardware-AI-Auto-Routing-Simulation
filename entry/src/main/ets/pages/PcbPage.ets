@@ -1,7 +1,7 @@
 /**
  * PCB Layout 编辑器页面 — KiCad Pcbnew 风格
  */
-import { AppService } from '../services/AppService';
+import { AppService, AiGenLogEntry } from '../services/AppService';
 import { PcbCanvas } from '../components/PcbCanvas';
 import { PcbLayerPanel, PcbLayerRow } from '../components/pcb/PcbLayerPanel';
 import { PcbVerticalToolbar } from '../components/pcb/PcbVerticalToolbar';
@@ -34,6 +34,7 @@ import { ProjectPaths } from '../utils/ProjectPaths';
 import { exportPcbSimpleStep } from '../utils/Pcb3dSceneUtil';
 import { Pcb3dRenderer } from '../utils/Pcb3dRenderer';
 import { importStepAndBind } from '../utils/PcbStepImporter';
+import { createPcbRouteAgents, hasPcbAutoRouteApiKey } from '../utils/PcbAutoRouteAgent';
 
 interface PcbLaunchParams {
   launchMode?: string;
@@ -89,12 +90,14 @@ struct PcbPage {
   @State stackHighlightCopperIds: PcbLayerId[] = [];
   /** 由原理图跳转进入：Home/返回 回到原理图 */
   @State fromSchematic: boolean = false;
-  /** F8 自动布线前确认铜层数 */
+  /** 自动布线前确认铜层数 */
   @State private showAutoRouteLayerConfirm: boolean = false;
   @State private autoRouteBoardCopper: number = 2;
   @State private autoRouteConfirmCopper: number = 2;
   /** 经典自动布线进行中（主线程协作让出，画布只读） */
   @State private autoRouteBusy: boolean = false;
+  @State private agentDrawingBusy: boolean = false;
+  @State private agentLogPreview: string = '';
   /** bit0=Ctrl, bit1=Shift — 页面级快捷键 */
   private pageModifierKeys: number = 0;
   private readonly autoRouteCopperOptions: number[] = [2, 4, 6, 8];
@@ -107,7 +110,28 @@ struct PcbPage {
     EventBus.getInstance().subscribe(ModuleEvent.PCB_CHANGED, this.onPcbChanged);
     EventBus.getInstance().subscribe(ModuleEvent.VIEWPORT_CHANGED, this.onViewportChanged);
     EventBus.getInstance().subscribe(ModuleEvent.SELECTION_CHANGED, this.onSelectionChanged);
+    this.appService.onAiGeneratingChangedSecondary = (busy: boolean) => {
+      this.agentDrawingBusy = busy && this.appService.getCanvasLockSource() === 'agent';
+      this.canvasVersion++;
+    };
+    this.appService.onAiGenLogsChangedSecondary = (logs) => {
+      this.refreshAgentLogPreview(logs);
+    };
+    this.agentDrawingBusy = this.appService.isAgentDrawingSession();
+    this.refreshAgentLogPreview(this.appService.getAiGenLogs());
     void this.initPage();
+  }
+
+  private refreshAgentLogPreview(logs: AiGenLogEntry[]): void {
+    const tail: string[] = [];
+    const start = Math.max(0, logs.length - 4);
+    for (let i = start; i < logs.length; i++) {
+      const t = logs[i].text;
+      if (t.indexOf('[Agent]') >= 0 || this.agentDrawingBusy) {
+        tail.push(t);
+      }
+    }
+    this.agentLogPreview = tail.join('\n');
   }
 
   aboutToDisappear(): void {
@@ -115,6 +139,8 @@ struct PcbPage {
     EventBus.getInstance().unsubscribe(ModuleEvent.PCB_CHANGED, this.onPcbChanged);
     EventBus.getInstance().unsubscribe(ModuleEvent.VIEWPORT_CHANGED, this.onViewportChanged);
     EventBus.getInstance().unsubscribe(ModuleEvent.SELECTION_CHANGED, this.onSelectionChanged);
+    this.appService.onAiGeneratingChangedSecondary = () => {};
+    this.appService.onAiGenLogsChangedSecondary = () => {};
   }
 
   private onSelectionChanged = (payload: ModuleEventPayload): void => {
@@ -371,10 +397,15 @@ struct PcbPage {
     return 2;
   }
 
-  /** F8 / 工具栏：先确认铜层数，再执行经典自动布线 */
+  /** 工具栏：须已配置 LLM API；先确认铜层，再执行五 Agent 编排 */
   private requestAutoRoute(): void {
     if (this.autoRouteBusy) {
       this.statusMessage = '自动布线进行中…';
+      return;
+    }
+    if (!hasPcbAutoRouteApiKey(this.appService.aiApiManager)) {
+      this.statusMessage = '自动布线需要 LLM API Key（请在原理图 AI 设置中配置默认接口）';
+      tracePcbUi('AUTO_ROUTE', 'blocked_no_api_key');
       return;
     }
     const cur = this.getEditor().getLayerStackCopperCount();
@@ -395,6 +426,12 @@ struct PcbPage {
     if (this.autoRouteBusy) {
       return;
     }
+    if (!hasPcbAutoRouteApiKey(this.appService.aiApiManager)) {
+      this.showAutoRouteLayerConfirm = false;
+      this.statusMessage = '自动布线需要 LLM API Key（请在原理图 AI 设置中配置默认接口）';
+      tracePcbUi('AUTO_ROUTE', 'confirm_blocked_no_api_key');
+      return;
+    }
     const target = this.normalizeAutoRouteCopper(this.autoRouteConfirmCopper);
     const prev = this.autoRouteBoardCopper;
     this.showAutoRouteLayerConfirm = false;
@@ -412,7 +449,7 @@ struct PcbPage {
     // 立即占位，防止确认连点；实际计算推迟到下一任务，先让 MMITask 结束
     this.autoRouteBusy = true;
     this.getEditor().setReadOnly(true);
-    this.statusMessage = `自动布线中（Cu=${target}）…`;
+    this.statusMessage = `自动布线中（五 Agent + 本地几何，Cu=${target}）…`;
     setTimeout((): void => {
       this.runAutoRoute(target);
     }, 0);
@@ -424,10 +461,17 @@ struct PcbPage {
       : this.getEditor().getLayerStackCopperCount();
     this.autoRouteBusy = true;
     this.getEditor().setReadOnly(true);
-    this.statusMessage = `自动布线中（Cu=${cu}）…`;
+    this.statusMessage = `自动布线中（五 Agent + 本地几何，Cu=${cu}）…`;
     tracePcbUi('AUTO_ROUTE', `start Cu=${cu}`);
     try {
-      const result = await this.getEditor().runAutoRoute();
+      const agents = createPcbRouteAgents(this.appService.aiApiManager);
+      if (agents === null) {
+        this.statusMessage = '自动布线需要 LLM API Key（请在原理图 AI 设置中配置默认接口）';
+        tracePcbOp('AUTO_ROUTE', 'fail no_api_key');
+        return;
+      }
+      tracePcbUi('AUTO_ROUTE', 'agents=5 (place/strategy/routing/critic/knowledge)');
+      const result = await this.getEditor().runAutoRoute(agents);
       if (result.success && result.data !== undefined) {
         this.syncPcbToProject();
         this.canvasVersion++;
@@ -472,6 +516,13 @@ struct PcbPage {
           .maxLines(2)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
 
+        Text('LLM 负责层角色/网序/重试策略 · 本地 maze 负责走线几何')
+          .fontSize(9)
+          .fontColor(ProteusColors.TEXT_SECONDARY)
+          .width('100%')
+          .textAlign(TextAlign.Center)
+          .maxLines(2)
+
         Row({ space: 4 }) {
           ForEach(this.autoRouteCopperOptions, (n: number, idx: number) => {
             ProteusChipTab({
@@ -484,7 +535,7 @@ struct PcbPage {
         }
         .width('100%')
 
-        Text('≥4 层时水平/垂直分铜层布线')
+        Text('≥4 层时水平/垂直分铜层布线 · 须已配置默认 LLM API')
           .fontSize(9)
           .fontColor(ProteusColors.TEXT_SECONDARY)
           .width('100%')
@@ -1635,16 +1686,26 @@ struct PcbPage {
             .width('100%')
             .height('100%')
 
-          // 对标原理图 AI 生图：全屏遮罩吞掉触摸/鼠标，禁止平移缩放编辑
-          if (this.autoRouteBusy) {
+          // 对标原理图：自动布线 / Agent 绘制 — 全屏遮罩吞掉触摸，禁止平移缩放编辑
+          if (this.autoRouteBusy || this.agentDrawingBusy) {
             Column({ space: 10 }) {
-              Text('自动布线中')
+              Text(this.agentDrawingBusy ? 'Agent 绘制中' : '自动布线中')
                 .fontSize(18)
                 .fontColor('#FFFFFF')
                 .fontWeight(FontWeight.Medium)
-              Text('画布已锁定 · 请等待布线完成')
+              Text(this.agentDrawingBusy
+                ? '画布已锁定 · 日志同步 AI 面板 [Agent]'
+                : '画布已锁定 · 请等待布线完成')
                 .fontSize(12)
                 .fontColor('#BDBDBD')
+              if (this.agentDrawingBusy && this.agentLogPreview.length > 0) {
+                Text(this.agentLogPreview)
+                  .fontSize(11)
+                  .fontColor('#CFD8DC')
+                  .textAlign(TextAlign.Start)
+                  .maxLines(6)
+                  .width('70%')
+              }
             }
             .width('100%')
             .height('100%')
@@ -1955,7 +2016,7 @@ struct PcbPage {
         })
         ProteusToolButton({
           iconName: ProteusIconName.WIRE,
-          tooltip: '自动布线 (F8)',
+          tooltip: '自动布线（五 Agent）',
           showLabel: false,
           onAction: () => { this.requestAutoRoute(); }
         })
@@ -2217,7 +2278,7 @@ struct PcbPage {
       { label: '回写原理图（反向标注）', action: () => { this.reverseToSchematic(); } },
       { label: 'DRC 检查', action: () => { this.runDrc(); } },
       { label: 'instr_trace: 2D/3D 诊断转储', action: () => { this.dumpPcbInstrTrace(); } },
-      { label: '自动布线 (F8)', action: () => { this.requestAutoRoute(); } },
+      { label: '自动布线', action: () => { this.requestAutoRoute(); } },
       { label: '复制 (Ctrl+C) / 粘贴 (Ctrl+V)', action: () => {
         const count = this.getEditor().pasteClipboard();
         this.statusMessage = count > 0 ? `已粘贴 ${count} 个` : '剪贴板为空，先 Ctrl+C 复制';

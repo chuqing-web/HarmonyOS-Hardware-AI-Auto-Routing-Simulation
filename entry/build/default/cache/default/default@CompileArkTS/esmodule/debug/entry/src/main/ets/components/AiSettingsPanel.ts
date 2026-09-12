@@ -9,6 +9,11 @@ interface AiSettingsPanel_Params {
     apiList?: AiApiConfig[];
     showAddForm?: boolean;
     apiSectionExpanded?: boolean;
+    agentBridgeExpanded?: boolean;
+    agentBridgePort?: number;
+    agentBridgeToken?: string;
+    agentBridgeRunning?: boolean;
+    agentBridgeSnippet?: string;
     apiRefreshTick?: number;
     promptText?: string;
     logs?: AiGenLogEntry[];
@@ -53,6 +58,7 @@ import type { AiApiConfig, ClarificationQuestion, ClarificationAnswer, Result } 
 import { AiApiConfigSection } from "@bundle:com.elecdraw.aischsim/entry/ets/components/AiApiConfigSection";
 import { ProteusClassicBtn, ProteusChipGrid, ProteusTextArea, ProteusTextInput, ProteusSwitch } from "@bundle:com.elecdraw.aischsim/entry/ets/components/proteus/ProteusWidgets";
 import { ProteusColors, ProteusDimens, ProteusFonts } from "@bundle:com.elecdraw.aischsim/entry/ets/theme/ProteusTheme";
+import pasteboard from "@ohos:pasteboard";
 interface ApiFormatOption {
     label: string;
     value: string;
@@ -70,6 +76,11 @@ export class AiSettingsPanel extends ViewPU {
         this.__apiList = new ObservedPropertyObjectPU([], this, "apiList");
         this.__showAddForm = new ObservedPropertySimplePU(false, this, "showAddForm");
         this.__apiSectionExpanded = new ObservedPropertySimplePU(false, this, "apiSectionExpanded");
+        this.__agentBridgeExpanded = new ObservedPropertySimplePU(false, this, "agentBridgeExpanded");
+        this.__agentBridgePort = new ObservedPropertySimplePU(0, this, "agentBridgePort");
+        this.__agentBridgeToken = new ObservedPropertySimplePU('', this, "agentBridgeToken");
+        this.__agentBridgeRunning = new ObservedPropertySimplePU(false, this, "agentBridgeRunning");
+        this.__agentBridgeSnippet = new ObservedPropertySimplePU('', this, "agentBridgeSnippet");
         this.__apiRefreshTick = new ObservedPropertySimplePU(0, this, "apiRefreshTick");
         this.__promptText = new ObservedPropertySimplePU('', this, "promptText");
         this.__logs = new ObservedPropertyObjectPU([], this, "logs");
@@ -130,6 +141,21 @@ export class AiSettingsPanel extends ViewPU {
         }
         if (params.apiSectionExpanded !== undefined) {
             this.apiSectionExpanded = params.apiSectionExpanded;
+        }
+        if (params.agentBridgeExpanded !== undefined) {
+            this.agentBridgeExpanded = params.agentBridgeExpanded;
+        }
+        if (params.agentBridgePort !== undefined) {
+            this.agentBridgePort = params.agentBridgePort;
+        }
+        if (params.agentBridgeToken !== undefined) {
+            this.agentBridgeToken = params.agentBridgeToken;
+        }
+        if (params.agentBridgeRunning !== undefined) {
+            this.agentBridgeRunning = params.agentBridgeRunning;
+        }
+        if (params.agentBridgeSnippet !== undefined) {
+            this.agentBridgeSnippet = params.agentBridgeSnippet;
         }
         if (params.apiRefreshTick !== undefined) {
             this.apiRefreshTick = params.apiRefreshTick;
@@ -250,6 +276,11 @@ export class AiSettingsPanel extends ViewPU {
         this.__apiList.purgeDependencyOnElmtId(rmElmtId);
         this.__showAddForm.purgeDependencyOnElmtId(rmElmtId);
         this.__apiSectionExpanded.purgeDependencyOnElmtId(rmElmtId);
+        this.__agentBridgeExpanded.purgeDependencyOnElmtId(rmElmtId);
+        this.__agentBridgePort.purgeDependencyOnElmtId(rmElmtId);
+        this.__agentBridgeToken.purgeDependencyOnElmtId(rmElmtId);
+        this.__agentBridgeRunning.purgeDependencyOnElmtId(rmElmtId);
+        this.__agentBridgeSnippet.purgeDependencyOnElmtId(rmElmtId);
         this.__apiRefreshTick.purgeDependencyOnElmtId(rmElmtId);
         this.__promptText.purgeDependencyOnElmtId(rmElmtId);
         this.__logs.purgeDependencyOnElmtId(rmElmtId);
@@ -289,6 +320,11 @@ export class AiSettingsPanel extends ViewPU {
         this.__apiList.aboutToBeDeleted();
         this.__showAddForm.aboutToBeDeleted();
         this.__apiSectionExpanded.aboutToBeDeleted();
+        this.__agentBridgeExpanded.aboutToBeDeleted();
+        this.__agentBridgePort.aboutToBeDeleted();
+        this.__agentBridgeToken.aboutToBeDeleted();
+        this.__agentBridgeRunning.aboutToBeDeleted();
+        this.__agentBridgeSnippet.aboutToBeDeleted();
         this.__apiRefreshTick.aboutToBeDeleted();
         this.__promptText.aboutToBeDeleted();
         this.__logs.aboutToBeDeleted();
@@ -370,6 +406,41 @@ export class AiSettingsPanel extends ViewPU {
     }
     set apiSectionExpanded(newValue: boolean) {
         this.__apiSectionExpanded.set(newValue);
+    }
+    private __agentBridgeExpanded: ObservedPropertySimplePU<boolean>;
+    get agentBridgeExpanded() {
+        return this.__agentBridgeExpanded.get();
+    }
+    set agentBridgeExpanded(newValue: boolean) {
+        this.__agentBridgeExpanded.set(newValue);
+    }
+    private __agentBridgePort: ObservedPropertySimplePU<number>;
+    get agentBridgePort() {
+        return this.__agentBridgePort.get();
+    }
+    set agentBridgePort(newValue: number) {
+        this.__agentBridgePort.set(newValue);
+    }
+    private __agentBridgeToken: ObservedPropertySimplePU<string>;
+    get agentBridgeToken() {
+        return this.__agentBridgeToken.get();
+    }
+    set agentBridgeToken(newValue: string) {
+        this.__agentBridgeToken.set(newValue);
+    }
+    private __agentBridgeRunning: ObservedPropertySimplePU<boolean>;
+    get agentBridgeRunning() {
+        return this.__agentBridgeRunning.get();
+    }
+    set agentBridgeRunning(newValue: boolean) {
+        this.__agentBridgeRunning.set(newValue);
+    }
+    private __agentBridgeSnippet: ObservedPropertySimplePU<string>;
+    get agentBridgeSnippet() {
+        return this.__agentBridgeSnippet.get();
+    }
+    set agentBridgeSnippet(newValue: string) {
+        this.__agentBridgeSnippet.set(newValue);
     }
     private __apiRefreshTick: ObservedPropertySimplePU<number>;
     get apiRefreshTick() {
@@ -622,6 +693,24 @@ export class AiSettingsPanel extends ViewPU {
             this.selfCheckSummary = '检测到首次布局问题';
         }
         this.enableReasoning = this.appService.aiEnableReasoning;
+        this.refreshAgentBridge();
+    }
+    private refreshAgentBridge(): void {
+        const info = this.appService.getAgentBridgeInfo();
+        this.agentBridgeRunning = info.running;
+        this.agentBridgePort = info.port;
+        this.agentBridgeToken = info.token;
+        this.agentBridgeSnippet = this.appService.getAgentBridgeMcpSnippet();
+    }
+    private copyTextToClipboard(text: string): void {
+        try {
+            const data = pasteboard.createData(pasteboard.MIMETYPE_TEXT_PLAIN, text);
+            void pasteboard.getSystemPasteboard().setData(data);
+        }
+        catch (e) {
+            Logger.warn(INSTR_TRACE_TAG, `[AGENT_BRIDGE] clipboard failed: ${e}`);
+            this.statusMessage = `复制失败: ${e}`;
+        }
     }
     refreshList(): void {
         this.apiList = this.appService.aiApiManager.listApis();
@@ -1076,7 +1165,7 @@ export class AiSettingsPanel extends ViewPU {
                                 let componentCall = new AiApiConfigSection(this, {
                                     statusMessage: this.__statusMessage,
                                     refreshTick: this.apiRefreshTick
-                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 518, col: 9 });
+                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 543, col: 9 });
                                 ViewPU.create(componentCall);
                                 let paramsLambda = () => {
                                     return {
@@ -1093,6 +1182,191 @@ export class AiSettingsPanel extends ViewPU {
                             }
                         }, { name: "AiApiConfigSection" });
                     }
+                    this.observeComponentCreation2((elmtId, isInitialRender) => {
+                        Divider.create();
+                        Divider.color(ProteusColors.DIVIDER);
+                        Divider.height(1);
+                        Divider.width('100%');
+                    }, Divider);
+                });
+            }
+            // ---- Agent Bridge（Cursor / OpenClaw MCP）----
+            else {
+                this.ifElseBranchUpdateFunction(1, () => {
+                });
+            }
+        }, If);
+        If.pop();
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            // ---- Agent Bridge（Cursor / OpenClaw MCP）----
+            Row.create();
+            // ---- Agent Bridge（Cursor / OpenClaw MCP）----
+            Row.width('100%');
+            // ---- Agent Bridge（Cursor / OpenClaw MCP）----
+            Row.padding({ left: 10, right: 8, top: 4, bottom: 4 });
+        }, Row);
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            Text.create(this.agentBridgeExpanded ? '▾ Agent Bridge' : '▸ Agent Bridge');
+            Text.fontSize(10);
+            Text.fontColor(ProteusColors.TEXT_LABEL);
+            Text.layoutWeight(1);
+            Text.onClick(() => {
+                this.agentBridgeExpanded = !this.agentBridgeExpanded;
+                if (this.agentBridgeExpanded) {
+                    this.appService.ensureAgentBridgeStarted();
+                    this.refreshAgentBridge();
+                }
+            });
+        }, Text);
+        Text.pop();
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            Text.create(this.agentBridgeRunning ? '运行中' : '未启动');
+            Text.fontSize(9);
+            Text.fontColor(this.agentBridgeRunning ? ProteusColors.TEXT_SECONDARY : ProteusColors.ERC_ERR);
+            Text.margin({ left: 8 });
+        }, Text);
+        Text.pop();
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            If.create();
+            if (this.appService.isAgentDrawingSession()) {
+                this.ifElseBranchUpdateFunction(0, () => {
+                    this.observeComponentCreation2((elmtId, isInitialRender) => {
+                        Text.create('· 绘制中');
+                        Text.fontSize(9);
+                        Text.fontColor(ProteusColors.SELECTED);
+                        Text.margin({ left: 4 });
+                    }, Text);
+                    Text.pop();
+                });
+            }
+            else {
+                this.ifElseBranchUpdateFunction(1, () => {
+                });
+            }
+        }, If);
+        If.pop();
+        // ---- Agent Bridge（Cursor / OpenClaw MCP）----
+        Row.pop();
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            If.create();
+            if (this.agentBridgeExpanded) {
+                this.ifElseBranchUpdateFunction(0, () => {
+                    this.observeComponentCreation2((elmtId, isInitialRender) => {
+                        Column.create({ space: 6 });
+                        Column.width('100%');
+                        Column.padding({ left: 10, right: 8, bottom: 8 });
+                    }, Column);
+                    this.observeComponentCreation2((elmtId, isInitialRender) => {
+                        Text.create(`地址: 127.0.0.1:${this.agentBridgePort}`);
+                        Text.fontSize(10);
+                        Text.fontColor(ProteusColors.TEXT_PRIMARY);
+                        Text.width('100%');
+                    }, Text);
+                    Text.pop();
+                    this.observeComponentCreation2((elmtId, isInitialRender) => {
+                        Text.create(`Token: ${this.agentBridgeToken}`);
+                        Text.fontSize(9);
+                        Text.fontFamily('monospace');
+                        Text.fontColor(ProteusColors.TEXT_SECONDARY);
+                        Text.width('100%');
+                    }, Text);
+                    Text.pop();
+                    this.observeComponentCreation2((elmtId, isInitialRender) => {
+                        Text.create('绘制会话：begin → place/wire → end（复用 AI 遮罩与下方日志，前缀 [Agent]；首次放置会自动 begin）');
+                        Text.fontSize(9);
+                        Text.fontColor(ProteusColors.TEXT_LABEL);
+                        Text.width('100%');
+                    }, Text);
+                    Text.pop();
+                    this.observeComponentCreation2((elmtId, isInitialRender) => {
+                        Text.create('外部 Agent 通过 MCP 调用原子编辑（不含应用内 AI / 自动布线）');
+                        Text.fontSize(9);
+                        Text.fontColor(ProteusColors.TEXT_LABEL);
+                        Text.width('100%');
+                    }, Text);
+                    Text.pop();
+                    this.observeComponentCreation2((elmtId, isInitialRender) => {
+                        Row.create({ space: 8 });
+                        Row.width('100%');
+                    }, Row);
+                    this.observeComponentCreation2((elmtId, isInitialRender) => {
+                        Text.create('刷新');
+                        Text.fontSize(10);
+                        Text.fontColor(ProteusColors.TEXT_PRIMARY);
+                        Text.padding({ left: 8, right: 8, top: 4, bottom: 4 });
+                        Text.backgroundColor(ProteusColors.INPUT_READONLY_BG);
+                        Text.onClick(() => {
+                            this.appService.ensureAgentBridgeStarted();
+                            this.refreshAgentBridge();
+                            this.statusMessage = this.agentBridgeRunning
+                                ? `Agent Bridge ${this.agentBridgePort}`
+                                : 'Agent Bridge 未运行';
+                        });
+                    }, Text);
+                    Text.pop();
+                    this.observeComponentCreation2((elmtId, isInitialRender) => {
+                        Text.create('轮换 Token');
+                        Text.fontSize(10);
+                        Text.fontColor(ProteusColors.TEXT_PRIMARY);
+                        Text.padding({ left: 8, right: 8, top: 4, bottom: 4 });
+                        Text.backgroundColor(ProteusColors.INPUT_READONLY_BG);
+                        Text.onClick(() => {
+                            this.appService.rotateAgentBridgeToken();
+                            this.refreshAgentBridge();
+                            this.statusMessage = 'Agent Bridge Token 已轮换';
+                        });
+                    }, Text);
+                    Text.pop();
+                    this.observeComponentCreation2((elmtId, isInitialRender) => {
+                        Text.create('复制 MCP 配置');
+                        Text.fontSize(10);
+                        Text.fontColor('#FFFFFF');
+                        Text.padding({ left: 8, right: 8, top: 4, bottom: 4 });
+                        Text.backgroundColor(ProteusColors.SELECTED);
+                        Text.onClick(() => {
+                            this.refreshAgentBridge();
+                            this.copyTextToClipboard(this.agentBridgeSnippet);
+                            this.statusMessage = '已复制 MCP 配置（粘贴到 Cursor mcp.json）';
+                        });
+                    }, Text);
+                    Text.pop();
+                    this.observeComponentCreation2((elmtId, isInitialRender) => {
+                        If.create();
+                        if (this.appService.isAgentDrawingSession()) {
+                            this.ifElseBranchUpdateFunction(0, () => {
+                                this.observeComponentCreation2((elmtId, isInitialRender) => {
+                                    Text.create('结束绘制');
+                                    Text.fontSize(10);
+                                    Text.fontColor('#FFFFFF');
+                                    Text.padding({ left: 8, right: 8, top: 4, bottom: 4 });
+                                    Text.backgroundColor(ProteusColors.ERC_ERR);
+                                    Text.onClick(() => {
+                                        this.appService.endAgentDrawingSession(true, false);
+                                        this.refreshAgentBridge();
+                                        this.statusMessage = 'Agent 绘制会话已结束';
+                                    });
+                                }, Text);
+                                Text.pop();
+                            });
+                        }
+                        else {
+                            this.ifElseBranchUpdateFunction(1, () => {
+                            });
+                        }
+                    }, If);
+                    If.pop();
+                    Row.pop();
+                    this.observeComponentCreation2((elmtId, isInitialRender) => {
+                        Text.create(this.agentBridgeSnippet);
+                        Text.fontSize(8);
+                        Text.fontFamily('monospace');
+                        Text.fontColor(ProteusColors.TEXT_SECONDARY);
+                        Text.width('100%');
+                        Text.maxLines(12);
+                        Text.textOverflow({ overflow: TextOverflow.Ellipsis });
+                    }, Text);
+                    Text.pop();
+                    Column.pop();
                     this.observeComponentCreation2((elmtId, isInitialRender) => {
                         Divider.create();
                         Divider.color(ProteusColors.DIVIDER);
@@ -1234,7 +1508,7 @@ export class AiSettingsPanel extends ViewPU {
                                                         this.clarifyChoiceById.set(q.id, 'A');
                                                         this.clarifyChoiceById = new Map(this.clarifyChoiceById);
                                                     }
-                                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 567, col: 19 });
+                                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 698, col: 19 });
                                                 ViewPU.create(componentCall);
                                                 let paramsLambda = () => {
                                                     return {
@@ -1266,7 +1540,7 @@ export class AiSettingsPanel extends ViewPU {
                                                         this.clarifyChoiceById.set(q.id, 'B');
                                                         this.clarifyChoiceById = new Map(this.clarifyChoiceById);
                                                     }
-                                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 575, col: 19 });
+                                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 706, col: 19 });
                                                 ViewPU.create(componentCall);
                                                 let paramsLambda = () => {
                                                     return {
@@ -1298,7 +1572,7 @@ export class AiSettingsPanel extends ViewPU {
                                                         this.clarifyChoiceById.set(q.id, 'C');
                                                         this.clarifyChoiceById = new Map(this.clarifyChoiceById);
                                                     }
-                                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 583, col: 19 });
+                                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 714, col: 19 });
                                                 ViewPU.create(componentCall);
                                                 let paramsLambda = () => {
                                                     return {
@@ -1332,7 +1606,7 @@ export class AiSettingsPanel extends ViewPU {
                                                         this.clarifyFreeById.set(q.id, v);
                                                         this.clarifyFreeById = new Map(this.clarifyFreeById);
                                                     }
-                                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 591, col: 19 });
+                                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 722, col: 19 });
                                                 ViewPU.create(componentCall);
                                                 let paramsLambda = () => {
                                                     return {
@@ -1379,7 +1653,7 @@ export class AiSettingsPanel extends ViewPU {
                                             onAction: () => {
                                                 void this.submitClarification();
                                             }
-                                        }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 610, col: 15 });
+                                        }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 741, col: 15 });
                                         ViewPU.create(componentCall);
                                         let paramsLambda = () => {
                                             return {
@@ -1466,7 +1740,7 @@ export class AiSettingsPanel extends ViewPU {
                                                 this.showSelfCheckDialog = false;
                                                 void this.runSelfCheck();
                                             }
-                                        }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 637, col: 15 });
+                                        }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 768, col: 15 });
                                         ViewPU.create(componentCall);
                                         let paramsLambda = () => {
                                             return {
@@ -1499,7 +1773,7 @@ export class AiSettingsPanel extends ViewPU {
                                                 this.appService.dismissAiSelfCheckPrompt();
                                                 this.statusMessage = '已跳过自检修复';
                                             }
-                                        }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 645, col: 15 });
+                                        }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 776, col: 15 });
                                         ViewPU.create(componentCall);
                                         let paramsLambda = () => {
                                             return {
@@ -1586,7 +1860,7 @@ export class AiSettingsPanel extends ViewPU {
                                             onAction: () => {
                                                 this.pickStrategy('oneshot');
                                             }
-                                        }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 675, col: 15 });
+                                        }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 806, col: 15 });
                                         ViewPU.create(componentCall);
                                         let paramsLambda = () => {
                                             return {
@@ -1616,7 +1890,7 @@ export class AiSettingsPanel extends ViewPU {
                                             onAction: () => {
                                                 this.pickStrategy('modular');
                                             }
-                                        }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 682, col: 15 });
+                                        }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 813, col: 15 });
                                         ViewPU.create(componentCall);
                                         let paramsLambda = () => {
                                             return {
@@ -1646,7 +1920,7 @@ export class AiSettingsPanel extends ViewPU {
                                             onAction: () => {
                                                 this.showStrategyDialog = false;
                                             }
-                                        }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 689, col: 15 });
+                                        }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 820, col: 15 });
                                         ViewPU.create(componentCall);
                                         let paramsLambda = () => {
                                             return {
@@ -1724,7 +1998,7 @@ export class AiSettingsPanel extends ViewPU {
                                             onAction: () => {
                                                 void this.runGenerate('replace');
                                             }
-                                        }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 713, col: 15 });
+                                        }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 844, col: 15 });
                                         ViewPU.create(componentCall);
                                         let paramsLambda = () => {
                                             return {
@@ -1754,7 +2028,7 @@ export class AiSettingsPanel extends ViewPU {
                                             onAction: () => {
                                                 void this.runGenerate('append');
                                             }
-                                        }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 720, col: 15 });
+                                        }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 851, col: 15 });
                                         ViewPU.create(componentCall);
                                         let paramsLambda = () => {
                                             return {
@@ -1784,7 +2058,7 @@ export class AiSettingsPanel extends ViewPU {
                                             onAction: () => {
                                                 void this.runGenerate('edit');
                                             }
-                                        }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 727, col: 15 });
+                                        }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 858, col: 15 });
                                         ViewPU.create(componentCall);
                                         let paramsLambda = () => {
                                             return {
@@ -1821,7 +2095,7 @@ export class AiSettingsPanel extends ViewPU {
                                             onAction: () => {
                                                 this.showModeDialog = false;
                                             }
-                                        }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 738, col: 15 });
+                                        }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 869, col: 15 });
                                         ViewPU.create(componentCall);
                                         let paramsLambda = () => {
                                             return {
@@ -1885,7 +2159,7 @@ export class AiSettingsPanel extends ViewPU {
                         areaHeight: ProteusDimens.TEXTAREA_MIN_HEIGHT,
                         isEnabled: !this.aiGenerating,
                         onChange: (v: string) => { this.promptText = v; }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 762, col: 9 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 893, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -1958,7 +2232,7 @@ export class AiSettingsPanel extends ViewPU {
                         onAction: () => {
                             this.requestGenerate();
                         }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 798, col: 11 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 929, col: 11 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -1988,7 +2262,7 @@ export class AiSettingsPanel extends ViewPU {
                         onAction: () => {
                             this.requestEditExisting();
                         }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 805, col: 11 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 936, col: 11 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -2030,7 +2304,7 @@ export class AiSettingsPanel extends ViewPU {
                             this.showModeDialog = false;
                             void this.runSelfCheck();
                         }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 817, col: 11 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 948, col: 11 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -2066,7 +2340,7 @@ export class AiSettingsPanel extends ViewPU {
                         onAction: () => {
                             this.appService.clearAiGenLogs();
                         }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 830, col: 11 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 961, col: 11 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -2127,7 +2401,7 @@ export class AiSettingsPanel extends ViewPU {
                                 this.showAddForm = true;
                             }
                         }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 859, col: 9 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 990, col: 9 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -2220,7 +2494,7 @@ export class AiSettingsPanel extends ViewPU {
                                             this.newAuthField = '';
                                         }
                                     }
-                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 883, col: 11 });
+                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 1014, col: 11 });
                                 ViewPU.create(componentCall);
                                 let paramsLambda = () => {
                                     return {
@@ -2307,7 +2581,7 @@ export class AiSettingsPanel extends ViewPU {
                                     placeholder: 'https://example.com （可选）',
                                     text: this.newApiUrl,
                                     onChange: (v: string) => { this.newApiUrl = v; }
-                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 928, col: 13 });
+                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 1059, col: 13 });
                                 ViewPU.create(componentCall);
                                 let paramsLambda = () => {
                                     return {
@@ -2353,7 +2627,7 @@ export class AiSettingsPanel extends ViewPU {
                                     text: this.newApiKey,
                                     password: true,
                                     onChange: (v: string) => { this.newApiKey = v; }
-                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 940, col: 13 });
+                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 1071, col: 13 });
                                 ViewPU.create(componentCall);
                                 let paramsLambda = () => {
                                     return {
@@ -2429,7 +2703,7 @@ export class AiSettingsPanel extends ViewPU {
                                     placeholder: 'x-api-key（Claude）或留空用 Bearer',
                                     text: this.newAuthField,
                                     onChange: (v: string) => { this.newAuthField = v; }
-                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 969, col: 13 });
+                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 1100, col: 13 });
                                 ViewPU.create(componentCall);
                                 let paramsLambda = () => {
                                     return {
@@ -2475,7 +2749,7 @@ export class AiSettingsPanel extends ViewPU {
                                     placeholder: 'claude-sonnet-4-6',
                                     text: this.newApiModel,
                                     onChange: (v: string) => { this.newApiModel = v; }
-                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 981, col: 13 });
+                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 1112, col: 13 });
                                 ViewPU.create(componentCall);
                                 let paramsLambda = () => {
                                     return {
@@ -2522,7 +2796,7 @@ export class AiSettingsPanel extends ViewPU {
                                 let componentCall = new ProteusSwitch(this, {
                                     isOn: this.newApiStream,
                                     onChange: (on: boolean) => { this.newApiStream = on; }
-                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 997, col: 13 });
+                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 1128, col: 13 });
                                 ViewPU.create(componentCall);
                                 let paramsLambda = () => {
                                     return {
@@ -2549,7 +2823,7 @@ export class AiSettingsPanel extends ViewPU {
                                     onAction: () => {
                                         this.saveApiFromForm();
                                     }
-                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 1003, col: 11 });
+                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 1134, col: 11 });
                                 ViewPU.create(componentCall);
                                 let paramsLambda = () => {
                                     return {
@@ -2604,7 +2878,7 @@ export class AiSettingsPanel extends ViewPU {
                             this.appService.aiApiManager.setLoadBalanceStrategy(this.loadBalanceModes[idx]);
                             this.statusMessage = `负载均衡: ${this.loadBalanceLabels[idx]}`;
                         }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 1023, col: 7 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 1154, col: 7 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -2731,7 +3005,7 @@ export class AiSettingsPanel extends ViewPU {
                                 onAction: () => {
                                     this.selectAsDefault(api);
                                 }
-                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 1070, col: 15 });
+                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 1201, col: 15 });
                             ViewPU.create(componentCall);
                             let paramsLambda = () => {
                                 return {
@@ -2760,7 +3034,7 @@ export class AiSettingsPanel extends ViewPU {
                                 onAction: () => {
                                     this.beginEditApi(api);
                                 }
-                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 1077, col: 15 });
+                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 1208, col: 15 });
                             ViewPU.create(componentCall);
                             let paramsLambda = () => {
                                 return {
@@ -2797,7 +3071,7 @@ export class AiSettingsPanel extends ViewPU {
                                     this.appService.syncAiApiConfigsToProject();
                                     this.refreshList();
                                 }
-                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 1083, col: 15 });
+                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 1214, col: 15 });
                             ViewPU.create(componentCall);
                             let paramsLambda = () => {
                                 return {
@@ -2841,7 +3115,7 @@ export class AiSettingsPanel extends ViewPU {
                                     this.appService.syncAiApiConfigsToProject();
                                     this.refreshList();
                                 }
-                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 1100, col: 15 });
+                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 1231, col: 15 });
                             ViewPU.create(componentCall);
                             let paramsLambda = () => {
                                 return {
@@ -2883,7 +3157,7 @@ export class AiSettingsPanel extends ViewPU {
                                     Logger.info(INSTR_TRACE_TAG, `[AI_API] removed id=${api.id}`);
                                     this.refreshList();
                                 }
-                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 1112, col: 15 });
+                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/components/AiSettingsPanel.ets", line: 1243, col: 15 });
                             ViewPU.create(componentCall);
                             let paramsLambda = () => {
                                 return {

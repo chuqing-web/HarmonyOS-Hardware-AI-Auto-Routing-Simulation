@@ -12,6 +12,7 @@ import { parsePinRef } from './PinRefUtil';
 import { getGlobalPcbFootprintLibrary } from './PcbFootprintLibrary';
 import { padWorldPosition, pointInPolygon } from './PcbZoneUtil';
 import { WireConflictGeometry } from './WireConflictGeometry';
+import { buildRatsnest } from './PcbNetUtil';
 
 /** 画布实时状态（由编辑器采集，写入 instr_trace） */
 export interface PcbCanvasTraceSnapshot {
@@ -284,15 +285,15 @@ export function tracePcbNetRoutingSummary(doc: PcbDocument): void {
     }
   }
 
-  const routedNets: Set<string> = new Set();
+  const hasCopper: Set<string> = new Set();
   for (let i = 0; i < doc.tracks.length; i++) {
     if (doc.tracks[i].netId.length > 0) {
-      routedNets.add(doc.tracks[i].netId);
+      hasCopper.add(doc.tracks[i].netId);
     }
   }
   for (let i = 0; i < doc.vias.length; i++) {
     if (doc.vias[i].netId.length > 0) {
-      routedNets.add(doc.vias[i].netId);
+      hasCopper.add(doc.vias[i].netId);
     }
   }
   const zoneNets: Set<string> = new Set();
@@ -302,9 +303,17 @@ export function tracePcbNetRoutingSummary(doc: PcbDocument): void {
     }
   }
 
+  // 与 AUTO_ROUTE_INCOMPLETE / failNets 同口径：飞线未消 = 未全连通
+  const incompleteNets: Set<string> = new Set();
+  const rats = buildRatsnest(doc);
+  for (let i = 0; i < rats.length; i++) {
+    incompleteNets.add(rats[i].netId);
+  }
+
   let singlePad = 0;
   let unrouted = 0;
-  let routed = 0;
+  let connected = 0;
+  let partial = 0;
   let powerOk = 0;
   padCountByNet.forEach((cnt: number, nid: string) => {
     const nm = netNameById.get(nid) ?? nid;
@@ -314,12 +323,19 @@ export function tracePcbNetRoutingSummary(doc: PcbDocument): void {
       upper === 'VOUT' || upper === 'REG_IN' || upper === 'VIN_SRC' ||
       upper.indexOf('VIN') >= 0 || upper.indexOf('VCC') >= 0 || upper.indexOf('VDD') >= 0;
     if (power) {
-      if (zoneNets.has(nid) || routedNets.has(nid)) {
-        powerOk++;
-        const how = zoneNets.has(nid)
-          ? (routedNets.has(nid) ? 'zone+copper' : 'zone')
-          : 'copper';
-        tracePcb('NET_POWER', `${nm} pads=${cnt} via=${how}`);
+      if (!incompleteNets.has(nid) && (zoneNets.has(nid) || hasCopper.has(nid) || cnt < 2)) {
+        if (cnt >= 2) {
+          powerOk++;
+          const how = zoneNets.has(nid)
+            ? (hasCopper.has(nid) ? 'zone+copper' : 'zone')
+            : 'copper';
+          tracePcb('NET_POWER', `${nm} pads=${cnt} via=${how}`);
+        } else {
+          singlePad++;
+        }
+      } else if (cnt >= 2 && hasCopper.has(nid)) {
+        partial++;
+        tracePcbWarn('NET_PARTIAL', `${nm} pads=${cnt} — 电源网有铜未全通`);
       } else if (cnt >= 2) {
         unrouted++;
         tracePcbWarn('NET_UNROUTED', `${nm} pads=${cnt} — 电源网无走线/铺铜`);
@@ -333,15 +349,19 @@ export function tracePcbNetRoutingSummary(doc: PcbDocument): void {
       tracePcb('NET_SINGLE_PAD', `${nm} pads=${cnt} — 单焊盘网(原理图对端未落板)`);
       return;
     }
-    if (routedNets.has(nid)) {
-      routed++;
+    if (!incompleteNets.has(nid)) {
+      connected++;
+    } else if (hasCopper.has(nid)) {
+      partial++;
+      tracePcbWarn('NET_PARTIAL', `${nm} pads=${cnt} — 有铜未全通(飞线残留)`);
     } else {
       unrouted++;
       tracePcbWarn('NET_UNROUTED', `${nm} pads=${cnt} — 尚无走线/过孔`);
     }
   });
   tracePcb('NET_SUMMARY',
-    `routed=${routed} unrouted=${unrouted} singlePad=${singlePad} powerOk=${powerOk}`);
+    `connected=${connected} partial=${partial} unrouted=${unrouted} ` +
+    `singlePad=${singlePad} powerOk=${powerOk}`);
 }
 
 /**
@@ -1373,12 +1393,22 @@ export interface PcbView2dTraceParams {
 
 let gLastView2dTraceMs: number = 0;
 let gLastView3dTraceMs: number = 0;
+/** 自动布线期间暂停 VIEW2D/3D 审计，避免与主线程路由争抢 uv_timer */
+let gInstrAuditPaused: boolean = false;
+
+/** 自动布线开始/结束时开关；暂停期间非 force 审计直接跳过 */
+export function setPcbInstrAuditPaused(paused: boolean): void {
+  gInstrAuditPaused = paused;
+}
 
 /**
  * 2D UI 展示审计：视口、器件屏幕位置、走线可见性、活动层内容
  */
 export function tracePcbView2dAudit(doc: PcbDocument, p: PcbView2dTraceParams,
   reason: string, force: boolean): void {
+  if (gInstrAuditPaused && !force) {
+    return;
+  }
   const now = Date.now();
   if (!force && now - gLastView2dTraceMs < 2800) {
     return;
@@ -1559,6 +1589,9 @@ export interface PcbView3dTraceParams {
  */
 export function tracePcbView3dAudit(doc: PcbDocument, p: PcbView3dTraceParams,
   reason: string, force: boolean): void {
+  if (gInstrAuditPaused && !force) {
+    return;
+  }
   const now = Date.now();
   if (!force && now - gLastView3dTraceMs < 2800) {
     return;

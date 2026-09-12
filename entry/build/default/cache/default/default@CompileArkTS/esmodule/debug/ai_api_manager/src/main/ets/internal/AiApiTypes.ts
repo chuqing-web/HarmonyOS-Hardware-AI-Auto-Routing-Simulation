@@ -78,14 +78,12 @@ export function buildChatRequestBody(model: string, messages: ChatRequestMessage
         max_tokens: maxTokens,
         temperature: temperature
     };
-    // Qwen 系（agnes/DashScope 兼容端点）忽略 thinking 对象，只认 enable_thinking；
-    // 否则 thinking 会继续吃光 max_tokens → finish_reason=length 空 content。
+    // Qwen/agnes（含 CUSTOM→apihub）常忽略 OpenAI thinking 对象，只认 enable_thinking；
+    // 双写：兼容 DeepSeek thinking.type 与 DashScope/agnes enable_thinking。
     const isQwen = provider === AiProviderType.QWEN;
     if (disableThinking === true) {
-        if (isQwen) {
-            body.enable_thinking = false;
-        }
-        else {
+        body.enable_thinking = false;
+        if (!isQwen) {
             const thinking: ThinkingParam = { type: 'disabled' };
             body.thinking = thinking;
         }
@@ -217,14 +215,11 @@ export function extractChoiceContent(choice: ChatCompletionChoice): string {
             return content;
         }
     }
-    // content 空：从 reasoning 里隔离 JSON（禁止把纯中文推理当正文）
+    // content 空：从 reasoning 隔离完整 JSON（长中文推理后常附答案；勿限制 '{' 前置长度）
     if (reasoning.length > 0) {
         const fromReason = isolateJsonFromText(reasoning);
-        if (fromReason !== null) {
-            const pre = reasoning.indexOf('{');
-            if (pre < 0 || pre <= 200) {
-                return fromReason;
-            }
+        if (fromReason !== null && fromReason.length > 0) {
+            return fromReason;
         }
         if (reasoning.charAt(0) === '{' && reasoning.charAt(reasoning.length - 1) === '}') {
             return reasoning;

@@ -67,6 +67,7 @@ struct Index {
   @State aiProgress: number = 0;
   @State aiStage: string = '';
   @State aiGenerating: boolean = false;
+  @State canvasLockSource: string = '';
   @State mouseX: number = 0;
   @State mouseY: number = 0;
   @State zoomPercent: number = 100;
@@ -149,6 +150,7 @@ struct Index {
     };
     this.appService.onAiGeneratingChanged = (busy: boolean) => {
       this.aiGenerating = busy;
+      this.canvasLockSource = this.appService.getCanvasLockSource();
       if (busy) {
         this.setActiveRightTab(2);
         this.rightCollapsed = false;
@@ -2254,14 +2256,22 @@ struct Index {
 
       if (this.aiGenerating) {
         Column({ space: 10 }) {
-          Text('AI 生成中')
+          Text(this.canvasLockSource === 'agent' ? 'Agent 绘制中' : 'AI 生成中')
             .fontSize(18)
             .fontColor('#FFFFFF')
             .fontWeight(FontWeight.Medium)
-          Text(this.aiStage.length > 0 ? `${this.aiStage}  ${this.aiProgress}%` : `${this.aiProgress}%`)
-            .fontSize(13)
-            .fontColor('#E0E0E0')
-          Text('画布已锁定 · 仅允许 AI 自动放置与布线')
+          if (this.canvasLockSource !== 'agent') {
+            Text(this.aiStage.length > 0 ? `${this.aiStage}  ${this.aiProgress}%` : `${this.aiProgress}%`)
+              .fontSize(13)
+              .fontColor('#E0E0E0')
+          } else {
+            Text('外部 Agent 正在放置与连线')
+              .fontSize(13)
+              .fontColor('#E0E0E0')
+          }
+          Text(this.canvasLockSource === 'agent'
+            ? '画布已锁定 · 仅允许 Agent Bridge 放置与布线'
+            : '画布已锁定 · 仅允许 AI 自动放置与布线')
             .fontSize(12)
             .fontColor('#BDBDBD')
           Text('详见右侧 AI 面板生成日志')

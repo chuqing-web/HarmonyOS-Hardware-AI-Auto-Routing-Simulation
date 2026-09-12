@@ -5,8 +5,8 @@ import type common from "@ohos:app.ability.common";
  * Prefer maximize() (PC/2in1) over layout-fullscreen (immersive mobile).
  * Also enables window-rect auto-save when a WindowStage is provided.
  *
- * Callers should await this BEFORE loading Splash / Index,
- * so the first layout pass sees a settled window size.
+ * Call before Splash loadContent so the first layout/fit sees a settled max window
+ * (avoids post-open “local zoom”). Also safe to reaffirm on Index/Home.
  */
 export async function maximizeAppWindow(ctx?: common.UIAbilityContext, stage?: window.WindowStage): Promise<void> {
     try {

@@ -7,6 +7,7 @@ import { AiApiConfig, AiProviderType, LoadBalanceMode, Logger, INSTR_TRACE_TAG,
 import { AiApiConfigSection } from './AiApiConfigSection';
 import { ProteusClassicBtn, ProteusChipGrid, ProteusTextArea, ProteusTextInput, ProteusSwitch } from './proteus/ProteusWidgets';
 import { ProteusColors, ProteusDimens, ProteusFonts } from '../theme/ProteusTheme';
+import { pasteboard } from '@kit.BasicServicesKit';
 
 interface ApiFormatOption {
   label: string;
@@ -22,6 +23,11 @@ export struct AiSettingsPanel {
   @State apiList: AiApiConfig[] = [];
   @State showAddForm: boolean = false;
   @State apiSectionExpanded: boolean = false;
+  @State agentBridgeExpanded: boolean = false;
+  @State agentBridgePort: number = 0;
+  @State agentBridgeToken: string = '';
+  @State agentBridgeRunning: boolean = false;
+  @State agentBridgeSnippet: string = '';
   @State apiRefreshTick: number = 0;
   @State promptText: string = '';
   @State logs: AiGenLogEntry[] = [];
@@ -106,6 +112,25 @@ export struct AiSettingsPanel {
       this.selfCheckSummary = '检测到首次布局问题';
     }
     this.enableReasoning = this.appService.aiEnableReasoning;
+    this.refreshAgentBridge();
+  }
+
+  private refreshAgentBridge(): void {
+    const info = this.appService.getAgentBridgeInfo();
+    this.agentBridgeRunning = info.running;
+    this.agentBridgePort = info.port;
+    this.agentBridgeToken = info.token;
+    this.agentBridgeSnippet = this.appService.getAgentBridgeMcpSnippet();
+  }
+
+  private copyTextToClipboard(text: string): void {
+    try {
+      const data = pasteboard.createData(pasteboard.MIMETYPE_TEXT_PLAIN, text);
+      void pasteboard.getSystemPasteboard().setData(data);
+    } catch (e) {
+      Logger.warn(INSTR_TRACE_TAG, `[AGENT_BRIDGE] clipboard failed: ${e}`);
+      this.statusMessage = `复制失败: ${e}`;
+    }
   }
 
   refreshList(): void {
@@ -519,6 +544,112 @@ export struct AiSettingsPanel {
           statusMessage: $statusMessage,
           refreshTick: this.apiRefreshTick
         })
+        Divider().color(ProteusColors.DIVIDER).height(1).width('100%')
+      }
+
+      // ---- Agent Bridge（Cursor / OpenClaw MCP）----
+      Row() {
+        Text(this.agentBridgeExpanded ? '▾ Agent Bridge' : '▸ Agent Bridge')
+          .fontSize(10)
+          .fontColor(ProteusColors.TEXT_LABEL)
+          .layoutWeight(1)
+          .onClick(() => {
+            this.agentBridgeExpanded = !this.agentBridgeExpanded;
+            if (this.agentBridgeExpanded) {
+              this.appService.ensureAgentBridgeStarted();
+              this.refreshAgentBridge();
+            }
+          })
+        Text(this.agentBridgeRunning ? '运行中' : '未启动')
+          .fontSize(9)
+          .fontColor(this.agentBridgeRunning ? ProteusColors.TEXT_SECONDARY : ProteusColors.ERC_ERR)
+          .margin({ left: 8 })
+        if (this.appService.isAgentDrawingSession()) {
+          Text('· 绘制中')
+            .fontSize(9)
+            .fontColor(ProteusColors.SELECTED)
+            .margin({ left: 4 })
+        }
+      }
+      .width('100%')
+      .padding({ left: 10, right: 8, top: 4, bottom: 4 })
+
+      if (this.agentBridgeExpanded) {
+        Column({ space: 6 }) {
+          Text(`地址: 127.0.0.1:${this.agentBridgePort}`)
+            .fontSize(10)
+            .fontColor(ProteusColors.TEXT_PRIMARY)
+            .width('100%')
+          Text(`Token: ${this.agentBridgeToken}`)
+            .fontSize(9)
+            .fontFamily('monospace')
+            .fontColor(ProteusColors.TEXT_SECONDARY)
+            .width('100%')
+          Text('绘制会话：begin → place/wire → end（复用 AI 遮罩与下方日志，前缀 [Agent]；首次放置会自动 begin）')
+            .fontSize(9)
+            .fontColor(ProteusColors.TEXT_LABEL)
+            .width('100%')
+          Text('外部 Agent 通过 MCP 调用原子编辑（不含应用内 AI / 自动布线）')
+            .fontSize(9)
+            .fontColor(ProteusColors.TEXT_LABEL)
+            .width('100%')
+          Row({ space: 8 }) {
+            Text('刷新')
+              .fontSize(10)
+              .fontColor(ProteusColors.TEXT_PRIMARY)
+              .padding({ left: 8, right: 8, top: 4, bottom: 4 })
+              .backgroundColor(ProteusColors.INPUT_READONLY_BG)
+              .onClick(() => {
+                this.appService.ensureAgentBridgeStarted();
+                this.refreshAgentBridge();
+                this.statusMessage = this.agentBridgeRunning
+                  ? `Agent Bridge ${this.agentBridgePort}`
+                  : 'Agent Bridge 未运行';
+              })
+            Text('轮换 Token')
+              .fontSize(10)
+              .fontColor(ProteusColors.TEXT_PRIMARY)
+              .padding({ left: 8, right: 8, top: 4, bottom: 4 })
+              .backgroundColor(ProteusColors.INPUT_READONLY_BG)
+              .onClick(() => {
+                this.appService.rotateAgentBridgeToken();
+                this.refreshAgentBridge();
+                this.statusMessage = 'Agent Bridge Token 已轮换';
+              })
+            Text('复制 MCP 配置')
+              .fontSize(10)
+              .fontColor('#FFFFFF')
+              .padding({ left: 8, right: 8, top: 4, bottom: 4 })
+              .backgroundColor(ProteusColors.SELECTED)
+              .onClick(() => {
+                this.refreshAgentBridge();
+                this.copyTextToClipboard(this.agentBridgeSnippet);
+                this.statusMessage = '已复制 MCP 配置（粘贴到 Cursor mcp.json）';
+              })
+            if (this.appService.isAgentDrawingSession()) {
+              Text('结束绘制')
+                .fontSize(10)
+                .fontColor('#FFFFFF')
+                .padding({ left: 8, right: 8, top: 4, bottom: 4 })
+                .backgroundColor(ProteusColors.ERC_ERR)
+                .onClick(() => {
+                  this.appService.endAgentDrawingSession(true, false);
+                  this.refreshAgentBridge();
+                  this.statusMessage = 'Agent 绘制会话已结束';
+                })
+            }
+          }
+          .width('100%')
+          Text(this.agentBridgeSnippet)
+            .fontSize(8)
+            .fontFamily('monospace')
+            .fontColor(ProteusColors.TEXT_SECONDARY)
+            .width('100%')
+            .maxLines(12)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+        }
+        .width('100%')
+        .padding({ left: 10, right: 8, bottom: 8 })
         Divider().color(ProteusColors.DIVIDER).height(1).width('100%')
       }
 

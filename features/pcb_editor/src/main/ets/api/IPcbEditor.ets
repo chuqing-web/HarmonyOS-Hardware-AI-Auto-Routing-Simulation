@@ -5,7 +5,7 @@ import {
   PcbDocument, PcbFootprintInst, PcbTrack, PcbVia, PcbZone, PcbLayerId,
   PcbDrcViolation, Point2D, ViewportState, ApiResult, AutoRouteResult,
   PcbSelectionState, PcbAppearance, PcbAppearanceMode, Pcb3dDisplayMode, PcbRatsnestEdge,
-  PcbViaKind, PcbRouteCornerMode, PcbSpatialIndex
+  PcbViaKind, PcbRouteCornerMode, PcbSpatialIndex, PcbRouteAgentBundle
 } from 'common';
 
 export { AutoRouteResult } from 'common';
@@ -54,6 +54,17 @@ export interface IPcbEditor {
   /** AI 布线期间只读锁（对标原理图） */
   setReadOnly(readOnly: boolean): void;
   isReadOnly(): boolean;
+  /** Agent Bridge：只读锁下仍允许 Bridge 写入（不再关闭焊盘 clearance） */
+  setAgentTrustedEdit(trusted: boolean): void;
+  moveFootprintTo(idOrRef: string, x: number, y: number, rotation?: number): boolean;
+  clearCopper(clearTracks?: boolean, clearVias?: boolean): number;
+  /** 清除安装孔网络，避免误连 GND */
+  clearMountHoleNets(): number;
+  /**
+   * 精确直线走线：端点仅吸附同网焊盘，强制 DRC（异网/空网焊盘均挡线）
+   */
+  addStraightTrack(start: Point2D, end: Point2D, netId?: string, netName?: string): PcbTrack | null;
+  getLastRouteRejectReason(): string;
 
   /** Appearance / 网络高亮 */
   getAppearance(): PcbAppearance;
@@ -107,6 +118,9 @@ export interface IPcbEditor {
   setRouteCornerMode(mode: PcbRouteCornerMode): void;
   /** 换层并在当前位置自动插入过孔 */
   switchRouteLayer(layer: PcbLayerId): PcbVia | null;
+  /** 直接添加线段（Agent / 程序化） */
+  addTrack(start: Point2D, end: Point2D, netId?: string, netName?: string,
+    skipSnapshot?: boolean): PcbTrack | null;
 
   addVia(pos: Point2D, netId?: string, netName?: string, kind?: PcbViaKind,
     fromLayer?: PcbLayerId, toLayer?: PcbLayerId): PcbVia | null;
@@ -145,8 +159,8 @@ export interface IPcbEditor {
   hitTestVia(worldX: number, worldY: number): PcbVia | null;
   hitTestZone(worldX: number, worldY: number): PcbZone | null;
   hitTestFootprint(worldX: number, worldY: number): PcbFootprintInst | null;
-  /** 经典自动布线（L 链，非 AI；异步让出主线程） */
-  runAutoRoute(): Promise<ApiResult<AutoRouteResult>>;
+  /** 经典自动布线（L 链；可选 LLM 策略钩子；异步让出主线程） */
+  runAutoRoute(agents?: PcbRouteAgentBundle | null): Promise<ApiResult<AutoRouteResult>>;
   /** 应用 PCB AI 布线结果 */
   applyAiRouteResult(tracks: PcbTrack[], vias: PcbVia[],
     footprints?: PcbFootprintInst[]): ApiResult<AutoRouteResult>;

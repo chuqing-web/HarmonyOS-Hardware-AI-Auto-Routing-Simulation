@@ -25,7 +25,7 @@ export default class EntryAbility extends UIAbility {
         catch (_e) { /* best-effort */ }
     }
     onWindowStageCreate(windowStage: window.WindowStage): void {
-        // 先最大化再进 Splash，避免首帧布局尺寸抖动（主画布 fit / 启动页过渡更稳）
+        // 先 maximize 再进 Splash，避免半窗首帧 fit 导致打开后「局部放大」
         void (async () => {
             await maximizeAppWindow(undefined, windowStage);
             windowStage.loadContent('pages/SplashPage', (err) => {

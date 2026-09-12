@@ -1,0 +1,13 @@
+{
+  "name": "elecdraw-mcp",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "MCP adapter for ElecDraw Agent Bridge (schematic + PCB atomic tools)",
+  "bin": {
+    "elecdraw-mcp": "./index.mjs"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

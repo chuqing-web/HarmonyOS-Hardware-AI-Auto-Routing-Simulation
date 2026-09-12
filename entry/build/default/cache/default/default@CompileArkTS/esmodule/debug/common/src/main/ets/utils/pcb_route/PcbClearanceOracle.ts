@@ -1,10 +1,11 @@
 import { PcbLayerId, PcbPadType } from "@bundle:com.elecdraw.aischsim/entry@common/ets/types/PcbTypes";
 import type { PcbDocument, PcbFootprintInst, PcbPad, PcbTrack, PcbVia } from "@bundle:com.elecdraw.aischsim/entry@common/ets/types/PcbTypes";
 import type { Point2D } from '../../types/CommonTypes';
-import { findNetClass } from "@bundle:com.elecdraw.aischsim/entry@common/ets/utils/PcbNetUtil";
+import { resolveClearanceScoped, resolveWidthScoped } from "@bundle:com.elecdraw.aischsim/entry@common/ets/utils/pcb_route/PcbRuleEngine";
 import { padWorldPosition } from "@bundle:com.elecdraw.aischsim/entry@common/ets/utils/PcbZoneUtil";
 import { WireConflictGeometry } from "@bundle:com.elecdraw.aischsim/entry@common/ets/utils/WireConflictGeometry";
 import { getGlobalPcbFootprintLibrary } from "@bundle:com.elecdraw.aischsim/entry@common/ets/utils/PcbFootprintLibrary";
+import { buildTrackSpatialIndex, queryTracksNearSegment } from "@bundle:com.elecdraw.aischsim/entry@common/ets/utils/pcb_route/PcbSpatialIndex";
 interface KeepoutAabb {
     x1: number;
     y1: number;
@@ -167,28 +168,16 @@ function segClearance(a1: Point2D, a2: Point2D, b1: Point2D, b2: Point2D): numbe
     return Math.min(distPointSeg(a1, b1, b2), distPointSeg(a2, b1, b2), distPointSeg(b1, a1, a2), distPointSeg(b2, a1, a2));
 }
 export function clearanceForNet(doc: PcbDocument, netId: string): number {
-    const base = doc.metadata.designRules.minClearance;
     if (netId.length === 0) {
-        return base;
+        return doc.metadata.designRules.minClearance;
     }
-    for (const n of doc.nets) {
-        if (n.id === netId) {
-            return findNetClass(doc, n.classId).clearance;
-        }
-    }
-    return base;
+    return resolveClearanceScoped(doc, netId, PcbLayerId.F_CU);
 }
 export function trackWidthForNet(doc: PcbDocument, netId: string): number {
-    const base = doc.metadata.designRules.defaultTrackWidth;
     if (netId.length === 0) {
-        return base;
+        return doc.metadata.designRules.defaultTrackWidth;
     }
-    for (const n of doc.nets) {
-        if (n.id === netId) {
-            return findNetClass(doc, n.classId).trackWidth;
-        }
-    }
-    return base;
+    return resolveWidthScoped(doc, netId, PcbLayerId.F_CU);
 }
 function viaOnLayer(v: PcbVia, layer: PcbLayerId): boolean {
     if (!v.layers || v.layers.length === 0) {
@@ -261,33 +250,68 @@ export function pathClearBlockReason(doc: PcbDocument, layer: PcbLayerId, a: Poi
         return edgeHit;
     }
     const need = clearanceForNet(doc, netId) + width / 2;
-    for (let i = 0; i < existing.length; i++) {
-        const t = existing[i];
-        if (t.layer !== layer) {
-            continue;
-        }
-        if (t.netId === netId && netId.length > 0) {
-            continue;
-        }
-        // 端点距粗检 + 中段穿越（旧版仅端点距，长斜线/正交穿越会漏检）
-        const gap = segClearance(a, b, t.start, t.end) - (need + t.width / 2);
-        if (gap < 0) {
-            return `track_block net=${t.netName || t.netId} on ${layer as string}` +
-                ` @(${Math.round(t.start.x)},${Math.round(t.start.y)})-(${Math.round(t.end.x)},${Math.round(t.end.y)})`;
-        }
-        const cross = WireConflictGeometry.segmentConflict(a, b, t.start, t.end);
-        if (cross === 'collinear_overlap') {
-            return `track_cross net=${t.netName || t.netId} on ${layer as string}` +
-                ` kind=${cross}` +
-                ` @(${Math.round(t.start.x)},${Math.round(t.start.y)})-(${Math.round(t.end.x)},${Math.round(t.end.y)})`;
-        }
-        if (cross === 'orthogonal_cross') {
-            const cp = WireConflictGeometry.orthogonalCrossPoint(a, b, t.start, t.end);
-            // 仅中段穿越算阻挡；共端点/T 接留给同网点连接
-            if (cp !== null && WireConflictGeometry.isMidspanCross(cp, [a, b], [t.start, t.end], 3)) {
+    const SPATIAL_THRESHOLD = 48;
+    if (existing.length >= SPATIAL_THRESHOLD) {
+        const idx = buildTrackSpatialIndex(existing, Math.max(60, need * 4));
+        const near = queryTracksNearSegment(idx, layer, a, b, need * 2 + 20);
+        for (let qi = 0; qi < near.length; qi++) {
+            const t = existing[near[qi]];
+            if (t.layer !== layer) {
+                continue;
+            }
+            if (t.netId === netId && netId.length > 0) {
+                continue;
+            }
+            const gap = segClearance(a, b, t.start, t.end) - (need + t.width / 2);
+            if (gap < 0) {
+                return `track_block net=${t.netName || t.netId} on ${layer as string}` +
+                    ` @(${Math.round(t.start.x)},${Math.round(t.start.y)})-(${Math.round(t.end.x)},${Math.round(t.end.y)})`;
+            }
+            const cross = WireConflictGeometry.segmentConflict(a, b, t.start, t.end);
+            if (cross === 'collinear_overlap') {
                 return `track_cross net=${t.netName || t.netId} on ${layer as string}` +
                     ` kind=${cross}` +
                     ` @(${Math.round(t.start.x)},${Math.round(t.start.y)})-(${Math.round(t.end.x)},${Math.round(t.end.y)})`;
+            }
+            if (cross === 'orthogonal_cross') {
+                const cp = WireConflictGeometry.orthogonalCrossPoint(a, b, t.start, t.end);
+                if (cp !== null && WireConflictGeometry.isMidspanCross(cp, [a, b], [t.start, t.end], 3)) {
+                    return `track_cross net=${t.netName || t.netId} on ${layer as string}` +
+                        ` kind=${cross}` +
+                        ` @(${Math.round(t.start.x)},${Math.round(t.start.y)})-(${Math.round(t.end.x)},${Math.round(t.end.y)})`;
+                }
+            }
+        }
+    }
+    else {
+        for (let i = 0; i < existing.length; i++) {
+            const t = existing[i];
+            if (t.layer !== layer) {
+                continue;
+            }
+            if (t.netId === netId && netId.length > 0) {
+                continue;
+            }
+            // 端点距粗检 + 中段穿越（旧版仅端点距，长斜线/正交穿越会漏检）
+            const gap = segClearance(a, b, t.start, t.end) - (need + t.width / 2);
+            if (gap < 0) {
+                return `track_block net=${t.netName || t.netId} on ${layer as string}` +
+                    ` @(${Math.round(t.start.x)},${Math.round(t.start.y)})-(${Math.round(t.end.x)},${Math.round(t.end.y)})`;
+            }
+            const cross = WireConflictGeometry.segmentConflict(a, b, t.start, t.end);
+            if (cross === 'collinear_overlap') {
+                return `track_cross net=${t.netName || t.netId} on ${layer as string}` +
+                    ` kind=${cross}` +
+                    ` @(${Math.round(t.start.x)},${Math.round(t.start.y)})-(${Math.round(t.end.x)},${Math.round(t.end.y)})`;
+            }
+            if (cross === 'orthogonal_cross') {
+                const cp = WireConflictGeometry.orthogonalCrossPoint(a, b, t.start, t.end);
+                // 仅中段穿越算阻挡；共端点/T 接留给同网点连接
+                if (cp !== null && WireConflictGeometry.isMidspanCross(cp, [a, b], [t.start, t.end], 3)) {
+                    return `track_cross net=${t.netName || t.netId} on ${layer as string}` +
+                        ` kind=${cross}` +
+                        ` @(${Math.round(t.start.x)},${Math.round(t.start.y)})-(${Math.round(t.end.x)},${Math.round(t.end.y)})`;
+                }
             }
         }
     }

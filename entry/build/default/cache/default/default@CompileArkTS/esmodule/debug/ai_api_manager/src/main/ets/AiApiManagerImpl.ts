@@ -155,11 +155,16 @@ function parseMaxTokensLimitError(errMsg: string): number {
 }
 function isThinkingAteOutputError(errMsg: string): boolean {
     const m = errMsg.toLowerCase();
+    // humanizeHttpError 会把 empty content 译成中文，chat() 重试须也能识别
+    if (m.indexOf('正文为空') >= 0 || m.indexOf('推理可能占满') >= 0) {
+        return true;
+    }
     if (m.indexOf('empty content') < 0) {
         return false;
     }
     return m.indexOf('finish_reason=length') >= 0
         || m.indexOf('reasoninglen=') >= 0
+        || m.indexOf('reasoning ate') >= 0
         || m.indexOf('stop_reason=max_tokens') >= 0;
 }
 /** 空 choices / 散文 raw body — 再 nudge 一次要求纯 JSON */
@@ -642,13 +647,17 @@ export class AiApiManagerImpl implements IAiApiManager {
                 '请忽略上一轮输出，重新发送：content 必须是且仅是一个完整 JSON 对象（首字符 { 末字符 }）；' +
                 '禁止 markdown/说明文字；reasoning/thinking 尽量为空或极短，不得再耗尽 max_tokens。';
             result = await this.sendRequest(api, safePrompt + nudge, retryOpts);
-            // 连续两轮 thinking 吃光输出额度：该模型在当前配置下结构性无法产出正文
-            //（disableThinking 可能被服务端忽略，如 agnes/Qwen 系），重试无益。
-            // 标记失败让后续调用 FAILOVER/ROUND_ROBIN 切到其它 API，不再每次打同一坏模型。
+            // 连续两轮 thinking 吃光：多 API 才 failover；sole API 留给调用方硬等待重试（不 LOCAL）
             if (!result.success && isThinkingAteOutputError(result.error ?? '')) {
-                this.failedApiIds.add(api.id);
-                Logger.warn(INSTR_TRACE_TAG, `[AI_API] thinking-ate-output twice → mark api failed id=${api.id}` +
-                    ` (failover for next call)`);
+                if (this.hasOtherEnabledApi(api.id)) {
+                    this.failedApiIds.add(api.id);
+                    Logger.warn(INSTR_TRACE_TAG, `[AI_API] thinking-ate-output twice → mark api failed id=${api.id}` +
+                        ` (failover for next call)`);
+                }
+                else {
+                    Logger.warn(INSTR_TRACE_TAG, `[AI_API] thinking-ate-output twice → keep sole api id=${api.id}` +
+                        ` (caller waits/retries; no LOCAL)`);
+                }
             }
         }
         else if (!result.success && isNonJsonBodyError(result.error ?? '')) {
@@ -989,9 +998,13 @@ export class AiApiManagerImpl implements IAiApiManager {
                 if (parsed.success) {
                     return parsed;
                 }
-                // HTTP 200 但正文不合格（whitespace/非 JSON/SSE 空）：多为代理/网关
-                // 掐断长请求的伪装形态 —— 继续下一传输档，全部失败再计连续失败
+                // HTTP 200 但正文不合格：传输无关的「推理吃光额度」勿翻 4 档代理/DNS
                 lastErr = parsed.error ?? 'empty body';
+                if (isThinkingAteOutputError(lastErr)) {
+                    Logger.warn(INSTR_TRACE_TAG, `[AI_API] HTTP 200 bad body id=${api.id}: ${lastErr} — skip transport flip (thinking ate)`);
+                    break;
+                }
+                // 其余多为代理/网关掐断伪装 —— 继续下一传输档
                 Logger.warn(INSTR_TRACE_TAG, `[AI_API] HTTP 200 bad body id=${api.id}: ${lastErr} — try next transport`);
                 continue;
             }
@@ -1016,7 +1029,7 @@ export class AiApiManagerImpl implements IAiApiManager {
                     continue;
                 }
             }
-            // 业务错误（401/429 等）不再翻代理
+            // 业务错误（401/429 等）不再翻代理；sole API 不拉黑，留给调用方等待重试
             if (lastErr.indexOf('API returned') >= 0) {
                 if (lastErr.indexOf('401') >= 0) {
                     const backupKey = this.encryptedKeys.get(`${api.id}_backup`);
@@ -1024,10 +1037,20 @@ export class AiApiManagerImpl implements IAiApiManager {
                         Logger.info(INSTR_TRACE_TAG, `[AI_API] retry with backup key id=${api.id}`);
                         return this.sendRequestWithKey(api, prompt, CryptoUtil.decrypt(backupKey), options);
                     }
-                    this.failedApiIds.add(api.id);
+                    if (this.hasOtherEnabledApi(api.id)) {
+                        this.failedApiIds.add(api.id);
+                    }
+                    else {
+                        Logger.warn(INSTR_TRACE_TAG, `[AI_API] 401 → keep sole api id=${api.id} (caller waits/retries)`);
+                    }
                 }
                 else if (lastErr.indexOf('API returned 4') >= 0) {
-                    this.failedApiIds.add(api.id);
+                    if (this.hasOtherEnabledApi(api.id)) {
+                        this.failedApiIds.add(api.id);
+                    }
+                    else {
+                        Logger.warn(INSTR_TRACE_TAG, `[AI_API] 4xx → keep sole api id=${api.id} (caller waits/retries)`);
+                    }
                 }
                 break;
             }
@@ -1036,16 +1059,28 @@ export class AiApiManagerImpl implements IAiApiManager {
                 continue;
             }
         }
+        // 推理占满额度：非传输故障，勿计 network/transport fail，直接交 chat() 抬 maxTokens 重试
+        if (isThinkingAteOutputError(lastErr)) {
+            return { success: false, error: lastErr };
+        }
         // 该 API 全传输档（代理/直连/DNS）均失败：连续计数，
         // 达阈值后标记 failed → 后续调用 FAILOVER/ROUND_ROBIN 切到其它 API。
-        // 长请求经代理 2 分钟被掐断（如 agnes + 慢生成）属结构性故障，重试同一通道无益。
+        // 仅有一个可用 API 时绝不拉黑：调用方硬等待重试，禁止整轮变成「No enabled AI API」。
         this.networkFailCount++;
         const tFailN = (this.transportFailCountByApi.get(api.id) ?? 0) + 1;
         this.transportFailCountByApi.set(api.id, tFailN);
         if (tFailN >= AI_API_TRANSPORT_FAIL_FAILOVER) {
-            this.failedApiIds.add(api.id);
-            Logger.warn(INSTR_TRACE_TAG, `[AI_API] transport fail x${tFailN} → mark api failed id=${api.id}` +
-                ` (failover for next call)`);
+            if (this.hasOtherEnabledApi(api.id)) {
+                this.failedApiIds.add(api.id);
+                Logger.warn(INSTR_TRACE_TAG, `[AI_API] transport fail x${tFailN} → mark api failed id=${api.id}` +
+                    ` (failover for next call)`);
+            }
+            else {
+                // 清零计数，避免 sole API 永久卡在「已达阈值」日志刷屏；下轮继续打同一通道
+                this.transportFailCountByApi.set(api.id, 0);
+                Logger.warn(INSTR_TRACE_TAG, `[AI_API] transport fail x${tFailN} → keep sole api id=${api.id}` +
+                    ` (caller waits/retries; no LOCAL)`);
+            }
         }
         else {
             Logger.warn(INSTR_TRACE_TAG, `[AI_API] transport fail x${tFailN} id=${api.id} (next call still retries)`);
@@ -1053,10 +1088,14 @@ export class AiApiManagerImpl implements IAiApiManager {
         const policy = this.networkMode.handleNetworkFailure(this.networkFailCount);
         Logger.warn(INSTR_TRACE_TAG, `[AI_API] network policy failCount=${this.networkFailCount} action=${policy}`);
         if (policy === 'offline') {
-            this.networkMode.setOfflineMode(true);
+            // 不自动切离线：否则云端被永久拦住，PCB AUTO 无法「API 失败则等待」只能退回本地。
+            // 清零计数，继续返回传输错误供调用方退避重试。
+            Logger.warn(INSTR_TRACE_TAG, `[AI_API] network policy would offline → keep online for wait-retry` +
+                ` id=${api.id}`);
+            this.networkFailCount = 0;
             return {
                 success: false,
-                error: humanizeHttpError(lastErr, usedProxy) + '（连续失败，已建议离线模式）'
+                error: humanizeHttpError(lastErr, usedProxy)
             };
         }
         return {
@@ -1405,8 +1444,12 @@ export class AiApiManagerImpl implements IAiApiManager {
                 if (parsed.success) {
                     return parsed;
                 }
-                // HTTP 200 但正文不合格：继续下一传输档（同主路径）
+                // HTTP 200 但正文不合格：推理吃光勿翻传输档
                 lastErr = parsed.error ?? 'empty body';
+                if (isThinkingAteOutputError(lastErr)) {
+                    Logger.warn(INSTR_TRACE_TAG, `[AI_API] HTTP 200 bad body (backupKey) id=${api.id}: ${lastErr} — skip transport flip`);
+                    break;
+                }
                 Logger.warn(INSTR_TRACE_TAG, `[AI_API] HTTP 200 bad body (backupKey) id=${api.id}: ${lastErr} — try next transport`);
                 continue;
             }
@@ -1422,6 +1465,9 @@ export class AiApiManagerImpl implements IAiApiManager {
                 break;
             }
         }
+        if (isThinkingAteOutputError(lastErr)) {
+            return { success: false, error: lastErr };
+        }
         return { success: false, error: humanizeHttpError(lastErr, usedProxy) };
     }
     /** 用户配置了全局代理时启用 HTTP 系统代理（鸿蒙应用默认不走系统代理） */
@@ -1436,10 +1482,47 @@ export class AiApiManagerImpl implements IAiApiManager {
         const effective = this.networkMode.getEffectiveProxy(apiId);
         return effective.length > 0 && effective !== 'system';
     }
+    /** 是否存在「其它」仍可用的 API（用于决定能否拉黑当前 id） */
+    private hasOtherEnabledApi(excludeId: string): boolean {
+        const allApis: AiApiConfig[] = Array.from(this.apis.values());
+        for (let oi = 0; oi < allApis.length; oi++) {
+            const o: AiApiConfig = allApis[oi];
+            if (o.enabled && o.id !== excludeId && !this.failedApiIds.has(o.id)) {
+                return true;
+            }
+        }
+        return false;
+    }
+    /** 全部被拉黑时复活已启用配置，供硬等待重试（禁止永久 No enabled AI API） */
+    private reviveFailedEnabledApis(reason: string): number {
+        if (this.networkMode.isOfflineMode()) {
+            this.networkMode.setOfflineMode(false);
+            Logger.warn(INSTR_TRACE_TAG, `[AI_API] clear offline mode for wait-retry (${reason})`);
+        }
+        let n = 0;
+        const allApis: AiApiConfig[] = Array.from(this.apis.values());
+        for (let i = 0; i < allApis.length; i++) {
+            const a: AiApiConfig = allApis[i];
+            if (a.enabled && this.failedApiIds.has(a.id)) {
+                this.failedApiIds.delete(a.id);
+                this.transportFailCountByApi.delete(a.id);
+                n++;
+            }
+        }
+        if (n > 0) {
+            Logger.warn(INSTR_TRACE_TAG, `[AI_API] revive ${n} failed api(s) for wait-retry (${reason})`);
+        }
+        return n;
+    }
     private selectApi(capability?: string): AiApiConfig | null {
         let enabled = Array.from(this.apis.values()).filter(a => a.enabled && !this.failedApiIds.has(a.id));
         if (!this.networkMode.shouldAllowCloudApi()) {
             enabled = enabled.filter(a => a.provider === AiProviderType.OLLAMA);
+        }
+        if (enabled.length === 0) {
+            // 全员 failed / 误入离线：复活并清离线，避免 PCB AUTO 只能 LOCAL
+            this.reviveFailedEnabledApis('selectApi empty');
+            enabled = Array.from(this.apis.values()).filter(a => a.enabled && !this.failedApiIds.has(a.id));
         }
         if (enabled.length === 0)
             return null;

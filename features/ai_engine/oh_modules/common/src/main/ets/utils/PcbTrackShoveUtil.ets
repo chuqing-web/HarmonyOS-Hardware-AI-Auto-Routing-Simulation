@@ -272,3 +272,84 @@ export function shoveForeignTracksByLReroute(
   }
   return rerouted;
 }
+
+const MAX_SHOVE_DEPTH = 4;
+
+/**
+ * 递归推挤：本轮 L 重布后若仍有冲突，继续推挤冲突段（深度上限）。
+ */
+function shoveRecursive(doc: PcbDocument, movers: Set<string>, depth: number): number {
+  if (depth > MAX_SHOVE_DEPTH || movers.size === 0) {
+    return 0;
+  }
+  const n = shoveForeignTracksByLReroute(doc, movers);
+  if (n === 0) {
+    return 0;
+  }
+  lockTrackEndpointsToPads(doc, movers);
+  // 新冲突：与刚动过的网络再碰的异网段
+  const next: Set<string> = new Set();
+  const tracks = doc.tracks;
+  const cap = Math.min(tracks.length, 100);
+  for (let i = 0; i < cap; i++) {
+    for (let j = i + 1; j < tracks.length; j++) {
+      if (!tracksClearanceConflict(tracks[i], tracks[j], doc)) {
+        continue;
+      }
+      const li = pointDist(tracks[i].start, tracks[i].end);
+      const lj = pointDist(tracks[j].start, tracks[j].end);
+      if (li <= lj) {
+        next.add(tracks[j].id);
+      } else {
+        next.add(tracks[i].id);
+      }
+      if (next.size >= MAX_FOREIGN_REROUTE * 2) {
+        i = cap;
+        break;
+      }
+    }
+  }
+  return n + shoveRecursive(doc, next, depth + 1);
+}
+
+/**
+ * 自动布线后处理：扫描同层 clearance 冲突，对受害段做 L 推挤重布。
+ * 多轮 + 递归深度，对齐路线图阶段三推挤。
+ */
+export function shoveAllClearanceConflicts(doc: PcbDocument, maxRounds: number = 3): number {
+  let total = 0;
+  for (let round = 0; round < maxRounds; round++) {
+    const movers: Set<string> = new Set();
+    const tracks = doc.tracks;
+    const cap = Math.min(tracks.length, 80);
+    for (let i = 0; i < cap; i++) {
+      for (let j = i + 1; j < tracks.length; j++) {
+        if (tracksClearanceConflict(tracks[i], tracks[j], doc)) {
+          const li = pointDist(tracks[i].start, tracks[i].end);
+          const lj = pointDist(tracks[j].start, tracks[j].end);
+          if (li <= lj) {
+            movers.add(tracks[j].id);
+          } else {
+            movers.add(tracks[i].id);
+          }
+          if (movers.size >= MAX_FOREIGN_REROUTE * 2) {
+            i = cap;
+            break;
+          }
+        }
+      }
+    }
+    if (movers.size === 0) {
+      break;
+    }
+    const n = shoveRecursive(doc, movers, 1);
+    total += n;
+    if (n === 0) {
+      break;
+    }
+  }
+  if (total > 0) {
+    tracePcb('TRACK_SHOVE_AUTO', `rerouted=${total} depthMax=${MAX_SHOVE_DEPTH}`);
+  }
+  return total;
+}

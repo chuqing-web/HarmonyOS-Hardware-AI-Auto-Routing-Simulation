@@ -2,7 +2,7 @@
 
 **面向 HarmonyOS NEXT 的原理图仿真、PCB 布局与 AI 辅助电路设计平台**
 
-在国产操作系统上提供混合信号仿真、8051/STM32 HEX 调试、虚拟仪器、**PCB 2D 布局与 3D 板级预览**，以及以 **工程化 AI Prompt** 与 **多 Agent 质量总线** 驱动的原理图闭环：「澄清 → 选型 → 布局 → 建网 → WAR 布线 → QA」。PCB 工作区提供 **正/反向标注**、多层铜箔、DRC、Gerber / 交换导出，以及 **经典正交自动布线**（`autoRoutePcb`）——服务高校实验、竞赛训练与方案预验证。
+在国产操作系统上提供混合信号仿真、8051/STM32 HEX 调试、虚拟仪器、**PCB 2D 布局与 3D 板级预览**，以及以 **工程化 AI Prompt** 与 **多 Agent 质量总线** 驱动的原理图闭环：「澄清 → 选型 → 布局 → 建网 → WAR 布线 → QA」。PCB 工作区提供 **正/反向标注**、多层铜箔、DRC、Gerber / 交换导出，以及 **经典自动布线栈**（`autoRoutePcb` / `orchestratePcbAutoRoute` + `pcb_route/`）。外部 Agent 可通过 **Agent Bridge + MCP** 实机控制正在运行的 App——服务高校实验、竞赛训练与方案预验证。
 
 [English](./README.md) | 简体中文
 
@@ -74,12 +74,13 @@
 | 7 | **HarmonyOS 原生混合信号内核** | 自研 MNA 模拟引擎、事件驱动数字引擎、8051 / 进程内 Cortex-M3 教学路径，全局纳秒调度器协同 |
 | 8 | **教学—仿真—诊断闭环** | 20 套配对 `.schsim` / `.pcbsim` 实验 + HEX 固件 + 知识点提示 + 分步上电 + 故障注入 + 覆盖率仪表盘；仪器与网络实时绑定 |
 | 9 | **多厂商 AI 治理** | **17** 类提供商模板、任务级 API 绑定、配额仪表盘、离线 / 代理 / 降级策略 |
-| 10 | **PCB 2D/3D + 经典自动布线** | 多层铜箔（F/B + In1…In6）；SCH↔PCB 标注；**`autoRoutePcb`** 正交 L 链（Cu≥4：H/V 分铜层 + 拐角过孔）；DRC；Gerber / PCB 交换文件 / STEP 预览；交互式 3D |
+| 10 | **PCB 2D/3D + 经典自动布线栈** | 多层铜箔（F/B + In1…In6）；SCH↔PCB 标注；**`autoRoutePcb`** + **`orchestratePcbAutoRoute`**（`common/.../pcb_route/` 下迷宫 / 间隙 / 拥塞 / MCU 列布局等）；DRC；Gerber / PCB 交换文件 / STEP 预览；交互式 3D |
+| 11 | **Agent Bridge + MCP（实机控制）** | `features/agent_bridge` 本机 JSON-RPC + `tools/elecdraw-mcp` stdio MCP：外部 Agent（Cursor / OpenClaw）对**正在运行**的 App 做原子 SCH/PCB 编辑——不暴露应用内自动布线工具 |
 
 **相对传统桌面 EDA：** 国产 OS 原生落地 + AI 可执行原理图输出 + 原理图/PCB 教学闭环。  
 **相对纯 Chat 助手：** Prompt 分阶段工程化、多 Agent 门禁、拓扑落地、ERC / 仿真可验证、失败可诊断。
 
-> **说明：** 早期 PCB 多 Agent LLM 铜箔路径（`PcbRouteCoordinator`、skill 10–14、`aiPcbAutoRoute`）已从**当前工作树移除**。生产 PCB 自动布线为上述经典引擎。`common` 中仍保留 `pcb_route/` 残件（`PcbLocalStrategy`、几何落铜辅助等）供后续接线——**当前未挂到 UI**。
+> **说明：** 早期 PCB **LLM 铜箔**路径（skill 10–14 / `aiPcbAutoRoute` 聊天几何）已移除。生产 PCB 自动布线仍为**经典 / 确定性**引擎，现由仓库内 `pcb_route/` 工具链（迷宫、间隙 Oracle、编排器布局↔布线回环等）经 `PcbEditorImpl.runAutoRoute` 接入。
 
 ---
 
@@ -150,10 +151,12 @@ LLM JSON  →  Agent 阶段 + 本地算法引擎  →  SchTopology
 
 ### 4.1 应用壳层与首页
 
-- `SplashPage` → `HomePage` → 原理图（`Index`）或 PCB（`PcbPage`）  
+- 霓虹双曲面 **SplashPage**（Canvas 线框 + 品牌 HUD）→ **HomePage** → 原理图（`Index`）或 PCB（`PcbPage`）  
+- 冷启动在进入 Splash 前先 maximize，保证首帧布局 / 画布 fit 落在已稳定窗口尺寸  
 - 首页：Getting Started / Start / Help / About；公告面板；GitHub 发布动态（`HomeAnnouncementService` / `HomeReleaseService`）  
 - 工程向导创建 `.schsim` / `.pcbsim`；最近工程；崩溃恢复提示  
 - 授权条：默认 Free；Star 仓库后经 GitHub OAuth Device Flow 解锁 Pro  
+- **AI 设置 → Agent Bridge**：本机 RPC 状态 / token / 可复制 MCP 配置（Cursor / OpenClaw）
 
 ### 4.2 原理图编辑
 
@@ -241,7 +244,7 @@ PCB 工作区（`features/pcb_editor` + `entry` 的 `PcbPage` / `PcbCanvas`）�
 | 图层 | F.Cu / B.Cu、In1…In6、丝印 / 阻焊 / 钢网、Edge.Cuts；铜层数可配（2 / 4 / 6 / 8） |
 | 编辑工具 | 选择、布线（90° / 45° / 弧）、过孔（通孔 / 盲 / 埋）、铺铜与多边形区、板框、测量、放置封装 |
 | SCH↔PCB | `forwardAnnotateFromSchematic` / `reverseAnnotateToSchematic`；飞线；焊盘–网络绑定（`PcbPinBindUtil`） |
-| 自动布线 | **经典** `runAutoRoute` → `autoRoutePcb`：正交多策略 L 链；Cu≥4 时 H/V 分铜层 + 拐角过孔；clearance 校验；异步切片让出主线程 |
+| 自动布线 | **经典栈**：`runAutoRoute` → `orchestratePcbAutoRoute`（可选 agents）或 **`autoRoutePcb`**；迷宫 + L 链候选；Cu≥4 时 H/V 分铜层 + 拐角过孔；间隙（`PcbClearanceOracle`）；拥塞撕线 / 布局微挪；异步切片让出主线程 |
 | DRC | 间隙、短路、未连；`pcb_route/` 内教学辅助（如 `ensureAllCopperUsed`） |
 | 2D 视图 | 单层 / 变暗 / 叠层、网络高亮、推挤与蛇形辅助 |
 | 3D 视图 | 轨道 / 预设 / 正交；真实 · 透视 · 爆炸 · 剖切 · 高度图；可选 STEP 绑定与 PBR/MSAA |
@@ -255,6 +258,25 @@ PCB 工作区（`features/pcb_editor` + `entry` 的 `PcbPage` / `PcbCanvas`）�
   <img src="./picture/pcb-3D.png" alt="PCB 3D 板级预览" width="900">
 </p>
 
+### 4.9 Agent Bridge 与 MCP
+
+外部 AI Agent 可对**正在运行**的 ElecDraw 做实机原子控制（SCH/PCB；推理在外部）：
+
+```
+Cursor / OpenClaw  --MCP/stdio-->  tools/elecdraw-mcp (Node)
+                                      |
+                               HTTP JSON-RPC + Bearer token
+                                      |
+                         features/agent_bridge (ArkTS) @ 127.0.0.1
+                                      |
+              IComponentLibrary / ISchematicEditor / IPcbEditor
+```
+
+- 启停 / 状态 / token / MCP 片段：**AI 设置 → Agent Bridge**（`AppService.ensureAgentBridgeStarted`）  
+- 绘制会话复用应用内「生成中」遮罩 + `[Agent]` 日志  
+- **不暴露**：应用内 AI 全流水线、WAR / PCB 自动布线工具  
+- 文档：`docs/superpowers/specs/2026-09-12-agent-bridge-mcp-design.md`、`tools/elecdraw-mcp/README.md`
+
 ---
 
 ## 五、技术架构
@@ -265,17 +287,20 @@ PCB 工作区（`features/pcb_editor` + `entry` 的 `PcbPage` / `PcbCanvas`）�
 ┌─────────────────────────────────────────────────────────────┐
 │  entry (HAP)                                                 │
 │  Splash → Home → Index / PcbPage · AppService · SimWorker    │
+│  Agent Bridge 宿主（设置页 + ensureAgentBridgeStarted）        │
 ├─────────────────────────────────────────────────────────────┤
-│  features/* (HAR) × 10                                        │
+│  features/* (HAR)                                            │
 │  schematic_editor │ pcb_editor │ component_library            │
 │  simulation_kernel │ hex_debugger │ instruments               │
 │  ai_engine │ ai_api_manager │ file_persistence │ plugin_system│
+│  agent_bridge（本机 JSON-RPC，供 MCP）                          │
 ├─────────────────────────────────────────────────────────────┤
 │  common (HAR)  SchTopology · PcbDocument · ERC/DRC 辅助       │
-│               WAR · autoRoutePcb · pcb_route · Gerber / License│
+│               WAR · autoRoutePcb · pcb_route 工具链 · Gerber  │
 ├─────────────────────────────────────────────────────────────┤
 │  资产  DeviceLibrary · skill/prompts · Test_Template          │
 │        (.schsim + .pcbsim) · hex_files · picture              │
+│  tools/elecdraw-mcp （Node MCP ↔ Agent Bridge）               │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -312,6 +337,7 @@ entry
 ├── instruments           → common
 ├── file_persistence      → common
 ├── plugin_system         → common
+├── agent_bridge          → common（经 AppService 宿主接入编辑器 / 器件库 API）
 ├── ai_api_manager        → common
 └── ai_engine             → common, ai_api_manager, component_library
     └── algorithms/agents/       # 原理图多 Agent 质量总线
@@ -325,7 +351,7 @@ entry
 
 生产路径：`AiEngineImpl.runFullPipeline` → **`AgentPipelineCoordinator`**。遗留 `AiPipelineOrchestrator` 仍为共享执行器 / 模块合并后端与 `skipLlm` 回退。
 
-PCB 自动布线路径（非 LLM）：`PcbPage` → `PcbEditorImpl.runAutoRoute` → **`autoRoutePcb`**。
+PCB 自动布线路径（非 LLM）：`PcbPage` → `PcbEditorImpl.runAutoRoute` → **`orchestratePcbAutoRoute`**（传入 agents 时）或 **`autoRoutePcb`**（迷宫 + L 链 + `pcb_route/` 工具链）。
 
 ### 6.1 整图一次（多 Agent）
 
@@ -377,17 +403,18 @@ PcbDocument（正向标注后 / 加载 .pcbsim）
 PcbPage 确认铜层数（可选）
     │
     ▼
-autoRoutePcb(doc, layer, schHints)
-    · 按网聚合焊盘；最近邻排序
-    · 正交 L 链候选 + clearance（ClearanceOracle）
+runAutoRoute → orchestratePcbAutoRoute? / autoRoutePcb
+    · 按网聚合焊盘；最近邻 / escape 排序
+    · 迷宫 + 正交 L 链候选 + ClearanceOracle
     · Cu≥4：水平 / 垂直分铜层 + 拐角过孔
+    · 拥塞撕线 / 布局微挪；需要时 MCU 列布局辅助
     · 异步切片（yield）保持 UI 响应
     │
     ▼
 可布 PcbDocument（2D 编辑 + 3D 预览 + DRC / Gerber）
 ```
 
-残件（未挂 UI）：`pcb_route/PcbLocalStrategy`（`buildLocalNetPlan` / `buildLocalRoutePolicy`）、`runPcbGeometryRoute`、`applyLlmPcbGeometry`、`PcbPlacementExecutor`——原 LLM 铜箔管线拆除后留在库内的辅助实现。
+配套工具链（经经典路径接入）：`pcb_route/PcbMazeRouter`、`PcbClearanceOracle`、`PcbRouteOrchestrator`、`PcbCongestion*`、`PcbMcuColumnPlacer` / `PcbMcuHandCopper`、`PcbLocalStrategy`、几何落铜辅助等。**无**生产 LLM 铜箔管线。
 
 ### 6.4 API 摘要
 
@@ -401,8 +428,9 @@ autoRoutePcb(doc, layer, schHints)
 | 增量编辑 | `generationMode: 'edit'` |
 | 诊断 | `aiStaticDiagnose` / `aiDynamicDiagnose` / `aiAnalyzeWave` |
 | 工程辅助 | `aiRecommendParam` / `aiGetReplaceDevice` / `aiOptimizeBom` |
-| PCB 自动布线 | `PcbEditorImpl.runAutoRoute` → `autoRoutePcb` / `rerouteNets` |
+| PCB 自动布线 | `PcbEditorImpl.runAutoRoute` → `orchestratePcbAutoRoute` / `autoRoutePcb` / `rerouteNets` |
 | SCH↔PCB | `forwardAnnotateFromSchematic` / `reverseAnnotateToSchematic` |
+| Agent Bridge | `AppService.ensureAgentBridgeStarted` · `tools/elecdraw-mcp` |
 
 提供商模板（**17**）：豆包、通义、DeepSeek、文心、智谱、Kimi、零一、百川、硅基流动、OpenAI、Claude、Gemini、Mistral、Groq、OpenRouter、Ollama、自定义。
 
@@ -419,7 +447,7 @@ autoRoutePcb(doc, layer, schHints)
 | 故障 | 9 种枚举；波形/批量引擎覆盖常用子集 |
 | 调试 | HEX 加载、地址/数据断点、单步、寄存器/内存、UART |
 | 仪器 | 实时波形、协议解码、表计↔网络绑定；示波器全历史放大 |
-| PCB | 正/反向标注、经典 `autoRoutePcb`、DRC、2D/3D 预览、Gerber / PCB 交换导出 |
+| PCB | 正/反向标注、经典 `autoRoutePcb` / 编排器栈、DRC、2D/3D 预览、Gerber / PCB 交换导出 |
 | 线程 | 默认主线程预算泵；ThreadWorker 已实现但默认关闭 |
 
 ---
@@ -507,12 +535,12 @@ ElecDraw_Harmony/
 │   └── src/main/ets/
 │       ├── types/               # SchTopology · PcbDocument · AI / License 类型
 │       ├── utils/               # ERC/DRC · WAR · autoRoutePcb · Gerber · 标注器
-│       │   └── pcb_route/       # clearance · 本地策略 · 几何残件辅助
+│       │   └── pcb_route/       # 迷宫 · 间隙 · 编排器 · 拥塞 · MCU 辅助
 │       ├── security/            # License · FeatureGate · GitHub OAuth / Star
 │       └── engines/             # 共享 MCU 教学辅助
-├── features/                    # 10 个功能 HAR（见 build-profile modules）
+├── features/                    # 功能 HAR（见 build-profile modules + entry 依赖）
 │   ├── schematic_editor/        # 原理图编辑 + WAR
-│   ├── pcb_editor/              # IPcbEditor / PcbEditorImpl
+│   ├── pcb_editor/              # IPcbEditor / PcbEditorImpl（含 runAutoRoute）
 │   ├── component_library/       # BuiltinComponents + 加载器
 │   ├── simulation_kernel/       # 混合仿真内核（含原生 SPICE NAPI 桩）
 │   ├── hex_debugger/            # HEX / MCU 调试
@@ -520,7 +548,8 @@ ElecDraw_Harmony/
 │   ├── ai_api_manager/          # 17 提供商模板与配额
 │   ├── file_persistence/        # 工程 / 导入导出 / 协作骨架
 │   ├── instruments/             # 虚拟仪器引擎
-│   └── plugin_system/           # 插件沙箱
+│   ├── plugin_system/           # 插件沙箱
+│   └── agent_bridge/            # 本机 JSON-RPC，供外部 MCP Agent
 ├── skill/                       # ★ AI 规则总纲 + Prompt 权威源（原理图 00–09）
 │   ├── SKILL.md
 │   ├── prompts/                 # 00–09 → templates/*.ets
@@ -533,6 +562,7 @@ ElecDraw_Harmony/
 ├── hex_files/                   # 7 个实验固件 HEX
 ├── picture/                     # README / 作品说明配图
 ├── tools/                       # 构建、verify、audit、PCB/SCH smoke
+│   ├── elecdraw-mcp/            # Node MCP 适配器 ↔ Agent Bridge
 │   ├── lab_templates/
 │   └── pcb_templates/
 ├── docs/                        # 比赛材料与设计 plans/specs
@@ -549,10 +579,10 @@ ElecDraw_Harmony/
 
 | 模块 | 职责摘要 |
 |------|----------|
-| `entry` | UI 壳层、首页 / 公告 / 发布动态、业务编排、Worker 宿主、主题与快捷键；仪器面板；**PcbPage / PcbCanvas / 3D** |
-| `common` | `SchTopology`、`PcbDocument`、ERC/DRC、EventBus、License / FeatureGate / GitHub 授权、WAR、**`autoRoutePcb`**、pcb_route 辅助、Gerber / 交换导出 / 标注器 |
+| `entry` | UI 壳层、首页 / 公告 / 发布动态、业务编排、Worker 宿主、主题与快捷键；仪器面板；**PcbPage / PcbCanvas / 3D**；Agent Bridge 设置 |
+| `common` | `SchTopology`、`PcbDocument`、ERC/DRC、EventBus、License / FeatureGate / GitHub 授权、WAR、**`autoRoutePcb`**、**`pcb_route/` 工具链**、Gerber / 交换导出 / 标注器 |
 | `schematic_editor` | 编辑命令、图层、拓扑导入导出、仿真互锁、WireAutoRouter |
-| `pcb_editor` | 图层、布线、过孔、铜区、DRC、标注、经典自动布线落地 |
+| `pcb_editor` | 图层、布线、过孔、铜区、DRC、标注、经典自动布线（`runAutoRoute`） |
 | `component_library` | 内置目录、SVG 缓存、器件别名 |
 | `simulation_kernel` | 三引擎 + 调度器 + 故障注入 + SpiceRunner |
 | `hex_debugger` | HEX、8051 / Cortex-M3、断点与行为仿真 |
@@ -561,6 +591,7 @@ ElecDraw_Harmony/
 | `file_persistence` | `.schsim` / `.pcbsim`、崩溃保护、导出、第三方导入解析、协作骨架 |
 | `instruments` | `VirtualInstrumentsImpl`、示波器 / LA / 表计引擎 |
 | `plugin_system` | 插件生命周期与沙箱 |
+| `agent_bridge` | 本机 JSON-RPC 服务；MCP 发现文件；绘制会话钩子 |
 
 **原理图 Agent：** `AgentPipelineCoordinator`、`CircuitBlackboard`、`RequirementsAgent`、`SelectAgent`、`LayoutAgent`、`NetAgent`、`RouteAgent`、`QaAgent`、`StageCritic`、`StageHooks`、`ModularModuleAgent`。
 
@@ -627,15 +658,16 @@ node tools/war_route_order_smoke.mjs
 
 建议按 5～10 分钟分镜，突出 **「工程化 Prompt → 多 Agent 门禁 → 可仿真拓扑 → PCB 板图 → 可教学验证」**：
 
-1. **启动与首页** — Splash → Home；公告 / 发布动态；打开左侧器件库与导航。  
+1. **启动与首页** — 霓虹 Splash → Home；公告 / 发布动态；打开左侧器件库与导航。  
 2. **教学模板** — 加载 `lab_uart` / `lab_555_astable` 等，展示覆盖率与知识点。  
 3. **HEX 调试** — 烧录配套 HEX，运行仿真，虚拟串口收发 / 流水灯现象。  
 4. **仪器联动** — 打开 `lab_amp` / `lab_filter`，示波器观察；双击波形 **全览** 后再缩放 / 平移。  
 5. **AI Prompt 闭环** — 输入「STM32 最小系统 + LED」；展示澄清 / 选型 / 布局 / 建网 / WAR / QA 与 ERC。  
-6. **PCB 2D / 3D** — 打开配对 `.pcbsim` 或正向标注；铜层、飞线、经典自动布线（F8 / 工具栏）；切换 **3D** 轨道 / 剖切。  
+6. **PCB 2D / 3D** — 打开配对 `.pcbsim` 或正向标注；铜层、飞线、经典自动布线（F8 / 工具栏；迷宫 + 编排器栈）；切换 **3D** 轨道 / 剖切。  
 7. **模块并行（加分项）** — 复杂需求选「模块并行」，展示整体设计 → 并行子图 → joints 合并。  
-8. **自检 / 故障注入** — 跑 AI 自检，或注入电阻开路等对照波形 / 诊断。  
-9. **工程能力** — 保存 `.schsim` / `.pcbsim`、Gerber 预览、主题切换、AI 配额 / 离线模式（可选）。  
+8. **Agent Bridge（加分项）** — AI 设置中 Agent Bridge 运行中；可选 Cursor MCP 放置/连线演示（`tools/elecdraw-mcp`）。  
+9. **自检 / 故障注入** — 跑 AI 自检，或注入电阻开路等对照波形 / 诊断。  
+10. **工程能力** — 保存 `.schsim` / `.pcbsim`、Gerber 预览、主题切换、AI 配额 / 离线模式（可选）。  
 
 ---
 
@@ -657,7 +689,8 @@ node tools/war_route_order_smoke.mjs
 |------|-------------|
 | AI 验收套件 | `AiPipelineValidator`，经 `runValidationSuite()` 调用 |
 | 多 Agent 门禁 | `qualityHardFail`、阶段批判、QA 残留中止、`usedLlm` 落图门禁 |
-| PCB 布线 | 经典 `autoRoutePcb` clearance + DRC；`pcb_route/` 残件辅助 |
+| PCB 布线 | 经典 `autoRoutePcb` / `orchestratePcbAutoRoute` + `pcb_route/` 工具链（迷宫、间隙、拥塞）+ DRC |
+| Agent Bridge | 本机 RPC + 经 `tools/elecdraw-mcp` 的 MCP 冒烟 |
 | 工程 verify | `tools/lab_templates/verify_*.mjs` |
 | PCB 模板工具 | `tools/pcb_templates/` 手工布局 / splice / export；`tools/test_pcb_*.mjs` |
 | SCH↔PCB 脚位表 | `verify_pin_bind.mjs`（若存在）：焊盘绑网断言 + 漂移检查 |
@@ -674,7 +707,8 @@ node tools/war_route_order_smoke.mjs
 - MCU：进程内 Thumb / 8051 教学级模型；**外部全系统 MCU 仿真器**列入展望  
 - 仿真线程：默认主线程预算泵；ThreadWorker 默认关闭  
 - PCB 3D 为 Canvas 近似（非完整 CAD 内核）  
-- **PCB 自动布线为经典 / 确定性引擎**——当前工作树无生产 LLM 铜箔管线  
+- **PCB 自动布线为经典 / 确定性引擎**——`pcb_route/` 内迷宫 + 编排器栈；**无**生产 LLM 铜箔管线  
+- **Agent Bridge** 仅监听 `127.0.0.1`；需 token；MCP **不暴露** WAR / 自动布线工具  
 - **SCH↔PCB 正向标注**：封装按脚位表绑网（8051/STM32/74xx/运放/555/存储器/仪器）；无专用表的未知封装可能 `FP_FALLBACK_0805` 审计并保留未绑焊盘（浮空优于误绑）  
 - **PCB 反向标注**：仅回写 refDes/旋转/value/封装名，不回写完整网络（教学范围）  
 - 故障注入 / 插件沙箱 / 实时协作：能力骨架或子集  
@@ -688,12 +722,13 @@ node tools/war_route_order_smoke.mjs
 2. **外部 MCU 仿真器** — 更完整的 STM32 外设级仿真  
 3. **Prompt / Skill 工具链** — md→ets 半自动同步与回归 diff（原理图 00–09）  
 4. **器件库扩充** — 三分体批量导入；更丰富封装 / STEP 库  
-5. **PCB 加深** — 更强经典 / 几何布线、盲埋孔流程、投板级 Gerber QA；可选重新接线本地/LLM 铜箔策略  
+5. **PCB 加深** — 更强迷宫 / 几何布线、盲埋孔流程、投板级 Gerber QA  
 6. **性能** — 稳定启用 ThreadWorker（帧差分）、大板渲染优化  
 7. **协作与云** — 实时协同编辑与实验报告云同步  
-8. **测试** — 更广的 Hypium 自动化  
+8. **测试** — 更广的 Hypium 自动化；Agent Bridge / MCP 集成测试  
 9. **故障注入 / 插件沙箱** — 覆盖补全  
-10. **产品官网 / 公告** — 持续完善双语首页与发布订阅（见 `docs/superpowers/plans/`）  
+10. **Agent Bridge** — 加固发现文件、模拟器端口转发文档、更丰富原子工具（仍不开放应用内自动布线工具）  
+11. **产品官网 / 公告** — 持续完善双语首页与发布订阅（见 `docs/superpowers/plans/`）  
 
 ---
 

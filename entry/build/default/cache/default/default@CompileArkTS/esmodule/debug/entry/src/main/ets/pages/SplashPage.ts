@@ -2,19 +2,20 @@ if (!("finalizeConstruction" in ViewPU.prototype)) {
     Reflect.set(ViewPU.prototype, "finalizeConstruction", () => { });
 }
 interface SplashPage_Params {
+    pageOpacity?: number;
+    textOpacity?: number;
+    statusText?: string;
+    progress?: number;
+    versionLabel?: string;
     meshAngle?: number;
     meshScale?: number;
     meshBreath?: number;
     meshDrawAlpha?: number;
-    brandAlpha?: number;
     meshVertices?: Vec3[];
     meshEdges?: MeshEdge[];
     projBuf?: ProjPoint[];
-    sortOrder?: number[];
-    edgeDepthBuf?: number[];
     animTimer?: number;
     exitTimer?: number;
-    settleTimers?: number[];
     canvasSettings?: RenderingContextSettings;
     canvasCtx?: CanvasRenderingContext2D;
     canvasW?: number;
@@ -23,15 +24,10 @@ interface SplashPage_Params {
     entering?: boolean;
     exiting?: boolean;
     navigated?: boolean;
-    surfaceReady?: boolean;
     animStarted?: boolean;
-    frameCount?: number;
-    statusText?: string;
-    progress?: number;
-    lastStageIdx?: number;
+    contextReady?: boolean;
     TOTAL_MS?: number;
     EXIT_MS?: number;
-    BG?: string;
     stages?: LoadingStage[];
 }
 import type { BusinessError } from "@ohos:base";
@@ -61,36 +57,32 @@ class SplashPage extends ViewPU {
         if (typeof paramsLambda === "function") {
             this.paramsGenerator_ = paramsLambda;
         }
+        this.__pageOpacity = new ObservedPropertySimplePU(1, this, "pageOpacity");
+        this.__textOpacity = new ObservedPropertySimplePU(0, this, "textOpacity");
+        this.__statusText = new ObservedPropertySimplePU('Initializing simulation kernel...', this, "statusText");
+        this.__progress = new ObservedPropertySimplePU(0, this, "progress");
+        this.__versionLabel = new ObservedPropertySimplePU(`v${APP_VERSION_NAME}`, this, "versionLabel");
         this.meshAngle = 0;
-        this.meshScale = 0.88;
+        this.meshScale = 0.92;
         this.meshBreath = 0;
         this.meshDrawAlpha = 1;
-        this.brandAlpha = 0;
         this.meshVertices = [];
         this.meshEdges = [];
         this.projBuf = [];
-        this.sortOrder = [];
-        this.edgeDepthBuf = [];
         this.animTimer = -1;
         this.exitTimer = -1;
-        this.settleTimers = [];
         this.canvasSettings = new RenderingContextSettings(true);
         this.canvasCtx = new CanvasRenderingContext2D(this.canvasSettings);
-        this.canvasW = 0;
-        this.canvasH = 0;
+        this.canvasW = 1280;
+        this.canvasH = 800;
         this.startTime = 0;
         this.entering = true;
         this.exiting = false;
         this.navigated = false;
-        this.surfaceReady = false;
         this.animStarted = false;
-        this.frameCount = 0;
-        this.statusText = 'Initializing simulation kernel...';
-        this.progress = 0;
-        this.lastStageIdx = 0;
+        this.contextReady = false;
         this.TOTAL_MS = 2800;
         this.EXIT_MS = 520;
-        this.BG = '#000000';
         this.stages = [
             { atMs: 0, text: 'Initializing simulation kernel...' },
             { atMs: 550, text: 'Loading component library...' },
@@ -102,6 +94,21 @@ class SplashPage extends ViewPU {
         this.finalizeConstruction();
     }
     setInitiallyProvidedValue(params: SplashPage_Params) {
+        if (params.pageOpacity !== undefined) {
+            this.pageOpacity = params.pageOpacity;
+        }
+        if (params.textOpacity !== undefined) {
+            this.textOpacity = params.textOpacity;
+        }
+        if (params.statusText !== undefined) {
+            this.statusText = params.statusText;
+        }
+        if (params.progress !== undefined) {
+            this.progress = params.progress;
+        }
+        if (params.versionLabel !== undefined) {
+            this.versionLabel = params.versionLabel;
+        }
         if (params.meshAngle !== undefined) {
             this.meshAngle = params.meshAngle;
         }
@@ -114,9 +121,6 @@ class SplashPage extends ViewPU {
         if (params.meshDrawAlpha !== undefined) {
             this.meshDrawAlpha = params.meshDrawAlpha;
         }
-        if (params.brandAlpha !== undefined) {
-            this.brandAlpha = params.brandAlpha;
-        }
         if (params.meshVertices !== undefined) {
             this.meshVertices = params.meshVertices;
         }
@@ -126,20 +130,11 @@ class SplashPage extends ViewPU {
         if (params.projBuf !== undefined) {
             this.projBuf = params.projBuf;
         }
-        if (params.sortOrder !== undefined) {
-            this.sortOrder = params.sortOrder;
-        }
-        if (params.edgeDepthBuf !== undefined) {
-            this.edgeDepthBuf = params.edgeDepthBuf;
-        }
         if (params.animTimer !== undefined) {
             this.animTimer = params.animTimer;
         }
         if (params.exitTimer !== undefined) {
             this.exitTimer = params.exitTimer;
-        }
-        if (params.settleTimers !== undefined) {
-            this.settleTimers = params.settleTimers;
         }
         if (params.canvasSettings !== undefined) {
             this.canvasSettings = params.canvasSettings;
@@ -165,32 +160,17 @@ class SplashPage extends ViewPU {
         if (params.navigated !== undefined) {
             this.navigated = params.navigated;
         }
-        if (params.surfaceReady !== undefined) {
-            this.surfaceReady = params.surfaceReady;
-        }
         if (params.animStarted !== undefined) {
             this.animStarted = params.animStarted;
         }
-        if (params.frameCount !== undefined) {
-            this.frameCount = params.frameCount;
-        }
-        if (params.statusText !== undefined) {
-            this.statusText = params.statusText;
-        }
-        if (params.progress !== undefined) {
-            this.progress = params.progress;
-        }
-        if (params.lastStageIdx !== undefined) {
-            this.lastStageIdx = params.lastStageIdx;
+        if (params.contextReady !== undefined) {
+            this.contextReady = params.contextReady;
         }
         if (params.TOTAL_MS !== undefined) {
             this.TOTAL_MS = params.TOTAL_MS;
         }
         if (params.EXIT_MS !== undefined) {
             this.EXIT_MS = params.EXIT_MS;
-        }
-        if (params.BG !== undefined) {
-            this.BG = params.BG;
         }
         if (params.stages !== undefined) {
             this.stages = params.stages;
@@ -199,57 +179,101 @@ class SplashPage extends ViewPU {
     updateStateVars(params: SplashPage_Params) {
     }
     purgeVariableDependenciesOnElmtId(rmElmtId) {
+        this.__pageOpacity.purgeDependencyOnElmtId(rmElmtId);
+        this.__textOpacity.purgeDependencyOnElmtId(rmElmtId);
+        this.__statusText.purgeDependencyOnElmtId(rmElmtId);
+        this.__progress.purgeDependencyOnElmtId(rmElmtId);
+        this.__versionLabel.purgeDependencyOnElmtId(rmElmtId);
     }
     aboutToBeDeleted() {
+        this.__pageOpacity.aboutToBeDeleted();
+        this.__textOpacity.aboutToBeDeleted();
+        this.__statusText.aboutToBeDeleted();
+        this.__progress.aboutToBeDeleted();
+        this.__versionLabel.aboutToBeDeleted();
         SubscriberManager.Get().delete(this.id__());
         this.aboutToBeDeletedInternal();
+    }
+    private __pageOpacity: ObservedPropertySimplePU<number>;
+    get pageOpacity() {
+        return this.__pageOpacity.get();
+    }
+    set pageOpacity(newValue: number) {
+        this.__pageOpacity.set(newValue);
+    }
+    private __textOpacity: ObservedPropertySimplePU<number>;
+    get textOpacity() {
+        return this.__textOpacity.get();
+    }
+    set textOpacity(newValue: number) {
+        this.__textOpacity.set(newValue);
+    }
+    private __statusText: ObservedPropertySimplePU<string>;
+    get statusText() {
+        return this.__statusText.get();
+    }
+    set statusText(newValue: string) {
+        this.__statusText.set(newValue);
+    }
+    private __progress: ObservedPropertySimplePU<number>;
+    get progress() {
+        return this.__progress.get();
+    }
+    set progress(newValue: number) {
+        this.__progress.set(newValue);
+    }
+    private __versionLabel: ObservedPropertySimplePU<string>;
+    get versionLabel() {
+        return this.__versionLabel.get();
+    }
+    set versionLabel(newValue: string) {
+        this.__versionLabel.set(newValue);
     }
     private meshAngle: number;
     private meshScale: number;
     private meshBreath: number;
     private meshDrawAlpha: number;
-    private brandAlpha: number;
     private meshVertices: Vec3[];
     private meshEdges: MeshEdge[];
     private projBuf: ProjPoint[];
-    private sortOrder: number[];
-    private edgeDepthBuf: number[];
     private animTimer: number;
     private exitTimer: number;
-    private settleTimers: number[];
     private canvasSettings: RenderingContextSettings;
     private canvasCtx: CanvasRenderingContext2D;
+    /** 缺省非 0：避免 onAreaChange 迟到时整段空画 */
     private canvasW: number;
     private canvasH: number;
     private startTime: number;
     private entering: boolean;
     private exiting: boolean;
     private navigated: boolean;
-    private surfaceReady: boolean;
     private animStarted: boolean;
-    private frameCount: number;
-    private statusText: string;
-    private progress: number;
-    private lastStageIdx: number;
+    private contextReady: boolean;
     private readonly TOTAL_MS: number;
     private readonly EXIT_MS: number;
-    private readonly BG: string;
     private readonly stages: LoadingStage[];
     aboutToAppear(): void {
         this.generateMesh();
-        // 布局可能晚于 onReady：与主画布同样补几次强制绘制 / 启动
-        this.queueSettle(80);
-        this.queueSettle(220);
-        this.queueSettle(480);
+        try {
+            this.getUIContext().animateTo({ duration: 900, curve: Curve.EaseOut }, () => {
+                this.textOpacity = 1;
+            });
+        }
+        catch (_e) {
+            this.textOpacity = 1;
+        }
+        // onReady 可能已先到；再兜底一次
+        setTimeout(() => {
+            this.tryStartAnimation();
+            this.drawFrame();
+        }, 120);
+        setTimeout(() => {
+            this.tryStartAnimation();
+            this.drawFrame();
+        }, 400);
     }
     aboutToDisappear(): void {
         this.clearTimers();
-    }
-    private queueSettle(delayMs: number): void {
-        this.settleTimers.push(setTimeout(() => {
-            this.tryStartAnimation();
-            this.drawFrame(true);
-        }, delayMs));
     }
     private clearTimers(): void {
         if (this.animTimer >= 0) {
@@ -260,42 +284,12 @@ class SplashPage extends ViewPU {
             clearInterval(this.exitTimer);
             this.exitTimer = -1;
         }
-        for (let i = 0; i < this.settleTimers.length; i++) {
-            clearTimeout(this.settleTimers[i]);
-        }
-        this.settleTimers = [];
-    }
-    private markSurface(w: number, h: number): void {
-        if (w <= 1 || h <= 1) {
-            return;
-        }
-        const sizeChanged = Math.abs(w - this.canvasW) > 0.5 || Math.abs(h - this.canvasH) > 0.5;
-        this.canvasW = w;
-        this.canvasH = h;
-        // 尺寸变化时 Canvas 缓冲可能被清成白底，必须先铺黑再画帧
-        this.paintBlackOnly(w, h);
-        this.surfaceReady = true;
-        this.tryStartAnimation();
-        if (sizeChanged || !this.animStarted) {
-            this.drawFrame(true);
-        }
-    }
-    /** 仅铺黑底 — 布局/onAreaChange/退出前调用，防止透明或白底露出 */
-    private paintBlackOnly(w?: number, h?: number): void {
-        const cw = (w !== undefined && w > 1) ? w : this.canvasW;
-        const ch = (h !== undefined && h > 1) ? h : this.canvasH;
-        if (cw <= 1 || ch <= 1) {
-            return;
-        }
-        const ctx = this.canvasCtx;
-        ctx.fillStyle = this.BG;
-        ctx.fillRect(0, 0, cw, ch);
     }
     private tryStartAnimation(): void {
-        if (this.animStarted || this.navigated) {
+        if (this.animStarted || this.navigated || !this.contextReady) {
             return;
         }
-        if (!this.surfaceReady || this.canvasW <= 1 || this.canvasH <= 1) {
+        if (this.canvasW <= 1 || this.canvasH <= 1) {
             return;
         }
         this.animStarted = true;
@@ -304,7 +298,7 @@ class SplashPage extends ViewPU {
     }
     private generateMesh(): void {
         const zSegs = 22;
-        const tSegs = 32;
+        const tSegs = 36;
         const height = 2.2;
         const twist = 1.6;
         const a = 1.0;
@@ -380,131 +374,125 @@ class SplashPage extends ViewPU {
         for (let i = 0; i < vertices.length; i++) {
             this.projBuf.push({ sx: 0, sy: 0, depth: 0 });
         }
-        this.sortOrder = [];
-        this.edgeDepthBuf = [];
-        for (let e = 0; e < edges.length; e++) {
-            this.sortOrder.push(e);
-            this.edgeDepthBuf.push(0);
-        }
     }
     private startAnimation(): void {
-        const frameMs = 33;
+        let lastProgressShown: number = -1;
         this.animTimer = setInterval(() => {
             this.meshAngle += 0.012;
             this.meshBreath += 0.045;
-            this.frameCount++;
             if (this.entering && !this.exiting) {
                 const enterT = Math.min((Date.now() - this.startTime) / 900, 1);
                 const ease = 1 - Math.pow(1 - enterT, 2.4);
-                this.meshScale = 0.88 + 0.12 * ease;
-                // 品牌略晚于网格出现
-                this.brandAlpha = Math.max(0, Math.min(1, (enterT - 0.12) / 0.55));
+                this.meshScale = 0.92 + 0.08 * ease;
                 if (enterT >= 1) {
                     this.entering = false;
-                    this.brandAlpha = 1;
                 }
             }
-            this.drawFrame((this.frameCount % 2) === 0);
+            // 先画网格，再更新 @State（避免重建清缓冲抢在描边前）
+            this.drawFrame();
             if (this.exiting) {
                 return;
             }
             const elapsed = Date.now() - this.startTime;
-            this.progress = Math.min(100, Math.floor(elapsed / this.TOTAL_MS * 100));
-            let stageIdx = 0;
+            const pct = Math.min(100, Math.floor(elapsed / this.TOTAL_MS * 100));
+            // 进度/文案少改 @State，防止频繁 rebuild 把 Canvas 刷黑
+            if (pct !== lastProgressShown) {
+                lastProgressShown = pct;
+                this.progress = pct;
+            }
             for (let i = this.stages.length - 1; i >= 0; i--) {
                 if (elapsed >= this.stages[i].atMs) {
-                    stageIdx = i;
+                    if (this.statusText !== this.stages[i].text) {
+                        this.statusText = this.stages[i].text;
+                    }
                     break;
                 }
-            }
-            if (stageIdx !== this.lastStageIdx) {
-                this.lastStageIdx = stageIdx;
-                this.statusText = this.stages[stageIdx].text;
             }
             if (elapsed >= this.TOTAL_MS) {
                 this.beginExit();
             }
-        }, frameMs);
+        }, 33);
     }
-    private drawFrame(resort: boolean = true): void {
+    private syncCanvasSizeFromContext(): void {
+        try {
+            const cw = Number(this.canvasCtx.width);
+            const ch = Number(this.canvasCtx.height);
+            if (cw > 1 && ch > 1) {
+                this.canvasW = cw;
+                this.canvasH = ch;
+            }
+        }
+        catch (_e) {
+            // ignore
+        }
+    }
+    private drawFrame(): void {
+        if (!this.contextReady) {
+            return;
+        }
+        this.syncCanvasSizeFromContext();
         const ctx = this.canvasCtx;
         const w = this.canvasW;
         const h = this.canvasH;
         if (w <= 1 || h <= 1) {
             return;
         }
-        // 每帧先铺黑底（含 onAreaChange 后缓冲被清的场景）
-        ctx.fillStyle = this.BG;
-        ctx.fillRect(0, 0, w, h);
-        if (!this.surfaceReady) {
+        if (this.meshVertices.length === 0 || this.meshEdges.length === 0) {
+            return;
+        }
+        try {
+            ctx.clearRect(0, 0, w, h);
+        }
+        catch (_eClear) {
             return;
         }
         const breath = 1 + 0.02 * Math.sin(this.meshBreath);
         const cosA = Math.cos(this.meshAngle);
         const sinA = Math.sin(this.meshAngle);
         const camDist = 5.5;
-        const screenCX = w * 0.50;
-        const screenCY = h * 0.30;
-        const projScale = Math.min(w, h) * 0.18 * this.meshScale * breath;
+        // 偏右上：与初版构图一致，避免被左侧文案挡住观感
+        const screenCX = w * 0.62;
+        const screenCY = h * 0.36;
+        const projScale = Math.min(w, h) * 0.26 * this.meshScale * breath;
         const globalA = this.meshDrawAlpha;
-        let minDepth = 1e9;
-        let maxDepth = -1e9;
         for (let i = 0; i < this.meshVertices.length; i++) {
             const v = this.meshVertices[i];
             const rx = v.x * cosA - v.z * sinA;
             const rz = v.x * sinA + v.z * cosA;
             const ry = v.y;
             const depth = rz + camDist;
-            if (depth < minDepth) {
-                minDepth = depth;
-            }
-            if (depth > maxDepth) {
-                maxDepth = depth;
-            }
             const invZ = projScale / depth;
             const pp = this.projBuf[i];
             pp.sx = rx * invZ + screenCX;
             pp.sy = -ry * invZ + screenCY;
             pp.depth = depth;
         }
-        const depthSpan = Math.max(0.001, maxDepth - minDepth);
-        if (resort) {
-            for (let e = 0; e < this.meshEdges.length; e++) {
-                const edge = this.meshEdges[e];
-                this.edgeDepthBuf[e] = (this.projBuf[edge.a].depth + this.projBuf[edge.b].depth) * 0.5;
-            }
-            const depths = this.edgeDepthBuf;
-            this.sortOrder.sort((ia: number, ib: number) => depths[ib] - depths[ia]);
-        }
+        // 三遍描边：外晕 → 中晕 → 核心（提高透明度，避免“全黑感”）
         for (let pass = 0; pass < 3; pass++) {
             let baseW: number;
             let baseA: number;
             if (pass === 0) {
-                baseW = 3.8;
-                baseA = 0.028;
+                baseW = 5.0;
+                baseA = 0.08;
             }
             else if (pass === 1) {
-                baseW = 1.6;
-                baseA = 0.10;
+                baseW = 2.2;
+                baseA = 0.28;
             }
             else {
-                baseW = 0.75;
-                baseA = 0.52;
+                baseW = 1.0;
+                baseA = 0.85;
             }
-            for (let si = 0; si < this.sortOrder.length; si++) {
-                const edge = this.meshEdges[this.sortOrder[si]];
+            for (let e = 0; e < this.meshEdges.length; e++) {
+                const edge = this.meshEdges[e];
                 const p1 = this.projBuf[edge.a];
                 const p2 = this.projBuf[edge.b];
                 if (p1 === undefined || p2 === undefined) {
                     continue;
                 }
-                const edgeDepth = (p1.depth + p2.depth) * 0.5;
-                const far = (edgeDepth - minDepth) / depthSpan;
-                const depthFade = 1.0 - far * 0.55;
-                const widthBoost = 1.0 + (1.0 - far) * 0.18;
                 const zNorm = (edge.avgZ + 2.2) / 4.4;
-                ctx.strokeStyle = this.edgeColor(zNorm, baseA * depthFade * globalA);
-                ctx.lineWidth = baseW * widthBoost;
+                ctx.strokeStyle = this.edgeColor(zNorm, baseA * globalA);
+                ctx.lineWidth = baseW;
                 ctx.lineCap = 'round';
                 ctx.beginPath();
                 ctx.moveTo(p1.sx, p1.sy);
@@ -512,37 +500,6 @@ class SplashPage extends ViewPU {
                 ctx.stroke();
             }
         }
-        this.drawBrandAndHud(ctx, w, h);
-    }
-    private drawBrandAndHud(ctx: CanvasRenderingContext2D, w: number, h: number): void {
-        const fade = Math.max(0, Math.min(1, this.brandAlpha * this.meshDrawAlpha));
-        if (fade < 0.02) {
-            return;
-        }
-        const cx = w * 0.5;
-        const titleY = h * 0.62;
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillStyle = `rgba(255,255,255,${fade.toFixed(3)})`;
-        ctx.font = 'bold 34px sans-serif';
-        ctx.fillText('ElecDraw', cx, titleY);
-        ctx.fillStyle = `rgba(255,255,255,${(0.42 * fade).toFixed(3)})`;
-        ctx.font = '13px sans-serif';
-        ctx.fillText('Hardware Schematic Simulator', cx, titleY + 28);
-        const barW = Math.min(w * 0.38, 420);
-        const barX = cx - barW * 0.5;
-        const barY = titleY + 58;
-        const barH = 2;
-        ctx.fillStyle = `rgba(255,255,255,${(0.08 * fade).toFixed(3)})`;
-        ctx.fillRect(barX, barY, barW, barH);
-        ctx.fillStyle = `rgba(120,210,255,${(0.72 * fade).toFixed(3)})`;
-        ctx.fillRect(barX, barY, barW * Math.max(0.04, this.progress / 100), barH);
-        ctx.fillStyle = `rgba(255,255,255,${(0.28 * fade).toFixed(3)})`;
-        ctx.font = '12px sans-serif';
-        ctx.fillText(this.statusText, cx, barY + 18);
-        ctx.fillStyle = `rgba(255,255,255,${(0.18 * fade).toFixed(3)})`;
-        ctx.font = '10px sans-serif';
-        ctx.fillText(`v${APP_VERSION_NAME}`, cx, barY + 38);
     }
     private edgeColor(t: number, alpha: number): string {
         let r: number;
@@ -560,8 +517,8 @@ class SplashPage extends ViewPU {
             g = Math.round(238 - s * (238 - 170));
             b = Math.round(s * 170);
         }
-        const aa = Math.max(0, Math.min(1, alpha));
-        return `rgba(${r},${g},${b},${aa.toFixed(3)})`;
+        const aa = Math.max(0.05, Math.min(1, alpha));
+        return `rgba(${r},${g},${b},${aa})`;
     }
     private beginExit(): void {
         if (this.exiting || this.navigated) {
@@ -572,32 +529,37 @@ class SplashPage extends ViewPU {
             clearInterval(this.animTimer);
             this.animTimer = -1;
         }
+        try {
+            this.getUIContext().animateTo({ duration: 420, curve: Curve.EaseIn }, () => {
+                this.textOpacity = 0;
+            });
+        }
+        catch (_e) {
+            this.textOpacity = 0;
+        }
         const expandStart = Date.now();
         const baseScale = this.meshScale;
         this.exitTimer = setInterval(() => {
             const elapsed = Date.now() - expandStart;
             const t = Math.min(elapsed / this.EXIT_MS, 1);
             const easeIn = t * t;
-            this.meshScale = baseScale + 0.12 * easeIn;
+            this.meshScale = baseScale + 0.35 * easeIn;
             this.meshDrawAlpha = 1 - t;
-            this.brandAlpha = Math.max(0, 1 - t * 1.15);
-            this.drawFrame(false);
+            this.pageOpacity = Math.max(0, 1 - t);
+            this.drawFrame();
             if (t >= 1) {
                 clearInterval(this.exitTimer);
                 this.exitTimer = -1;
-                this.paintBlackOnly();
-                this.navigateToIndex();
+                this.navigateToHome();
             }
         }, 30);
     }
-    private navigateToIndex(): void {
+    private navigateToHome(): void {
         if (this.navigated) {
             return;
         }
         this.navigated = true;
         this.clearTimers();
-        this.paintBlackOnly();
-        this.drawFrame(false);
         try {
             this.getUIContext().getRouter().replaceUrl({ url: 'pages/HomePage' })
                 .catch((_err: BusinessError) => {
@@ -624,41 +586,179 @@ class SplashPage extends ViewPU {
             Stack.create();
             Stack.width('100%');
             Stack.height('100%');
-            Stack.backgroundColor(this.BG);
-            Stack.expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM, SafeAreaEdge.START, SafeAreaEdge.END]);
+            Stack.backgroundColor('#000000');
+            Stack.opacity(Math.max(0, this.pageOpacity));
+            Stack.expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM]);
         }, Stack);
         this.observeComponentCreation2((elmtId, isInitialRender) => {
-            // 系统层兜底黑底（Canvas 未就绪 / 安全区角落也不闪白）
             Column.create();
-            // 系统层兜底黑底（Canvas 未就绪 / 安全区角落也不闪白）
             Column.width('100%');
-            // 系统层兜底黑底（Canvas 未就绪 / 安全区角落也不闪白）
             Column.height('100%');
-            // 系统层兜底黑底（Canvas 未就绪 / 安全区角落也不闪白）
-            Column.backgroundColor(this.BG);
+            Column.backgroundColor('#000000');
         }, Column);
-        // 系统层兜底黑底（Canvas 未就绪 / 安全区角落也不闪白）
         Column.pop();
         this.observeComponentCreation2((elmtId, isInitialRender) => {
             Canvas.create(this.canvasCtx);
             Canvas.width('100%');
             Canvas.height('100%');
-            Canvas.backgroundColor(this.BG);
             Canvas.hitTestBehavior(HitTestMode.None);
             Canvas.onReady(() => {
-                this.paintBlackOnly();
-                this.drawFrame(true);
+                this.contextReady = true;
+                this.syncCanvasSizeFromContext();
+                this.tryStartAnimation();
+                this.drawFrame();
             });
             Canvas.onAreaChange((_old, area) => {
                 const w = Number(area.width);
                 const h = Number(area.height);
                 if (w > 1 && h > 1) {
-                    this.paintBlackOnly(w, h);
+                    this.canvasW = w;
+                    this.canvasH = h;
+                    if (this.contextReady) {
+                        this.tryStartAnimation();
+                        this.drawFrame();
+                    }
                 }
-                this.markSurface(w, h);
             });
         }, Canvas);
         Canvas.pop();
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            // 左侧文案：不依赖 Canvas 文字，保证启动页绝不是“纯黑一片”
+            Column.create();
+            // 左侧文案：不依赖 Canvas 文字，保证启动页绝不是“纯黑一片”
+            Column.width('100%');
+            // 左侧文案：不依赖 Canvas 文字，保证启动页绝不是“纯黑一片”
+            Column.height('100%');
+            // 左侧文案：不依赖 Canvas 文字，保证启动页绝不是“纯黑一片”
+            Column.alignItems(HorizontalAlign.Start);
+        }, Column);
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            Blank.create();
+            Blank.layoutWeight(1);
+        }, Blank);
+        Blank.pop();
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            Column.create({ space: 0 });
+            Column.alignItems(HorizontalAlign.Start);
+            Column.padding({ left: 72 });
+        }, Column);
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            Text.create('ElecDraw');
+            Text.fontSize(38);
+            Text.fontWeight(FontWeight.Bold);
+            Text.fontColor('#FFFFFF');
+            Text.letterSpacing(4);
+            Text.opacity(this.textOpacity);
+        }, Text);
+        Text.pop();
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            Blank.create();
+            Blank.height(10);
+        }, Blank);
+        Blank.pop();
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            Text.create('Hardware Schematic Simulator');
+            Text.fontSize(14);
+            Text.fontColor('rgba(255,255,255,0.55)');
+            Text.letterSpacing(2);
+            Text.opacity(this.textOpacity * 0.85);
+        }, Text);
+        Text.pop();
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            Blank.create();
+            Blank.height(28);
+        }, Blank);
+        Blank.pop();
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            // 进度条
+            Row.create();
+            // 进度条
+            Row.width(220);
+            // 进度条
+            Row.height(2);
+            // 进度条
+            Row.backgroundColor('rgba(255,255,255,0.12)');
+            // 进度条
+            Row.opacity(this.textOpacity);
+        }, Row);
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            Row.create();
+            Row.width(`${Math.max(4, this.progress)}%`);
+            Row.height(2);
+            Row.backgroundColor('rgba(120,210,255,0.85)');
+        }, Row);
+        Row.pop();
+        // 进度条
+        Row.pop();
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            Blank.create();
+            Blank.height(14);
+        }, Blank);
+        Blank.pop();
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            Text.create(this.statusText);
+            Text.fontSize(12);
+            Text.fontColor('rgba(255,255,255,0.40)');
+            Text.opacity(this.textOpacity * 0.85);
+        }, Text);
+        Text.pop();
+        Column.pop();
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            Blank.create();
+            Blank.layoutWeight(1.15);
+        }, Blank);
+        Blank.pop();
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            Row.create({ space: 10 });
+            Row.padding({ left: 72, bottom: 40 });
+            Row.opacity(this.textOpacity * 0.85);
+        }, Row);
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            Row.create({ space: 1.5 });
+        }, Row);
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            Column.create();
+            Column.width(6);
+            Column.height(20);
+            Column.backgroundColor('#44DDBB');
+        }, Column);
+        Column.pop();
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            Column.create();
+            Column.width(6);
+            Column.height(20);
+            Column.backgroundColor('#FFEE44');
+        }, Column);
+        Column.pop();
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            Column.create();
+            Column.width(6);
+            Column.height(20);
+            Column.backgroundColor('#44AAFF');
+        }, Column);
+        Column.pop();
+        Row.pop();
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            Column.create({ space: 1 });
+            Column.alignItems(HorizontalAlign.Start);
+        }, Column);
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            Text.create('ElecDraw');
+            Text.fontSize(11);
+            Text.fontColor('rgba(255,255,255,0.65)');
+            Text.fontWeight(FontWeight.Medium);
+        }, Text);
+        Text.pop();
+        this.observeComponentCreation2((elmtId, isInitialRender) => {
+            Text.create(this.versionLabel);
+            Text.fontSize(9);
+            Text.fontColor('rgba(255,255,255,0.30)');
+        }, Text);
+        Text.pop();
+        Column.pop();
+        Row.pop();
+        // 左侧文案：不依赖 Canvas 文字，保证启动页绝不是“纯黑一片”
+        Column.pop();
         Stack.pop();
     }
     rerender() {

@@ -194,8 +194,13 @@ export {
   PcbViaPreference, PcbRoutePolicy, PcbQaRepairPlan,
   PcbGeometrySeg, PcbGeometryResult, PcbGeoFailDetail, PcbAiRouteResult, PcbPadEndpoint,
   PcbLlmTrackPath, PcbLlmViaSpec, PcbLlmGeometryPlan,
+  PcbPreferEdge, PcbCorridorBias, PcbAutoAgentOpKind, PcbAutoAgentOp,
+  PcbAutoGlobalAdvice, PcbAutoRipupAdvice, PcbAutoGeometryAdvice,
+  PcbPlacementAgentAdvice, PcbCriticReport, PcbKnowledgeSnapshot,
+  PcbAutoRouteAgentContext, PcbRouteEngineHooks, PcbRouteAgentBundle,
   emptyPcbAiRouteResult, copperRoleKeys, policyCoversCopperLayers,
   validateLayerRoleSemantics, policyHasStub, isTrustedPcbStrategy,
+  isValidPcbLayerRole, validateAutoLayerRoles, isTrustedAutoAdvice,
   PcbTrustedStrategyFlags
 } from './src/main/ets/types/PcbAiRouteTypes';
 
@@ -387,6 +392,7 @@ export { GerberLayerFile, GerberExportResult, exportPcbGerber } from './src/main
 export { KiCadPcbExportResult, exportPcbKiCad } from './src/main/ets/utils/PcbKiCadExporter';
 
 export { autoRoutePcb, AutoRouteResult, rerouteNets, RerouteResult } from './src/main/ets/utils/PcbAutoRouter';
+export { orchestratePcbAutoRoute } from './src/main/ets/utils/pcb_route/PcbRouteOrchestrator';
 
 export { ensureBoardAccessories, clearCopperForNets, BoardAccessoriesResult, AccessoryNetHint,
   accessoryHintsFromSchematicNets
@@ -403,11 +409,75 @@ export {
   applyPcbPlacementPlan, PlacementApplyResult, PlacementApplyOptions
 } from './src/main/ets/utils/pcb_route/PcbPlacementExecutor';
 export {
+  MCU_COLUMN_PLACE_RECIPE, buildMcuColumnPlacementPlan,
+  detectMcuColumnClusters, mcuColumnNeedsRepair, McuColumnPlaceOpts
+} from './src/main/ets/utils/pcb_route/PcbMcuColumnPlacer';
+export {
+  applyMcuHandCopper, buildMcuHandLayerRoles, McuHandCopperResult
+} from './src/main/ets/utils/pcb_route/PcbMcuHandCopper';
+export {
   buildLocalNetPlan, buildLocalRoutePolicy
 } from './src/main/ets/utils/pcb_route/PcbLocalStrategy';
 export {
   pathClearOfTracks, pathClearBlockReason, clearanceForNet, trackWidthForNet
 } from './src/main/ets/utils/pcb_route/PcbClearanceOracle';
+export {
+  buildCongestionMap, pickCongestionAwareLayerPair, estimateNetCongestionRisk,
+  buildPlacementCongestionFeedback,
+  GlobalCongestionMap, GlobalLayerPair, PlacementCongestionFeedback, CongestionHotspot
+} from './src/main/ets/utils/pcb_route/PcbGlobalRoute';
+export {
+  assignGlobalChannels, GlobalChannelPlan, GlobalNetGuide, GlobalNetSeed
+} from './src/main/ets/utils/pcb_route/PcbGlobalChannel';
+export { assignGlobalChannelsWithCapacity } from './src/main/ets/utils/pcb_route/PcbGlobalCapacity';
+export { assignGlobalChannelsEdgeAware } from './src/main/ets/utils/pcb_route/PcbGCellEdgeRouter';
+export { assignTracksToGuides } from './src/main/ets/utils/pcb_route/PcbTrackAssign';
+export { routeDiffPairCoupled, CoupledDiffResult } from './src/main/ets/utils/pcb_route/PcbDiffPairCoupled';
+export { routeSwitchBoxCorridor, buildSwitchBoxes, SwitchBox } from './src/main/ets/utils/pcb_route/PcbSwitchBox';
+export {
+  buildRuleEngine, getRuleEngine, resolveRule, resolveClearanceScoped, resolveWidthScoped,
+  validateRuleEngine, logRuleEngineOnce, RuleScopeLevel, ScopedRule, RuleEngine
+} from './src/main/ets/utils/pcb_route/PcbRuleEngine';
+export { routeGridlessVisible } from './src/main/ets/utils/pcb_route/PcbGridlessRoom';
+export { routeRoomModel, expandRoomFromSeed, RouteRoom } from './src/main/ets/utils/pcb_route/PcbRoomModel';
+export { routePolyRoom } from './src/main/ets/utils/pcb_route/PcbPolyRoom';
+export {
+  resolveViaGeometry, mazeViaTransitionCost, ViaCostSpec
+} from './src/main/ets/utils/pcb_route/PcbViaCostModel';
+export { annealRouteOptimize, AnnealResult } from './src/main/ets/utils/pcb_route/PcbSimulatedAnnealing';
+export {
+  runAutorouteBenchmark, runAutorouteE2EBenchmark,
+  buildBenchBoardSimple, buildBenchBoardCross, buildBenchBoardGrid,
+  BenchReport, BenchCaseResult, E2EReport, E2ECaseResult
+} from './src/main/ets/utils/pcb_route/PcbRouteBenchmark';
+export { auditDfmRules, fixAcidTrapCorners, normalizeTinyDiagonals } from './src/main/ets/utils/pcb_route/PcbDfmChecks';
+export { tuneDiffPairSerpentine } from './src/main/ets/utils/pcb_route/PcbSerpentine';
+export { ripBlockingTracksForNets } from './src/main/ets/utils/pcb_route/PcbCongestionRipup';
+export { chamferOrthoCorners, pruneStubTracks } from './src/main/ets/utils/pcb_route/PcbCorner45';
+export { resolveTrackWidth, suggestedWidth50Ohm, suggestedDiffTraceWidth } from './src/main/ets/utils/pcb_route/PcbImpedanceRules';
+export { nudgePlacementFromCongestion, PlacementNudgeResult } from './src/main/ets/utils/pcb_route/PcbCongestionPlacement';
+export { auditSignalIntegrity, SiAuditStats } from './src/main/ets/utils/pcb_route/PcbSiChecks';
+export {
+  buildRectilinearSteinerEdges, manhattanPrimPinEdges, orderSteinerEdgesForRouting,
+  SteinerEdge, SteinerNode
+} from './src/main/ets/utils/pcb_route/PcbSteinerTree';
+export { shortenOrthoStairs, shortenOrthoStairsAsync } from './src/main/ets/utils/pcb_route/PcbRoutePostOptimize';
+export {
+  collectDiffPairPlans, reportDiffPairLengths, isDiffPairNet, tuneDiffPairLengths,
+  offsetOrthoPolyline, buildDiffFollowCandidates, DiffPairPlan, DiffPairLengthReport
+} from './src/main/ets/utils/pcb_route/PcbDiffPairRouter';
+export {
+  auditRouteClearance, auditRouteDfm, computeAutoRouteMetrics, AutoRouteMetrics
+} from './src/main/ets/utils/pcb_route/PcbRouteVerify';
+export { orderPinsOuterRingFirst, orderPointsOuterRingFirst } from './src/main/ets/utils/pcb_route/PcbEscapeOrder';
+export { applyBgaDogboneFanout, isBgaLikeFootprint, BgaFanoutResult } from './src/main/ets/utils/pcb_route/PcbBgaFanout';
+export {
+  buildTrackSpatialIndex, queryTracksNearSegment, TrackSpatialIndex
+} from './src/main/ets/utils/pcb_route/PcbSpatialIndex';
+export { mazeRouteRectilinear, mazeRouteRectilinearAsync, MazeLayerPair } from './src/main/ets/utils/pcb_route/PcbMazeRouter';
+export {
+  shoveForeignTracksByLReroute, shoveAllClearanceConflicts, doglegPadToPadSelectedTracks
+} from './src/main/ets/utils/PcbTrackShoveUtil';
 
 export {
   registerSchPinToPadNet, lookupPadNet, registerPadNetKey, resolveDevicePadNumber
@@ -420,6 +490,7 @@ export {
   tracePcbDrc, tracePcbSchCompare, tracePcbNetRoutingSummary, tracePcbReverseResult,
   tracePcbFullState, tracePcbPinConnectivity, tracePcbCanvasRealtime, PcbCanvasTraceSnapshot,
   tracePcbLayoutCrowd, tracePcbTrackCrossAudit, tracePcbView2dAudit, tracePcbView3dAudit, tracePcbDisplayDump,
+  setPcbInstrAuditPaused,
   PcbView2dTraceParams, PcbView3dTraceParams
 } from './src/main/ets/utils/PcbTraceLog';
 
@@ -429,13 +500,10 @@ export {
   lockTrackEndpointsToPads,
   collectNetIdsForFootprints, snapTrackEndpointsToPads, snapTrackEndpointsNearFootprints,
   pruneZeroLengthTracks, mergeColinearTracks, pruneShortTracks,
+  healSameLayerCopperTopology,
   orderPointsNearestNeighbor, padSnapTolerance, junctionMatchTolerance,
   pcbPadPosKey, TrackFollowResult, TrackEndpointSnapshot
 } from './src/main/ets/utils/PcbTrackBindUtil';
-
-export {
-  doglegPadToPadSelectedTracks, shoveForeignTracksByLReroute
-} from './src/main/ets/utils/PcbTrackShoveUtil';
 
 export {
   padWorldPosition, rebuildZoneCutouts, pointInPolygon, makeRectCutout,

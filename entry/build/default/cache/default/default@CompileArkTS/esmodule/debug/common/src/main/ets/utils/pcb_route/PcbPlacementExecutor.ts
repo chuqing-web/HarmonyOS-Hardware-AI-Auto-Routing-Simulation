@@ -8,9 +8,11 @@ export interface PlacementApplyResult {
     placedCount: number;
     reason: string;
 }
-/** revise 模式：允许在现有位姿附近微调，关闭 echo 门禁 */
+/** revise 模式：允许在现有位姿附近微调，关闭 echo 门禁；本地列式贴簇可写板 */
 export interface PlacementApplyOptions {
     allowEcho?: boolean;
+    /** 允许 fromLlm=false 的本地确定性布局（模板列式等） */
+    allowLocal?: boolean;
 }
 interface BoardBounds {
     minX: number;
@@ -202,21 +204,41 @@ function applyLlmBoardSize(doc: PcbDocument, widthMil: number, heightMil: number
         ` mounts=${Math.min(mounts.length, corners.length)}`);
     return '';
 }
+/** 连接器可靠近板边（手摆常见） */
+function isConnectorFootprint(fp: PcbFootprintInst): boolean {
+    const r = (fp.refDes ?? '').toUpperCase();
+    if (r === 'J1' || (r.length >= 2 && r.charAt(0) === 'J')) {
+        return true;
+    }
+    const d = (fp.defId ?? '').toUpperCase();
+    return d.indexOf('PINHDR') >= 0 || d.indexOf('CONN') >= 0;
+}
 export function applyPcbPlacementPlan(doc: PcbDocument, plan: PcbPlacementPlan, opts?: PlacementApplyOptions): PlacementApplyResult {
-    if (!plan.fromLlm) {
+    const allowLocal = opts?.allowLocal === true;
+    if (!plan.fromLlm && !allowLocal) {
         return { ok: false, placedCount: 0, reason: 'placement plan not from LLM' };
     }
     if (!plan.placements || plan.placements.length === 0) {
         return { ok: false, placedCount: 0, reason: 'empty placement plan from LLM' };
     }
-    // 板框必须由 LLM 给出（允许略写容差：缺省则失败，逼模型定尺寸）
-    const bw = plan.boardWidthMil;
-    const bh = plan.boardHeightMil;
+    // 板框：LLM 给出则采用；flash 常只回 footprint 行漏尺寸 → 沿用现有 outline，勿整轮 ORCH_PLACE_FAIL
+    let bw = plan.boardWidthMil;
+    let bh = plan.boardHeightMil;
     if (bw === undefined || bh === undefined || !(bw > 0) || !(bh > 0)) {
-        return {
-            ok: false, placedCount: 0,
-            reason: 'LLM placement missing boardWidthMil/boardHeightMil — board size must come from model'
-        };
+        const b = boardBounds(doc);
+        const curW = Math.round(b.maxX - b.minX);
+        const curH = Math.round(b.maxY - b.minY);
+        if (curW > 10 && curH > 10 && curW < 1e7 && curH < 1e7) {
+            bw = curW;
+            bh = curH;
+            tracePcb('AI_BOARD', `LLM omitted size → keep ${bw}x${bh}`);
+        }
+        else {
+            return {
+                ok: false, placedCount: 0,
+                reason: 'LLM placement missing boardWidthMil/boardHeightMil — board size must come from model'
+            };
+        }
     }
     const boardErr = applyLlmBoardSize(doc, bw, bh);
     if (boardErr.length > 0) {
@@ -276,8 +298,8 @@ export function applyPcbPlacementPlan(doc: PcbDocument, plan: PcbPlacementPlan, 
                 reason: `LLM placement out of board: ${fp.refDes} (${item.x},${item.y})`
             };
         }
-        // 功能封装远离板边（安装孔除外）
-        const edgeInset = 90;
+        // 功能封装远离板边（安装孔除外；连接器允许更贴边）
+        const edgeInset = isConnectorFootprint(fp) ? 20 : 90;
         if (!isMountHole(fp) &&
             (item.x < bounds.minX + edgeInset || item.x > bounds.maxX - edgeInset ||
                 item.y < bounds.minY + edgeInset || item.y > bounds.maxY - edgeInset)) {
@@ -302,24 +324,30 @@ export function applyPcbPlacementPlan(doc: PcbDocument, plan: PcbPlacementPlan, 
     }
     let unlocked = 0;
     for (const fp of doc.footprints) {
-        if (!fp.locked && !locked.has(fp.id)) {
+        if (!fp.locked && !locked.has(fp.id) && !isMountHole(fp)) {
             unlocked++;
         }
     }
     const grid = doc.metadata.gridSize ?? 5;
     const allowEcho = opts?.allowEcho === true;
-    // revise/auto 模式允许增量微调（qa re-place 等场景）；full 模式须全覆盖
-    if (unlocked > 0 && pending.length < unlocked && !allowEcho) {
+    const isRelayout = plan.decision === 'relayout';
+    // relayout：必须覆盖绝大部分可动件；revise+allowEcho：允许增量
+    const minCover = isRelayout
+        ? Math.max(2, Math.ceil(unlocked * 0.85))
+        : unlocked;
+    if (unlocked > 0 && pending.length < minCover && (isRelayout || !allowEcho)) {
         const unkHint = skippedUnknown.length > 0
             ? `; skippedUnknown=${skippedUnknown.slice(0, 5).join(',')}` +
                 `${skippedUnknown.length > 5 ? '…' : ''} — footprintId 必须逐字复制列表，禁止编造`
             : '';
         return {
             ok: false, placedCount: pending.length,
-            reason: `placement coverage ${pending.length}/${unlocked} unlocked footprints${unkHint}`
+            reason: (isRelayout ? 'relayout' : 'placement') +
+                ` coverage ${pending.length}/${unlocked} (need≥${minCover})${unkHint}`
         };
     }
-    if (!allowEcho) {
+    // relayout 禁止几乎原位复制；revise+allowEcho 可跳过 echo 门禁
+    if (!allowEcho || isRelayout) {
         let echoable = 0;
         let echoed = 0;
         for (let i = 0; i < pending.length; i++) {
@@ -335,7 +363,8 @@ export function applyPcbPlacementPlan(doc: PcbDocument, plan: PcbPlacementPlan, 
                 echoed++;
             }
         }
-        if (echoable >= 3 && echoed / echoable >= 0.85) {
+        const echoRatio = isRelayout ? 0.55 : 0.85;
+        if (echoable >= 3 && echoed / echoable >= echoRatio) {
             return {
                 ok: false, placedCount: 0,
                 reason: `placement echo ${(echoed)}/${echoable} — refuse copy of current poses; rearrange functional footprints`

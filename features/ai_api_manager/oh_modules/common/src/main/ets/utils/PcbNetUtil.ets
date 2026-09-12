@@ -2,11 +2,12 @@
  * PCB 网络表重建、飞线、正交 L 路径、网络高亮辅助
  */
 import {
-  PcbDocument, PcbNet, PcbNetClass, PcbRatsnestEdge, PcbPad,
-  PcbFootprintInst
+  PcbDocument, PcbNet, PcbNetClass, PcbRatsnestEdge, PcbPad, PcbTrack,
+  PcbFootprintInst, PcbPadType
 } from '../types/PcbTypes';
 import { Point2D } from '../types/CommonTypes';
 import { padWorldPosition, pointInPolygon } from './PcbZoneUtil';
+import { WireConflictGeometry } from './WireConflictGeometry';
 
 export function guessNetClassId(netName: string, classes: PcbNetClass[]): string {
   const upper = (netName ?? '').toUpperCase();
@@ -86,12 +87,282 @@ interface PadNode {
   pos: Point2D;
 }
 
+interface CopperUnionFind {
+  parent: Map<string, string>;
+  keyOf: (p: Point2D) => string;
+  find: (k: string) => string;
+}
+
+/**
+ * 同网铜连通并查集：每个 net 只建一次。
+ * 旧实现每次 padsCopperConnected 全量重建 + O(keys²) 近邻，
+ * VCC 多焊盘时 buildRatsnest 会在主线程烧数秒（THREAD_BLOCK）。
+ */
+function buildCopperUnion(doc: PcbDocument, netId: string): CopperUnionFind {
+  const tol = 15;
+  const keyOf = (p: Point2D): string =>
+    `${Math.round(p.x / tol)}_${Math.round(p.y / tol)}`;
+  const parent: Map<string, string> = new Map();
+  const find = (k: string): string => {
+    let p = parent.get(k) ?? k;
+    if (!parent.has(k)) {
+      parent.set(k, k);
+    }
+    while (p !== (parent.get(p) ?? p)) {
+      const pp = parent.get(p) ?? p;
+      parent.set(p, parent.get(pp) ?? pp);
+      p = parent.get(p) ?? p;
+    }
+    return p;
+  };
+  const union = (x: string, y: string): void => {
+    const rx = find(x);
+    const ry = find(y);
+    if (rx !== ry) {
+      parent.set(rx, ry);
+    }
+  };
+  const touch = (p: Point2D): void => {
+    const k = keyOf(p);
+    if (!parent.has(k)) {
+      parent.set(k, k);
+    }
+  };
+
+  for (const trk of doc.tracks) {
+    if (trk.netId !== netId) {
+      continue;
+    }
+    touch(trk.start);
+    touch(trk.end);
+    union(keyOf(trk.start), keyOf(trk.end));
+  }
+  for (const via of doc.vias) {
+    if (via.netId !== netId) {
+      continue;
+    }
+    touch(via.position);
+  }
+  for (const fp of doc.footprints) {
+    for (const pad of fp.pads) {
+      if (pad.netId !== netId) {
+        continue;
+      }
+      touch(padWorldPosition(fp, pad));
+    }
+  }
+
+  // 同网同层几何连通：交叉 / T 接 / 中段压焊盘 / 过孔旁路（不仅依赖端点）
+  const sameNetTracks: PcbTrack[] = [];
+  for (let ti = 0; ti < doc.tracks.length; ti++) {
+    if (doc.tracks[ti].netId === netId) {
+      sameNetTracks.push(doc.tracks[ti]);
+    }
+  }
+  const ptSegDist = (p: Point2D, a: Point2D, b: Point2D): number => {
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const lenSq = dx * dx + dy * dy;
+    if (lenSq < 1e-6) {
+      return Math.hypot(p.x - a.x, p.y - a.y);
+    }
+    let t = ((p.x - a.x) * dx + (p.y - a.y) * dy) / lenSq;
+    t = Math.max(0, Math.min(1, t));
+    return Math.hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy));
+  };
+  const padOnLayer = (pad: PcbPad, layer: string): boolean => {
+    if (pad.type === PcbPadType.TH || pad.type === PcbPadType.NPTH) {
+      return true;
+    }
+    if (!pad.layers || pad.layers.length === 0) {
+      return true;
+    }
+    for (let i = 0; i < pad.layers.length; i++) {
+      if (`${pad.layers[i]}` === layer) {
+        return true;
+      }
+    }
+    return false;
+  };
+  for (let i = 0; i < sameNetTracks.length; i++) {
+    const a = sameNetTracks[i];
+    for (let j = i + 1; j < sameNetTracks.length; j++) {
+      const b = sameNetTracks[j];
+      if (a.layer !== b.layer) {
+        continue;
+      }
+      const kind = WireConflictGeometry.segmentConflict(a.start, a.end, b.start, b.end);
+      if (kind === 'orthogonal_cross' || kind === 'collinear_overlap') {
+        const cp = WireConflictGeometry.orthogonalCrossPoint(a.start, a.end, b.start, b.end);
+        if (cp !== null) {
+          touch(cp);
+          union(keyOf(cp), keyOf(a.start));
+          union(keyOf(cp), keyOf(b.start));
+        } else {
+          union(keyOf(a.start), keyOf(b.start));
+          union(keyOf(a.end), keyOf(b.end));
+        }
+      }
+      const hitTol = Math.max(a.width, b.width) / 2 + 2;
+      const joinEp = (ep: Point2D, segA: Point2D, segB: Point2D): void => {
+        if (ptSegDist(ep, segA, segB) <= hitTol) {
+          touch(ep);
+          union(keyOf(ep), keyOf(segA));
+          union(keyOf(ep), keyOf(segB));
+        }
+      };
+      joinEp(a.start, b.start, b.end);
+      joinEp(a.end, b.start, b.end);
+      joinEp(b.start, a.start, a.end);
+      joinEp(b.end, a.start, a.end);
+    }
+  }
+  for (const fp of doc.footprints) {
+    for (const pad of fp.pads) {
+      if (pad.netId !== netId) {
+        continue;
+      }
+      const wp = padWorldPosition(fp, pad);
+      const padR = Math.max(pad.size.x, pad.size.y) / 2;
+      for (let ti = 0; ti < sameNetTracks.length; ti++) {
+        const trk = sameNetTracks[ti];
+        if (!padOnLayer(pad, `${trk.layer}`)) {
+          continue;
+        }
+        const hitR = padR + trk.width / 2;
+        if (ptSegDist(wp, trk.start, trk.end) <= hitR) {
+          touch(wp);
+          union(keyOf(wp), keyOf(trk.start));
+          union(keyOf(wp), keyOf(trk.end));
+        }
+      }
+    }
+  }
+  for (const via of doc.vias) {
+    if (via.netId !== netId) {
+      continue;
+    }
+    const viaR = (via.diameter > 0 ? via.diameter : 20) / 2;
+    for (let ti = 0; ti < sameNetTracks.length; ti++) {
+      const trk = sameNetTracks[ti];
+      const hitR = viaR + trk.width / 2;
+      if (ptSegDist(via.position, trk.start, trk.end) <= hitR) {
+        touch(via.position);
+        union(keyOf(via.position), keyOf(trk.start));
+      }
+    }
+  }
+
+  for (let zi = 0; zi < doc.zones.length; zi++) {
+    const z = doc.zones[zi];
+    if (z.netId !== netId || z.outline.length < 3) {
+      continue;
+    }
+    const hub = `__zone_${zi}`;
+    if (!parent.has(hub)) {
+      parent.set(hub, hub);
+    }
+    for (let i = 0; i < z.outline.length; i++) {
+      const p = z.outline[i];
+      touch(p);
+      union(keyOf(p), hub);
+      if (i > 0) {
+        union(keyOf(z.outline[i - 1]), keyOf(p));
+      }
+    }
+    union(keyOf(z.outline[z.outline.length - 1]), keyOf(z.outline[0]));
+    for (const fp of doc.footprints) {
+      for (const pad of fp.pads) {
+        if (pad.netId !== netId) {
+          continue;
+        }
+        if (!padTouchesZoneLayer(pad.layers, pad.type, z.layer)) {
+          continue;
+        }
+        const wp = padWorldPosition(fp, pad);
+        if (!pointInPolygon(wp, z.outline)) {
+          continue;
+        }
+        touch(wp);
+        union(keyOf(wp), hub);
+      }
+    }
+    for (const via of doc.vias) {
+      if (via.netId !== netId) {
+        continue;
+      }
+      if (!pointInPolygon(via.position, z.outline)) {
+        continue;
+      }
+      touch(via.position);
+      union(keyOf(via.position), hub);
+    }
+  }
+  // 网格近邻：按格桶聚合，避免 O(keys²)
+  const buckets: Map<string, string[]> = new Map();
+  parent.forEach((_v: string, k: string) => {
+    if (k.startsWith('__zone_')) {
+      return;
+    }
+    const parts = k.split('_');
+    if (parts.length < 2) {
+      return;
+    }
+    const gx = Number(parts[0]);
+    const gy = Number(parts[1]);
+    if (!Number.isFinite(gx) || !Number.isFinite(gy)) {
+      return;
+    }
+    const bk = `${gx}_${gy}`;
+    let list = buckets.get(bk);
+    if (list === undefined) {
+      list = [];
+      buckets.set(bk, list);
+    }
+    list.push(k);
+  });
+  buckets.forEach((list: string[], bk: string) => {
+    const parts = bk.split('_');
+    const gx = Number(parts[0]);
+    const gy = Number(parts[1]);
+    for (let dx = -1; dx <= 1; dx++) {
+      for (let dy = -1; dy <= 1; dy++) {
+        const nb = buckets.get(`${gx + dx}_${gy + dy}`);
+        if (nb === undefined) {
+          continue;
+        }
+        for (let i = 0; i < list.length; i++) {
+          for (let j = 0; j < nb.length; j++) {
+            if (dx === 0 && dy === 0 && j <= i) {
+              continue;
+            }
+            union(list[i], nb[j]);
+          }
+        }
+      }
+    }
+  });
+  const out: CopperUnionFind = { parent, keyOf, find };
+  return out;
+}
+
+function padsConnectedInUnion(uf: CopperUnionFind, a: Point2D, b: Point2D): boolean {
+  const ka = uf.keyOf(a);
+  const kb = uf.keyOf(b);
+  if (!uf.parent.has(ka) || !uf.parent.has(kb)) {
+    return false;
+  }
+  return uf.find(ka) === uf.find(kb);
+}
+
 /** 未连接焊盘对飞线（同网最小生成树边，过滤已有铜连通） */
 export function buildRatsnest(doc: PcbDocument): PcbRatsnestEdge[] {
   const nodesByNet: Map<string, PadNode[]> = new Map();
   for (const fp of doc.footprints) {
     for (const pad of fp.pads) {
-      if (!pad.netId || pad.netId.length === 0) continue;
+      if (!pad.netId || pad.netId.length === 0) {
+        continue;
+      }
       const pos = padWorldPosition(fp, pad);
       const list = nodesByNet.get(pad.netId) ?? [];
       list.push({
@@ -106,11 +377,24 @@ export function buildRatsnest(doc: PcbDocument): PcbRatsnestEdge[] {
 
   const edges: PcbRatsnestEdge[] = [];
   nodesByNet.forEach((nodes: PadNode[], netId: string) => {
-    if (nodes.length < 2) return;
-    if (isNetFullyConnected(doc, netId, nodes)) return;
-    // Prim MST on pads
+    if (nodes.length < 2) {
+      return;
+    }
+    const uf = buildCopperUnion(doc, netId);
+    let fully = true;
+    for (let i = 1; i < nodes.length; i++) {
+      if (!padsConnectedInUnion(uf, nodes[0].pos, nodes[i].pos)) {
+        fully = false;
+        break;
+      }
+    }
+    if (fully) {
+      return;
+    }
     const used: boolean[] = [];
-    for (let i = 0; i < nodes.length; i++) used.push(false);
+    for (let i = 0; i < nodes.length; i++) {
+      used.push(false);
+    }
     used[0] = true;
     let usedCount = 1;
     while (usedCount < nodes.length) {
@@ -118,9 +402,13 @@ export function buildRatsnest(doc: PcbDocument): PcbRatsnestEdge[] {
       let bestJ = -1;
       let bestD = Infinity;
       for (let i = 0; i < nodes.length; i++) {
-        if (!used[i]) continue;
+        if (!used[i]) {
+          continue;
+        }
         for (let j = 0; j < nodes.length; j++) {
-          if (used[j]) continue;
+          if (used[j]) {
+            continue;
+          }
           const dx = nodes[i].pos.x - nodes[j].pos.x;
           const dy = nodes[i].pos.y - nodes[j].pos.y;
           const d = dx * dx + dy * dy;
@@ -131,10 +419,12 @@ export function buildRatsnest(doc: PcbDocument): PcbRatsnestEdge[] {
           }
         }
       }
-      if (bestJ < 0) break;
+      if (bestJ < 0) {
+        break;
+      }
       used[bestJ] = true;
       usedCount++;
-      if (!padsCopperConnected(doc, netId, nodes[bestI].pos, nodes[bestJ].pos)) {
+      if (!padsConnectedInUnion(uf, nodes[bestI].pos, nodes[bestJ].pos)) {
         edges.push({
           netId,
           netName: nodes[bestI].netName,
@@ -147,110 +437,9 @@ export function buildRatsnest(doc: PcbDocument): PcbRatsnestEdge[] {
   return edges;
 }
 
-function isNetFullyConnected(doc: PcbDocument, netId: string, nodes: PadNode[]): boolean {
-  if (nodes.length < 2) return true;
-  for (let i = 1; i < nodes.length; i++) {
-    if (!padsCopperConnected(doc, netId, nodes[0].pos, nodes[i].pos)) {
-      return false;
-    }
-  }
-  return true;
-}
-
 /** 简化连通：同网铜皮图元端点网格并查集（含 Zone 覆铜） */
 function padsCopperConnected(doc: PcbDocument, netId: string, a: Point2D, b: Point2D): boolean {
-  const tol = 15;
-  const keyOf = (p: Point2D): string =>
-    `${Math.round(p.x / tol)}_${Math.round(p.y / tol)}`;
-  const parent: Map<string, string> = new Map();
-  const find = (k: string): string => {
-    let p = parent.get(k) ?? k;
-    if (!parent.has(k)) parent.set(k, k);
-    while (p !== (parent.get(p) ?? p)) {
-      const pp = parent.get(p) ?? p;
-      parent.set(p, parent.get(pp) ?? pp);
-      p = parent.get(p) ?? p;
-    }
-    return p;
-  };
-  const union = (x: string, y: string): void => {
-    const rx = find(x);
-    const ry = find(y);
-    if (rx !== ry) parent.set(rx, ry);
-  };
-  const touch = (p: Point2D): void => {
-    const k = keyOf(p);
-    if (!parent.has(k)) parent.set(k, k);
-  };
-
-  for (const trk of doc.tracks) {
-    if (trk.netId !== netId) continue;
-    touch(trk.start);
-    touch(trk.end);
-    union(keyOf(trk.start), keyOf(trk.end));
-  }
-  for (const via of doc.vias) {
-    if (via.netId !== netId) continue;
-    touch(via.position);
-  }
-  for (const fp of doc.footprints) {
-    for (const pad of fp.pads) {
-      if (pad.netId !== netId) continue;
-      touch(padWorldPosition(fp, pad));
-    }
-  }
-  // Zone 覆铜：轮廓顶点 + 落在铺铜内且层兼容的同网焊盘/过孔（热焊盘仍视为连通）
-  for (let zi = 0; zi < doc.zones.length; zi++) {
-    const z = doc.zones[zi];
-    if (z.netId !== netId || z.outline.length < 3) continue;
-    const hub = `__zone_${zi}`;
-    if (!parent.has(hub)) parent.set(hub, hub);
-    for (let i = 0; i < z.outline.length; i++) {
-      const p = z.outline[i];
-      touch(p);
-      union(keyOf(p), hub);
-      if (i > 0) union(keyOf(z.outline[i - 1]), keyOf(p));
-    }
-    union(keyOf(z.outline[z.outline.length - 1]), keyOf(z.outline[0]));
-    for (const fp of doc.footprints) {
-      for (const pad of fp.pads) {
-        if (pad.netId !== netId) continue;
-        if (!padTouchesZoneLayer(pad.layers, pad.type, z.layer)) continue;
-        const wp = padWorldPosition(fp, pad);
-        if (!pointInPolygon(wp, z.outline)) continue;
-        touch(wp);
-        union(keyOf(wp), hub);
-      }
-    }
-    for (const via of doc.vias) {
-      if (via.netId !== netId) continue;
-      if (!pointInPolygon(via.position, z.outline)) continue;
-      touch(via.position);
-      union(keyOf(via.position), hub);
-    }
-  }
-  // 近邻并查（焊盘/过孔与走线端点、Zone 顶点）
-  const keys: string[] = [];
-  parent.forEach((_v: string, k: string) => {
-    keys.push(k);
-  });
-  for (let i = 0; i < keys.length; i++) {
-    for (let j = i + 1; j < keys.length; j++) {
-      if (keys[i].startsWith('__zone_') || keys[j].startsWith('__zone_')) continue;
-      const partsI = keys[i].split('_');
-      const partsJ = keys[j].split('_');
-      if (partsI.length < 2 || partsJ.length < 2) continue;
-      const dx = Number(partsI[0]) - Number(partsJ[0]);
-      const dy = Number(partsI[1]) - Number(partsJ[1]);
-      if (Math.abs(dx) <= 1 && Math.abs(dy) <= 1) {
-        union(keys[i], keys[j]);
-      }
-    }
-  }
-  const ka = keyOf(a);
-  const kb = keyOf(b);
-  if (!parent.has(ka) || !parent.has(kb)) return false;
-  return find(ka) === find(kb);
+  return padsConnectedInUnion(buildCopperUnion(doc, netId), a, b);
 }
 
 /** 焊盘是否能接到指定铜层（通孔焊盘默认双面） */

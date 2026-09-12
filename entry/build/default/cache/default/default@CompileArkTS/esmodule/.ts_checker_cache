@@ -176,7 +176,9 @@
         "C:\\Program Files\\Huawei\\DevEco Studio\\sdk\\default\\openharmony\\ets\\build-tools\\ets-loader\\declarations\\pattern_lock.d.ts",
         "C:\\Program Files\\Huawei\\DevEco Studio\\sdk\\default\\openharmony\\ets\\build-tools\\ets-loader\\declarations\\video.d.ts",
         "C:\\Program Files\\Huawei\\DevEco Studio\\sdk\\default\\openharmony\\ets\\api\\@ohos.web.webview.d.ts",
-        "C:\\Program Files\\Huawei\\DevEco Studio\\sdk\\default\\openharmony\\ets\\api\\@ohos.print.d.ts"
+        "C:\\Program Files\\Huawei\\DevEco Studio\\sdk\\default\\openharmony\\ets\\api\\@ohos.print.d.ts",
+        "C:\\Projects\\ElecDraw_Harmony\\features\\agent_bridge\\src\\main\\ets\\AgentHttpServer.ets",
+        "C:\\Program Files\\Huawei\\DevEco Studio\\sdk\\default\\openharmony\\ets\\api\\@ohos.display.d.ts"
       ],
       "error": false
     },
@@ -640,7 +642,8 @@
       "parent": [
         "C:\\Program Files\\Huawei\\DevEco Studio\\sdk\\default\\openharmony\\ets\\api\\@ohos.multimedia.image.d.ts",
         "C:\\Program Files\\Huawei\\DevEco Studio\\sdk\\default\\openharmony\\ets\\api\\@ohos.graphics.drawing.d.ts",
-        "C:\\Program Files\\Huawei\\DevEco Studio\\sdk\\default\\openharmony\\ets\\api\\@ohos.arkui.componentSnapshot.d.ts"
+        "C:\\Program Files\\Huawei\\DevEco Studio\\sdk\\default\\openharmony\\ets\\api\\@ohos.arkui.componentSnapshot.d.ts",
+        "C:\\Program Files\\Huawei\\DevEco Studio\\sdk\\default\\openharmony\\ets\\api\\@ohos.display.d.ts"
       ],
       "error": false
     },
@@ -1582,7 +1585,7 @@
       "error": false
     },
     "C:\\Projects\\ElecDraw_Harmony\\entry\\src\\main\\ets\\services\\AppService.ets": {
-      "mtimeMs": 1786007694434.3022,
+      "mtimeMs": 1789219050786.1829,
       "children": [
         "C:\\Projects\\ElecDraw_Harmony\\features\\schematic_editor\\Index.ets",
         "C:\\Projects\\ElecDraw_Harmony\\features\\component_library\\Index.ets",
@@ -1596,6 +1599,7 @@
         "C:\\Projects\\ElecDraw_Harmony\\features\\instruments\\Index.ets",
         "C:\\Projects\\ElecDraw_Harmony\\features\\plugin_system\\Index.ets",
         "C:\\Projects\\ElecDraw_Harmony\\features\\pcb_editor\\Index.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\features\\agent_bridge\\Index.ets",
         "C:\\Program Files\\Huawei\\DevEco Studio\\sdk\\default\\openharmony\\ets\\api\\@ohos.app.ability.common.d.ts",
         "C:\\Program Files\\Huawei\\DevEco Studio\\sdk\\default\\openharmony\\ets\\api\\@ohos.file.fs.d.ts",
         "C:\\Projects\\ElecDraw_Harmony\\entry\\src\\main\\ets\\utils\\DeviceLibraryBootstrap.ets",
@@ -1664,7 +1668,7 @@
       "error": false
     },
     "C:\\Projects\\ElecDraw_Harmony\\entry\\src\\main\\ets\\utils\\WindowLaunchUtil.ets": {
-      "mtimeMs": 1785398430913.996,
+      "mtimeMs": 1789222200027.7058,
       "children": [
         "C:\\Program Files\\Huawei\\DevEco Studio\\sdk\\default\\openharmony\\ets\\api\\@ohos.window.d.ts",
         "C:\\Program Files\\Huawei\\DevEco Studio\\sdk\\default\\openharmony\\ets\\api\\@ohos.app.ability.common.d.ts"
@@ -1681,7 +1685,7 @@
       ]
     },
     "C:\\Projects\\ElecDraw_Harmony\\entry\\src\\main\\ets\\entryability\\EntryAbility.ets": {
-      "mtimeMs": 1785398430924.8564,
+      "mtimeMs": 1789222389253.4795,
       "children": [
         "C:\\Program Files\\Huawei\\DevEco Studio\\sdk\\default\\openharmony\\ets\\api\\@ohos.app.ability.AbilityConstant.d.ts",
         "C:\\Program Files\\Huawei\\DevEco Studio\\sdk\\default\\openharmony\\ets\\api\\@ohos.app.ability.UIAbility.d.ts",
@@ -1707,7 +1711,10 @@
         "C:\\Projects\\ElecDraw_Harmony\\entry\\src\\main\\ets\\pages\\Index.ets",
         "C:\\Projects\\ElecDraw_Harmony\\entry\\src\\main\\ets\\components\\SchematicCanvas.ets",
         "C:\\Projects\\ElecDraw_Harmony\\entry\\src\\main\\ets\\components\\PropertyPanel.ets",
-        "C:\\Projects\\ElecDraw_Harmony\\entry\\src\\main\\ets\\pages\\PcbPage.ets"
+        "C:\\Projects\\ElecDraw_Harmony\\entry\\src\\main\\ets\\pages\\PcbPage.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\features\\agent_bridge\\src\\main\\ets\\AgentBridgeImpl.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\features\\agent_bridge\\src\\main\\ets\\AgentCommandDispatcher.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\features\\agent_bridge\\src\\main\\ets\\api\\IAgentBridge.ets"
       ],
       "error": false
     },
@@ -1745,7 +1752,10 @@
         "C:\\Projects\\ElecDraw_Harmony\\entry\\src\\main\\ets\\components\\SchematicCanvas.ets",
         "C:\\Projects\\ElecDraw_Harmony\\entry\\src\\main\\ets\\utils\\SchematicSymbolRenderer.ets",
         "C:\\Projects\\ElecDraw_Harmony\\entry\\src\\main\\ets\\components\\PropertyPanel.ets",
-        "C:\\Projects\\ElecDraw_Harmony\\entry\\src\\main\\ets\\components\\ComponentPreview.ets"
+        "C:\\Projects\\ElecDraw_Harmony\\entry\\src\\main\\ets\\components\\ComponentPreview.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\features\\agent_bridge\\src\\main\\ets\\AgentBridgeImpl.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\features\\agent_bridge\\src\\main\\ets\\AgentCommandDispatcher.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\features\\agent_bridge\\src\\main\\ets\\api\\IAgentBridge.ets"
       ],
       "error": false
     },
@@ -1807,7 +1817,7 @@
       "error": false
     },
     "C:\\Projects\\ElecDraw_Harmony\\features\\ai_api_manager\\Index.ets": {
-      "mtimeMs": 1786007683464.4878,
+      "mtimeMs": 1789222200009.8567,
       "children": [
         "C:\\Projects\\ElecDraw_Harmony\\features\\ai_api_manager\\src\\main\\ets\\api\\IAiApiManager.ets",
         "C:\\Projects\\ElecDraw_Harmony\\features\\ai_api_manager\\src\\main\\ets\\AiApiManagerImpl.ets",
@@ -1831,7 +1841,8 @@
         "C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine\\src\\main\\ets\\algorithms\\pcb_agents\\PcbRoutePolicyAgent.ets",
         "C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine\\src\\main\\ets\\algorithms\\pcb_agents\\PcbGeometryAgent.ets",
         "C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine\\src\\main\\ets\\algorithms\\pcb_agents\\PcbQaAgent.ets",
-        "C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine\\src\\main\\ets\\algorithms\\pcb_agents\\PcbChatOpts.ets"
+        "C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine\\src\\main\\ets\\algorithms\\pcb_agents\\PcbChatOpts.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\entry\\src\\main\\ets\\utils\\PcbAutoRouteAgent.ets"
       ],
       "error": false
     },
@@ -1913,7 +1924,10 @@
         "C:\\Projects\\ElecDraw_Harmony\\entry\\src\\main\\ets\\services\\AppService.ets",
         "C:\\Projects\\ElecDraw_Harmony\\entry\\src\\main\\ets\\pages\\PcbPage.ets",
         "C:\\Projects\\ElecDraw_Harmony\\entry\\src\\main\\ets\\components\\PcbCanvas.ets",
-        "C:\\Projects\\ElecDraw_Harmony\\entry\\src\\main\\ets\\components\\pcb\\PcbVerticalToolbar.ets"
+        "C:\\Projects\\ElecDraw_Harmony\\entry\\src\\main\\ets\\components\\pcb\\PcbVerticalToolbar.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\features\\agent_bridge\\src\\main\\ets\\AgentBridgeImpl.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\features\\agent_bridge\\src\\main\\ets\\AgentCommandDispatcher.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\features\\agent_bridge\\src\\main\\ets\\api\\IAgentBridge.ets"
       ],
       "error": false
     },
@@ -1949,7 +1963,8 @@
         "C:\\Projects\\ElecDraw_Harmony\\entry\\src\\main\\ets\\components\\McuDebugPanel.ets",
         "C:\\Projects\\ElecDraw_Harmony\\entry\\src\\main\\ets\\pages\\PcbPage.ets",
         "C:\\Projects\\ElecDraw_Harmony\\entry\\src\\main\\ets\\services\\HomeReleaseService.ets",
-        "C:\\Projects\\ElecDraw_Harmony\\entry\\src\\main\\ets\\utils\\AiTransportStickyStore.ets"
+        "C:\\Projects\\ElecDraw_Harmony\\entry\\src\\main\\ets\\utils\\AiTransportStickyStore.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\features\\agent_bridge\\src\\main\\ets\\AgentBridgeImpl.ets"
       ],
       "error": false
     },
@@ -2077,7 +2092,7 @@
       "error": false
     },
     "C:\\Projects\\ElecDraw_Harmony\\common\\Index.ets": {
-      "mtimeMs": 1786007135160.3303,
+      "mtimeMs": 1789222200009.8567,
       "children": [
         "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\EventBus.ets",
         "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\MapJsonUtil.ets",
@@ -2145,6 +2160,7 @@
         "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\PcbGerberExporter.ets",
         "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\PcbKiCadExporter.ets",
         "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\PcbAutoRouter.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbRouteOrchestrator.ets",
         "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\PcbBoardAccessories.ets",
         "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbGeometryRouter.ets",
         "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbLlmGeometryApply.ets",
@@ -2152,12 +2168,43 @@
         "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbViaFactory.ets",
         "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\ensureAllCopperUsed.ets",
         "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbPlacementExecutor.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbMcuColumnPlacer.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbMcuHandCopper.ets",
         "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbLocalStrategy.ets",
         "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbClearanceOracle.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbGlobalRoute.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbGlobalChannel.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbGlobalCapacity.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbGCellEdgeRouter.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbTrackAssign.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbDiffPairCoupled.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbSwitchBox.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbRuleEngine.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbGridlessRoom.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbRoomModel.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbPolyRoom.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbViaCostModel.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbSimulatedAnnealing.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbRouteBenchmark.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbDfmChecks.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbSerpentine.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbCongestionRipup.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbCorner45.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbImpedanceRules.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbCongestionPlacement.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbSiChecks.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbSteinerTree.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbRoutePostOptimize.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbDiffPairRouter.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbRouteVerify.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbEscapeOrder.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbBgaFanout.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbSpatialIndex.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbMazeRouter.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\PcbTrackShoveUtil.ets",
         "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\PcbPinBindUtil.ets",
         "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\PcbTraceLog.ets",
         "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\PcbTrackBindUtil.ets",
-        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\PcbTrackShoveUtil.ets",
         "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\PcbZoneUtil.ets",
         "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\PcbNetUtil.ets",
         "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\PcbTrackChainUtil.ets",
@@ -2318,7 +2365,11 @@
         "C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine\\src\\main\\ets\\algorithms\\pcb_agents\\PcbChatOpts.ets",
         "C:\\Projects\\ElecDraw_Harmony\\entry\\src\\main\\ets\\utils\\AiTransportStickyStore.ets",
         "C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine\\src\\main\\ets\\algorithms\\pcb_agents\\PcbLlmReplyGuard.ets",
-        "C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine\\src\\main\\ets\\algorithms\\pcb_agents\\PcbLocalEscalate.ets"
+        "C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine\\src\\main\\ets\\algorithms\\pcb_agents\\PcbLocalEscalate.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\entry\\src\\main\\ets\\utils\\PcbAutoRouteAgent.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\features\\agent_bridge\\src\\main\\ets\\AgentBridgeImpl.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\features\\agent_bridge\\src\\main\\ets\\AgentCommandDispatcher.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\features\\agent_bridge\\src\\main\\ets\\AgentHttpServer.ets"
       ],
       "error": false
     },
@@ -2347,7 +2398,7 @@
       "error": false
     },
     "C:\\Projects\\ElecDraw_Harmony\\features\\schematic_editor\\src\\main\\ets\\SchematicEditorImpl.ets": {
-      "mtimeMs": 1786007683463.487,
+      "mtimeMs": 1789222199995.6665,
       "children": [
         "C:\\Projects\\ElecDraw_Harmony\\features\\schematic_editor\\src\\main\\ets\\internal\\EditCommands.ets",
         "C:\\Projects\\ElecDraw_Harmony\\common\\Index.ets",
@@ -2445,7 +2496,19 @@
         "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PowerBusRouter.ets",
         "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\ensureAllCopperUsed.ets",
         "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbLlmGeometryApply.ets",
-        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\PcbTrackShoveUtil.ets"
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\PcbTrackShoveUtil.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbRoutePostOptimize.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbDiffPairRouter.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbRouteVerify.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbSiChecks.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbBgaFanout.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbSerpentine.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbSimulatedAnnealing.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbDfmChecks.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbCorner45.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbRouteBenchmark.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbMcuHandCopper.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\PcbTrackBindUtil.ets"
       ],
       "error": false
     },
@@ -2588,7 +2651,10 @@
         "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\DeviceHitGeometry.ets",
         "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\PcbTraceLog.ets",
         "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\PcbAutoRouter.ets",
-        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbClearanceOracle.ets"
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbClearanceOracle.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbRouteVerify.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\PcbNetUtil.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\PcbTrackBindUtil.ets"
       ],
       "error": false
     },
@@ -2605,13 +2671,15 @@
       "error": false
     },
     "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\WarRouteOrder.ets": {
-      "mtimeMs": 1785141055808.0098,
+      "mtimeMs": 1789222200019.8596,
       "children": [
         "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\types\\CommonTypes.ets"
       ],
       "parent": [
         "C:\\Projects\\ElecDraw_Harmony\\common\\Index.ets",
-        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\PcbAutoRouter.ets"
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\PcbAutoRouter.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbSteinerTree.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbEscapeOrder.ets"
       ],
       "error": false
     },
@@ -3012,7 +3080,7 @@
       "error": false
     },
     "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\types\\PcbAiRouteTypes.ets": {
-      "mtimeMs": 1786007683506.9797,
+      "mtimeMs": 1789222200009.8567,
       "children": [
         "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\types\\PcbTypes.ets",
         "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\types\\CommonTypes.ets"
@@ -3025,7 +3093,11 @@
         "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\ensureAllCopperUsed.ets",
         "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbLlmGeometryApply.ets",
         "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbPlacementExecutor.ets",
-        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbLocalStrategy.ets"
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbLocalStrategy.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\PcbAutoRouter.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbRouteOrchestrator.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbMcuColumnPlacer.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbMcuHandCopper.ets"
       ],
       "error": false
     },
@@ -3148,7 +3220,34 @@
         "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbPlacementExecutor.ets",
         "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\PcbTrackShoveUtil.ets",
         "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\PcbTrackChainUtil.ets",
-        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\PcbSerpentineUtil.ets"
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\PcbSerpentineUtil.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbMazeRouter.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbSpatialIndex.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbGlobalRoute.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbGlobalChannel.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbSteinerTree.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbRoutePostOptimize.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbDiffPairRouter.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbRouteVerify.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbEscapeOrder.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbBgaFanout.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbCongestionPlacement.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbGCellEdgeRouter.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbGlobalCapacity.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbTrackAssign.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbDiffPairCoupled.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbSerpentine.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbCongestionRipup.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbSwitchBox.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbGridlessRoom.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbRoomModel.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbSimulatedAnnealing.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbCorner45.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbPolyRoom.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbRouteBenchmark.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbDfmChecks.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbMcuColumnPlacer.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbMcuHandCopper.ets"
       ],
       "error": false
     },
@@ -3182,7 +3281,36 @@
         "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbPlacementExecutor.ets",
         "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\PcbTrackShoveUtil.ets",
         "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\PcbTrackChainUtil.ets",
-        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbLocalStrategy.ets"
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbLocalStrategy.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbMazeRouter.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbSpatialIndex.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbGlobalRoute.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbGlobalChannel.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbRoutePostOptimize.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbDiffPairRouter.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbRouteVerify.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbSiChecks.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbImpedanceRules.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbBgaFanout.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbCongestionPlacement.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbRuleEngine.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbViaCostModel.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbGCellEdgeRouter.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbGlobalCapacity.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbDiffPairCoupled.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbSerpentine.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbCongestionRipup.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbSwitchBox.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbGridlessRoom.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbRoomModel.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbSimulatedAnnealing.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbDfmChecks.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbCorner45.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbPolyRoom.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbRouteBenchmark.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbRouteOrchestrator.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbMcuColumnPlacer.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbMcuHandCopper.ets"
       ],
       "error": false
     },
@@ -3207,7 +3335,7 @@
       "error": false
     },
     "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\PcbForwardAnnotator.ets": {
-      "mtimeMs": 1786007683483.8838,
+      "mtimeMs": 1786007858950.3452,
       "children": [
         "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\types\\CommonTypes.ets",
         "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\types\\TopologyTypes.ets",
@@ -3239,7 +3367,7 @@
       "error": false
     },
     "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\PcbGerberExporter.ets": {
-      "mtimeMs": 1786007683506.9797,
+      "mtimeMs": 1789222200035.38,
       "children": [
         "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\types\\PcbTypes.ets",
         "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\types\\CommonTypes.ets",
@@ -3263,7 +3391,7 @@
       "error": false
     },
     "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\PcbAutoRouter.ets": {
-      "mtimeMs": 1786007683471.2778,
+      "mtimeMs": 1786441163953.3728,
       "children": [
         "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\types\\PcbTypes.ets",
         "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\types\\CommonTypes.ets",
@@ -3272,13 +3400,47 @@
         "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\PcbTrackBindUtil.ets",
         "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\PcbBoardAccessories.ets",
         "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbClearanceOracle.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbMazeRouter.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbGlobalRoute.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbGCellEdgeRouter.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbTrackAssign.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbGlobalChannel.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\ensureAllCopperUsed.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbLocalStrategy.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbMcuHandCopper.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbMcuColumnPlacer.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\types\\PcbAiRouteTypes.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbSteinerTree.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbRoutePostOptimize.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbDiffPairRouter.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbDiffPairCoupled.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbSerpentine.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbCongestionRipup.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbSwitchBox.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbRuleEngine.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbGridlessRoom.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbRoomModel.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbSimulatedAnnealing.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbDfmChecks.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbRouteVerify.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbEscapeOrder.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbBgaFanout.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbCongestionPlacement.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbImpedanceRules.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbSiChecks.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\PcbTrackShoveUtil.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbCorner45.ets",
         "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\PcbTraceLog.ets",
         "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\WireConflictGeometry.ets",
         "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\WarRouteOrder.ets",
-        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\PcbNetUtil.ets"
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\PcbNetUtil.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbViaCostModel.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbPolyRoom.ets"
       ],
       "parent": [
-        "C:\\Projects\\ElecDraw_Harmony\\common\\Index.ets"
+        "C:\\Projects\\ElecDraw_Harmony\\common\\Index.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbRouteBenchmark.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbRouteOrchestrator.ets"
       ],
       "error": false
     },
@@ -3294,12 +3456,13 @@
       "parent": [
         "C:\\Projects\\ElecDraw_Harmony\\common\\Index.ets",
         "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\PcbForwardAnnotator.ets",
-        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\PcbAutoRouter.ets"
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\PcbAutoRouter.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbRouteOrchestrator.ets"
       ],
       "error": false
     },
     "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbGeometryRouter.ets": {
-      "mtimeMs": 1786007683461.486,
+      "mtimeMs": 1789222200008.8567,
       "children": [
         "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\types\\PcbTypes.ets",
         "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\types\\CommonTypes.ets",
@@ -3374,24 +3537,26 @@
       "error": false
     },
     "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\ensureAllCopperUsed.ets": {
-      "mtimeMs": 1786007683486.4338,
+      "mtimeMs": 1789222200009.8567,
       "children": [
         "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\types\\PcbTypes.ets",
         "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\types\\CommonTypes.ets",
         "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\types\\PcbAiRouteTypes.ets",
         "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\IdUtil.ets",
         "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbClearanceOracle.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbViaCostModel.ets",
         "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\PcbTraceLog.ets"
       ],
       "parent": [
         "C:\\Projects\\ElecDraw_Harmony\\common\\Index.ets",
         "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbGeometryRouter.ets",
-        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbLlmGeometryApply.ets"
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbLlmGeometryApply.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\PcbAutoRouter.ets"
       ],
       "error": false
     },
     "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbPlacementExecutor.ets": {
-      "mtimeMs": 1786007683431.6074,
+      "mtimeMs": 1789222200035.38,
       "children": [
         "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\types\\PcbTypes.ets",
         "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\types\\PcbAiRouteTypes.ets",
@@ -3400,19 +3565,21 @@
         "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\PcbTraceLog.ets"
       ],
       "parent": [
-        "C:\\Projects\\ElecDraw_Harmony\\common\\Index.ets"
+        "C:\\Projects\\ElecDraw_Harmony\\common\\Index.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbRouteOrchestrator.ets"
       ],
       "error": false
     },
     "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbClearanceOracle.ets": {
-      "mtimeMs": 1786007885031.7463,
+      "mtimeMs": 1789222199997.1743,
       "children": [
         "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\types\\PcbTypes.ets",
         "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\types\\CommonTypes.ets",
-        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\PcbNetUtil.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbRuleEngine.ets",
         "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\PcbZoneUtil.ets",
         "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\WireConflictGeometry.ets",
-        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\PcbFootprintLibrary.ets"
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\PcbFootprintLibrary.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbSpatialIndex.ets"
       ],
       "parent": [
         "C:\\Projects\\ElecDraw_Harmony\\common\\Index.ets",
@@ -3422,7 +3589,21 @@
         "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\ensureAllCopperUsed.ets",
         "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbLlmGeometryApply.ets",
         "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\PcbTrackShoveUtil.ets",
-        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\PcbAutoRouter.ets"
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\PcbAutoRouter.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbMazeRouter.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbRoutePostOptimize.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbDiffPairRouter.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbRouteVerify.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbBgaFanout.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbDiffPairCoupled.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbSerpentine.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbSwitchBox.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbGridlessRoom.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbRoomModel.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbSimulatedAnnealing.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbDfmChecks.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbCorner45.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbPolyRoom.ets"
       ],
       "error": false
     },
@@ -3438,7 +3619,7 @@
       "error": false
     },
     "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\PcbTraceLog.ets": {
-      "mtimeMs": 1786007683470.2417,
+      "mtimeMs": 1789222200017.8599,
       "children": [
         "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\Logger.ets",
         "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\InstrumentTraceLog.ets",
@@ -3447,7 +3628,8 @@
         "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\PinRefUtil.ets",
         "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\PcbFootprintLibrary.ets",
         "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\PcbZoneUtil.ets",
-        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\WireConflictGeometry.ets"
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\WireConflictGeometry.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\PcbNetUtil.ets"
       ],
       "parent": [
         "C:\\Projects\\ElecDraw_Harmony\\common\\Index.ets",
@@ -3461,17 +3643,40 @@
         "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbLlmGeometryApply.ets",
         "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbPlacementExecutor.ets",
         "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\PcbTrackShoveUtil.ets",
-        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\PcbFootprintLibrary.ets"
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\PcbFootprintLibrary.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbDiffPairRouter.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbBgaFanout.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbCongestionPlacement.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbRuleEngine.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbGCellEdgeRouter.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbGlobalCapacity.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbTrackAssign.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbDiffPairCoupled.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbSerpentine.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbCongestionRipup.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbSwitchBox.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbGridlessRoom.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbRoomModel.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbSimulatedAnnealing.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbDfmChecks.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbCorner45.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbPolyRoom.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbRouteBenchmark.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbRouteOrchestrator.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbMcuColumnPlacer.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbMcuHandCopper.ets"
       ],
       "error": false
     },
     "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\PcbTrackBindUtil.ets": {
-      "mtimeMs": 1786007683474.7944,
+      "mtimeMs": 1789222200034.1992,
       "children": [
         "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\types\\PcbTypes.ets",
         "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\types\\CommonTypes.ets",
         "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\PcbZoneUtil.ets",
-        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\PcbTraceLog.ets"
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\PcbTraceLog.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\WireConflictGeometry.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\IdUtil.ets"
       ],
       "parent": [
         "C:\\Projects\\ElecDraw_Harmony\\common\\Index.ets",
@@ -3479,12 +3684,13 @@
         "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\PcbAutoRouter.ets",
         "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbGeometryRouter.ets",
         "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbPlacementExecutor.ets",
-        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\PcbTrackShoveUtil.ets"
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\PcbTrackShoveUtil.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbCongestionPlacement.ets"
       ],
       "error": false
     },
     "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\PcbTrackShoveUtil.ets": {
-      "mtimeMs": 1785891180639.8347,
+      "mtimeMs": 1789222200034.1992,
       "children": [
         "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\types\\CommonTypes.ets",
         "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\types\\PcbTypes.ets",
@@ -3495,7 +3701,8 @@
         "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\PcbTraceLog.ets"
       ],
       "parent": [
-        "C:\\Projects\\ElecDraw_Harmony\\common\\Index.ets"
+        "C:\\Projects\\ElecDraw_Harmony\\common\\Index.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\PcbAutoRouter.ets"
       ],
       "error": false
     },
@@ -3515,16 +3722,24 @@
         "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbGeometryRouter.ets",
         "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbClearanceOracle.ets",
         "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PowerBusRouter.ets",
-        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbLlmGeometryApply.ets"
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbLlmGeometryApply.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbBgaFanout.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbGridlessRoom.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbRoomModel.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbDfmChecks.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbPolyRoom.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbMcuHandCopper.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbRouteOrchestrator.ets"
       ],
       "error": false
     },
     "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\PcbNetUtil.ets": {
-      "mtimeMs": 1785465231598.0498,
+      "mtimeMs": 1789222200023.6958,
       "children": [
         "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\types\\PcbTypes.ets",
         "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\types\\CommonTypes.ets",
-        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\PcbZoneUtil.ets"
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\PcbZoneUtil.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\WireConflictGeometry.ets"
       ],
       "parent": [
         "C:\\Projects\\ElecDraw_Harmony\\common\\Index.ets",
@@ -3532,7 +3747,12 @@
         "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbViaFactory.ets",
         "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbClearanceOracle.ets",
         "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\PcbTrackShoveUtil.ets",
-        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\PcbAutoRouter.ets"
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\PcbAutoRouter.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\PcbTraceLog.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbRouteVerify.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbBgaFanout.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbRuleEngine.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbRouteOrchestrator.ets"
       ],
       "error": false
     },
@@ -3548,7 +3768,7 @@
       "error": false
     },
     "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\PcbSpatialIndex.ets": {
-      "mtimeMs": 1786007683451.7246,
+      "mtimeMs": 1789222200004.4465,
       "children": [],
       "parent": [
         "C:\\Projects\\ElecDraw_Harmony\\common\\Index.ets"
@@ -3556,7 +3776,7 @@
       "error": false
     },
     "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\PcbSerpentineUtil.ets": {
-      "mtimeMs": 1786007683485.158,
+      "mtimeMs": 1789222200022.0007,
       "children": [
         "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\types\\CommonTypes.ets"
       ],
@@ -3581,7 +3801,8 @@
         "C:\\Projects\\ElecDraw_Harmony\\entry\\src\\main\\ets\\components\\McuDebugPanel.ets",
         "C:\\Projects\\ElecDraw_Harmony\\entry\\src\\main\\ets\\pages\\PcbPage.ets",
         "C:\\Projects\\ElecDraw_Harmony\\entry\\src\\main\\ets\\workers\\SimWorker.ets",
-        "C:\\Projects\\ElecDraw_Harmony\\features\\ai_api_manager\\src\\main\\ets\\AiApiManagerImpl.ets"
+        "C:\\Projects\\ElecDraw_Harmony\\features\\ai_api_manager\\src\\main\\ets\\AiApiManagerImpl.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\features\\agent_bridge\\src\\main\\ets\\AgentHttpServer.ets"
       ],
       "error": false
     },
@@ -3674,7 +3895,8 @@
         "C:\\Program Files\\Huawei\\DevEco Studio\\sdk\\default\\openharmony\\ets\\api\\@ohos.security.cert.d.ts"
       ],
       "parent": [
-        "C:\\Program Files\\Huawei\\DevEco Studio\\sdk\\default\\openharmony\\ets\\api\\@ohos.net.connection.d.ts"
+        "C:\\Program Files\\Huawei\\DevEco Studio\\sdk\\default\\openharmony\\ets\\api\\@ohos.net.connection.d.ts",
+        "C:\\Projects\\ElecDraw_Harmony\\features\\agent_bridge\\src\\main\\ets\\AgentHttpServer.ets"
       ],
       "error": false
     },
@@ -4099,7 +4321,7 @@
       "error": false
     },
     "C:\\Projects\\ElecDraw_Harmony\\features\\ai_api_manager\\src\\main\\ets\\AiApiManagerImpl.ets": {
-      "mtimeMs": 1785976741218.468,
+      "mtimeMs": 1789222200019.8596,
       "children": [
         "C:\\Projects\\ElecDraw_Harmony\\features\\ai_api_manager\\src\\main\\ets\\api\\IAiApiManager.ets",
         "C:\\Projects\\ElecDraw_Harmony\\features\\ai_api_manager\\src\\main\\ets\\config\\ProviderTemplates.ets",
@@ -4141,7 +4363,7 @@
       "error": false
     },
     "C:\\Projects\\ElecDraw_Harmony\\features\\ai_api_manager\\src\\main\\ets\\internal\\AiApiTypes.ets": {
-      "mtimeMs": 1785976741176.9492,
+      "mtimeMs": 1789222200019.8596,
       "children": [
         "C:\\Projects\\ElecDraw_Harmony\\common\\Index.ets"
       ],
@@ -4492,7 +4714,7 @@
       "error": false
     },
     "C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine\\src\\main\\ets\\algorithms\\AiPipelineOrchestrator.ets": {
-      "mtimeMs": 1786007683474.7944,
+      "mtimeMs": 1789222200017.8599,
       "children": [
         "C:\\Projects\\ElecDraw_Harmony\\features\\ai_api_manager\\Index.ets",
         "C:\\Projects\\ElecDraw_Harmony\\features\\component_library\\Index.ets",
@@ -4806,7 +5028,7 @@
       "error": false
     },
     "C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine\\src\\main\\ets\\prompts\\templates\\SharedPromptRules.ets": {
-      "mtimeMs": 1786007683468.241,
+      "mtimeMs": 1789222200009.8567,
       "children": [],
       "parent": [
         "C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine\\src\\main\\ets\\prompts\\PromptLoader.ets"
@@ -5642,7 +5864,7 @@
       "error": false
     },
     "C:\\Projects\\ElecDraw_Harmony\\features\\pcb_editor\\src\\main\\ets\\api\\IPcbEditor.ets": {
-      "mtimeMs": 1786007683489.12,
+      "mtimeMs": 1789222200009.8567,
       "children": [
         "C:\\Projects\\ElecDraw_Harmony\\common\\Index.ets",
         "C:\\Projects\\ElecDraw_Harmony\\common\\Index.ets"
@@ -5654,7 +5876,7 @@
       "error": false
     },
     "C:\\Projects\\ElecDraw_Harmony\\features\\pcb_editor\\src\\main\\ets\\PcbEditorImpl.ets": {
-      "mtimeMs": 1786007683425.6074,
+      "mtimeMs": 1789222200001.1958,
       "children": [
         "C:\\Projects\\ElecDraw_Harmony\\features\\pcb_editor\\src\\main\\ets\\api\\IPcbEditor.ets",
         "C:\\Projects\\ElecDraw_Harmony\\common\\Index.ets",
@@ -5666,7 +5888,7 @@
       "error": false
     },
     "C:\\Projects\\ElecDraw_Harmony\\entry\\src\\main\\ets\\pages\\SplashPage.ets": {
-      "mtimeMs": 1785398430930.2063,
+      "mtimeMs": 1789222381172.8792,
       "children": [
         "C:\\Program Files\\Huawei\\DevEco Studio\\sdk\\default\\openharmony\\ets\\api\\@ohos.base.d.ts",
         "C:\\Projects\\ElecDraw_Harmony\\common\\Index.ets"
@@ -5893,13 +6115,14 @@
       "error": false
     },
     "C:\\Projects\\ElecDraw_Harmony\\entry\\src\\main\\ets\\components\\AiSettingsPanel.ets": {
-      "mtimeMs": 1785920213247.2988,
+      "mtimeMs": 1789219050776.1045,
       "children": [
         "C:\\Projects\\ElecDraw_Harmony\\entry\\src\\main\\ets\\services\\AppService.ets",
         "C:\\Projects\\ElecDraw_Harmony\\common\\Index.ets",
         "C:\\Projects\\ElecDraw_Harmony\\entry\\src\\main\\ets\\components\\AiApiConfigSection.ets",
         "C:\\Projects\\ElecDraw_Harmony\\entry\\src\\main\\ets\\components\\proteus\\ProteusWidgets.ets",
-        "C:\\Projects\\ElecDraw_Harmony\\entry\\src\\main\\ets\\theme\\ProteusTheme.ets"
+        "C:\\Projects\\ElecDraw_Harmony\\entry\\src\\main\\ets\\theme\\ProteusTheme.ets",
+        "C:\\Program Files\\Huawei\\DevEco Studio\\sdk\\default\\openharmony\\ets\\api\\@ohos.pasteboard.d.ts"
       ],
       "parent": [
         "C:\\Projects\\ElecDraw_Harmony\\entry\\src\\main\\ets\\pages\\Index.ets"
@@ -6048,7 +6271,7 @@
       "error": false
     },
     "C:\\Projects\\ElecDraw_Harmony\\entry\\src\\main\\ets\\pages\\Index.ets": {
-      "mtimeMs": 1786007683503.782,
+      "mtimeMs": 1789222200001.1958,
       "children": [
         "C:\\Projects\\ElecDraw_Harmony\\entry\\src\\main\\ets\\services\\AppService.ets",
         "C:\\Projects\\ElecDraw_Harmony\\entry\\src\\main\\ets\\components\\SchematicCanvas.ets",
@@ -6145,7 +6368,8 @@
         "C:\\Program Files\\Huawei\\DevEco Studio\\sdk\\default\\openharmony\\ets\\api\\@ohos.data.unifiedDataChannel.d.ts"
       ],
       "parent": [
-        "C:\\Projects\\ElecDraw_Harmony\\entry\\src\\main\\ets\\components\\InstrTraceLogPanel.ets"
+        "C:\\Projects\\ElecDraw_Harmony\\entry\\src\\main\\ets\\components\\InstrTraceLogPanel.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\entry\\src\\main\\ets\\components\\AiSettingsPanel.ets"
       ],
       "error": false
     },
@@ -6295,7 +6519,7 @@
       "error": false
     },
     "C:\\Projects\\ElecDraw_Harmony\\entry\\src\\main\\ets\\pages\\PcbPage.ets": {
-      "mtimeMs": 1786008562457.295,
+      "mtimeMs": 1789222200017.8599,
       "children": [
         "C:\\Projects\\ElecDraw_Harmony\\entry\\src\\main\\ets\\services\\AppService.ets",
         "C:\\Projects\\ElecDraw_Harmony\\entry\\src\\main\\ets\\components\\PcbCanvas.ets",
@@ -6320,7 +6544,8 @@
         "C:\\Projects\\ElecDraw_Harmony\\entry\\src\\main\\ets\\utils\\ProjectPaths.ets",
         "C:\\Projects\\ElecDraw_Harmony\\entry\\src\\main\\ets\\utils\\Pcb3dSceneUtil.ets",
         "C:\\Projects\\ElecDraw_Harmony\\entry\\src\\main\\ets\\utils\\Pcb3dRenderer.ets",
-        "C:\\Projects\\ElecDraw_Harmony\\entry\\src\\main\\ets\\utils\\PcbStepImporter.ets"
+        "C:\\Projects\\ElecDraw_Harmony\\entry\\src\\main\\ets\\utils\\PcbStepImporter.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\entry\\src\\main\\ets\\utils\\PcbAutoRouteAgent.ets"
       ],
       "parent": [],
       "error": true,
@@ -6329,7 +6554,7 @@
       ]
     },
     "C:\\Projects\\ElecDraw_Harmony\\entry\\src\\main\\ets\\utils\\Pcb3dMeshBuilder.ets": {
-      "mtimeMs": 1786007683487.8494,
+      "mtimeMs": 1789222200027.7058,
       "children": [
         "C:\\Projects\\ElecDraw_Harmony\\common\\Index.ets",
         "C:\\Projects\\ElecDraw_Harmony\\entry\\src\\main\\ets\\utils\\Pcb3dMath.ets",
@@ -6352,7 +6577,7 @@
       "error": false
     },
     "C:\\Projects\\ElecDraw_Harmony\\entry\\src\\main\\ets\\utils\\Pcb3dMath.ets": {
-      "mtimeMs": 1786007683486.4338,
+      "mtimeMs": 1789222200023.6958,
       "children": [],
       "parent": [
         "C:\\Projects\\ElecDraw_Harmony\\entry\\src\\main\\ets\\utils\\Pcb3dRenderer.ets",
@@ -6911,7 +7136,7 @@
       "error": false
     },
     "C:\\Projects\\ElecDraw_Harmony\\entry\\src\\main\\ets\\utils\\AiTransportStickyStore.ets": {
-      "mtimeMs": 1786007683434.6045,
+      "mtimeMs": 1789222200004.4465,
       "children": [
         "C:\\Program Files\\Huawei\\DevEco Studio\\sdk\\default\\openharmony\\ets\\api\\@ohos.file.fs.d.ts",
         "C:\\Projects\\ElecDraw_Harmony\\common\\Index.ets"
@@ -6938,13 +7163,16 @@
       "error": false
     },
     "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbLocalStrategy.ets": {
-      "mtimeMs": 1785978828230.5527,
+      "mtimeMs": 1789222199997.1743,
       "children": [
         "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\types\\PcbTypes.ets",
-        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\types\\PcbAiRouteTypes.ets"
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\types\\PcbAiRouteTypes.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbMcuColumnPlacer.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbMcuHandCopper.ets"
       ],
       "parent": [
-        "C:\\Projects\\ElecDraw_Harmony\\common\\Index.ets"
+        "C:\\Projects\\ElecDraw_Harmony\\common\\Index.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\PcbAutoRouter.ets"
       ],
       "error": false
     },
@@ -6957,6 +7185,633 @@
       "parent": [
         "C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine\\src\\main\\ets\\algorithms\\pcb_agents\\PcbGeometryAgent.ets",
         "C:\\Projects\\ElecDraw_Harmony\\features\\ai_engine\\src\\main\\ets\\algorithms\\pcb_agents\\PcbQaAgent.ets"
+      ],
+      "error": false
+    },
+    "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbMazeRouter.ets": {
+      "mtimeMs": 1789222200003.1936,
+      "children": [
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\types\\PcbTypes.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\types\\CommonTypes.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbClearanceOracle.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbViaCostModel.ets"
+      ],
+      "parent": [
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\PcbAutoRouter.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\Index.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbSwitchBox.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbRouteBenchmark.ets"
+      ],
+      "error": false
+    },
+    "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbGlobalRoute.ets": {
+      "mtimeMs": 1789222200020.8594,
+      "children": [
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\types\\PcbTypes.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\types\\CommonTypes.ets"
+      ],
+      "parent": [
+        "C:\\Projects\\ElecDraw_Harmony\\common\\Index.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\PcbAutoRouter.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbGlobalChannel.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbCongestionPlacement.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbGCellEdgeRouter.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbGlobalCapacity.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbTrackAssign.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbRouteBenchmark.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbRouteOrchestrator.ets"
+      ],
+      "error": false
+    },
+    "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbGlobalChannel.ets": {
+      "mtimeMs": 1789222200010.8557,
+      "children": [
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\types\\CommonTypes.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbGlobalRoute.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\types\\PcbTypes.ets"
+      ],
+      "parent": [
+        "C:\\Projects\\ElecDraw_Harmony\\common\\Index.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\PcbAutoRouter.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbGCellEdgeRouter.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbGlobalCapacity.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbTrackAssign.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbSwitchBox.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbRouteBenchmark.ets"
+      ],
+      "error": false
+    },
+    "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbImpedanceRules.ets": {
+      "mtimeMs": 1789222200009.8567,
+      "children": [
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\types\\PcbTypes.ets"
+      ],
+      "parent": [
+        "C:\\Projects\\ElecDraw_Harmony\\common\\Index.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\PcbAutoRouter.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbSiChecks.ets"
+      ],
+      "error": false
+    },
+    "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbCongestionPlacement.ets": {
+      "mtimeMs": 1789222200020.8594,
+      "children": [
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\types\\PcbTypes.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\types\\CommonTypes.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\PcbTrackBindUtil.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbGlobalRoute.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\PcbTraceLog.ets"
+      ],
+      "parent": [
+        "C:\\Projects\\ElecDraw_Harmony\\common\\Index.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\PcbAutoRouter.ets"
+      ],
+      "error": false
+    },
+    "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbSiChecks.ets": {
+      "mtimeMs": 1789222200022.0007,
+      "children": [
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\types\\PcbTypes.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\IdUtil.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbImpedanceRules.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbDiffPairRouter.ets"
+      ],
+      "parent": [
+        "C:\\Projects\\ElecDraw_Harmony\\common\\Index.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\PcbAutoRouter.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbRouteVerify.ets"
+      ],
+      "error": false
+    },
+    "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbSteinerTree.ets": {
+      "mtimeMs": 1789222200034.1992,
+      "children": [
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\types\\CommonTypes.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\WarRouteOrder.ets"
+      ],
+      "parent": [
+        "C:\\Projects\\ElecDraw_Harmony\\common\\Index.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\PcbAutoRouter.ets"
+      ],
+      "error": false
+    },
+    "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbRoutePostOptimize.ets": {
+      "mtimeMs": 1789222199989.7937,
+      "children": [
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\types\\PcbTypes.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\types\\CommonTypes.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\IdUtil.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbClearanceOracle.ets"
+      ],
+      "parent": [
+        "C:\\Projects\\ElecDraw_Harmony\\common\\Index.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\PcbAutoRouter.ets"
+      ],
+      "error": false
+    },
+    "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbDiffPairRouter.ets": {
+      "mtimeMs": 1789222199997.1743,
+      "children": [
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\types\\PcbTypes.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\types\\CommonTypes.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\IdUtil.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbClearanceOracle.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\PcbTraceLog.ets"
+      ],
+      "parent": [
+        "C:\\Projects\\ElecDraw_Harmony\\common\\Index.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\PcbAutoRouter.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbSiChecks.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbSerpentine.ets"
+      ],
+      "error": false
+    },
+    "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbRouteVerify.ets": {
+      "mtimeMs": 1789222199991.793,
+      "children": [
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\types\\PcbTypes.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\types\\CommonTypes.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\IdUtil.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\PcbNetUtil.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbClearanceOracle.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\WireConflictGeometry.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbSiChecks.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbDfmChecks.ets"
+      ],
+      "parent": [
+        "C:\\Projects\\ElecDraw_Harmony\\common\\Index.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\PcbAutoRouter.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbRouteBenchmark.ets"
+      ],
+      "error": false
+    },
+    "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbEscapeOrder.ets": {
+      "mtimeMs": 1789222200018.86,
+      "children": [
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\types\\CommonTypes.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\WarRouteOrder.ets"
+      ],
+      "parent": [
+        "C:\\Projects\\ElecDraw_Harmony\\common\\Index.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\PcbAutoRouter.ets"
+      ],
+      "error": false
+    },
+    "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbBgaFanout.ets": {
+      "mtimeMs": 1789222200004.4465,
+      "children": [
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\types\\PcbTypes.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\types\\CommonTypes.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\IdUtil.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\PcbZoneUtil.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbClearanceOracle.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\PcbNetUtil.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\PcbTraceLog.ets"
+      ],
+      "parent": [
+        "C:\\Projects\\ElecDraw_Harmony\\common\\Index.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\PcbAutoRouter.ets"
+      ],
+      "error": false
+    },
+    "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbSpatialIndex.ets": {
+      "mtimeMs": 1789222200009.8567,
+      "children": [
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\types\\PcbTypes.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\types\\CommonTypes.ets"
+      ],
+      "parent": [
+        "C:\\Projects\\ElecDraw_Harmony\\common\\Index.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbClearanceOracle.ets"
+      ],
+      "error": false
+    },
+    "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbGlobalCapacity.ets": {
+      "mtimeMs": 1789222200005.7473,
+      "children": [
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\types\\CommonTypes.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\types\\PcbTypes.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbGlobalRoute.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbGlobalChannel.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\PcbTraceLog.ets"
+      ],
+      "parent": [
+        "C:\\Projects\\ElecDraw_Harmony\\common\\Index.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbGCellEdgeRouter.ets"
+      ],
+      "error": false
+    },
+    "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbGCellEdgeRouter.ets": {
+      "mtimeMs": 1789222200003.918,
+      "children": [
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\types\\CommonTypes.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\types\\PcbTypes.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbGlobalRoute.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbGlobalChannel.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbGlobalCapacity.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\PcbTraceLog.ets"
+      ],
+      "parent": [
+        "C:\\Projects\\ElecDraw_Harmony\\common\\Index.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\PcbAutoRouter.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbRouteBenchmark.ets"
+      ],
+      "error": false
+    },
+    "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbTrackAssign.ets": {
+      "mtimeMs": 1789222200009.8567,
+      "children": [
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\types\\CommonTypes.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbGlobalRoute.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbGlobalChannel.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\PcbTraceLog.ets"
+      ],
+      "parent": [
+        "C:\\Projects\\ElecDraw_Harmony\\common\\Index.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\PcbAutoRouter.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbRouteBenchmark.ets"
+      ],
+      "error": false
+    },
+    "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbDiffPairCoupled.ets": {
+      "mtimeMs": 1789222200035.38,
+      "children": [
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\types\\PcbTypes.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\types\\CommonTypes.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbClearanceOracle.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\PcbTraceLog.ets"
+      ],
+      "parent": [
+        "C:\\Projects\\ElecDraw_Harmony\\common\\Index.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\PcbAutoRouter.ets"
+      ],
+      "error": false
+    },
+    "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbSwitchBox.ets": {
+      "mtimeMs": 1789222200022.0007,
+      "children": [
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\types\\PcbTypes.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\types\\CommonTypes.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbMazeRouter.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbGlobalChannel.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbClearanceOracle.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\PcbTraceLog.ets"
+      ],
+      "parent": [
+        "C:\\Projects\\ElecDraw_Harmony\\common\\Index.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\PcbAutoRouter.ets"
+      ],
+      "error": false
+    },
+    "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbRuleEngine.ets": {
+      "mtimeMs": 1789222200034.1992,
+      "children": [
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\types\\PcbTypes.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\PcbNetUtil.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\PcbTraceLog.ets"
+      ],
+      "parent": [
+        "C:\\Projects\\ElecDraw_Harmony\\common\\Index.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\PcbAutoRouter.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbClearanceOracle.ets"
+      ],
+      "error": false
+    },
+    "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbGridlessRoom.ets": {
+      "mtimeMs": 1789222200034.1992,
+      "children": [
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\types\\PcbTypes.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\types\\CommonTypes.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbClearanceOracle.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\PcbZoneUtil.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\PcbTraceLog.ets"
+      ],
+      "parent": [
+        "C:\\Projects\\ElecDraw_Harmony\\common\\Index.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\PcbAutoRouter.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbRouteBenchmark.ets"
+      ],
+      "error": false
+    },
+    "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbRoomModel.ets": {
+      "mtimeMs": 1789222200004.4465,
+      "children": [
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\types\\PcbTypes.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\types\\CommonTypes.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbClearanceOracle.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\PcbZoneUtil.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\PcbTraceLog.ets"
+      ],
+      "parent": [
+        "C:\\Projects\\ElecDraw_Harmony\\common\\Index.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\PcbAutoRouter.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbRouteBenchmark.ets"
+      ],
+      "error": false
+    },
+    "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbPolyRoom.ets": {
+      "mtimeMs": 1789222200023.6958,
+      "children": [
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\types\\PcbTypes.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\types\\CommonTypes.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbClearanceOracle.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\PcbZoneUtil.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\PcbTraceLog.ets"
+      ],
+      "parent": [
+        "C:\\Projects\\ElecDraw_Harmony\\common\\Index.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\PcbAutoRouter.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbRouteBenchmark.ets"
+      ],
+      "error": false
+    },
+    "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbViaCostModel.ets": {
+      "mtimeMs": 1789222200032.1985,
+      "children": [
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\types\\PcbTypes.ets"
+      ],
+      "parent": [
+        "C:\\Projects\\ElecDraw_Harmony\\common\\Index.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\PcbAutoRouter.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbMazeRouter.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\ensureAllCopperUsed.ets"
+      ],
+      "error": false
+    },
+    "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbSimulatedAnnealing.ets": {
+      "mtimeMs": 1789222200022.0007,
+      "children": [
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\types\\PcbTypes.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\types\\CommonTypes.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\IdUtil.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbClearanceOracle.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\PcbTraceLog.ets"
+      ],
+      "parent": [
+        "C:\\Projects\\ElecDraw_Harmony\\common\\Index.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\PcbAutoRouter.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbRouteBenchmark.ets"
+      ],
+      "error": false
+    },
+    "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbRouteBenchmark.ets": {
+      "mtimeMs": 1789222200027.7058,
+      "children": [
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\types\\PcbTypes.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\types\\CommonTypes.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\IdUtil.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbMazeRouter.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbGridlessRoom.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbRoomModel.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbPolyRoom.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbGlobalRoute.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbGCellEdgeRouter.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbTrackAssign.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbGlobalChannel.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbSimulatedAnnealing.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbRouteVerify.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\PcbAutoRouter.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\PcbTraceLog.ets"
+      ],
+      "parent": [
+        "C:\\Projects\\ElecDraw_Harmony\\common\\Index.ets"
+      ],
+      "error": false
+    },
+    "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbDfmChecks.ets": {
+      "mtimeMs": 1789222200005.7473,
+      "children": [
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\types\\PcbTypes.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\types\\CommonTypes.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\IdUtil.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\PcbZoneUtil.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbClearanceOracle.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbCorner45.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\PcbTraceLog.ets"
+      ],
+      "parent": [
+        "C:\\Projects\\ElecDraw_Harmony\\common\\Index.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\PcbAutoRouter.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbRouteVerify.ets"
+      ],
+      "error": false
+    },
+    "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbSerpentine.ets": {
+      "mtimeMs": 1789222199999.1982,
+      "children": [
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\types\\PcbTypes.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\types\\CommonTypes.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\IdUtil.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbClearanceOracle.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbDiffPairRouter.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\PcbTraceLog.ets"
+      ],
+      "parent": [
+        "C:\\Projects\\ElecDraw_Harmony\\common\\Index.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\PcbAutoRouter.ets"
+      ],
+      "error": false
+    },
+    "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbCongestionRipup.ets": {
+      "mtimeMs": 1789222200031.1992,
+      "children": [
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\types\\PcbTypes.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\types\\CommonTypes.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\PcbTraceLog.ets"
+      ],
+      "parent": [
+        "C:\\Projects\\ElecDraw_Harmony\\common\\Index.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\PcbAutoRouter.ets"
+      ],
+      "error": false
+    },
+    "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbCorner45.ets": {
+      "mtimeMs": 1789222200009.8567,
+      "children": [
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\types\\PcbTypes.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\types\\CommonTypes.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\IdUtil.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbClearanceOracle.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\PcbTraceLog.ets"
+      ],
+      "parent": [
+        "C:\\Projects\\ElecDraw_Harmony\\common\\Index.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\PcbAutoRouter.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbDfmChecks.ets"
+      ],
+      "error": false
+    },
+    "C:\\Projects\\ElecDraw_Harmony\\entry\\src\\main\\ets\\utils\\PcbAutoRouteAgent.ets": {
+      "mtimeMs": 1789222199999.1982,
+      "children": [
+        "C:\\Projects\\ElecDraw_Harmony\\common\\Index.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\features\\ai_api_manager\\Index.ets"
+      ],
+      "parent": [
+        "C:\\Projects\\ElecDraw_Harmony\\entry\\src\\main\\ets\\pages\\PcbPage.ets"
+      ],
+      "error": false
+    },
+    "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbRouteOrchestrator.ets": {
+      "mtimeMs": 1789222200027.7058,
+      "children": [
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\types\\PcbTypes.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\types\\PcbAiRouteTypes.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\PcbAutoRouter.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\PcbBoardAccessories.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbPlacementExecutor.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbMcuColumnPlacer.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\PcbNetUtil.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\PcbZoneUtil.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbGlobalRoute.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\PcbTraceLog.ets"
+      ],
+      "parent": [
+        "C:\\Projects\\ElecDraw_Harmony\\common\\Index.ets"
+      ],
+      "error": false
+    },
+    "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbMcuColumnPlacer.ets": {
+      "mtimeMs": 1789222200010.8557,
+      "children": [
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\types\\PcbTypes.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\types\\PcbAiRouteTypes.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\types\\CommonTypes.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\PcbTraceLog.ets"
+      ],
+      "parent": [
+        "C:\\Projects\\ElecDraw_Harmony\\common\\Index.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbRouteOrchestrator.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\PcbAutoRouter.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbLocalStrategy.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbMcuHandCopper.ets"
+      ],
+      "error": false
+    },
+    "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbMcuHandCopper.ets": {
+      "mtimeMs": 1789222200031.1992,
+      "children": [
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\types\\PcbTypes.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\types\\CommonTypes.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\types\\PcbAiRouteTypes.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\IdUtil.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\PcbZoneUtil.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbMcuColumnPlacer.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\PcbTraceLog.ets"
+      ],
+      "parent": [
+        "C:\\Projects\\ElecDraw_Harmony\\common\\Index.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\PcbAutoRouter.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\src\\main\\ets\\utils\\pcb_route\\PcbLocalStrategy.ets"
+      ],
+      "error": false
+    },
+    "C:\\Projects\\ElecDraw_Harmony\\features\\agent_bridge\\Index.ets": {
+      "mtimeMs": 1789219050777.5474,
+      "children": [
+        "C:\\Projects\\ElecDraw_Harmony\\features\\agent_bridge\\src\\main\\ets\\api\\IAgentBridge.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\features\\agent_bridge\\src\\main\\ets\\api\\IAgentDrawingHost.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\features\\agent_bridge\\src\\main\\ets\\AgentBridgeImpl.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\features\\agent_bridge\\src\\main\\ets\\AgentCommandDispatcher.ets"
+      ],
+      "parent": [
+        "C:\\Projects\\ElecDraw_Harmony\\entry\\src\\main\\ets\\services\\AppService.ets"
+      ],
+      "error": false
+    },
+    "C:\\Projects\\ElecDraw_Harmony\\features\\agent_bridge\\src\\main\\ets\\api\\IAgentBridge.ets": {
+      "mtimeMs": 1789219050782.693,
+      "children": [
+        "C:\\Projects\\ElecDraw_Harmony\\features\\schematic_editor\\Index.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\features\\component_library\\Index.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\features\\pcb_editor\\Index.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\features\\agent_bridge\\src\\main\\ets\\api\\IAgentDrawingHost.ets"
+      ],
+      "parent": [
+        "C:\\Projects\\ElecDraw_Harmony\\features\\agent_bridge\\Index.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\features\\agent_bridge\\src\\main\\ets\\AgentBridgeImpl.ets"
+      ],
+      "error": false
+    },
+    "C:\\Projects\\ElecDraw_Harmony\\features\\agent_bridge\\src\\main\\ets\\AgentBridgeImpl.ets": {
+      "mtimeMs": 1789219050782.693,
+      "children": [
+        "C:\\Program Files\\Huawei\\DevEco Studio\\sdk\\default\\openharmony\\ets\\api\\@ohos.file.fs.d.ts",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\Index.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\features\\schematic_editor\\Index.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\features\\component_library\\Index.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\features\\pcb_editor\\Index.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\features\\agent_bridge\\src\\main\\ets\\api\\IAgentBridge.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\features\\agent_bridge\\src\\main\\ets\\api\\IAgentDrawingHost.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\features\\agent_bridge\\src\\main\\ets\\AgentCommandDispatcher.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\features\\agent_bridge\\src\\main\\ets\\AgentHttpServer.ets"
+      ],
+      "parent": [
+        "C:\\Projects\\ElecDraw_Harmony\\features\\agent_bridge\\Index.ets"
+      ],
+      "error": false
+    },
+    "C:\\Projects\\ElecDraw_Harmony\\features\\agent_bridge\\src\\main\\ets\\AgentCommandDispatcher.ets": {
+      "mtimeMs": 1789222200034.1992,
+      "children": [
+        "C:\\Projects\\ElecDraw_Harmony\\common\\Index.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\features\\schematic_editor\\Index.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\features\\component_library\\Index.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\features\\pcb_editor\\Index.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\features\\agent_bridge\\src\\main\\ets\\api\\IAgentDrawingHost.ets"
+      ],
+      "parent": [
+        "C:\\Projects\\ElecDraw_Harmony\\features\\agent_bridge\\Index.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\features\\agent_bridge\\src\\main\\ets\\AgentBridgeImpl.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\features\\agent_bridge\\src\\main\\ets\\AgentHttpServer.ets"
+      ],
+      "error": false
+    },
+    "C:\\Projects\\ElecDraw_Harmony\\features\\agent_bridge\\src\\main\\ets\\AgentHttpServer.ets": {
+      "mtimeMs": 1789222200020.8594,
+      "children": [
+        "C:\\Program Files\\Huawei\\DevEco Studio\\sdk\\default\\openharmony\\ets\\api\\@ohos.net.socket.d.ts",
+        "C:\\Program Files\\Huawei\\DevEco Studio\\sdk\\default\\openharmony\\ets\\api\\@ohos.base.d.ts",
+        "C:\\Program Files\\Huawei\\DevEco Studio\\sdk\\default\\openharmony\\ets\\api\\@ohos.util.d.ts",
+        "C:\\Projects\\ElecDraw_Harmony\\common\\Index.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\features\\agent_bridge\\src\\main\\ets\\AgentCommandDispatcher.ets"
+      ],
+      "parent": [
+        "C:\\Projects\\ElecDraw_Harmony\\features\\agent_bridge\\src\\main\\ets\\AgentBridgeImpl.ets"
+      ],
+      "error": true,
+      "errorCodes": [
+        28007
+      ]
+    },
+    "C:\\Projects\\ElecDraw_Harmony\\features\\agent_bridge\\src\\main\\ets\\api\\IAgentDrawingHost.ets": {
+      "mtimeMs": 1789222199999.1982,
+      "children": [],
+      "parent": [
+        "C:\\Projects\\ElecDraw_Harmony\\features\\agent_bridge\\Index.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\features\\agent_bridge\\src\\main\\ets\\api\\IAgentBridge.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\features\\agent_bridge\\src\\main\\ets\\AgentBridgeImpl.ets",
+        "C:\\Projects\\ElecDraw_Harmony\\features\\agent_bridge\\src\\main\\ets\\AgentCommandDispatcher.ets"
+      ],
+      "error": false
+    },
+    "C:\\Program Files\\Huawei\\DevEco Studio\\sdk\\default\\openharmony\\ets\\api\\@ohos.display.d.ts": {
+      "mtimeMs": 1782438560000,
+      "children": [
+        "C:\\Program Files\\Huawei\\DevEco Studio\\sdk\\default\\openharmony\\ets\\api\\@ohos.base.d.ts",
+        "C:\\Program Files\\Huawei\\DevEco Studio\\sdk\\default\\openharmony\\ets\\api\\@ohos.graphics.colorSpaceManager.d.ts",
+        "C:\\Program Files\\Huawei\\DevEco Studio\\sdk\\default\\openharmony\\ets\\api\\@ohos.graphics.hdrCapability.d.ts"
+      ],
+      "parent": [
+        "C:\\Projects\\ElecDraw_Harmony\\entry\\src\\main\\ets\\pages\\SplashPage.ets"
+      ],
+      "error": false
+    },
+    "C:\\Program Files\\Huawei\\DevEco Studio\\sdk\\default\\openharmony\\ets\\api\\@ohos.graphics.hdrCapability.d.ts": {
+      "mtimeMs": 1782438560000,
+      "children": [],
+      "parent": [
+        "C:\\Program Files\\Huawei\\DevEco Studio\\sdk\\default\\openharmony\\ets\\api\\@ohos.display.d.ts"
       ],
       "error": false
     }

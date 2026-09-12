@@ -77,6 +77,8 @@ export class SchematicEditorImpl implements ISchematicEditor {
   private buses: BusInfo[] = [];
   private annotations: SchematicAnnotation[] = [];
   private readOnlyMode: boolean = false;
+  /** Agent Bridge 会话：只读锁挡住人手，但允许 Bridge 原子写 */
+  private agentTrustedEdit: boolean = false;
   private boundsResolver: ComponentBoundsResolver | null = null;
   private pinResolver: PinResolver | null = null;
   private defaultParamsResolver: DefaultParamsResolver | null = null;
@@ -358,6 +360,14 @@ export class SchematicEditorImpl implements ISchematicEditor {
 
   setReadOnly(readOnly: boolean): void {
     this.readOnlyMode = readOnly;
+    if (!readOnly) {
+      this.agentTrustedEdit = false;
+    }
+  }
+
+  /** Agent 绘制会话：readOnly + 信任 Bridge 写入 */
+  setAgentTrustedEdit(trusted: boolean): void {
+    this.agentTrustedEdit = trusted;
   }
 
   isReadOnly(): boolean {
@@ -365,7 +375,7 @@ export class SchematicEditorImpl implements ISchematicEditor {
   }
 
   private guardEdit(): ApiResult<void> | null {
-    if (this.readOnlyMode) {
+    if (this.readOnlyMode && !this.agentTrustedEdit) {
       return ResultHelper.fail(ErrCode.ERR_PROJECT_LOCKED, '工程处于只读模式');
     }
     return this.guardSimBusy();

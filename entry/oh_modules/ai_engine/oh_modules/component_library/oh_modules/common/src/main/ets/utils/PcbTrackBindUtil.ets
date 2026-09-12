@@ -1,10 +1,12 @@
 /**
  * PCB 走线-焊盘拓扑绑定 — 移动/旋转封装时走线端点跟随焊盘，折点联动传播
  */
-import { PcbDocument, PcbFootprintInst, PcbPad, PcbTrack } from '../types/PcbTypes';
+import { PcbDocument, PcbFootprintInst, PcbPad, PcbTrack, PcbPadType, PcbLayerId } from '../types/PcbTypes';
 import { Point2D } from '../types/CommonTypes';
 import { padWorldPosition } from './PcbZoneUtil';
 import { tracePcb } from './PcbTraceLog';
+import { WireConflictGeometry } from './WireConflictGeometry';
+import { IdUtil } from './IdUtil';
 
 interface PcbPadSnapRef {
   pos: Point2D;
@@ -802,4 +804,279 @@ export function orderPointsNearestNeighbor(points: Point2D[]): Point2D[] {
     ordered.push(current);
   }
   return ordered;
+}
+
+function pointToSegmentDistLocal(p: Point2D, a: Point2D, b: Point2D): number {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const lenSq = dx * dx + dy * dy;
+  if (lenSq < 1e-6) {
+    return pointDist(p, a);
+  }
+  let t = ((p.x - a.x) * dx + (p.y - a.y) * dy) / lenSq;
+  t = Math.max(0, Math.min(1, t));
+  const proj: Point2D = { x: a.x + t * dx, y: a.y + t * dy };
+  return pointDist(p, proj);
+}
+
+function projectPointOnSegment(p: Point2D, a: Point2D, b: Point2D): Point2D {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const lenSq = dx * dx + dy * dy;
+  if (lenSq < 1e-6) {
+    return copyPoint2D(a);
+  }
+  let t = ((p.x - a.x) * dx + (p.y - a.y) * dy) / lenSq;
+  t = Math.max(0, Math.min(1, t));
+  const out: Point2D = { x: a.x + t * dx, y: a.y + t * dy };
+  return out;
+}
+
+function padTouchesCopperLayer(pad: PcbPad, layer: PcbLayerId): boolean {
+  if (pad.type === PcbPadType.TH || pad.type === PcbPadType.NPTH) {
+    return true;
+  }
+  if (!pad.layers || pad.layers.length === 0) {
+    return true;
+  }
+  for (let i = 0; i < pad.layers.length; i++) {
+    if (pad.layers[i] === layer) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * 在 pt 处拆分走线为两段（端点重合即电气结点）。
+ * @returns 新增段数（0/1）
+ */
+function splitTrackAtPoint(doc: PcbDocument, index: number, pt: Point2D, endTol: number): number {
+  if (index < 0 || index >= doc.tracks.length) {
+    return 0;
+  }
+  const t = doc.tracks[index];
+  const dStart = pointDist(t.start, pt);
+  const dEnd = pointDist(t.end, pt);
+  if (dStart <= endTol) {
+    if (dStart > 0.01) {
+      t.start = copyPoint2D(pt);
+    }
+    return 0;
+  }
+  if (dEnd <= endTol) {
+    if (dEnd > 0.01) {
+      t.end = copyPoint2D(pt);
+    }
+    return 0;
+  }
+  const onSeg = pointToSegmentDistLocal(pt, t.start, t.end);
+  const hit = Math.max(t.width / 2, 2) + 1;
+  if (onSeg > hit) {
+    return 0;
+  }
+  const oldEnd = copyPoint2D(t.end);
+  t.end = copyPoint2D(pt);
+  const neu: PcbTrack = {
+    id: IdUtil.generate('trk'),
+    layer: t.layer,
+    start: copyPoint2D(pt),
+    end: oldEnd,
+    width: t.width,
+    netId: t.netId,
+    netName: t.netName
+  };
+  doc.tracks.push(neu);
+  return 1;
+}
+
+/** 同网同层：正交交叉 / T 接 → 在交点拆段，形成真实结点 */
+function splitSameNetTrackJunctions(doc: PcbDocument): number {
+  let splits = 0;
+  const endTol = 3;
+  const maxPass = 40;
+  for (let pass = 0; pass < maxPass; pass++) {
+    let did = false;
+    const n = doc.tracks.length;
+    for (let i = 0; i < n; i++) {
+      const a = doc.tracks[i];
+      if (!a.netId || a.netId.length === 0) {
+        continue;
+      }
+      for (let j = i + 1; j < doc.tracks.length; j++) {
+        const b = doc.tracks[j];
+        if (a.layer !== b.layer || a.netId !== b.netId) {
+          continue;
+        }
+        const kind = WireConflictGeometry.segmentConflict(a.start, a.end, b.start, b.end);
+        if (kind === 'orthogonal_cross') {
+          const cp = WireConflictGeometry.orthogonalCrossPoint(a.start, a.end, b.start, b.end);
+          if (cp !== null &&
+            WireConflictGeometry.isMidspanCross(cp, [a.start, a.end], [b.start, b.end], endTol)) {
+            splits += splitTrackAtPoint(doc, i, cp, endTol);
+            // b 索引可能因 push 变化：用 id 查找
+            let bj = -1;
+            for (let k = 0; k < doc.tracks.length; k++) {
+              if (doc.tracks[k].id === b.id) {
+                bj = k;
+                break;
+              }
+            }
+            if (bj >= 0) {
+              splits += splitTrackAtPoint(doc, bj, cp, endTol);
+            }
+            did = true;
+            break;
+          }
+        }
+        // T 接：A 端点落在 B 线段中部
+        const hitTol = Math.max(a.width, b.width) / 2 + 2;
+        const tryT = (ep: Point2D, seg: PcbTrack, segId: string): boolean => {
+          if (pointDist(ep, seg.start) <= endTol || pointDist(ep, seg.end) <= endTol) {
+            return false;
+          }
+          if (pointToSegmentDistLocal(ep, seg.start, seg.end) > hitTol) {
+            return false;
+          }
+          let sj = -1;
+          for (let k = 0; k < doc.tracks.length; k++) {
+            if (doc.tracks[k].id === segId) {
+              sj = k;
+              break;
+            }
+          }
+          if (sj < 0) {
+            return false;
+          }
+          const nAdd = splitTrackAtPoint(doc, sj, ep, endTol);
+          splits += nAdd;
+          return nAdd > 0;
+        };
+        if (tryT(a.start, b, b.id) || tryT(a.end, b, b.id) ||
+          tryT(b.start, a, a.id) || tryT(b.end, a, a.id)) {
+          did = true;
+          break;
+        }
+      }
+      if (did) {
+        break;
+      }
+    }
+    if (!did) {
+      break;
+    }
+  }
+  return splits;
+}
+
+/**
+ * 走线中段压过同网（或空网）焊盘 → 赋网并在焊盘处拆段，使端点落在焊盘上
+ */
+function splitTracksThroughPads(doc: PcbDocument): number {
+  let splits = 0;
+  const endTol = 3;
+  const maxPass = 60;
+  for (let pass = 0; pass < maxPass; pass++) {
+    let did = false;
+    for (let ti = 0; ti < doc.tracks.length; ti++) {
+      const trk = doc.tracks[ti];
+      for (let fi = 0; fi < doc.footprints.length; fi++) {
+        const fp = doc.footprints[fi];
+        for (let pi = 0; pi < fp.pads.length; pi++) {
+          const pad = fp.pads[pi];
+          const padNet = pad.netId ?? '';
+          if (padNet.length === 0) {
+            continue;
+          }
+          if (!padTouchesCopperLayer(pad, trk.layer)) {
+            continue;
+          }
+          // 异网：不绑定（由 DRC 拒绝）；同网或走线空网才处理
+          if (trk.netId.length > 0 && trk.netId !== padNet) {
+            continue;
+          }
+          const wp = padWorldPosition(fp, pad);
+          const padR = Math.max(pad.size.x, pad.size.y) / 2;
+          const hitR = padR + trk.width / 2;
+          const d = pointToSegmentDistLocal(wp, trk.start, trk.end);
+          if (d > hitR) {
+            continue;
+          }
+          // 端点已在焊盘上则无需拆
+          if (pointDist(trk.start, wp) <= padR + 1 || pointDist(trk.end, wp) <= padR + 1) {
+            if (trk.netId.length === 0) {
+              trk.netId = padNet;
+              trk.netName = pad.netName ?? padNet;
+            }
+            continue;
+          }
+          if (trk.netId.length === 0) {
+            trk.netId = padNet;
+            trk.netName = pad.netName ?? padNet;
+          }
+          const proj = projectPointOnSegment(wp, trk.start, trk.end);
+          // 优先拆在焊盘中心投影；若投影离中心很近则用焊盘中心
+          const splitPt = pointDist(proj, wp) <= padR * 0.6 ? copyPoint2D(wp) : proj;
+          const before = doc.tracks.length;
+          const nAdd = splitTrackAtPoint(doc, ti, splitPt, endTol);
+          splits += nAdd;
+          // 拆后把靠近焊盘的端点吸到焊盘中心
+          if (nAdd > 0 || before === doc.tracks.length) {
+            const touchIds: string[] = [trk.id];
+            if (nAdd > 0) {
+              touchIds.push(doc.tracks[doc.tracks.length - 1].id);
+            }
+            for (let k = 0; k < doc.tracks.length; k++) {
+              const t2 = doc.tracks[k];
+              let hit = false;
+              for (let u = 0; u < touchIds.length; u++) {
+                if (t2.id === touchIds[u]) {
+                  hit = true;
+                  break;
+                }
+              }
+              if (!hit) {
+                continue;
+              }
+              if (pointDist(t2.start, wp) <= padR + endTol) {
+                t2.start = copyPoint2D(wp);
+              }
+              if (pointDist(t2.end, wp) <= padR + endTol) {
+                t2.end = copyPoint2D(wp);
+              }
+            }
+          }
+          if (nAdd > 0) {
+            did = true;
+            break;
+          }
+        }
+        if (did) {
+          break;
+        }
+      }
+      if (did) {
+        break;
+      }
+    }
+    if (!did) {
+      break;
+    }
+  }
+  return splits;
+}
+
+/**
+ * 同层铜拓扑自愈：交叉/T 接拆段 + 过焊盘拆段吸附 + 端点吸焊盘。
+ * 使「交叉即连通」「压焊盘即连通」在几何上成立。
+ */
+export function healSameLayerCopperTopology(doc: PcbDocument): number {
+  const j = splitSameNetTrackJunctions(doc);
+  const p = splitTracksThroughPads(doc);
+  const s = snapTrackEndpointsToPads(doc);
+  const total = j + p + s;
+  if (total > 0) {
+    tracePcb('COPPER_HEAL', `junctionSplits=${j} padSplits=${p} endpointSnaps=${s}`);
+  }
+  return total;
 }

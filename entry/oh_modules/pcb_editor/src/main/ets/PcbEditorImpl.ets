@@ -8,7 +8,7 @@ import {
   PcbEditorSelectionData, Point2D, ViewportState, EventBus, ModuleEvent, IdUtil,
   createDefaultPcbViewport, createEmptyPcbDocument,
   forwardAnnotatePcb, reverseAnnotatePcb, getGlobalPcbFootprintLibrary,
-  autoRoutePcb, AutoRouteResult, AccessoryNetHint,
+  AutoRouteResult, AccessoryNetHint,
   rebuildZoneCutouts, pointInPolygon, makeRectCutout, normalizeZoneFields, defaultZoneFields,
   SchematicDocument, ApiResult, ResultHelper, ErrCode,
   normalizePcbDocument, isCopperLayer, applyCopperLayerCount, copperLayersFromStack,
@@ -17,6 +17,7 @@ import {
   collectFootprintPadPositions, updateTracksForFootprintTransform, padSnapTolerance,
   snapTrackEndpointsToPads, snapTrackEndpointsNearFootprints, syncMovedTrackJunctions,
   lockTrackEndpointsToPads, doglegPadToPadSelectedTracks, shoveForeignTracksByLReroute,
+  healSameLayerCopperTopology,
   TrackEndpointSnapshot,
   tracePcbAutoRoute, tracePcbManualRoute, tracePcbManualRouteReject,
   tracePcbTrackAdded, tracePcbDrc, tracePcbNetRoutingSummary,
@@ -24,7 +25,8 @@ import {
   PcbAppearance, PcbAppearanceMode, defaultPcbAppearance, normalizePcbAppearance, PcbRatsnestEdge,
   PcbViaKind, PcbRouteCornerMode, rebuildPcbNets, buildRatsnest, routeByCornerMode, findNetClass,
   sumTrackLengthForNet, PcbSpatialIndex, PcbSpatialItem, PcbSpatialKind, PcbSpatialRect,
-  matchDiffPairLengths, Pcb3dDisplayMode, netCopperConnectsPads
+  matchDiffPairLengths, Pcb3dDisplayMode, netCopperConnectsPads,
+  PcbRouteAgentBundle, orchestratePcbAutoRoute, autoRoutePcb
 } from 'common';
 
 export { PcbToolMode } from './api/IPcbEditor';
@@ -78,6 +80,12 @@ export class PcbEditorImpl implements IPcbEditor {
 
   // ── AI / 只读锁（对标原理图 setReadOnly）──
   private readOnlyMode: boolean = false;
+  /** Agent Bridge 会话：只读锁挡住人手，但允许 Bridge 原子写 */
+  private agentTrustedEdit: boolean = false;
+  /** Agent 布线：仅拦跨网络，跳过实时 clearance（由 Agent 负责路径） */
+  private agentRelaxRouteDrc: boolean = false;
+  /** 最近一次 commit/addTrack 拒绝原因（供 Agent RPC） */
+  private lastRouteRejectReason: string = '';
 
   // ── Clipboard ──
   private clipboard: PcbFootprintInst[] = [];
@@ -105,15 +113,204 @@ export class PcbEditorImpl implements IPcbEditor {
 
   setReadOnly(readOnly: boolean): void {
     this.readOnlyMode = readOnly;
+    if (!readOnly) {
+      this.agentTrustedEdit = false;
+      this.agentRelaxRouteDrc = false;
+    }
   }
 
   isReadOnly(): boolean {
     return this.readOnlyMode;
   }
 
+  /** Agent 绘制会话：只读锁下允许 Bridge 写入；焊盘/走线 clearance 始终生效 */
+  setAgentTrustedEdit(trusted: boolean): void {
+    this.agentTrustedEdit = trusted;
+    // 不再关闭 clearance —— Agent 同层误碰焊盘必须拒绝
+    this.agentRelaxRouteDrc = false;
+  }
+
+  /** 绝对移动封装（按 id 或 refDes） */
+  moveFootprintTo(idOrRef: string, x: number, y: number, rotation?: number): boolean {
+    if (this.guardEdit()) {
+      return false;
+    }
+    if (!this.document) {
+      return false;
+    }
+    let fp: PcbFootprintInst | undefined = undefined;
+    for (let i = 0; i < this.document.footprints.length; i++) {
+      const f = this.document.footprints[i];
+      if (f.id === idOrRef || f.refDes === idOrRef) {
+        fp = f;
+        break;
+      }
+    }
+    if (fp === undefined) {
+      return false;
+    }
+    this.saveSnapshot();
+    fp.position = { x: x, y: y };
+    if (rotation !== undefined) {
+      const r = ((Math.round(rotation / 90) * 90) % 360 + 360) % 360;
+      if (r === 90 || r === 180 || r === 270) {
+        fp.rotation = r as 0 | 90 | 180 | 270;
+      } else {
+        fp.rotation = 0;
+      }
+    }
+    this.touchModified();
+    this.refreshConnectivity();
+    this.publishChanged();
+    return true;
+  }
+
+  /** 清除走线/过孔（Agent 重布前清理） */
+  clearCopper(clearTracks: boolean = true, clearVias: boolean = true): number {
+    if (this.guardEdit()) {
+      return 0;
+    }
+    if (!this.document) {
+      return 0;
+    }
+    let n = 0;
+    this.saveSnapshot();
+    if (clearTracks) {
+      n += this.document.tracks.length;
+      this.document.tracks = [];
+    }
+    if (clearVias) {
+      n += this.document.vias.length;
+      this.document.vias = [];
+    }
+    this.touchModified();
+    this.refreshConnectivity();
+    this.publishChanged();
+    return n;
+  }
+
+  /** 安装孔去网络，避免 GND 环误连 H1–H4 */
+  clearMountHoleNets(): number {
+    if (this.guardEdit()) {
+      return 0;
+    }
+    if (!this.document) {
+      return 0;
+    }
+    let n = 0;
+    this.saveSnapshot();
+    for (let i = 0; i < this.document.footprints.length; i++) {
+      const fp = this.document.footprints[i];
+      const isMount = fp.defId.indexOf('MOUNT') >= 0 ||
+        (fp.refDes.length > 0 && (fp.refDes.charAt(0) === 'H' || fp.refDes.indexOf('MH') === 0));
+      if (!isMount) {
+        continue;
+      }
+      for (let pi = 0; pi < fp.pads.length; pi++) {
+        const pad = fp.pads[pi];
+        if ((pad.netId !== undefined && pad.netId.length > 0) ||
+          (pad.netName !== undefined && pad.netName.length > 0)) {
+          pad.netId = '';
+          pad.netName = '';
+          n++;
+        }
+      }
+    }
+    this.touchModified();
+    this.refreshConnectivity();
+    this.publishChanged();
+    return n;
+  }
+
+  /**
+   * Agent 精确直线：不拐弯；端点只吸附同网焊盘；强制 DRC（异网/空网焊盘均挡）
+   */
+  addStraightTrack(start: Point2D, end: Point2D, netId?: string, netName?: string): PcbTrack | null {
+    if (this.guardEdit()) {
+      this.lastRouteRejectReason = 'readonly';
+      return null;
+    }
+    if (!this.document) {
+      this.lastRouteRejectReason = 'no_document';
+      return null;
+    }
+    if (!isCopperLayer(this.activeLayer)) {
+      this.lastRouteRejectReason = 'not_copper_layer';
+      return null;
+    }
+
+    let resolvedId = netId ?? '';
+    let resolvedName = netName ?? '';
+    const s0 = this.snapEndpointForNet(start, resolvedId);
+    const e0 = this.snapEndpointForNet(end, resolvedId);
+    const startNet = this.findNetAtPointTight(s0);
+    const endNet = this.findNetAtPointTight(e0);
+    if (resolvedId.length === 0) {
+      resolvedId = startNet?.netId ?? endNet?.netId ?? '';
+      resolvedName = startNet?.netName ?? endNet?.netName ?? '';
+    }
+    if (startNet && startNet.netId.length > 0 && resolvedId.length > 0 && startNet.netId !== resolvedId) {
+      this.lastRouteRejectReason =
+        `cross_net:${startNet.netName || startNet.netId}->${resolvedName || resolvedId}`;
+      return null;
+    }
+    if (endNet && endNet.netId.length > 0 && resolvedId.length > 0 && endNet.netId !== resolvedId) {
+      this.lastRouteRejectReason =
+        `cross_net:${resolvedName || resolvedId}->${endNet.netName || endNet.netId}`;
+      return null;
+    }
+    if (startNet && endNet && startNet.netId.length > 0 && endNet.netId.length > 0 &&
+      startNet.netId !== endNet.netId) {
+      this.lastRouteRejectReason =
+        `cross_net:${startNet.netName || startNet.netId}->${endNet.netName || endNet.netId}`;
+      return null;
+    }
+    if (resolvedName.length === 0) {
+      resolvedName = startNet?.netName ?? endNet?.netName ?? resolvedId;
+    }
+
+    const dx = e0.x - s0.x;
+    const dy = e0.y - s0.y;
+    if (Math.sqrt(dx * dx + dy * dy) < 0.5) {
+      this.lastRouteRejectReason = 'too_short';
+      return null;
+    }
+
+    const path: Point2D[] = [s0, e0];
+    const violations = this.checkPathClearance(path, resolvedId, true);
+    if (violations > 0) {
+      this.lastRouteRejectReason = `drc_pad_or_track:${violations}`;
+      this.routeViolationCount = violations;
+      return null;
+    }
+
+    const track = this.addTrack(s0, e0, resolvedId, resolvedName, false);
+    if (!track) {
+      if (this.lastRouteRejectReason.length === 0) {
+        this.lastRouteRejectReason = 'add_track_failed';
+      }
+      return null;
+    }
+    this.lastRouteRejectReason = '';
+    this.routeViolationCount = 0;
+    this.refreshConnectivity();
+    return track;
+  }
+
+  /** 最近一次布线拒绝原因（供 Agent 诊断） */
+  getLastRouteRejectReason(): string {
+    if (this.lastRouteRejectReason.length > 0) {
+      return this.lastRouteRejectReason;
+    }
+    if (this.routeViolationCount > 0) {
+      return `drc:${this.routeViolationCount}`;
+    }
+    return '';
+  }
+
   /** true = 已锁定，调用方应中止编辑 */
   private guardEdit(): boolean {
-    return this.readOnlyMode;
+    return this.readOnlyMode && !this.agentTrustedEdit;
   }
 
   loadDocument(doc: PcbDocument): void {
@@ -986,17 +1183,21 @@ export class PcbEditorImpl implements IPcbEditor {
     this.routePreviewPoint = this.snapToPadOrGrid(point);
     if (this.routeStartPoint && this.document) {
       const path = routeByCornerMode(this.routeStartPoint, this.routePreviewPoint, this.routeCornerMode);
-      this.routeViolationCount = this.checkPathClearance(path);
+      this.routeViolationCount = this.checkPathClearance(path, '', true);
     }
     return this.routePreviewPoint;
   }
 
   commitRoute(end: Point2D): PcbTrack | null {
-    if (!this.routeStartPoint) return null;
+    if (!this.routeStartPoint) {
+      this.lastRouteRejectReason = 'inactive';
+      return null;
+    }
     const snappedEnd = this.snapToPadOrGrid(end);
     const dx = snappedEnd.x - this.routeStartPoint.x;
     const dy = snappedEnd.y - this.routeStartPoint.y;
     if (Math.sqrt(dx * dx + dy * dy) < 0.5) {
+      this.lastRouteRejectReason = 'too_short';
       this.routePreviewPoint = snappedEnd;
       return null;
     }
@@ -1005,6 +1206,8 @@ export class PcbEditorImpl implements IPcbEditor {
     const endNet = this.findNetAtPoint(snappedEnd);
     if (startNet && endNet && startNet.netId.length > 0 && endNet.netId.length > 0 &&
       startNet.netId !== endNet.netId) {
+      this.lastRouteRejectReason =
+        `cross_net:${startNet.netName || startNet.netId}->${endNet.netName || endNet.netId}`;
       tracePcbManualRouteReject('跨网络', startNet.netName, endNet.netName);
       this.routePreviewPoint = snappedEnd;
       return null;
@@ -1014,15 +1217,17 @@ export class PcbEditorImpl implements IPcbEditor {
     const netName = startNet?.netName ?? endNet?.netName ?? '';
     const path = routeByCornerMode(this.routeStartPoint, snappedEnd, this.routeCornerMode);
 
-    // 提交前最后一次实时 DRC 检查 — 违规则拒绝写入
-    const violations = this.checkPathClearance(path);
+    // 提交前实时 DRC — 焊盘/异网走线始终检查（Agent 也不再跳过）
+    const violations = this.checkPathClearance(path, netId, true);
     if (violations > 0) {
+      this.lastRouteRejectReason = `drc_pad_or_track:${violations}`;
       tracePcbManualRouteReject('实时DRC',
         `路径存在 ${violations} 处违规`, `${violations} violations`);
       this.routePreviewPoint = snappedEnd;
       this.routeViolationCount = violations;
       return null;
     }
+    this.routeViolationCount = 0;
 
     let lastTrack: PcbTrack | null = null;
     for (let i = 0; i < path.length - 1; i++) {
@@ -1034,10 +1239,13 @@ export class PcbEditorImpl implements IPcbEditor {
     }
 
     if (lastTrack) {
+      this.lastRouteRejectReason = '';
       this.routeStartPoint = snappedEnd;
       this.routePreviewPoint = snappedEnd;
       this.routeViolationCount = 0;
       this.refreshConnectivity();
+    } else {
+      this.lastRouteRejectReason = 'add_track_failed';
     }
     return lastTrack;
   }
@@ -1267,44 +1475,153 @@ export class PcbEditorImpl implements IPcbEditor {
     return null;
   }
 
-  private checkPathClearance(path: Point2D[]): number {
+  /**
+   * 路径 clearance。
+   * @param routeNetId 当前走线网络；空则用起点吸附网
+   * @param blockUnassignedPads true=空网焊盘也挡线（防止擦过 NC/安装孔）
+   */
+  private checkPathClearance(path: Point2D[], routeNetId: string = '',
+    blockUnassignedPads: boolean = true): number {
     if (!this.document || path.length < 2) return 0;
     const rules = this.document.metadata.designRules;
     const minClear = rules.minClearance;
-    const snapNet = this.findNetAtPoint(this.routeStartPoint!);
-    const snapNetId = snapNet?.netId ?? '';
+    const trackHalf = (rules.defaultTrackWidth > 0 ? rules.defaultTrackWidth : 10) / 2;
+    let snapNetId = routeNetId;
+    if (snapNetId.length === 0 && this.routeStartPoint) {
+      const snapNet = this.findNetAtPointTight(this.routeStartPoint);
+      snapNetId = snapNet?.netId ?? '';
+    }
     let violations = 0;
+    const pathStart = path[0];
+    const pathEnd = path[path.length - 1];
 
     for (let seg = 0; seg < path.length - 1; seg++) {
       const segStart = path[seg];
       const segEnd = path[seg + 1];
 
       for (const trk of this.document.tracks) {
-        if (trk.netId.length > 0 && trk.netId === snapNetId) continue;
+        if (trk.netId.length > 0 && snapNetId.length > 0 && trk.netId === snapNetId) continue;
         if (trk.layer !== this.activeLayer) continue;
         const d = segmentDist(segStart, segEnd, trk.start, trk.end);
-        if (d < minClear + trk.width / 2) violations++;
+        if (d < minClear + trk.width / 2 + trackHalf) violations++;
       }
 
       for (const via of this.document.vias) {
-        if (via.netId.length > 0 && via.netId === snapNetId) continue;
+        if (via.netId.length > 0 && snapNetId.length > 0 && via.netId === snapNetId) continue;
         if (!viaSpansLayer(via.layers, this.activeLayer)) continue;
         const d = pointToSegmentDist(via.position, segStart, segEnd);
-        if (d < minClear + via.diameter / 2) violations++;
+        if (d < minClear + via.diameter / 2 + trackHalf) violations++;
       }
 
       for (const fp of this.document.footprints) {
+        const isMount = fp.defId.indexOf('MOUNT') >= 0 ||
+          (fp.refDes.length > 0 && fp.refDes.charAt(0) === 'H');
         for (const pad of fp.pads) {
           const padNetId = pad.netId ?? '';
-          if (padNetId.length > 0 && padNetId === snapNetId) continue;
+          // 同网焊盘放行
+          if (snapNetId.length > 0 && padNetId === snapNetId) continue;
+          // 空网：默认挡线；安装孔无论是否赋网都挡（除非同网已在上面放行）
+          if (padNetId.length === 0 && !blockUnassignedPads && !isMount) continue;
+
           const wp = padWorldPosition(fp, pad);
+          const endTol = Math.max(pad.size.x, pad.size.y) / 2 + 1;
+          const onStart = pointDist(pathStart, wp) <= endTol;
+          const onEnd = pointDist(pathEnd, wp) <= endTol;
+          if ((onStart || onEnd) &&
+            (padNetId.length === 0 || snapNetId.length === 0 || padNetId === snapNetId)) {
+            continue;
+          }
+
           const d = pointToSegmentDist(wp, segStart, segEnd);
           const padRadius = Math.max(pad.size.x, pad.size.y) / 2;
-          if (d < minClear + padRadius) violations++;
+          if (d < minClear + padRadius + trackHalf) violations++;
         }
       }
     }
     return violations;
+  }
+
+  /** 端点吸附：只吸同网焊盘；绝不吸到异网（修复「擦到别的引脚却当自己网」） */
+  private snapEndpointForNet(world: Point2D, netId: string): Point2D {
+    if (!this.document) {
+      return this.snapPoint(world);
+    }
+    const grid = this.document.metadata.gridSize ?? 5;
+    let bestSame: Point2D | null = null;
+    let bestSameD = Infinity;
+    for (const fp of this.document.footprints) {
+      for (const pad of fp.pads) {
+        const padNet = pad.netId ?? '';
+        if (netId.length > 0 && padNet.length > 0 && padNet !== netId) {
+          continue;
+        }
+        if (netId.length > 0 && padNet.length === 0) {
+          continue;
+        }
+        if (netId.length === 0 && padNet.length === 0) {
+          continue;
+        }
+        const wp = padWorldPosition(fp, pad);
+        const tol = Math.max(pad.size.x, pad.size.y) / 2 + grid;
+        const d = pointDist(world, wp);
+        if (d <= tol && d < bestSameD) {
+          bestSameD = d;
+          bestSame = { x: wp.x, y: wp.y };
+        }
+      }
+    }
+    if (bestSame) {
+      return bestSame;
+    }
+    return this.snapPoint(world);
+  }
+
+  /** 紧容差取网：避免远处异网走线/焊盘被误判 */
+  private findNetAtPointTight(world: Point2D): PcbNetRef | null {
+    const hit = this.findPadAtTight(world);
+    if (hit && hit.pad.netId !== undefined && hit.pad.netId.length > 0) {
+      const name = hit.pad.netName !== undefined && hit.pad.netName.length > 0
+        ? hit.pad.netName : hit.pad.netId;
+      return { netId: hit.pad.netId, netName: name };
+    }
+    if (!this.document) return null;
+    const grid = this.document.metadata.gridSize ?? 5;
+    const viaTol = Math.max(12, grid * 2);
+    for (const via of this.document.vias) {
+      const d = pointDist(world, via.position);
+      if (d <= viaTol && via.netId.length > 0) {
+        return { netId: via.netId, netName: via.netName };
+      }
+    }
+    const trkTol = Math.max(8, grid);
+    for (const trk of this.document.tracks) {
+      if (trk.netId.length === 0) continue;
+      if (trk.layer !== this.activeLayer) continue;
+      const d = pointToSegmentDist(world, trk.start, trk.end);
+      if (d <= trkTol + trk.width / 2) {
+        return { netId: trk.netId, netName: trk.netName };
+      }
+    }
+    return null;
+  }
+
+  private findPadAtTight(world: Point2D): PcbPadHit | null {
+    if (!this.document) return null;
+    const grid = this.document.metadata.gridSize ?? 5;
+    let best: PcbPadHit | null = null;
+    let bestDist = Infinity;
+    for (const fp of this.document.footprints) {
+      for (const pad of fp.pads) {
+        const wp = padWorldPosition(fp, pad);
+        const tol = Math.max(pad.size.x, pad.size.y) / 2 + grid;
+        const d = pointDist(world, wp);
+        if (d <= tol && d < bestDist) {
+          bestDist = d;
+          best = { pad, wx: wp.x, wy: wp.y };
+        }
+      }
+    }
+    return best;
   }
 
   addTrack(start: Point2D, end: Point2D, netId?: string, netName?: string,
@@ -1324,6 +1641,8 @@ export class PcbEditorImpl implements IPcbEditor {
     let resolvedName = netName ?? startNet?.netName ?? endNet?.netName ?? '';
     if (startNet && endNet && startNet.netId.length > 0 && endNet.netId.length > 0 &&
       startNet.netId !== endNet.netId) {
+      this.lastRouteRejectReason =
+        `cross_net:${startNet.netName || startNet.netId}->${endNet.netName || endNet.netId}`;
       tracePcbManualRouteReject('跨网络', startNet.netName, endNet.netName);
       return null;
     }
@@ -1772,7 +2091,7 @@ export class PcbEditorImpl implements IPcbEditor {
   //  Auto Route / DRC
   // ═══════════════════════════════════════════════════
 
-  async runAutoRoute(): Promise<ApiResult<AutoRouteResult>> {
+  async runAutoRoute(agents?: PcbRouteAgentBundle | null): Promise<ApiResult<AutoRouteResult>> {
     // 不调用 guardEdit：调用方会在布线期间 setReadOnly(true) 锁画布，
     // 若此处再判只读会自锁，表现为「无铜线 / fail 画布已锁定」。
     // AI 占用由调用方 isAiGenerating() 拦截；applyAiRouteResult 同样不 guard。
@@ -1792,7 +2111,9 @@ export class PcbEditorImpl implements IPcbEditor {
         });
       }
     }
-    const result = await autoRoutePcb(this.document, layer, schHints);
+    const result = agents !== undefined && agents !== null
+      ? await orchestratePcbAutoRoute(this.document, layer, schHints, agents)
+      : await autoRoutePcb(this.document, layer, schHints, null);
     this.refreshConnectivity();
     tracePcbAutoRoute(this.document, layer, result.netCount, result.trackCount, result.messages);
     this.touchModified();
@@ -2389,8 +2710,11 @@ export class PcbEditorImpl implements IPcbEditor {
 
   findNetAtPoint(world: Point2D): PcbNetRef | null {
     const hit = this.findPadAt(world);
-    if (hit && hit.pad.netId && hit.pad.netName) {
-      return { netId: hit.pad.netId, netName: hit.pad.netName };
+    // 只要有 netId 即可（勿强制 netName，否则 Agent 布线永远判空网 → DRC 全阻）
+    if (hit && hit.pad.netId !== undefined && hit.pad.netId.length > 0) {
+      const name = hit.pad.netName !== undefined && hit.pad.netName.length > 0
+        ? hit.pad.netName : hit.pad.netId;
+      return { netId: hit.pad.netId, netName: name };
     }
     if (!this.document) return null;
     const tol = Math.max(20, (this.document.metadata.gridSize ?? 5) * 4);
@@ -2499,6 +2823,8 @@ export class PcbEditorImpl implements IPcbEditor {
 
   private refreshConnectivity(): void {
     if (!this.document) return;
+    // 同层交叉/T 接/过焊盘 → 拆段成结点，再重建网络与飞线
+    healSameLayerCopperTopology(this.document);
     rebuildPcbNets(this.document);
     this.ratsnestCache = buildRatsnest(this.document);
     this.spatialDirty = true;
@@ -2774,8 +3100,15 @@ function pointToSegmentDist(p: Point2D, a: Point2D, b: Point2D): number {
 }
 
 function segmentDist(a1: Point2D, a2: Point2D, b1: Point2D, b2: Point2D): number {
-  const mids = [pointDist(a1, b1), pointDist(a1, b2), pointDist(a2, b1), pointDist(a2, b2)];
-  return Math.min(...mids);
+  if (segmentsCross(a1, a2, b1, b2)) {
+    return 0;
+  }
+  return Math.min(
+    pointToSegmentDist(a1, b1, b2),
+    pointToSegmentDist(a2, b1, b2),
+    pointToSegmentDist(b1, a1, a2),
+    pointToSegmentDist(b2, a1, a2)
+  );
 }
 
 /** 线段与轴对齐矩形相交（含端点在矩形内） */

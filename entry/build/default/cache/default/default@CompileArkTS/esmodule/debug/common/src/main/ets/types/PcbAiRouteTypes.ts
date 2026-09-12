@@ -10,12 +10,12 @@ export type PcbResidualKind = 'none' | 'drc' | 'unrouted' | 'unused_copper' | 's
 /**
  * placement 阶段模式：
  * - full：空板/首次，LLM 全量定板+位姿
- * - auto：已有功能封装，把现板态势发给 LLM，由其 decision=keep|revise
+ * - auto：已有功能封装，把现板态势发给 LLM，由其 decision=keep|revise|relayout
  * - skip / revise：内部或程序化；UI 不再询问
  */
 export type PcbPlacementMode = 'full' | 'auto' | 'skip' | 'revise';
-/** auto 模式下 LLM 裁定：沿用现有 / 增量调整 */
-export type PcbPlacementDecision = 'keep' | 'revise';
+/** auto 模式下 LLM 裁定：沿用 / 增量调整 / 整板重排 */
+export type PcbPlacementDecision = 'keep' | 'revise' | 'relayout';
 export interface PcbPlacementItem {
     footprintId: string;
     x: number;
@@ -34,7 +34,7 @@ export interface PcbPlacementPlan {
     placements: PcbPlacementItem[];
     groups?: PcbPlacementGroup[];
     lockedIds?: string[];
-    /** auto：LLM 裁定 keep=沿用现位姿 / revise=增量改 */
+    /** auto：LLM 裁定 keep=沿用现位姿 / revise=增量改 / relayout=整板重排 */
     decision?: PcbPlacementDecision;
     /** 板框宽（mil，原点左下/左上矩形），由 LLM 决定 */
     boardWidthMil?: number;
@@ -268,4 +268,196 @@ export interface PcbPadEndpoint {
     footprintId: string;
     padId: string;
     pos: Point2D;
+}
+/** F8 走廊偏向（策略-only，几何仍本地） */
+export type PcbPreferEdge = 'N' | 'S' | 'E' | 'W';
+export interface PcbCorridorBias {
+    preferLayer?: string;
+    preferEdge?: PcbPreferEdge;
+}
+/**
+ * LLM 可下发、本地引擎执行的操作。
+ * 策略类：ripup / clear_reroute / force_hv / swap_hv
+ * 几何类（坐标须落在板内；本地 clearance 校验，失败则跳过该条）：
+ * - via_at：在 (x,y) 打通孔（可选 fromLayer/toLayer）
+ * - via_near：在 (x,y) 附近搜索可放过孔点
+ * - seg：在 layer 上布 (x,y)→(x2,y2) 正交段（非正交则拆成两段尝试）
+ * - guide_maze：用本地 maze 连接 (x,y,layer)→(x2,y2,toLayer|layer)
+ */
+export type PcbAutoAgentOpKind = 'ripup' | 'clear_reroute' | 'force_hv' | 'swap_hv' | 'via_at' | 'via_near' | 'seg' | 'guide_maze';
+export interface PcbAutoAgentOp {
+    op: PcbAutoAgentOpKind;
+    /** netId 或网名 */
+    net: string;
+    h?: string;
+    v?: string;
+    x?: number;
+    y?: number;
+    x2?: number;
+    y2?: number;
+    layer?: string;
+    fromLayer?: string;
+    toLayer?: string;
+}
+/** Strategy：层角色 + 网序 */
+export interface PcbAutoGlobalAdvice {
+    fromLlm: boolean;
+    /** 本地兜底（非 LLM）；Router 认 fromLlm||fromLocal */
+    fromLocal?: boolean;
+    layerRoles: Record<string, PcbLayerRole>;
+    netOrder: string[];
+    reason?: string;
+}
+/** Strategy：拆线 / 重试序 / 走廊偏向 / 可执行 ops */
+export interface PcbAutoRipupAdvice {
+    fromLlm: boolean;
+    fromLocal?: boolean;
+    ripupTargets: string[];
+    corridorBias: Record<string, PcbCorridorBias>;
+    retryNetOrder?: string[];
+    ops?: PcbAutoAgentOp[];
+    reason?: string;
+}
+/** Routing：几何 ops 硬修（坐标由本地引擎校验） */
+export interface PcbAutoGeometryAdvice {
+    fromLlm: boolean;
+    fromLocal?: boolean;
+    ops: PcbAutoAgentOp[];
+    retryNetOrder?: string[];
+    reason?: string;
+}
+/** Placement Agent 输出（直接改板） */
+export interface PcbPlacementAgentAdvice {
+    fromLlm: boolean;
+    fromLocal?: boolean;
+    plan: PcbPlacementPlan;
+    estimatedCompletionRate?: number;
+    reason?: string;
+}
+/** Critic Agent 评审（不改板、不布线） */
+export interface PcbCriticReport {
+    fromLlm: boolean;
+    fromLocal?: boolean;
+    overallScore: number;
+    /** 布通失败主因是否为布局 */
+    layoutIssue: boolean;
+    notes: string;
+    suggestedRipup?: string[];
+    suggestedRetryOrder?: string[];
+}
+/** Knowledge Agent 轻量快照（本地） */
+export interface PcbKnowledgeSnapshot {
+    ruleHints: string[];
+    designSummary: string;
+    sessionNotes: string[];
+}
+/** 挂点上下文（摘要文本，控制 token） */
+export interface PcbAutoRouteAgentContext {
+    copperLayers: string[];
+    netSummaries: string[];
+    failSummaries?: string[];
+    errorDigests?: string[];
+    metricsSummary?: string;
+    /** 板框/铜量/层角色/拥塞等总览行 */
+    situationLines?: string[];
+    /** 飞线端点：net|a=(x,y)|b=(x,y)|span= */
+    ratsDetails?: string[];
+    /** 失败网焊盘采样：net|ref.pad@(x,y) */
+    padSamples?: string[];
+    /** Knowledge 注入的规则提示（可选） */
+    knowledgeHints?: string[];
+    /** 布局-布线回环轮次 0..N */
+    placeRound?: number;
+}
+/**
+ * RoutingCore（PcbAutoRouter）引擎钩子：仅 Strategy + Routing。
+ * Critic / Placement / Knowledge 由 Orchestrator 调度，不进几何引擎。
+ */
+export interface PcbRouteEngineHooks {
+    strategyPlan?: (ctx: PcbAutoRouteAgentContext) => Promise<PcbAutoGlobalAdvice | null>;
+    strategyOnFail?: (ctx: PcbAutoRouteAgentContext) => Promise<PcbAutoRipupAdvice | null>;
+    routingSalvage?: (ctx: PcbAutoRouteAgentContext) => Promise<PcbAutoGeometryAdvice | null>;
+}
+/**
+ * 五 Agent 编排入口（Orchestrator 消费）。
+ * Placement / Strategy / Routing / Critic 可 LLM；Knowledge 本地。
+ */
+export interface PcbRouteAgentBundle {
+    placementOptimize: (ctx: PcbAutoRouteAgentContext) => Promise<PcbPlacementAgentAdvice | null>;
+    strategyPlan: (ctx: PcbAutoRouteAgentContext) => Promise<PcbAutoGlobalAdvice | null>;
+    strategyOnFail: (ctx: PcbAutoRouteAgentContext) => Promise<PcbAutoRipupAdvice | null>;
+    routingSalvage: (ctx: PcbAutoRouteAgentContext) => Promise<PcbAutoGeometryAdvice | null>;
+    criticReview: (ctx: PcbAutoRouteAgentContext) => Promise<PcbCriticReport | null>;
+    knowledgePrepare: (ctx: PcbAutoRouteAgentContext) => Promise<PcbKnowledgeSnapshot | null>;
+    knowledgeRecord: (ctx: PcbAutoRouteAgentContext, resultSummary: string) => void;
+}
+/** Router 是否采纳该建议（真 LLM 或显式本地兜底） */
+export function isTrustedAutoAdvice(fromLlm: boolean, fromLocal?: boolean): boolean {
+    return fromLlm || fromLocal === true;
+}
+const VALID_LAYER_ROLES: PcbLayerRole[] = [
+    'gnd_bus', 'vcc_bus', 'signal_h', 'signal_v', 'stub', 'power_h', 'power_v'
+];
+export function isValidPcbLayerRole(role: string): boolean {
+    for (let i = 0; i < VALID_LAYER_ROLES.length; i++) {
+        if (VALID_LAYER_ROLES[i] === role) {
+            return true;
+        }
+    }
+    return false;
+}
+/** 校验 layerRoles 覆盖全部铜层且 role 合法；失败返回原因，通过返回 '' */
+export function validateAutoLayerRoles(layerRoles: Record<string, PcbLayerRole>, copperLayers: PcbLayerId[]): string {
+    let hasH = false;
+    let hasV = false;
+    for (let i = 0; i < copperLayers.length; i++) {
+        const lid = copperLayers[i] as string;
+        const r = layerRoles[lid];
+        if (!r) {
+            return `missing role for ${lid}`;
+        }
+        if (!isValidPcbLayerRole(r as string)) {
+            return `invalid role ${r} for ${lid}`;
+        }
+        if (r === 'signal_h' || r === 'power_h') {
+            hasH = true;
+        }
+        if (r === 'signal_v' || r === 'power_v') {
+            hasV = true;
+        }
+    }
+    // ≥3 层须有正交 H/V（信号或电源），且内层不能只剩 gnd/vcc 总线
+    if (copperLayers.length >= 3) {
+        if (!hasH || !hasV) {
+            return 'need signal_h|power_h and signal_v|power_v for 3+ Cu (every layer routes)';
+        }
+        let innerRoutable = false;
+        for (let i = 1; i < copperLayers.length - 1; i++) {
+            const r = layerRoles[copperLayers[i] as string];
+            if (r === 'signal_h' || r === 'signal_v' || r === 'power_h' || r === 'power_v' ||
+                r === 'stub') {
+                innerRoutable = true;
+                break;
+            }
+        }
+        if (copperLayers.length > 2 && !innerRoutable) {
+            return 'inner Cu need routable role signal_h|signal_v|power_*|stub (not only gnd/vcc bus)';
+        }
+    }
+    // Cu=2：至少一层 stub/signal，禁止两层都只标总线却无走线角色
+    if (copperLayers.length === 2) {
+        let routable = false;
+        for (let i = 0; i < copperLayers.length; i++) {
+            const r = layerRoles[copperLayers[i] as string];
+            if (r === 'stub' || r === 'signal_h' || r === 'signal_v' ||
+                r === 'power_h' || r === 'power_v') {
+                routable = true;
+                break;
+            }
+        }
+        if (!routable) {
+            return '2 Cu need stub|signal_*|power_* on at least one layer';
+        }
+    }
+    return '';
 }

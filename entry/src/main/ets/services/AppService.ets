@@ -17,6 +17,8 @@ import { FilePersistenceImpl, CrashGuard, IFilePersistence, BomLookup, SessionSt
 import { VirtualInstrumentsImpl, IVirtualInstruments, ComponentInstrumentBinding } from 'instruments';
 import { PluginManagerImpl, IPluginManager } from 'plugin_system';
 import { PcbEditorImpl, IPcbEditor } from 'pcb_editor';
+import { AgentBridgeImpl, IAgentBridge, AgentBridgeInfo, IAgentDrawingHost,
+  AgentDrawingSessionResult } from 'agent_bridge';
 import { common } from '@kit.AbilityKit';
 import fs from '@ohos.file.fs';
 import { DeviceLibraryBootstrap } from '../utils/DeviceLibraryBootstrap';
@@ -132,6 +134,7 @@ export class AppService {
   readonly instruments: IVirtualInstruments;
   readonly pluginManager: IPluginManager;
   readonly pcbEditor: IPcbEditor;
+  readonly agentBridge: IAgentBridge;
   readonly teachingService: TeachingService;
   readonly mcuBehavior: McuBehaviorSimulator;
   readonly crashGuard: CrashGuard;
@@ -172,7 +175,10 @@ export class AppService {
   private templateBootstrapPromise: Promise<void> | null = null;
   /** 授权文件 + GitHub Star 静默复验（记住账户后启动自动检测） */
   private licenseBootstrapPromise: Promise<void> | null = null;
+  private agentBridgeStartPromise: Promise<AgentBridgeInfo> | null = null;
   private aiGenerating: boolean = false;
+  /** 画布锁来源：'' | 'ai' | 'agent' —— 复用同一遮罩与 AI 日志面板 */
+  private canvasLockSource: string = '';
   /** 用户点取消后保持为 true，直到该次 await 收尾（禁止 endAiGenerate 提前清掉） */
   private aiGenCancelRequested: boolean = false;
   /** 每次 begin/cancel 递增；await 返回后若 session 过期则丢弃结果 */
@@ -195,7 +201,16 @@ export class AppService {
   onWaveUpdate: (waves: WaveData[]) => void = () => {};
   onAiProgress: (p: ProgressInfo) => void = () => {};
   onAiGeneratingChanged: (busy: boolean) => void = () => {};
+  /** PCB 页等次要订阅（避免覆盖 Index 主回调） */
+  onAiGeneratingChangedSecondary: (busy: boolean) => void = () => {};
   onAiGenLogsChanged: (logs: AiGenLogEntry[]) => void = () => {};
+  /** PCB 页遮罩内展示最近 Agent 日志 */
+  onAiGenLogsChangedSecondary: (logs: AiGenLogEntry[]) => void = () => {};
+
+  private notifyAiGeneratingChanged(busy: boolean): void {
+    this.onAiGeneratingChanged(busy);
+    this.onAiGeneratingChangedSecondary(busy);
+  }
   onAiSelfCheckNeeded: (issueCount: number, summary: string) => void = () => {};
   /** Cline Ask：澄清问题就绪 */
   onAiClarificationNeeded: (questions: ClarificationQuestion[], prompt: string,
@@ -218,6 +233,10 @@ export class AppService {
     this.pluginManager = new PluginManagerImpl();
     this.pcbEditor = new PcbEditorImpl();
     (this.pcbEditor as PcbEditorImpl).setSchematicProvider(() => this.schematicEditor.getDocument());
+    const bridge = new AgentBridgeImpl();
+    bridge.bindEditors(this.schematicEditor, this.pcbEditor, this.componentLibrary);
+    bridge.bindDrawingHost(this.createAgentDrawingHost());
+    this.agentBridge = bridge;
     this.teachingService = (this.aiEngine as AiEngineImpl).teachingService;
     this.mcuBehavior = new McuBehaviorSimulator();
     this.crashGuard = new CrashGuard();
@@ -283,6 +302,45 @@ export class AppService {
     this.pluginManager.setPluginInstallDir(`${filesDir}/AISchSim/Plugins`);
     this.collabSync.setSession(this.sessionHolderId, this.sessionUserName);
     FeatureGate.refresh();
+    this.ensureAgentBridgeStarted(baseDir);
+  }
+
+  /** 启动本机 Agent Bridge（幂等）；供 Cursor/OpenClaw MCP 连接 */
+  ensureAgentBridgeStarted(baseDir?: string): void {
+    const dir = baseDir && baseDir.length > 0 ? baseDir : this.appBaseDir;
+    if (dir.length === 0) {
+      return;
+    }
+    if (this.agentBridge.isRunning()) {
+      return;
+    }
+    if (this.agentBridgeStartPromise !== null) {
+      return;
+    }
+    this.agentBridgeStartPromise = this.agentBridge.start(dir).then((info: AgentBridgeInfo) => {
+      Logger.info(INSTR_TRACE_TAG,
+        `[AGENT_BRIDGE] listening ${info.host}:${info.port} tokenLen=${info.token.length}`);
+      this.onStatusMessage(`Agent Bridge: ${info.host}:${info.port}`);
+      return info;
+    }).catch((e: Object) => {
+      this.agentBridgeStartPromise = null;
+      const msg = e instanceof Error ? e.message : `${e}`;
+      Logger.warn(INSTR_TRACE_TAG, `[AGENT_BRIDGE] start failed: ${msg}`);
+      this.onStatusMessage(`Agent Bridge 启动失败: ${msg}`);
+      throw new Error(msg);
+    });
+  }
+
+  getAgentBridgeInfo(): AgentBridgeInfo {
+    return this.agentBridge.getInfo();
+  }
+
+  rotateAgentBridgeToken(): string {
+    return this.agentBridge.rotateToken();
+  }
+
+  getAgentBridgeMcpSnippet(): string {
+    return this.agentBridge.getMcpConfigSnippet();
   }
 
   /** 首页等待：token 已记住时完成静默 Star 复验后再刷新 About */
@@ -2607,6 +2665,101 @@ export class AppService {
     return out;
   }
 
+  /** 画布锁来源：ai / agent / 空 */
+  getCanvasLockSource(): string {
+    return this.canvasLockSource;
+  }
+
+  isAgentDrawingSession(): boolean {
+    return this.canvasLockSource === 'agent' && this.aiGenerating;
+  }
+
+  private createAgentDrawingHost(): IAgentDrawingHost {
+    return new AgentDrawingHostAdapter(this);
+  }
+
+  private agentSessionResult(ok: boolean, error: string, active: boolean,
+    fitted: boolean): AgentDrawingSessionResult {
+    const r: AgentDrawingSessionResult = {
+      ok: ok,
+      error: error,
+      active: active,
+      fitted: fitted
+    };
+    return r;
+  }
+
+  beginAgentDrawingSession(reason: string): AgentDrawingSessionResult {
+    if (this.canvasLockSource === 'ai' && this.aiGenerating) {
+      return this.agentSessionResult(false, 'AI 生成中，无法开始 Agent 绘制会话', false, false);
+    }
+    if (this.isAgentDrawingSession()) {
+      this.agentAppendSessionLog(reason.length > 0 ? reason : '继续绘制');
+      return this.agentSessionResult(true, '', true, false);
+    }
+    this.aiGenerating = true;
+    this.canvasLockSource = 'agent';
+    this.aiGenCancelRequested = false;
+    (this.schematicEditor as SchematicEditorImpl).setReadOnly(true);
+    (this.schematicEditor as SchematicEditorImpl).setAgentTrustedEdit(true);
+    (this.pcbEditor as PcbEditorImpl).setReadOnly(true);
+    (this.pcbEditor as PcbEditorImpl).setAgentTrustedEdit(true);
+    const why = reason.length > 0 ? reason : 'Agent 远程绘制';
+    this.appendAiGenLog('system', `[Agent] ${why} · 画布已锁定`);
+    this.notifyAiGeneratingChanged(true);
+    this.onStatusMessage('Agent 绘制中，画布已锁定');
+    return this.agentSessionResult(true, '', true, false);
+  }
+
+  endAgentDrawingSession(fit: boolean = true, cancelled: boolean = false): AgentDrawingSessionResult {
+    if (!this.isAgentDrawingSession()) {
+      return this.agentSessionResult(true, '', false, false);
+    }
+    let fitted = false;
+    if (fit && !cancelled) {
+      this.schematicEditor.fitAllInView();
+      (this.pcbEditor as PcbEditorImpl).fitBoardInView();
+      fitted = true;
+    }
+    (this.schematicEditor as SchematicEditorImpl).setAgentTrustedEdit(false);
+    (this.schematicEditor as SchematicEditorImpl).setReadOnly(false);
+    (this.pcbEditor as PcbEditorImpl).setAgentTrustedEdit(false);
+    (this.pcbEditor as PcbEditorImpl).setReadOnly(false);
+    this.aiGenerating = false;
+    this.canvasLockSource = '';
+    if (cancelled) {
+      this.appendAiGenLog('system', '[Agent] 绘制已取消 · 画布已解锁');
+      this.onStatusMessage('Agent 绘制已取消');
+    } else {
+      this.appendAiGenLog('system', fitted
+        ? '[Agent] 绘制完成 · 已居中适应 · 画布已解锁'
+        : '[Agent] 绘制完成 · 画布已解锁');
+      this.onStatusMessage('Agent 绘制完成，画布已解锁');
+    }
+    this.notifyAiGeneratingChanged(false);
+    this.syncProjectFromModules();
+    return this.agentSessionResult(true, '', false, fitted);
+  }
+
+  agentFitAllInView(): AgentDrawingSessionResult {
+    this.schematicEditor.fitAllInView();
+    (this.pcbEditor as PcbEditorImpl).fitBoardInView();
+    if (this.isAgentDrawingSession()) {
+      this.appendAiGenLog('system', '[Agent] 画布已居中适应（原理图+PCB）');
+    }
+    return this.agentSessionResult(true, '', this.isAgentDrawingSession(), true);
+  }
+
+  agentAppendSessionLog(text: string): AgentDrawingSessionResult {
+    const raw = text.trim();
+    if (raw.length === 0) {
+      return this.agentSessionResult(false, 'empty log', this.isAgentDrawingSession(), false);
+    }
+    const line = raw.indexOf('[Agent]') === 0 ? raw : `[Agent] ${raw}`;
+    this.appendAiGenLog('system', line);
+    return this.agentSessionResult(true, '', this.isAgentDrawingSession(), false);
+  }
+
   clearAiGenLogs(): void {
     this.aiGenLogs = [];
     this.notifyAiGenLogs();
@@ -2617,12 +2770,21 @@ export class AppService {
     if (!this.aiGenerating) {
       return false;
     }
-    this.appendAiGenLog('system', '生成中，禁止手动放置器件（复杂问题 AI 可能需较长时间，请耐心等待）');
-    this.onStatusMessage('AI 生成中，请耐心等待（复杂电路可能数分钟）');
+    if (this.canvasLockSource === 'agent') {
+      this.appendAiGenLog('system', '[Agent] 绘制中，禁止手动放置器件');
+      this.onStatusMessage('Agent 绘制中，画布已锁定');
+    } else {
+      this.appendAiGenLog('system', '生成中，禁止手动放置器件（复杂问题 AI 可能需较长时间，请耐心等待）');
+      this.onStatusMessage('AI 生成中，请耐心等待（复杂电路可能数分钟）');
+    }
     return true;
   }
 
   cancelAiGenerate(): void {
+    if (this.isAgentDrawingSession()) {
+      this.endAgentDrawingSession(false, true);
+      return;
+    }
     if (!this.aiGenerating && !this.aiGenCancelRequested) {
       return;
     }
@@ -2634,9 +2796,12 @@ export class AppService {
     // 立刻解锁 UI，不等待当前 LLM HTTP 自然结束
     if (this.aiGenerating) {
       this.aiGenerating = false;
+      this.canvasLockSource = '';
+      (this.schematicEditor as SchematicEditorImpl).setAgentTrustedEdit(false);
       (this.schematicEditor as SchematicEditorImpl).setReadOnly(false);
+      (this.pcbEditor as PcbEditorImpl).setAgentTrustedEdit(false);
       (this.pcbEditor as PcbEditorImpl).setReadOnly(false);
-      this.onAiGeneratingChanged(false);
+      this.notifyAiGeneratingChanged(false);
     }
     this.appendAiGenLog('assistant', '已取消生成');
     this.onStatusMessage('AI 生成已取消');
@@ -2661,9 +2826,13 @@ export class AppService {
     }
     this.aiSelfCheckPromptPending = false;
     this.aiGenerating = true;
+    this.canvasLockSource = 'ai';
     this.aiGenCancelRequested = false;
+    (this.schematicEditor as SchematicEditorImpl).setAgentTrustedEdit(false);
     (this.schematicEditor as SchematicEditorImpl).setReadOnly(true);
-    this.onAiGeneratingChanged(true);
+    (this.pcbEditor as PcbEditorImpl).setAgentTrustedEdit(false);
+    (this.pcbEditor as PcbEditorImpl).setReadOnly(true);
+    this.notifyAiGeneratingChanged(true);
     this.appendAiGenLog('system', '开始 AI 自检修复 · 画布已锁定');
     this.onStatusMessage('AI 自检修复中…');
     Logger.info(INSTR_TRACE_TAG, '[AI_GEN] self_check START');
@@ -3189,25 +3358,35 @@ export class AppService {
   }
 
   private beginAiGenerate(prompt: string, mode: AiGenerateMode): void {
+    if (this.isAgentDrawingSession()) {
+      this.endAgentDrawingSession(false, true);
+    }
     this.aiGenEpoch++;
     this.aiGenerating = true;
+    this.canvasLockSource = 'ai';
     this.aiGenCancelRequested = false;
+    (this.schematicEditor as SchematicEditorImpl).setAgentTrustedEdit(false);
     (this.schematicEditor as SchematicEditorImpl).setReadOnly(true);
+    (this.pcbEditor as PcbEditorImpl).setAgentTrustedEdit(false);
+    (this.pcbEditor as PcbEditorImpl).setReadOnly(true);
     this.aiGenLogs = [];
     this.appendAiGenLog('user', prompt);
     this.appendAiGenLog('system',
       `开始全闭环生成（${this.aiModeLabel(mode)}）· 画布已锁定`);
     this.appendAiGenLog('assistant', '正在解析器件需求…');
-    this.onAiGeneratingChanged(true);
+    this.notifyAiGeneratingChanged(true);
     this.onStatusMessage('AI 生成中，画布已锁定（请耐心等待长回复）');
   }
 
   private endAiGenerate(_ok: boolean): void {
     this.aiGenerating = false;
+    this.canvasLockSource = '';
     this.aiGenCancelRequested = false;
+    (this.schematicEditor as SchematicEditorImpl).setAgentTrustedEdit(false);
     (this.schematicEditor as SchematicEditorImpl).setReadOnly(false);
+    (this.pcbEditor as PcbEditorImpl).setAgentTrustedEdit(false);
     (this.pcbEditor as PcbEditorImpl).setReadOnly(false);
-    this.onAiGeneratingChanged(false);
+    this.notifyAiGeneratingChanged(false);
   }
 
   /**
@@ -3331,7 +3510,9 @@ export class AppService {
   }
 
   private notifyAiGenLogs(): void {
-    this.onAiGenLogsChanged(this.getAiGenLogs());
+    const logs = this.getAiGenLogs();
+    this.onAiGenLogsChanged(logs);
+    this.onAiGenLogsChangedSecondary(logs);
   }
 
   /** 局部框选器件重新摆放 */
@@ -4003,5 +4184,34 @@ export class AppService {
     const lib = this.componentLibrary as ComponentLibraryImpl;
     const r = lib.importOfflinePack(packDir);
     return r.success ? (r.data ?? 0) : 0;
+  }
+}
+
+/** Bridge → AppService 绘制会话适配（避免 ArkTS 对象字面量方法限制） */
+class AgentDrawingHostAdapter implements IAgentDrawingHost {
+  private readonly app: AppService;
+
+  constructor(app: AppService) {
+    this.app = app;
+  }
+
+  beginDrawingSession(reason: string): AgentDrawingSessionResult {
+    return this.app.beginAgentDrawingSession(reason);
+  }
+
+  endDrawingSession(fit: boolean): AgentDrawingSessionResult {
+    return this.app.endAgentDrawingSession(fit, false);
+  }
+
+  fitAllInView(): AgentDrawingSessionResult {
+    return this.app.agentFitAllInView();
+  }
+
+  appendSessionLog(text: string): AgentDrawingSessionResult {
+    return this.app.agentAppendSessionLog(text);
+  }
+
+  isAgentDrawingSession(): boolean {
+    return this.app.isAgentDrawingSession();
   }
 }

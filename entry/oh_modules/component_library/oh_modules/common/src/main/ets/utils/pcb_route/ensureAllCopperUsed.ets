@@ -1,9 +1,9 @@
 /**
- * 硬门禁：Cu 栈每一铜层须有 track 或同层 zone
+ * 硬门禁：Cu 栈每一铜层须有 track（可选计 zone）
  * filler 短段须过 clearance，否则跳过（勿注入短路）
  */
 import {
-  PcbDocument, PcbLayerId, PcbTrack, PcbVia, PcbViaKind, copperLayersFromStack
+  PcbDocument, PcbLayerId, PcbTrack, PcbVia, copperLayersFromStack
 } from '../../types/PcbTypes';
 import { Point2D } from '../../types/CommonTypes';
 import {
@@ -11,6 +11,7 @@ import {
 } from '../../types/PcbAiRouteTypes';
 import { IdUtil } from '../IdUtil';
 import { pathClearBlockReason, trackWidthForNet, viaClearAt } from './PcbClearanceOracle';
+import { resolveViaGeometry } from './PcbViaCostModel';
 import { tracePcbWarn } from '../PcbTraceLog';
 
 export function ensureAllCopperUsed(
@@ -82,7 +83,8 @@ function pickNetForRole(
 }
 
 /**
- * 为声明但未用到的铜层补真实短段（挂已有电气网）；须过 clearance，失败则跳过该层
+ * 为声明但未用到的铜层补真实短段（挂已有电气网）；须过 clearance，失败则跳过该层。
+ * 无 role 时按 signal_h 处理，避免空角色层被永久跳过。
  */
 export function fillUnusedCopperLayers(
   doc: PcbDocument,
@@ -112,12 +114,23 @@ export function fillUnusedCopperLayers(
   }
 
   const copperAll = copperLayersFromStack(doc.layerStack);
+  const stub = findRoleLayer(policy, 'stub') ??
+    (copperAll.length > 0 ? copperAll[0] : null);
 
   for (let mi = 0; mi < missing.length; mi++) {
     const lid = missing[mi];
-    const role = policy.layerRoles[lid as string] as PcbLayerRole | undefined;
+    let role = policy.layerRoles[lid as string] as PcbLayerRole | undefined;
     if (!role) {
-      continue;
+      // 无角色仍须占层：按叠层位置推断
+      if (copperAll.length > 0 && lid === copperAll[0]) {
+        role = 'stub';
+      } else if (copperAll.length > 0 && lid === copperAll[copperAll.length - 1]) {
+        role = 'power_h';
+      } else {
+        const idx = copperAll.indexOf(lid);
+        role = (idx >= 0 && (idx % 2) === 1) ? 'signal_h' : 'signal_v';
+      }
+      policy.layerRoles[lid as string] = role;
     }
     const ne = pickNetForRole(role, netPlan, routedNetIds);
     if (!ne) {
@@ -128,45 +141,56 @@ export function fillUnusedCopperLayers(
       role === 'vcc_bus' || role === 'stub';
 
     let placed = false;
-    const yBases = [mi * grid * 4, mi * grid * 4 + grid * 10, -mi * grid * 4 - grid * 8];
+    const yBases = [
+      mi * grid * 4,
+      mi * grid * 4 + grid * 10,
+      0 - mi * grid * 4 - grid * 8,
+      mi * grid * 6 + grid * 20,
+      0 - mi * grid * 6 - grid * 16,
+      grid * 30,
+      0 - grid * 30
+    ];
+    const xBases = [0, grid * 12, 0 - grid * 12, grid * 24, 0 - grid * 24];
     for (let yi = 0; yi < yBases.length && !placed; yi++) {
-      const yOff = yBases[yi];
-      const a: Point2D = horiz
-        ? { x: cx - grid * 8, y: cy + yOff }
-        : { x: cx + yOff, y: cy - grid * 8 };
-      const b: Point2D = horiz
-        ? { x: cx + grid * 8, y: cy + yOff }
-        : { x: cx + yOff, y: cy + grid * 8 };
-      const block = pathClearBlockReason(doc, lid, a, b, ne.netId, width, tracks, vias);
-      if (block !== null) {
-        continue;
-      }
-      tracks.push({
-        id: IdUtil.generate('trk'),
-        layer: lid,
-        start: a,
-        end: b,
-        width,
-        netId: ne.netId,
-        netName: ne.netName
-      });
-      const stub = findRoleLayer(policy, 'stub') ?? findRoleLayer(policy, 'signal_h');
-      if (stub && stub !== lid) {
-        const diameter = doc.metadata.designRules.minViaDrill + 8;
-        if (viaClearAt(doc, a, ne.netId, diameter, copperAll, tracks, vias)) {
-          vias.push({
-            id: IdUtil.generate('via'),
-            position: { x: a.x, y: a.y },
-            drill: doc.metadata.designRules.minViaDrill,
-            diameter,
-            netId: ne.netId,
-            netName: ne.netName,
-            layers: copperAll,
-            kind: PcbViaKind.THROUGH
-          });
+      for (let xi = 0; xi < xBases.length && !placed; xi++) {
+        const yOff = yBases[yi];
+        const xOff = xBases[xi];
+        const a: Point2D = horiz
+          ? { x: cx - grid * 8 + xOff, y: cy + yOff }
+          : { x: cx + yOff + xOff, y: cy - grid * 8 };
+        const b: Point2D = horiz
+          ? { x: cx + grid * 8 + xOff, y: cy + yOff }
+          : { x: cx + yOff + xOff, y: cy + grid * 8 };
+        const block = pathClearBlockReason(doc, lid, a, b, ne.netId, width, tracks, vias);
+        if (block !== null) {
+          continue;
         }
+        tracks.push({
+          id: IdUtil.generate('trk'),
+          layer: lid,
+          start: a,
+          end: b,
+          width,
+          netId: ne.netId,
+          netName: ne.netName
+        });
+        if (stub && stub !== lid) {
+          const spec = resolveViaGeometry(doc, stub, lid, 0, 0);
+          if (viaClearAt(doc, a, ne.netId, spec.diameter, spec.layers, tracks, vias)) {
+            vias.push({
+              id: IdUtil.generate('via'),
+              position: { x: a.x, y: a.y },
+              drill: spec.drill,
+              diameter: spec.diameter,
+              netId: ne.netId,
+              netName: ne.netName,
+              layers: spec.layers,
+              kind: spec.kind
+            });
+          }
+        }
+        placed = true;
       }
-      placed = true;
     }
     if (!placed) {
       tracePcbWarn('AI_CU_FILL',
