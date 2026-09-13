@@ -52,21 +52,25 @@ export function buildLabPower(doc: SchematicDocument): void {
 /** lab_amp: LM358 同相放大器 + VAC 激励 */
 export function buildLabAmp(doc: SchematicDocument): void {
   // 单电源 5V：小信号 + 偏置，增益 1+Rf/Rg=11 → Vout≈2.2±1.1V
-  // 布局：VAC 下沉与 R1 错开 y；反馈 Rf 上跨 / Rg 下地；仪器右列；
-  // 异网端点/廊道 ≥40，避免 WireNetTopology 并网把反馈拆掉（开环误报）
+  // 布局要点（运行时 pinThreshold≈15）：
+  // - Rf 勿压在 VCC→V+ 竖廊（旧 x=380 会让电源/反馈吸附并网）
+  // - 电压表 COM 远离 SIG_OUT→CH1 折点（旧距≈11px → SIG_OUT 并进 GND → 电源/地短路误报）
+  // - 异网端点/廊道 ≥40
   const vac = K.place(doc, 'VAC', 'AC1', { x: 60, y: 300 });
   vac.parameters.set('amplitude', '0.1V');
   vac.parameters.set('frequency', '1kHz');
   vac.parameters.set('offset', '0.2V');
   const ri = R(doc, 'R_10k', 'R1', 180, 120);
   const opa = K.place(doc, 'LM358', 'U1', { x: 380, y: 180 });
-  const rf = R(doc, 'R_100k', 'Rf', 380, 40);
+  // Rf 右移：躲开 U1.V+@(380,130)↔PWR1 竖线
+  const rf = R(doc, 'R_100k', 'Rf', 480, 40);
   const rg = R(doc, 'R_10k', 'Rg', 260, 360);
   const vcc = K.place(doc, 'VCC', 'PWR1', { x: 380, y: 0 });
   vcc.parameters.set('voltage', '5V');
   const gnd = K.place(doc, 'GND', 'GND1', { x: 260, y: 460 });
-  const vm = K.place(doc, 'VOLTMETER_DC', 'M1', { x: 580, y: 120 });
-  const osc = K.place(doc, 'OSCILLOSCOPE', 'OSC1', { x: 580, y: 320 });
+  // 仪器再右移/上移：M1.COM 与 CH1 廊道间距 >40
+  const vm = K.place(doc, 'VOLTMETER_DC', 'M1', { x: 700, y: 60 });
+  const osc = K.place(doc, 'OSCILLOSCOPE', 'OSC1', { x: 700, y: 340 });
 
   // R1 hub：竖落到 VAC.1，不横穿 VAC.2
   K.join(doc, 'SIG_SRC', NetType.SIGNAL, [p(ri, '1'), p(vac, '1')]);
@@ -721,11 +725,9 @@ export function buildLabMcuStm32(doc: SchematicDocument): void {
     const vccPin = 'VDD';
     const gndPin = 'VSS';
     const mcu = K.place(doc, id, `U${i + 1}`, { x: ox + (isF407 ? 260 : 160), y: 240 });
-    // OSC_IN/OUT ≈ mcu.y-60/-50；晶振贴同高，避免 y=40 长竖线擦过 Y.2（dist≈16）误挂网
-    const xtalY = 180;
-    const xtal = K.place(doc, 'XTAL_8M', `Y${i + 1}`, { x: ox + 40, y: xtalY });
+    const xtal = K.place(doc, 'XTAL_8M', `Y${i + 1}`, { x: ox + 40, y: 40 });
     // DeepErcEngine：两侧负载电容须 |Δx|<80（placeXtalCaps = ±60）
-    const _caps = placeXtalCaps(doc, ox + 40, xtalY, `CX${i}`);
+    const _caps = placeXtalCaps(doc, ox + 40, 40, `CX${i}`);
   const c1 = _caps.c1;
   const c2 = _caps.c2;
     const cDec = C(doc, 'C_10uF', `CD${i + 1}`, ox + 300, 460);

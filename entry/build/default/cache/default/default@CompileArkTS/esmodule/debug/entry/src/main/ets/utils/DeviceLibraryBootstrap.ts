@@ -6,7 +6,7 @@ interface ResourceManagerLike {
     getRawFileContent(path: string): Promise<Uint8Array>;
 }
 /** 变更 DeviceLibrary 引脚/符号时递增，触发设备侧重拷贝 */
-const DEVICE_LIBRARY_BOOTSTRAP_VERSION = '2026-07-27-builtin-full-index';
+const DEVICE_LIBRARY_BOOTSTRAP_VERSION = '2026-09-13-vac-passive-lab-amp';
 export class DeviceLibraryBootstrap {
     static async ensureLibrary(context: common.UIAbilityContext, targetRoot: string): Promise<boolean> {
         try {
