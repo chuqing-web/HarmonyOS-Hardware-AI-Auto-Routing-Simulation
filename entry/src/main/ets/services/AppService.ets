@@ -200,12 +200,19 @@ export class AppService {
   onErcUpdate: (errors: ErcError[]) => void = () => {};
   onWaveUpdate: (waves: WaveData[]) => void = () => {};
   onAiProgress: (p: ProgressInfo) => void = () => {};
+  /** PCB 页等次要订阅（避免覆盖 Index 主回调） */
+  onAiProgressSecondary: (p: ProgressInfo) => void = () => {};
   onAiGeneratingChanged: (busy: boolean) => void = () => {};
   /** PCB 页等次要订阅（避免覆盖 Index 主回调） */
   onAiGeneratingChangedSecondary: (busy: boolean) => void = () => {};
   onAiGenLogsChanged: (logs: AiGenLogEntry[]) => void = () => {};
   /** PCB 页遮罩内展示最近 Agent 日志 */
   onAiGenLogsChangedSecondary: (logs: AiGenLogEntry[]) => void = () => {};
+
+  private notifyAiProgress(p: ProgressInfo): void {
+    this.onAiProgress(p);
+    this.onAiProgressSecondary(p);
+  }
 
   private notifyAiGeneratingChanged(busy: boolean): void {
     this.onAiGeneratingChanged(busy);
@@ -2295,7 +2302,7 @@ export class AppService {
       await MainThreadYield.yield();
       // Pass editor doc so MNA sees OUT1/AC+ pin names (topo round-trip alone loses them)
       const result = this.simulationKernel.startSimulation(topo, cfg, (p) => {
-        this.onAiProgress(p);
+        this.notifyAiProgress(p);
       }, doc);
 
       if (!result.success) {
@@ -2653,7 +2660,7 @@ export class AppService {
     const topo = this.getTopology();
     const result = await this.aiEngine.runAiTask(
       AiTaskType.TASK_AUTO_ROUTE_GLOBAL, topo, undefined,
-      (p) => this.onAiProgress(p)
+      (p) => this.notifyAiProgress(p)
     );
     if (result.success && result.topology) {
       this.schematicEditor.applyRouteResult({
@@ -2884,7 +2891,7 @@ export class AppService {
       this.appendAiGenLog('assistant', 'Coordinator 自检 WAR/QA…');
       const pipe = await (this.aiEngine as AiEngineImpl).runSelfCheckPipeline(topo, true,
         (p) => {
-          this.onAiProgress(p);
+          this.notifyAiProgress(p);
         });
       if (pipe.success && pipe.data && pipe.data.topology &&
         (pipe.data.topology.deviceList?.length ?? 0) > 0 &&
@@ -3433,7 +3440,7 @@ export class AppService {
     if (this.aiGenCancelRequested) {
       return;
     }
-    this.onAiProgress(p);
+    this.notifyAiProgress(p);
     if (p.stage.length === 0) {
       return;
     }
@@ -3541,7 +3548,7 @@ export class AppService {
     const result = await this.aiEngine.runAiTask(
       AiTaskType.TASK_LAYOUT_PLACE, topo,
       { prompt, lockedUuids: locked },
-      (p) => this.onAiProgress(p)
+      (p) => this.notifyAiProgress(p)
     );
     if (result.success && result.topology) {
       this.schematicEditor.loadTopology(result.topology);
@@ -3982,7 +3989,7 @@ export class AppService {
     });
     // SIMULATION_STEP → canvas only; wave emit is in publishInstrumentFrame (throttled)
     EventBus.getInstance().subscribe(ModuleEvent.AI_TASK_PROGRESS, (payload) => {
-      this.onAiProgress(payload.data as ProgressInfo);
+      this.notifyAiProgress(payload.data as ProgressInfo);
     });
   }
 

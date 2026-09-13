@@ -169,12 +169,18 @@ export class AppService {
     onErcUpdate: (errors: ErcError[]) => void = () => { };
     onWaveUpdate: (waves: WaveData[]) => void = () => { };
     onAiProgress: (p: ProgressInfo) => void = () => { };
+    /** PCB 页等次要订阅（避免覆盖 Index 主回调） */
+    onAiProgressSecondary: (p: ProgressInfo) => void = () => { };
     onAiGeneratingChanged: (busy: boolean) => void = () => { };
     /** PCB 页等次要订阅（避免覆盖 Index 主回调） */
     onAiGeneratingChangedSecondary: (busy: boolean) => void = () => { };
     onAiGenLogsChanged: (logs: AiGenLogEntry[]) => void = () => { };
     /** PCB 页遮罩内展示最近 Agent 日志 */
     onAiGenLogsChangedSecondary: (logs: AiGenLogEntry[]) => void = () => { };
+    private notifyAiProgress(p: ProgressInfo): void {
+        this.onAiProgress(p);
+        this.onAiProgressSecondary(p);
+    }
     private notifyAiGeneratingChanged(busy: boolean): void {
         this.onAiGeneratingChanged(busy);
         this.onAiGeneratingChangedSecondary(busy);
@@ -2170,7 +2176,7 @@ export class AppService {
             await MainThreadYield.yield();
             // Pass editor doc so MNA sees OUT1/AC+ pin names (topo round-trip alone loses them)
             const result = this.simulationKernel.startSimulation(topo, cfg, (p) => {
-                this.onAiProgress(p);
+                this.notifyAiProgress(p);
             }, doc);
             if (!result.success) {
                 Logger.warn(INSTR_TRACE_TAG, `[SIM_START_FAIL] ${result.error ?? 'unknown'}`);
@@ -2499,7 +2505,7 @@ export class AppService {
             this.onStatusMessage('AI 用量已达 80%，请注意额度');
         }
         const topo = this.getTopology();
-        const result = await this.aiEngine.runAiTask(AiTaskType.TASK_AUTO_ROUTE_GLOBAL, topo, undefined, (p) => this.onAiProgress(p));
+        const result = await this.aiEngine.runAiTask(AiTaskType.TASK_AUTO_ROUTE_GLOBAL, topo, undefined, (p) => this.notifyAiProgress(p));
         if (result.success && result.topology) {
             this.schematicEditor.applyRouteResult({
                 routeLines: result.topology.wireList,
@@ -2705,7 +2711,7 @@ export class AppService {
             const topo = TopologyAdapter.toTopology(editor.getDocument());
             this.appendAiGenLog('assistant', 'Coordinator 自检 WAR/QA…');
             const pipe = await (this.aiEngine as AiEngineImpl).runSelfCheckPipeline(topo, true, (p) => {
-                this.onAiProgress(p);
+                this.notifyAiProgress(p);
             });
             if (pipe.success && pipe.data && pipe.data.topology &&
                 (pipe.data.topology.deviceList?.length ?? 0) > 0 &&
@@ -3191,7 +3197,7 @@ export class AppService {
         if (this.aiGenCancelRequested) {
             return;
         }
-        this.onAiProgress(p);
+        this.notifyAiProgress(p);
         if (p.stage.length === 0) {
             return;
         }
@@ -3286,7 +3292,7 @@ export class AppService {
         const locked = topo.deviceList
             .filter(d => !selected.some(s => s.instUuid === d.instUuid))
             .map(d => d.instUuid);
-        const result = await this.aiEngine.runAiTask(AiTaskType.TASK_LAYOUT_PLACE, topo, { prompt, lockedUuids: locked }, (p) => this.onAiProgress(p));
+        const result = await this.aiEngine.runAiTask(AiTaskType.TASK_LAYOUT_PLACE, topo, { prompt, lockedUuids: locked }, (p) => this.notifyAiProgress(p));
         if (result.success && result.topology) {
             this.schematicEditor.loadTopology(result.topology);
             this.onProjectChanged();
@@ -3702,7 +3708,7 @@ export class AppService {
         });
         // SIMULATION_STEP → canvas only; wave emit is in publishInstrumentFrame (throttled)
         EventBus.getInstance().subscribe(ModuleEvent.AI_TASK_PROGRESS, (payload) => {
-            this.onAiProgress(payload.data as ProgressInfo);
+            this.notifyAiProgress(payload.data as ProgressInfo);
         });
     }
     private wireCallbacks(): void {

@@ -274,16 +274,6 @@
       "dynamic": false,
       "maskedByOverrideDependencyMap": false
     },
-    "simulation_kernel@file:features/simulation_kernel": {
-      "storePath": "features/simulation_kernel",
-      "dependencies": {
-        "common": "common"
-      },
-      "dynamicDependencies": {},
-      "dev": false,
-      "dynamic": false,
-      "maskedByOverrideDependencyMap": false
-    },
     "hex_debugger@file:features/hex_debugger": {
       "storePath": "features/hex_debugger",
       "dependencies": {
@@ -294,18 +284,8 @@
       "dynamic": false,
       "maskedByOverrideDependencyMap": false
     },
-    "ai_api_manager@file:features/ai_api_manager": {
-      "storePath": "features/ai_api_manager",
-      "dependencies": {
-        "common": "common"
-      },
-      "dynamicDependencies": {},
-      "dev": false,
-      "dynamic": false,
-      "maskedByOverrideDependencyMap": false
-    },
-    "instruments@file:features/instruments": {
-      "storePath": "features/instruments",
+    "simulation_kernel@file:features/simulation_kernel": {
+      "storePath": "features/simulation_kernel",
       "dependencies": {
         "common": "common"
       },
@@ -324,8 +304,8 @@
       "dynamic": false,
       "maskedByOverrideDependencyMap": false
     },
-    "plugin_system@file:features/plugin_system": {
-      "storePath": "features/plugin_system",
+    "ai_api_manager@file:features/ai_api_manager": {
+      "storePath": "features/ai_api_manager",
       "dependencies": {
         "common": "common"
       },
@@ -336,6 +316,26 @@
     },
     "pcb_editor@file:features/pcb_editor": {
       "storePath": "features/pcb_editor",
+      "dependencies": {
+        "common": "common"
+      },
+      "dynamicDependencies": {},
+      "dev": false,
+      "dynamic": false,
+      "maskedByOverrideDependencyMap": false
+    },
+    "plugin_system@file:features/plugin_system": {
+      "storePath": "features/plugin_system",
+      "dependencies": {
+        "common": "common"
+      },
+      "dynamicDependencies": {},
+      "dev": false,
+      "dynamic": false,
+      "maskedByOverrideDependencyMap": false
+    },
+    "instruments@file:features/instruments": {
+      "storePath": "features/instruments",
       "dependencies": {
         "common": "common"
       },

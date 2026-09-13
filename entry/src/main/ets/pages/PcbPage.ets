@@ -20,7 +20,7 @@ import {
   createEmptyPcbDocument, normalizePcbDocument, isCopperLayer,
   PcbAppearanceMode, Pcb3dDisplayMode, PcbViaKind, PcbRouteCornerMode, PcbStackLayer, copperLayersFromStack,
   tracePcbUi, tracePcbOp, tracePcb3d, tracePcbDisplayDump, PcbCanvasTraceSnapshot,
-  PcbView2dTraceParams, PcbView3dTraceParams
+  PcbView2dTraceParams, PcbView3dTraceParams, ProgressInfo
 } from 'common';
 import { PcbEditorImpl, PcbToolMode } from 'pcb_editor';
 import { SchematicEditorImpl } from 'schematic_editor';
@@ -98,6 +98,11 @@ struct PcbPage {
   @State private autoRouteBusy: boolean = false;
   @State private agentDrawingBusy: boolean = false;
   @State private agentLogPreview: string = '';
+  @State aiGenerating: boolean = false;
+  @State aiProgress: number = 0;
+  @State aiStage: string = '';
+  /** 递增后驱动右侧栏切到 AI 页 */
+  @State aiFocusTick: number = 0;
   /** bit0=Ctrl, bit1=Shift — 页面级快捷键 */
   private pageModifierKeys: number = 0;
   private readonly autoRouteCopperOptions: number[] = [2, 4, 6, 8];
@@ -112,7 +117,15 @@ struct PcbPage {
     EventBus.getInstance().subscribe(ModuleEvent.SELECTION_CHANGED, this.onSelectionChanged);
     this.appService.onAiGeneratingChangedSecondary = (busy: boolean) => {
       this.agentDrawingBusy = busy && this.appService.getCanvasLockSource() === 'agent';
+      this.aiGenerating = busy || this.autoRouteBusy;
+      if (busy) {
+        this.focusAiPanel('Agent 绘制中…');
+      }
       this.canvasVersion++;
+    };
+    this.appService.onAiProgressSecondary = (p: ProgressInfo) => {
+      this.aiProgress = p.progress;
+      this.aiStage = p.stage;
     };
     this.appService.onAiGenLogsChangedSecondary = (logs) => {
       this.refreshAgentLogPreview(logs);
@@ -140,7 +153,25 @@ struct PcbPage {
     EventBus.getInstance().unsubscribe(ModuleEvent.VIEWPORT_CHANGED, this.onViewportChanged);
     EventBus.getInstance().unsubscribe(ModuleEvent.SELECTION_CHANGED, this.onSelectionChanged);
     this.appService.onAiGeneratingChangedSecondary = () => {};
+    this.appService.onAiProgressSecondary = () => {};
     this.appService.onAiGenLogsChangedSecondary = () => {};
+  }
+
+  private focusAiPanel(stage: string): void {
+    this.aiFocusTick++;
+    this.aiGenerating = true;
+    this.aiStage = stage;
+    if (this.aiProgress <= 0) {
+      this.aiProgress = 1;
+    }
+  }
+
+  private clearAiPanelBusy(): void {
+    if (!this.autoRouteBusy && !this.appService.isAiGenerating()) {
+      this.aiGenerating = false;
+      this.aiProgress = 0;
+      this.aiStage = '';
+    }
   }
 
   private onSelectionChanged = (payload: ModuleEventPayload): void => {
@@ -404,7 +435,8 @@ struct PcbPage {
       return;
     }
     if (!hasPcbAutoRouteApiKey(this.appService.aiApiManager)) {
-      this.statusMessage = '自动布线需要 LLM API Key（请在原理图 AI 设置中配置默认接口）';
+      this.statusMessage = '自动布线需要 LLM API Key（请在右侧 AI 面板配置默认接口）';
+      this.aiFocusTick++;
       tracePcbUi('AUTO_ROUTE', 'blocked_no_api_key');
       return;
     }
@@ -428,7 +460,8 @@ struct PcbPage {
     }
     if (!hasPcbAutoRouteApiKey(this.appService.aiApiManager)) {
       this.showAutoRouteLayerConfirm = false;
-      this.statusMessage = '自动布线需要 LLM API Key（请在原理图 AI 设置中配置默认接口）';
+      this.statusMessage = '自动布线需要 LLM API Key（请在右侧 AI 面板配置默认接口）';
+      this.aiFocusTick++;
       tracePcbUi('AUTO_ROUTE', 'confirm_blocked_no_api_key');
       return;
     }
@@ -450,6 +483,7 @@ struct PcbPage {
     this.autoRouteBusy = true;
     this.getEditor().setReadOnly(true);
     this.statusMessage = `自动布线中（五 Agent + 本地几何，Cu=${target}）…`;
+    this.focusAiPanel(`自动布线 Cu=${target}`);
     setTimeout((): void => {
       this.runAutoRoute(target);
     }, 0);
@@ -462,11 +496,13 @@ struct PcbPage {
     this.autoRouteBusy = true;
     this.getEditor().setReadOnly(true);
     this.statusMessage = `自动布线中（五 Agent + 本地几何，Cu=${cu}）…`;
+    this.focusAiPanel(`自动布线 Cu=${cu}`);
     tracePcbUi('AUTO_ROUTE', `start Cu=${cu}`);
     try {
       const agents = createPcbRouteAgents(this.appService.aiApiManager);
       if (agents === null) {
-        this.statusMessage = '自动布线需要 LLM API Key（请在原理图 AI 设置中配置默认接口）';
+        this.statusMessage = '自动布线需要 LLM API Key（请在右侧 AI 面板配置默认接口）';
+        this.aiFocusTick++;
         tracePcbOp('AUTO_ROUTE', 'fail no_api_key');
         return;
       }
@@ -481,18 +517,23 @@ struct PcbPage {
           `自动布线: ${d.netCount} 网络, ${d.trackCount} 段 · Cu=${cu}` +
           `${hint.length > 0 ? ' — ' + hint : ''}`;
         this.unsavedChanges = true;
+        this.aiProgress = 100;
+        this.aiStage = '自动布线完成';
         tracePcbOp('AUTO_ROUTE', `ok nets=${d.netCount} tracks=${d.trackCount} Cu=${cu}`);
       } else {
         this.statusMessage = result.error ?? '自动布线失败';
+        this.aiStage = '自动布线失败';
         tracePcbOp('AUTO_ROUTE', `fail ${result.error ?? 'unknown'}`);
       }
     } catch (e) {
       const msg = e instanceof Error ? e.message : `${e}`;
       this.statusMessage = `自动布线异常: ${msg}`;
+      this.aiStage = '自动布线异常';
       tracePcbOp('AUTO_ROUTE', `exception ${msg}`);
     } finally {
       this.getEditor().setReadOnly(false);
       this.autoRouteBusy = false;
+      this.clearAiPanelBusy();
       this.canvasVersion++;
     }
   }
@@ -1745,6 +1786,11 @@ struct PcbPage {
           stackFocusTick: this.stackFocusTick,
           stackHighlightCopperIds: this.stackHighlightCopperIds,
           gerberDocRev: this.gerberDocRev,
+          statusMessage: $statusMessage,
+          aiGenerating: $aiGenerating,
+          aiProgress: $aiProgress,
+          aiStage: $aiStage,
+          aiFocusTick: this.aiFocusTick,
           getPcbDocument: () => this.getEditor().getDocument(),
           onExportGerber: () => { this.exportGerber(); },
           onZonePriority: (delta: number) => { this.adjustSelectedZonePriority(delta); },

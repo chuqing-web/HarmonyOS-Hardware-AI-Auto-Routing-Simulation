@@ -7,8 +7,8 @@ export const VERSION_CODE = 1001001;
 export const VERSION_NAME = '1.1.1';
 export const TARGET_NAME = 'default';
 export const PRODUCT_NAME = 'default';
-export const BUILD_MODE_NAME = 'debug';
-export const DEBUG = true;
+export const BUILD_MODE_NAME = 'release';
+export const DEBUG = false;
 
 /**
  * BuildProfile Class is used only for compatibility purposes.

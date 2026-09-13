@@ -1,5 +1,5 @@
 /**
- * PCB 右侧面板 — 属性 / DRC / 封装 / 层栈
+ * PCB 右侧面板 — 属性 / AI / DRC / 封装 / 层栈 / Gerber / 教学
  */
 import {
   PcbDrcViolation, PcbDrcSeverity, PcbLayerId, PcbFootprintDef, PcbViaKind,
@@ -12,14 +12,16 @@ import { ProteusClassicBtn, ProteusPanelTitle, ProteusSidebarTab } from '../prot
 import { ProteusIconName } from '../proteus/ProteusIcons';
 import { PcbTeachingPanel } from './PcbTeachingPanel';
 import { PcbGerberPreview } from './PcbGerberPreview';
+import { AiSettingsPanel } from '../AiSettingsPanel';
 
 enum PcbRightTab {
   PROPERTIES = 0,
-  DRC = 1,
-  LIBRARY = 2,
-  STACK = 3,
-  GERBER = 4,
-  TEACHING = 5
+  AI = 1,
+  DRC = 2,
+  LIBRARY = 3,
+  STACK = 4,
+  GERBER = 5,
+  TEACHING = 6
 }
 
 @Component
@@ -60,6 +62,12 @@ export struct PcbRightPanel {
   onExportGerber: () => void = () => {};
   getPcbDocument: () => PcbDocument | null = () => null;
   @Prop gerberDocRev: number = 0;
+  @Link statusMessage: string;
+  @Link aiGenerating: boolean;
+  @Link aiProgress: number;
+  @Link aiStage: string;
+  /** 自动布线等场景递增 → 切到 AI 页 */
+  @Prop @Watch('onAiFocusTickChange') aiFocusTick: number = 0;
 
   @State private activeTab: PcbRightTab = PcbRightTab.PROPERTIES;
   @State private fpDefs: PcbFootprintDef[] = [];
@@ -75,7 +83,16 @@ export struct PcbRightPanel {
     }
   }
 
+  private onAiFocusTickChange(): void {
+    if (this.aiFocusTick > 0) {
+      this.activeTab = PcbRightTab.AI;
+    }
+  }
+
   private panelTitle(): string {
+    if (this.activeTab === PcbRightTab.AI) {
+      return 'AI';
+    }
     if (this.activeTab === PcbRightTab.DRC) {
       return 'DRC';
     }
@@ -100,6 +117,15 @@ export struct PcbRightPanel {
       Row() {
         if (this.activeTab === PcbRightTab.PROPERTIES) {
           this.buildPropertiesTab()
+        } else if (this.activeTab === PcbRightTab.AI) {
+          AiSettingsPanel({
+            statusMessage: $statusMessage,
+            aiGenerating: $aiGenerating,
+            aiProgress: $aiProgress,
+            aiStage: $aiStage
+          })
+            .layoutWeight(1)
+            .height('100%')
         } else if (this.activeTab === PcbRightTab.DRC) {
           this.buildDrcTab()
         } else if (this.activeTab === PcbRightTab.LIBRARY) {
@@ -129,6 +155,11 @@ export struct PcbRightPanel {
             label: '属性', tooltip: '属性面板', icon: ProteusIconName.SETTINGS,
             selected: this.activeTab === PcbRightTab.PROPERTIES,
             onSelect: () => { this.activeTab = PcbRightTab.PROPERTIES; }
+          })
+          ProteusSidebarTab({
+            label: 'AI', tooltip: 'AI 助手', icon: ProteusIconName.AI_ROUTE,
+            selected: this.activeTab === PcbRightTab.AI,
+            onSelect: () => { this.activeTab = PcbRightTab.AI; }
           })
           ProteusSidebarTab({
             label: 'DRC', tooltip: '设计规则检查', icon: ProteusIconName.ERC,
