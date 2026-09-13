@@ -92,9 +92,8 @@ export class PcbTemplateMergeUtil {
                 locked: false,
                 pads: pads
             };
-            if (src.schematicCompId !== undefined && src.schematicCompId.length > 0) {
-                fp.schematicCompId = src.schematicCompId;
-            }
+            // 不复制模板内 schematicCompId：那是模板工程旧 UUID，会与当前原理图错绑，
+            // 导致「原理图已删教学模块、PCB 仍留件」。同步时只认当前原理图 id。
             target.footprints.push(fp);
         }
         for (let i = 0; i < source.tracks.length; i++) {

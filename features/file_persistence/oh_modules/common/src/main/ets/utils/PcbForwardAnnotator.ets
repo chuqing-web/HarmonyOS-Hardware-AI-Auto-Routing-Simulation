@@ -15,6 +15,8 @@ import {
   collectFootprintPadPositions, updateTracksForFootprintTransform,
   snapTrackEndpointsToPads, pruneZeroLengthTracks
 } from './PcbTrackBindUtil';
+import { syncFootprintPadsFromSchematic } from './PcbSchPadSync';
+import { rebuildPcbNets } from './PcbNetUtil';
 import { ensureBoardAccessories, accessoryHintsFromSchematicNets } from './PcbBoardAccessories';
 
 export interface ForwardAnnotateResult {
@@ -331,6 +333,37 @@ export class PcbForwardAnnotator {
     this.lib = lib ?? getGlobalPcbFootprintLibrary();
   }
 
+  /**
+   * 无 schematicCompId 的封装是否保留：
+   * - 用户锁定手布件
+   * - 排针 J1 / defId 含 PINHDR（教学外接排针保留）
+   * - 安装孔 H+数字
+   * 其它无绑定残留（已删教学模块）一律丢弃。
+   */
+  static shouldKeepOrphanFootprint(fp: PcbFootprintInst): boolean {
+    if (fp.locked === true) {
+      return true;
+    }
+    if (fp.refDes === 'J1') {
+      return true;
+    }
+    const def = fp.defId ?? '';
+    if (def.indexOf('PINHDR') >= 0) {
+      return true;
+    }
+    const ref = fp.refDes ?? '';
+    if (ref.length < 2 || ref.charAt(0) !== 'H') {
+      return false;
+    }
+    for (let i = 1; i < ref.length; i++) {
+      const c = ref.charCodeAt(i);
+      if (c < 48 || c > 57) {
+        return false;
+      }
+    }
+    return true;
+  }
+
   /** 从原理图文档生成/更新 PCB（保留已有走线，更新封装位置与网络） */
   annotateFromSchematic(schematic: SchematicDocument, existing?: PcbDocument): ForwardAnnotateResult {
     const doc = existing ?? createEmptyPcbDocument(schematic.name);
@@ -339,14 +372,34 @@ export class PcbForwardAnnotator {
     let placed = 0;
     let skipped = 0;
 
+    /** 当前原理图可布局器件 id — 唯一权威；已删除教学模块的封装一律不进板 */
+    const liveSchIds: Set<string> = new Set();
+    for (const comp of schematic.components) {
+      if (isLayoutable(comp)) {
+        liveSchIds.add(comp.id);
+      }
+    }
+
     const existingBySchId: Map<string, PcbFootprintInst> = new Map();
-    /** 无 schematicCompId 的既有封装（仪器探针 / 手布外设）：更新时保留，勿整表替换丢掉 */
     const orphanKeep: PcbFootprintInst[] = [];
+    let staleDropped = 0;
+    let orphanDropped = 0;
     for (const fp of doc.footprints) {
-      if (fp.schematicCompId) {
-        existingBySchId.set(fp.schematicCompId, fp);
-      } else {
+      const schId = fp.schematicCompId;
+      if (schId !== undefined && schId.length > 0) {
+        if (liveSchIds.has(schId)) {
+          existingBySchId.set(schId, fp);
+        } else if (PcbForwardAnnotator.shouldKeepOrphanFootprint(fp)) {
+          // 原理图已删，但排针/安装孔仍保留（清掉失效绑定）
+          fp.schematicCompId = undefined;
+          orphanKeep.push(fp);
+        } else {
+          staleDropped++;
+        }
+      } else if (PcbForwardAnnotator.shouldKeepOrphanFootprint(fp)) {
         orphanKeep.push(fp);
+      } else {
+        orphanDropped++;
       }
     }
 
@@ -374,6 +427,8 @@ export class PcbForwardAnnotator {
         const oldPadPos = collectFootprintPadPositions(inst);
         // 始终从库刷新焊盘几何（保留同号网络/id），避免库修正后旧实例仍用错误脚距
         this.lib.resyncPadsFromDef(inst, defId);
+        // 以原理图引脚数量/脚号为准，裁剪或补齐焊盘
+        syncFootprintPadsFromSchematic(inst, comp.libraryId);
         pendingTrackFollow.push(oldPadPos);
         pendingFpIds.push(inst.id);
         if (oldDefId !== defId) {
@@ -403,6 +458,7 @@ export class PcbForwardAnnotator {
       const created = this.lib.instantiate(slot.defId, slot.comp.refDes, slot.value,
         { x: slot.x, y: slot.y }, slot.comp.rotation, slot.comp.id);
       if (created) {
+        syncFootprintPadsFromSchematic(created, slot.comp.libraryId);
         newFootprints.push(created);
         placed++;
       } else {
@@ -411,7 +467,12 @@ export class PcbForwardAnnotator {
       }
     }
 
+    // 保留已有排针；若无 J1 则按教学板补排针+角孔
     doc.footprints = newFootprints.concat(orphanKeep);
+    const removed = staleDropped + orphanDropped;
+    if (removed > 0) {
+      messages.push(`已移除 ${removed} 个原理图中不存在的封装（含已删教学模块）`);
+    }
     // 焊盘局部坐标变化后，把仍挂在旧焊盘世界坐标上的走线端点一起挪过去
     for (let i = 0; i < pendingFpIds.length; i++) {
       const fpSet: Set<string> = new Set([pendingFpIds[i]]);
@@ -427,6 +488,8 @@ export class PcbForwardAnnotator {
     if (acc.message.length > 0) {
       messages.push(acc.message);
     }
+    PcbForwardAnnotator.pruneCopperWithoutPads(doc);
+    rebuildPcbNets(doc);
 
     if (placed === 0) {
       messages.push('原理图中没有可布局的器件');
@@ -438,6 +501,20 @@ export class PcbForwardAnnotator {
     };
     tracePcbForwardResult(schematic, doc, placed, skipped, messages);
     return out;
+  }
+
+  /** 删掉已无任何焊盘归属的走线/过孔（教学模块移除后的残铜） */
+  private static pruneCopperWithoutPads(doc: PcbDocument): void {
+    const padNets: Set<string> = new Set();
+    for (const fp of doc.footprints) {
+      for (const pad of fp.pads) {
+        if (pad.netId !== undefined && pad.netId.length > 0) {
+          padNets.add(pad.netId);
+        }
+      }
+    }
+    doc.tracks = doc.tracks.filter((t) => t.netId.length === 0 || padNets.has(t.netId));
+    doc.vias = doc.vias.filter((v) => v.netId.length === 0 || padNets.has(v.netId));
   }
 
   annotateFromTopology(topo: SchTopology, existing?: PcbDocument): ForwardAnnotateResult {

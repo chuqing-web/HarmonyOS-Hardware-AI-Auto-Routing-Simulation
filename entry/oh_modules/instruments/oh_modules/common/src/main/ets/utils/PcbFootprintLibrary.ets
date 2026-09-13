@@ -472,6 +472,27 @@ function defSOIC8W(): PcbFootprintDef {
   };
 }
 
+/** QFP-32 — 对齐 STM32F030 教学符号 32 脚 */
+function defQFP32(): PcbFootprintDef {
+  const pads: PcbPad[] = [];
+  for (let i = 0; i < 8; i++) {
+    pads.push(smdPad(`${i + 1}`, -220, -175 + i * 50, 50, 12));
+    pads.push(smdPad(`${8 + i + 1}`, -175 + i * 50, 220, 50, 12));
+    pads.push(smdPad(`${16 + i + 1}`, 220, 175 - i * 50, 50, 12));
+    pads.push(smdPad(`${24 + i + 1}`, 175 - i * 50, -220, 50, 12));
+  }
+  return {
+    id: 'FP_QFP32',
+    name: 'QFP-32',
+    description: 'QFP-32 teaching (STM32F030 32-pin symbol)',
+    pads,
+    silkLines: rectSilk(220, 220),
+    courtyard: [
+      { x: -240, y: -240 }, { x: 240, y: -240 }, { x: 240, y: 240 }, { x: -240, y: 240 }
+    ]
+  };
+}
+
 /** QFP-44 (STC15W408AS) */
 function defQFP44(): PcbFootprintDef {
   const pads: PcbPad[] = [];
@@ -830,8 +851,12 @@ function isMcuStm32F407Lib(lib: string): boolean {
   return lib.includes('stm32f407');
 }
 
-function isMcuStm32Tssop20Lib(lib: string): boolean {
-  return lib.includes('stm32f030') || lib.includes('stm32l431');
+function isMcuStm32F030Lib(lib: string): boolean {
+  return lib.includes('stm32f030');
+}
+
+function isMcuStm32L431Lib(lib: string): boolean {
+  return lib.includes('stm32l431');
 }
 
 const BUILTIN_DEFS: PcbFootprintDef[] = [
@@ -852,7 +877,7 @@ const BUILTIN_DEFS: PcbFootprintDef[] = [
   // 电容
   defRadialCap(),
   // QFP / TSSOP
-  defQFP44(), defQFP48(), defQFP64(), defQFP100(), defTSSOP20(),
+  defQFP32(), defQFP44(), defQFP48(), defQFP64(), defQFP100(), defTSSOP20(),
   // 电位器 / 晶振（HC-49 与模板一致；XTAL2 兼容旧 id）
   defPot3Pin(), defHC49(), defXtal2Pin(),
   // 开关 / 继电器 / 蜂鸣器
@@ -890,8 +915,8 @@ export class PcbFootprintLibrary {
     const fp = footprintStr.toLowerCase();
     const lib = libraryId.toLowerCase();
 
-    // --- 显式 footprint 字符串（与模板同序） ---
-    if (fp.includes('0402')) return 'FP_0805';
+    // --- 显式 footprint 字符串（与模板同序；脚数以原理图为准时优先选匹配封装） ---
+    if (fp.includes('0402')) return 'FP_0402';
     if (fp.includes('0603') || fp.includes('1608')) return 'FP_0603';
     if (fp.includes('1206') || fp.includes('3216')) return 'FP_1206';
     if (fp.includes('0805') || fp.includes('2012')) return 'FP_0805';
@@ -909,32 +934,38 @@ export class PcbFootprintLibrary {
     if (fp.includes('qfp') && fp.includes('100')) return 'FP_QFP100';
     if (fp.includes('qfp') && fp.includes('64')) return 'FP_QFP64';
     if (fp.includes('qfp') && fp.includes('48')) return 'FP_QFP48';
+    if (fp.includes('qfp') && fp.includes('32')) return 'FP_QFP32';
 
-    // --- libraryId（与 Test_Template 板级封装对齐） ---
+    // --- libraryId：优先匹配原理图引脚数对应的封装 ---
     // OLED 必须先于 led_，避免 oled 被当成 led
     if (lib.includes('oled')) return 'FP_OLED';
     if (lib.includes('lcd')) return 'FP_LCD1602';
     if (lib.includes('lm2596')) return 'FP_SIP5';
     if (lib.includes('7805') || lib.includes('7812') || lib.includes('ams1117')) return 'FP_TO2203';
-    if (lib.startsWith('r_') || lib.startsWith('c_') || lib.startsWith('l_') ||
-      lib.startsWith('led_') || lib.includes('1n') || lib.includes('fuse')) {
-      return lib.includes('fuse') ? 'FP_1206' : 'FP_0805';
-    }
+    if (lib.startsWith('led_')) return 'FP_LED5';
+    if (lib.includes('1n4148') || lib.includes('1n4007') || lib.includes('1n5819')) return 'FP_AXIAL_DIODE';
+    if (lib.startsWith('fuse_') || lib.includes('fuse')) return 'FP_FUSE';
+    if (lib.startsWith('l_')) return 'FP_AXIAL_IND';
+    if (lib.startsWith('r_') || lib.startsWith('c_')) return 'FP_0805';
     if (lib.includes('irf')) return 'FP_TO2203';
     if (lib.includes('2n') || lib.includes('mos') || lib.includes('bjt')) return 'FP_SOT23';
     if (lib.includes('pot')) return 'FP_POT3';
     if (lib.includes('ds18')) return 'FP_TO92_SENSOR';
     if (lib.includes('hall')) return 'FP_TO92_SENSOR';
     if (lib.includes('ldr')) return 'FP_LDR';
-    if (lib.includes('sw_')) return 'FP_SW_PUSH';
+    // 原理图 SW_PUSH 仅 2 脚 → 用 THT2，避免 4 焊盘微动开关
+    if (lib.includes('sw_')) return 'FP_THT2';
     if (lib.includes('buzzer')) return 'FP_BUZZER';
     if (lib.includes('relay')) return 'FP_RELAY_SPDT';
     if (lib.includes('xtal') || lib.includes('crystal')) return 'FP_HC49';
     if (isMcu51Lib(lib)) return 'FP_DIP40';
     if (isMcuStm32F103C8Lib(lib)) return 'FP_QFP48';
-    if (isMcuStm32F103RCLib(lib)) return 'FP_QFP64';
+    // F103RC 教学符号 48 脚 → QFP48（不以物理 LQFP64 为准）
+    if (isMcuStm32F103RCLib(lib)) return 'FP_QFP48';
     if (isMcuStm32F407Lib(lib)) return 'FP_QFP100';
-    if (isMcuStm32Tssop20Lib(lib)) return 'FP_TSSOP20';
+    // F030 教学 32 脚 / L431 教学 48 脚
+    if (isMcuStm32F030Lib(lib)) return 'FP_QFP32';
+    if (isMcuStm32L431Lib(lib)) return 'FP_QFP48';
     if (lib.includes('2764') || lib.includes('62256')) return 'FP_DIP28';
     if (lib.includes('cd4017') || lib.includes('4017')) return 'FP_DIP16';
     if (lib.includes('74hc') || lib.includes('74ls') || lib.includes('cd40')) return 'FP_DIP14';

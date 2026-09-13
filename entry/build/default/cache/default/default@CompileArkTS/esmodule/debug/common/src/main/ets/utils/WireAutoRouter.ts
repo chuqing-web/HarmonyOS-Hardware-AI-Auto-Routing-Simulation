@@ -1163,10 +1163,17 @@ export class WireAutoRouter {
     private static escapePinsOf(obs: WarCompObstacle): Point2D[] {
         return obs.escapePinWorlds;
     }
+    /**
+     * 同器件邻脚禁行半径。
+     * 不可用 FOREIGN_PIN_CLEARANCE(20)：标准脚距常为 20，会把目标脚逃逸走廊整条堵死，
+     * 表现为「从引脚引出后无法接到其它脚/导线」。异器件脚仍走 foreignPins 的 20 净空。
+     */
+    private static siblingPinClearR(ctx: WarRouteContext): number {
+        return Math.max(ctx.gridSize * 0.9, 8);
+    }
     private static nearSiblingPinNotEscape(wx: number, wy: number, obs: WarCompObstacle, ctx: WarRouteContext): boolean {
         const escape = WireAutoRouter.escapePinsOf(obs);
-        // 与 FOREIGN_PIN_CLEARANCE 对齐：邻脚 20mil 内硬挡（旧 clearR≈9 仍会贴脚而过）
-        const clearR = Math.max(FOREIGN_PIN_CLEARANCE, ctx.gridSize * 0.9);
+        const clearR = WireAutoRouter.siblingPinClearR(ctx);
         for (let pi = 0; pi < obs.pinWorlds.length; pi++) {
             const p = obs.pinWorlds[pi];
             if (Math.hypot(wx - p.x, wy - p.y) > clearR) {
@@ -1246,10 +1253,14 @@ export class WireAutoRouter {
             }
         }
         // 无关引脚硬禁行（含邻器件脚尖伸出选中区外；端点目标脚不在 foreignPins）
+        // T 接落点 / 端点松弛格：允许贴到铜皮附近的异脚尖，否则线-线/脚-线无法收束
         const pinClear = FOREIGN_PIN_CLEARANCE;
         for (let fi = 0; fi < ctx.foreignPins.length; fi++) {
             const fp = ctx.foreignPins[fi];
             if (Math.hypot(wx - fp.x, wy - fp.y) < pinClear) {
+                if (endpointLoose || WireAutoRouter.isWireJoinPoint(wx, wy, ctx)) {
+                    continue;
+                }
                 return true;
             }
         }

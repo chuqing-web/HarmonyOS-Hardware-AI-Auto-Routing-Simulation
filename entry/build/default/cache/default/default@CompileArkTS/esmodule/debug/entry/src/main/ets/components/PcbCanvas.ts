@@ -47,6 +47,8 @@ interface PcbCanvas_Params {
     viewHeight?: number;
     redrawScheduled?: boolean;
     isTouchActive?: boolean;
+    last3dDraftRedrawMs?: number;
+    hq3dPending?: boolean;
     lastTouchX?: number;
     lastTouchY?: number;
     draggingItems?: boolean;
@@ -130,6 +132,8 @@ export class PcbCanvas extends ViewPU {
         this.viewHeight = 0;
         this.redrawScheduled = false;
         this.isTouchActive = false;
+        this.last3dDraftRedrawMs = 0;
+        this.hq3dPending = false;
         this.lastTouchX = 0;
         this.lastTouchY = 0;
         this.draggingItems = false;
@@ -250,6 +254,12 @@ export class PcbCanvas extends ViewPU {
         }
         if (params.isTouchActive !== undefined) {
             this.isTouchActive = params.isTouchActive;
+        }
+        if (params.last3dDraftRedrawMs !== undefined) {
+            this.last3dDraftRedrawMs = params.last3dDraftRedrawMs;
+        }
+        if (params.hq3dPending !== undefined) {
+            this.hq3dPending = params.hq3dPending;
         }
         if (params.lastTouchX !== undefined) {
             this.lastTouchX = params.lastTouchX;
@@ -467,6 +477,9 @@ export class PcbCanvas extends ViewPU {
     private viewHeight: number;
     private redrawScheduled: boolean;
     private isTouchActive: boolean;
+    /** 3D 交互草稿节流（拖拽时 30fps Canvas，松手后再 PBR） */
+    private last3dDraftRedrawMs: number;
+    private hq3dPending: boolean;
     /** 最近一次有效触点（Touch Up 时 touches 可能为空） */
     private lastTouchX: number;
     private lastTouchY: number;
@@ -506,10 +519,26 @@ export class PcbCanvas extends ViewPU {
         if (this.redrawScheduled)
             return;
         this.redrawScheduled = true;
+        const editor = this.getEditor();
+        const draft3d = editor.getAppearance().show3d &&
+            (this.orbiting3d || this.panning);
+        const delay = draft3d ? 33 : 16;
         setTimeout(() => {
             this.redrawScheduled = false;
             this.drawAll();
-        }, 16);
+        }, delay);
+    }
+    /** 松手后延迟一帧跑高质量 PBR */
+    private scheduleHighQuality3d(): void {
+        if (this.hq3dPending)
+            return;
+        this.hq3dPending = true;
+        setTimeout(() => {
+            this.hq3dPending = false;
+            if (this.orbiting3d || this.panning)
+                return;
+            this.scheduleRedraw();
+        }, 80);
     }
     private drawAll(): void {
         const ctx = this.context;
@@ -528,7 +557,10 @@ export class PcbCanvas extends ViewPU {
         const appearance = editor.getAppearance();
         if (appearance.show3d) {
             this.drawSimple3d(ctx, doc, vp);
-            this.emitView3dInstrTrace(doc, false);
+            // 拖拽草稿帧不写 instr 审计，减负
+            if (!(this.orbiting3d || this.panning)) {
+                this.emitView3dInstrTrace(doc, false);
+            }
             return;
         }
         // 工业层序：栅格 → 基板 → 浅透敷铜 → 阻焊 → 走线/过孔/焊盘 → 丝印 → Edge.Cuts
@@ -1209,7 +1241,8 @@ export class PcbCanvas extends ViewPU {
             measurePts: this.measure3dPts,
             showInterference: ap.view3dShowInterference === true,
             usePbr: ap.view3dPbr === true && mode === Pcb3dDisplayMode.REALISTIC,
-            msaa: ap.view3dMsaa >= 4 ? 4 : 1,
+            msaa: 1,
+            draftMode: this.orbiting3d || this.panning,
             activeLayer: editor.getActiveLayer(),
             appearanceMode: ap.mode !== undefined ? ap.mode : PcbAppearanceMode.OVERLAY
         });
@@ -1241,7 +1274,8 @@ export class PcbCanvas extends ViewPU {
             measurePts: this.measure3dPts,
             showInterference: ap.view3dShowInterference === true,
             usePbr: ap.view3dPbr === true && mode === Pcb3dDisplayMode.REALISTIC,
-            msaa: ap.view3dMsaa >= 4 ? 4 : 1,
+            msaa: 1,
+            draftMode: this.orbiting3d || this.panning,
             activeLayer: editor.getActiveLayer(),
             appearanceMode: ap.mode !== undefined ? ap.mode : PcbAppearanceMode.OVERLAY
         };
@@ -2584,7 +2618,7 @@ export class PcbCanvas extends ViewPU {
             this.panning = false;
             this.orbiting3d = false;
             this.orbitMoved3d = false;
-            this.scheduleRedraw();
+            this.scheduleHighQuality3d();
             return;
         }
         // 走线提交：差分对与普通走线均在 pointerDown 提交，Up 仅收尾状态
@@ -2615,11 +2649,17 @@ export class PcbCanvas extends ViewPU {
             editor.endMoveOperation();
         }
         this.pointerDown = false;
+        const was3dInteract = this.panning || this.orbiting3d;
         this.panning = false;
         this.orbiting3d = false;
         this.draggingItems = false;
         this.lastSnapPoint = null;
-        this.scheduleRedraw();
+        if (was3dInteract && this.getEditor().getAppearance().show3d) {
+            this.scheduleHighQuality3d();
+        }
+        else {
+            this.scheduleRedraw();
+        }
     }
     private handlePointerHover(sx: number, sy: number): void {
         if (this.pointerDown)

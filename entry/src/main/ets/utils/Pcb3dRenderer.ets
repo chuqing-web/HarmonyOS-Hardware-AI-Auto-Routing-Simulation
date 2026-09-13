@@ -1,8 +1,7 @@
 /**
- * PCB 3D 预览（Canvas 伪 3D）
- * 白皮书 P0/P1：板厚+侧边 FR4、铜箔挤出、孔壁沉铜、PBR 近似材质、
- * 三点光/软阴影/AO、正交/透视、图层/选中/网络联动、丝印贴花、LOD。
- * 注：真 PBR/SSAO/IBL/STEP 需 WebGL；此处为工业可视化近似。
+ * PCB 3D 预览（Canvas 伪 3D + 增强 CPU PBR）
+ * 观感对齐嘉立创：阻焊开窗露铜、ENIG 焊盘、参数化立体元件、更高分辨率 PBR。
+ * Native GLES（XComponent）见 Pcb3dGpuBridge / entry/src/main/cpp/pcb3d_gpu — 就绪后切换。
  */
 import {
   PcbDocument, PcbFootprintInst, PcbLayerId, PcbTrack, PcbPadType, Point2D,
@@ -18,27 +17,28 @@ import {
 import { Pcb3dMeshBuilder } from './Pcb3dMeshBuilder';
 import { Pcb3dPbrRaster } from './Pcb3dPbrRaster';
 import { getBoundStepSig } from './PcbStepImporter';
+import { MASK_OPENING_EXPAND_MIL } from './Pcb3dModelLibrary';
 
-/** 材质颜色（Canvas painter 路径，工业可视化优化） */
+/** 材质颜色（Canvas 路径；对齐嘉立创常见绿阻焊 / ENIG） */
 export class Mat3d {
-  // 阻焊：经典绿色系，更高饱和度
-  static readonly MASK = '#0B7A3E';
-  static readonly MASK_LIT = '#18A855';
-  static readonly MASK_DIM = '#065A2A';
-  static readonly MASK_TOP = '#0D8C46';
-  static readonly MASK_TOP_LIT = '#1EB860';
+  // 阻焊：嘉立创经典绿（略提亮）
+  static readonly MASK = '#149A52';
+  static readonly MASK_LIT = '#22C06A';
+  static readonly MASK_DIM = '#0A6B38';
+  static readonly MASK_TOP = '#18A858';
+  static readonly MASK_TOP_LIT = '#2ED078';
   // FR4 侧边：暖棕
-  static readonly FR4_EDGE = '#9B8460';
-  static readonly FR4_EDGE_LIT = '#B8A078';
-  static readonly FR4_EDGE_DIM = '#786545';
-  // 铜箔：暖铜色
-  static readonly COPPER = '#C47A3A';
-  static readonly COPPER_LIT = '#E0A855';
-  static readonly COPPER_HI = '#F5E080';
-  static readonly COPPER_DIM = '#8B5528';
+  static readonly FR4_EDGE = '#B89860';
+  static readonly FR4_EDGE_LIT = '#D0B078';
+  static readonly FR4_EDGE_DIM = '#8A7048';
+  // 铜箔：暖铜色（阻焊下略暗）
+  static readonly COPPER = '#C87840';
+  static readonly COPPER_LIT = '#E09858';
+  static readonly COPPER_HI = '#F0D070';
+  static readonly COPPER_DIM = '#8A5A32';
   // ENIG 金
-  static readonly ENIG = '#F0D050';
-  static readonly ENIG_LIT = '#FCE890';
+  static readonly ENIG = '#E8C848';
+  static readonly ENIG_LIT = '#F8E878';
   // HASL 锡
   static readonly HASL = '#C8C8C8';
   static readonly HASL_LIT = '#E8E8E8';
@@ -46,7 +46,7 @@ export class Mat3d {
   static readonly BARREL = '#E0C040';
   static readonly BARREL_LIT = '#F8E878';
   // 丝印
-  static readonly SILK = '#F8F8F8';
+  static readonly SILK = '#F5F5F5';
   // 塑封
   static readonly PLASTIC = '#1E1E24';
   static readonly PLASTIC_LIT = '#363640';
@@ -80,9 +80,14 @@ export interface Pcb3dViewParams {
   cutFraction: number;
   measurePts: Point2D[];
   showInterference: boolean;
-  /** 启用真 PBR+IBL+MSAA 光栅（写实默认开） */
+  /** 启用真 PBR 光栅（写实）；拖拽时由 draftMode 自动降级 */
   usePbr: boolean;
   msaa: number;
+  /**
+   * 交互草稿：旋转/平移中为 true → 走 Canvas 快路径；
+   * 松手后 false → 再跑 PBR，避免每帧 CPU 光栅卡顿。
+   */
+  draftMode?: boolean;
   /** 活动铜层：ACTIVE_ONLY 时只看该层连线 */
   activeLayer: PcbLayerId;
   /** overlay=全层可见分色 / active_only=只看活动层 / dim_inactive=淡化非活动层 */
@@ -459,9 +464,18 @@ function drawExtrudedBox(ctx: CanvasRenderingContext2D, project: ProjectFn,
     bot.push(project(corners[i].x, corners[i].y, z0));
     top.push(project(corners[i].x, corners[i].y, z1));
   }
-  ctx.fillStyle = sideFill;
+  // 侧面按朝向明暗：迎光（偏右上）更亮，背光更暗 → 立体感
   for (let k = 0; k < 4; k++) {
     const n = (k + 1) % 4;
+    const mx = (bot[k].x + bot[n].x + top[n].x + top[k].x) * 0.25;
+    const my = (bot[k].y + bot[n].y + top[n].y + top[k].y) * 0.25;
+    const cx = (bot[0].x + bot[1].x + bot[2].x + bot[3].x) * 0.25;
+    const cy = (bot[0].y + bot[1].y + bot[2].y + bot[3].y) * 0.25;
+    const ox = mx - cx;
+    const oy = my - cy;
+    const lit = 0.55 + 0.45 * Math.max(-1, Math.min(1, (ox * 0.75 - oy * 0.55) /
+      (Math.sqrt(ox * ox + oy * oy) + 1)));
+    ctx.fillStyle = sideFill;
     ctx.beginPath();
     ctx.moveTo(bot[k].x, bot[k].y);
     ctx.lineTo(bot[n].x, bot[n].y);
@@ -469,6 +483,13 @@ function drawExtrudedBox(ctx: CanvasRenderingContext2D, project: ProjectFn,
     ctx.lineTo(top[k].x, top[k].y);
     ctx.closePath();
     ctx.fill();
+    if (lit < 0.72) {
+      ctx.fillStyle = hexAlpha('#000000', (0.72 - lit) * 0.55);
+      ctx.fill();
+    } else if (lit > 0.88) {
+      ctx.fillStyle = hexAlpha('#FFFFFF', (lit - 0.88) * 0.9);
+      ctx.fill();
+    }
   }
   ctx.fillStyle = topFill;
   ctx.strokeStyle = edge;
@@ -479,6 +500,15 @@ function drawExtrudedBox(ctx: CanvasRenderingContext2D, project: ProjectFn,
   ctx.closePath();
   ctx.fill();
   ctx.stroke();
+  // 顶面迎光高光条
+  ctx.fillStyle = hexAlpha('#FFFFFF', 0.08);
+  ctx.beginPath();
+  ctx.moveTo(top[0].x, top[0].y);
+  ctx.lineTo(top[1].x, top[1].y);
+  ctx.lineTo((top[1].x + top[2].x) * 0.5, (top[1].y + top[2].y) * 0.5);
+  ctx.lineTo((top[0].x + top[3].x) * 0.5, (top[0].y + top[3].y) * 0.5);
+  ctx.closePath();
+  ctx.fill();
 }
 
 export class Pcb3dRenderer {
@@ -577,7 +607,7 @@ export class Pcb3dRenderer {
     if (Pcb3dRenderer.meshCache !== null && Pcb3dRenderer.meshCacheKey === key) {
       return Pcb3dRenderer.meshCache;
     }
-    const mesh = Pcb3dMeshBuilder.build(doc, 60000);
+    const mesh = Pcb3dMeshBuilder.build(doc, 42000);
     Pcb3dRenderer.meshCacheKey = key;
     Pcb3dRenderer.meshCache = mesh;
     return mesh;
@@ -590,17 +620,19 @@ export class Pcb3dRenderer {
 
   static render(ctx: CanvasRenderingContext2D, doc: PcbDocument, p: Pcb3dViewParams): void {
     const mode = p.displayMode !== undefined ? p.displayMode : Pcb3dDisplayMode.REALISTIC;
-    if (p.usePbr && mode === Pcb3dDisplayMode.REALISTIC) {
+    // 静止且开启 PBR 才跑 CPU 光栅；拖拽中强制 Canvas，保证流畅
+    const wantPbr = p.usePbr && mode === Pcb3dDisplayMode.REALISTIC && p.draftMode !== true;
+    if (wantPbr) {
       Pcb3dRenderer.traceDrawDecisions(doc, p, boardThicknessWorld(doc), 0.28, 'pbr');
       Pcb3dRenderer.renderPbr(ctx, doc, p);
       return;
     }
-    // 背景：深色渐变模拟工作室环境
+    // 背景：偏亮工作室环境（避免灰暗）
     const grad = ctx.createLinearGradient(0, 0, 0, p.viewHeight);
-    grad.addColorStop(0, '#1E2430');
-    grad.addColorStop(0.4, '#252D3A');
-    grad.addColorStop(0.7, '#2A3444');
-    grad.addColorStop(1, '#1A2030');
+    grad.addColorStop(0, '#3A4558');
+    grad.addColorStop(0.35, '#343E50');
+    grad.addColorStop(0.7, '#2E3848');
+    grad.addColorStop(1, '#283040');
     ctx.fillStyle = grad;
     ctx.fillRect(0, 0, p.viewWidth, p.viewHeight);
 
@@ -855,30 +887,34 @@ export class Pcb3dRenderer {
         backPasteAlpha, true);
     }
 
-    // ── 背面阻焊 (Back Mask) ──
+    // ── B.Cu 底层铜（阻焊之下）──
+    Pcb3dRenderer.drawCopperPass(ctx, project, depthOf, doc, p, boardH, copperOrder,
+      explode, explodeGap, cutaway, cutX, hasHl, hl, dim, cuH, zoom, lodFar, true);
+
+    // ── 背面阻焊（开窗露铜）──
     if (showBackMask && outline.length >= 3) {
-      Pcb3dRenderer.drawMaskLayer(ctx, project, outline, 0.6, boardH,
+      Pcb3dRenderer.drawMaskLayer(ctx, project, doc, outline, 0.6, boardH,
         backMaskAlpha * boardGhost, false);
     }
 
-    // ── 背面丝印 (Back Silk) ──
+    // ── 背面丝印 ──
     if (showBackSilk && outline.length >= 3 && !lodFar) {
       Pcb3dRenderer.drawSilkLayer(ctx, project, doc, outline, boardH,
         backSilkAlpha, true);
     }
 
-    // ── B.Cu 底层铜 (bottomOnly=true) ──
-    Pcb3dRenderer.drawCopperPass(ctx, project, depthOf, doc, p, boardH, copperOrder,
-      explode, explodeGap, cutaway, cutX, hasHl, hl, dim, cuH, zoom, lodFar, true);
+    // ── F.Cu 顶层铜（阻焊之下，嘉立创层序）──
+    if (!focusBottom) {
+      Pcb3dRenderer.drawCopperPass(ctx, project, depthOf, doc, p, boardH, copperOrder,
+        explode, explodeGap, cutaway, cutX, hasHl, hl, dim, cuH, zoom, lodFar, false);
+    }
 
-    // ── 板体顶面：阻焊 + 微光泽 + 丝印板框 ──
+    // ── 板体顶面：阻焊开窗 + 微光泽 + 丝印 ──
     if (outline.length >= 3 && !focusBottom) {
-      // 顶面阻焊 — 分层渲染：底色 + 渐变 + 微纹理
       if (showFrontMask) {
-        Pcb3dRenderer.drawMaskLayer(ctx, project, outline, boardH - 0.2, boardH,
-          Math.min(0.72, frontMaskAlpha * boardTopAlpha), true);
+        Pcb3dRenderer.drawMaskLayer(ctx, project, doc, outline, boardH - 0.2, boardH,
+          Math.min(0.88, frontMaskAlpha * boardTopAlpha), true);
       } else {
-        // 图层面板关掉 F.Mask 时仍画默认绿色顶面
         ctx.fillStyle = hexAlpha(Mat3d.MASK_TOP, boardTopAlpha);
         ctx.beginPath();
         for (let i = 0; i < outline.length; i++) {
@@ -888,13 +924,17 @@ export class Pcb3dRenderer {
         ctx.closePath();
         ctx.fill();
       }
-      // 板边高光线
       ctx.strokeStyle = hexAlpha(Mat3d.MASK_TOP_LIT, Math.min(0.85, boardTopAlpha + 0.15));
       ctx.lineWidth = 2;
+      ctx.beginPath();
+      for (let i = 0; i < outline.length; i++) {
+        const pt = project(outline[i].x, outline[i].y, boardH);
+        if (i === 0) ctx.moveTo(pt.x, pt.y); else ctx.lineTo(pt.x, pt.y);
+      }
+      ctx.closePath();
       ctx.stroke();
-      // 板面微光泽
-      const lightFac = 0.08 - (syaw * 0.02 + cyaw * 0.02);
-      ctx.fillStyle = hexAlpha('#FFFFFF', Math.max(0, Math.min(0.12, lightFac * boardTopAlpha)));
+      const lightFac = 0.10 - (syaw * 0.02 + cyaw * 0.02);
+      ctx.fillStyle = hexAlpha('#FFFFFF', Math.max(0, Math.min(0.14, lightFac * boardTopAlpha)));
       ctx.beginPath();
       for (let i = 0; i < outline.length; i++) {
         const pt = project(outline[i].x, outline[i].y, boardH + 0.3);
@@ -903,17 +943,10 @@ export class Pcb3dRenderer {
       ctx.closePath();
       ctx.fill();
 
-      // 顶面丝印板框
       if (showSilk && !lodFar) {
         Pcb3dRenderer.drawSilkLayer(ctx, project, doc, outline, boardH,
           silkAlpha, false);
       }
-    }
-
-    // ── F.Cu 顶层铜 (bottomOnly=false) ──
-    if (!focusBottom) {
-      Pcb3dRenderer.drawCopperPass(ctx, project, depthOf, doc, p, boardH, copperOrder,
-        explode, explodeGap, cutaway, cutX, hasHl, hl, dim, cuH, zoom, lodFar, false);
     }
 
     const viaDraws: ViaDraw[] = [];
@@ -929,10 +962,12 @@ export class Pcb3dRenderer {
       const span = viaZSpan(via.layers, via.kind, boardH, copperOrder, explode, explodeGap,
         doc.layerStack);
       const kind = via.kind !== undefined ? via.kind : PcbViaKind.THROUGH;
+      const drillR = via.drill > 0 ? via.drill / 2 : via.diameter * 0.22;
+      const outerR = Math.min(via.diameter / 2, Math.max(drillR * 1.9, 14));
       viaDraws.push({
         x: via.position.x, y: via.position.y,
-        outerR: via.diameter / 2,
-        drillR: via.drill > 0 ? via.drill / 2 : via.diameter * 0.22,
+        outerR: outerR,
+        drillR: drillR,
         plated: true,
         depth: depthOf(via.position.x, via.position.y, (span.x + span.y) / 2),
         netId: via.netId, id: via.id,
@@ -1271,9 +1306,9 @@ export class Pcb3dRenderer {
       boardCy /= outline.length;
     }
     const mesh = Pcb3dRenderer.getCachedMesh(doc);
-    // PBR 光栅：内部按 55% 缩放，这里传全分辨率即可
-    const srcW = Math.min(500, Math.max(120, Math.floor(p.viewWidth * 0.55)));
-    const srcH = Math.min(340, Math.max(90, Math.floor(p.viewHeight * 0.55)));
+    // 静止 PBR：适中分辨率（清晰且可接受延迟）；CPU MSAA 强制关闭
+    const srcW = Math.min(560, Math.max(180, Math.floor(p.viewWidth * 0.48)));
+    const srcH = Math.min(400, Math.max(120, Math.floor(p.viewHeight * 0.48)));
     const msaa = 1;
     const scaleX = srcW / Math.max(p.viewWidth, 1);
     const scaleY = srcH / Math.max(p.viewHeight, 1);
@@ -1291,31 +1326,31 @@ export class Pcb3dRenderer {
       boardCy,
       worldScale: 1
     });
-    ctx.fillStyle = '#1A2030';
+    ctx.fillStyle = '#2A3344';
     ctx.fillRect(0, 0, p.viewWidth, p.viewHeight);
     Pcb3dPbrRaster.blitToCanvas(ctx, rgba, srcW, srcH, 0, 0, p.viewWidth, p.viewHeight);
 
-    // 暗角
+    // 轻暗角（避免发闷）
     const vg = ctx.createRadialGradient(
-      p.viewWidth / 2, p.viewHeight / 2, p.viewWidth * 0.40,
-      p.viewWidth / 2, p.viewHeight / 2, p.viewWidth * 0.90
+      p.viewWidth / 2, p.viewHeight / 2, p.viewWidth * 0.50,
+      p.viewWidth / 2, p.viewHeight / 2, p.viewWidth * 0.95
     );
     vg.addColorStop(0, 'rgba(0,0,0,0)');
-    vg.addColorStop(0.50, 'rgba(0,0,0,0.03)');
-    vg.addColorStop(1, 'rgba(0,0,0,0.40)');
+    vg.addColorStop(0.65, 'rgba(0,0,0,0)');
+    vg.addColorStop(1, 'rgba(0,0,0,0.16)');
     ctx.fillStyle = vg;
     ctx.fillRect(0, 0, p.viewWidth, p.viewHeight);
 
-    ctx.fillStyle = 'rgba(14,18,26,0.82)';
-    ctx.fillRect(8, 8, 540, 46);
+    ctx.fillStyle = 'rgba(14,18,26,0.72)';
+    ctx.fillRect(8, 8, 520, 46);
     ctx.fillStyle = '#FFFFFF';
     ctx.font = 'bold 12px sans-serif';
     ctx.textAlign = 'left';
     ctx.textBaseline = 'alphabetic';
-    ctx.fillText(`3D · PBR GGX · ${srcW}x${srcH} · ${mesh.tris.length} tris`, 16, 24);
+    ctx.fillText(`3D · PBR · ${srcW}x${srcH} · ${mesh.tris.length} tris`, 16, 24);
     ctx.fillStyle = 'rgba(180,210,255,0.92)';
     ctx.font = '11px sans-serif';
-    ctx.fillText(`yaw ${p.yawDeg.toFixed(0)}°  pitch ${p.pitchDeg.toFixed(0)}° · 三点光 · CookTorrance · ACES`, 16, 44);
+    ctx.fillText(`yaw ${p.yawDeg.toFixed(0)}°  pitch ${p.pitchDeg.toFixed(0)}° · 拖拽时自动降级流畅预览`, 16, 44);
 
     let yawDeg = p.yawDeg;
     let pitchDeg = p.pitchDeg;
@@ -1836,134 +1871,185 @@ export class Pcb3dRenderer {
     }
   }
 
-  /** 通孔：整段等径金黄圆柱 + 等径钻孔（顶底与孔壁同色同粗） */
+  /** 通孔：镀铜圆柱 + 钻孔纵深 + 环焊盘；环心对齐真实 (x,y)，外径按 drill 钳制 */
   private static drawViaBarrel(ctx: CanvasRenderingContext2D, project: ProjectFn,
     x: number, y: number, zBot: number, zTop: number,
     outerR: number, drillR: number, zoom: number, flatY: number,
     plated: boolean, detail: boolean, alpha: number, selected: boolean,
     kind: PcbViaKind): void {
-    // 外径全程=焊盘外径；内孔全程=钻孔，禁止中间收细
-    const ro = Math.max(2.2, outerR * zoom);
-    const ri = Math.max(1.0, Math.min(drillR * zoom, ro * 0.55));
-    const flat = Math.min(0.92, flatY + 0.06);
+    // 世界尺寸钳制：避免异常 diameter / 视觉放大导致「圆柱过大」
+    const drillW = Math.max(0.8, drillR);
+    const outerW = Math.min(Math.max(outerR, drillW * 1.35), Math.max(drillW * 1.9, 14));
+    const ro = Math.max(1.8, outerW * zoom);
+    const ri = Math.max(1.0, Math.min(drillW * zoom, ro * 0.55));
+    const flat = Math.min(0.88, Math.max(0.38, flatY + 0.08));
     const ry = Math.max(1.2, ro * flat);
-    const riy = Math.max(0.8, ri * flat);
+    const riy = Math.max(0.9, ri * flat);
 
-    let goldDark = '#D4B028';
-    let goldMid = '#F0D050';
-    let goldLit = '#FFE870';
-    let goldHi = '#FFF8C0';
+    let goldDark = '#B89018';
+    let goldMid = '#E8C848';
+    let goldLit = '#F8E070';
+    let goldHi = '#FFF8D0';
     if (kind === PcbViaKind.BLIND) {
-      goldDark = '#D8B830'; goldMid = '#F5DC58'; goldLit = '#FFE878'; goldHi = '#FFFAD0';
+      goldDark = '#C8A020'; goldMid = '#F0D458'; goldLit = '#FFE878'; goldHi = '#FFFAD0';
     } else if (kind === PcbViaKind.BURIED) {
-      goldDark = '#505058'; goldMid = '#888890'; goldLit = '#B0B0B8'; goldHi = '#D0D0D8';
+      goldDark = '#404048'; goldMid = '#787880'; goldLit = '#A0A0A8'; goldHi = '#C0C0C8';
     }
 
+    // 环焊盘必须落在真实投影点，禁止为「挤出侧壁」挪动环心（否则位置错）
     const top = project(x, y, zTop);
     const bot = project(x, y, zBot);
-    const dx = top.x - bot.x;
-    const dy = top.y - bot.y;
-    const len = Math.sqrt(dx * dx + dy * dy) || 1;
+    let dx = top.x - bot.x;
+    let dy = top.y - bot.y;
+    let projLen = Math.sqrt(dx * dx + dy * dy);
+    // 侧壁端点可略延长；环仍画在 top/bot
+    let sideTopX = top.x;
+    let sideTopY = top.y;
+    let sideBotX = bot.x;
+    let sideBotY = bot.y;
+    const minSide = Math.max(ro * 0.42, 3.2);
+    if (projLen < minSide) {
+      const midX = (top.x + bot.x) * 0.5;
+      const midY = (top.y + bot.y) * 0.5;
+      const half = minSide * 0.5;
+      // 沿已有投影方向延伸；近乎俯视时沿屏幕竖向
+      if (projLen > 0.15) {
+        const sx = dx / projLen;
+        const sy = dy / projLen;
+        sideTopX = midX + sx * half;
+        sideTopY = midY + sy * half;
+        sideBotX = midX - sx * half;
+        sideBotY = midY - sy * half;
+      } else {
+        sideTopX = midX;
+        sideTopY = midY - half;
+        sideBotX = midX;
+        sideBotY = midY + half;
+      }
+      dx = sideTopX - sideBotX;
+      dy = sideTopY - sideBotY;
+      projLen = minSide;
+    }
+    const len = projLen || 1;
     const nx = (-dy / len) * ro;
     const ny = (dx / len) * ro;
     const nix = (-dy / len) * ri;
     const niy = (dx / len) * ri;
 
-    if (plated && alpha > 0.25) {
-      ctx.fillStyle = hexAlpha('#000000', 0.08 * alpha);
-      fillEllipse(ctx, bot.x, bot.y, ro * 1.06, ry * 1.06);
+    if (plated && alpha > 0.2) {
+      ctx.fillStyle = hexAlpha('#000000', 0.12 * alpha);
+      fillEllipse(ctx, bot.x + ro * 0.06, bot.y + ry * 0.10, ro * 1.06, ry * 1.05);
     }
 
-    if (plated && len > 2.5) {
-      const bands = detail ? 6 : 4;
-      const cols = detail
-        ? [goldDark, goldMid, goldLit, goldHi, goldLit, goldMid]
-        : [goldDark, goldLit, goldHi, goldMid];
-      const alphas = detail
-        ? [0.95, 0.98, 1.0, 0.75, 0.98, 0.95]
-        : [0.95, 1.0, 0.72, 0.95];
+    if (plated) {
+      const bands = detail ? 12 : 7;
       for (let b = 0; b < bands; b++) {
         const t0 = -1 + (2 * b) / bands;
         const t1 = -1 + (2 * (b + 1)) / bands;
-        ctx.fillStyle = hexAlpha(cols[b], alphas[b] * alpha);
+        const midT = (t0 + t1) * 0.5;
+        const facing = Math.sqrt(Math.max(0, 1 - midT * midT));
+        const litBias = 0.5 + 0.5 * midT;
+        const shade = 0.28 + 0.42 * facing + 0.30 * litBias;
+        let col = goldMid;
+        if (shade < 0.42) {
+          col = goldDark;
+        } else if (shade > 0.78) {
+          col = goldHi;
+        } else if (shade > 0.60) {
+          col = goldLit;
+        }
+        ctx.fillStyle = hexAlpha(col, Math.min(1, (0.88 + shade * 0.12) * alpha));
         ctx.beginPath();
-        ctx.moveTo(bot.x + nx * t0, bot.y + ny * t0);
-        ctx.lineTo(top.x + nx * t0, top.y + ny * t0);
-        ctx.lineTo(top.x + nx * t1, top.y + ny * t1);
-        ctx.lineTo(bot.x + nx * t1, bot.y + ny * t1);
+        ctx.moveTo(sideBotX + nx * t0, sideBotY + ny * t0);
+        ctx.lineTo(sideTopX + nx * t0, sideTopY + ny * t0);
+        ctx.lineTo(sideTopX + nx * t1, sideTopY + ny * t1);
+        ctx.lineTo(sideBotX + nx * t1, sideBotY + ny * t1);
         ctx.closePath();
         ctx.fill();
       }
-      if (detail) {
-        ctx.strokeStyle = hexAlpha(goldHi, 0.60 * alpha);
-        ctx.lineWidth = Math.max(1.0, ro * 0.12);
-        ctx.beginPath();
-        ctx.moveTo(bot.x + nx * 0.22, bot.y + ny * 0.22);
-        ctx.lineTo(top.x + nx * 0.22, top.y + ny * 0.22);
-        ctx.stroke();
-      }
-      // 内孔与顶底同径 ri
-      ctx.fillStyle = hexAlpha('#14120C', 0.92 * alpha);
+      ctx.strokeStyle = hexAlpha(goldHi, 0.72 * alpha);
+      ctx.lineWidth = Math.max(1.0, ro * 0.12);
       ctx.beginPath();
-      ctx.moveTo(bot.x + nix, bot.y + niy);
-      ctx.lineTo(top.x + nix, top.y + niy);
-      ctx.lineTo(top.x - nix, top.y - niy);
-      ctx.lineTo(bot.x - nix, bot.y - niy);
+      ctx.moveTo(sideBotX + nx * 0.22, sideBotY + ny * 0.22);
+      ctx.lineTo(sideTopX + nx * 0.22, sideTopY + ny * 0.22);
+      ctx.stroke();
+      ctx.strokeStyle = hexAlpha(goldDark, 0.55 * alpha);
+      ctx.lineWidth = Math.max(0.9, ro * 0.10);
+      ctx.beginPath();
+      ctx.moveTo(sideBotX - nx * 0.88, sideBotY - ny * 0.88);
+      ctx.lineTo(sideTopX - nx * 0.88, sideTopY - ny * 0.88);
+      ctx.stroke();
+      // 钻孔内壁
+      ctx.fillStyle = hexAlpha('#1A1008', 0.90 * alpha);
+      ctx.beginPath();
+      ctx.moveTo(sideBotX + nix, sideBotY + niy);
+      ctx.lineTo(sideTopX + nix, sideTopY + niy);
+      ctx.lineTo(sideTopX - nix, sideTopY - niy);
+      ctx.lineTo(sideBotX - nix, sideBotY - niy);
       ctx.closePath();
       ctx.fill();
     }
 
+    // 底环 — 真实 bot
     if (plated) {
-      ctx.fillStyle = hexAlpha(goldDark, 0.92 * alpha);
+      ctx.fillStyle = hexAlpha(goldDark, 0.96 * alpha);
       fillEllipse(ctx, bot.x, bot.y, ro, ry);
-      ctx.fillStyle = hexAlpha(goldMid, 0.98 * alpha);
-      fillEllipse(ctx, bot.x, bot.y, ro * 0.92, ry * 0.92);
+      ctx.fillStyle = hexAlpha(goldMid, alpha);
+      fillEllipse(ctx, bot.x, bot.y, (ro + ri) * 0.52, (ry + riy) * 0.52);
+      ctx.fillStyle = hexAlpha('#080604', 0.97 * alpha);
+      fillEllipse(ctx, bot.x, bot.y, ri, riy);
     } else {
-      ctx.fillStyle = hexAlpha(Mat3d.FR4_EDGE, 0.9 * alpha);
+      ctx.fillStyle = hexAlpha(Mat3d.FR4_EDGE, 0.92 * alpha);
       fillEllipse(ctx, bot.x, bot.y, ro, ry);
+      ctx.fillStyle = hexAlpha('#0A0806', 0.96 * alpha);
+      fillEllipse(ctx, bot.x, bot.y, ri, riy);
     }
-    ctx.fillStyle = hexAlpha('#14120C', 0.95 * alpha);
-    fillEllipse(ctx, bot.x, bot.y, ri, riy);
 
+    // 顶环 — 真实 top
     if (plated) {
-      ctx.fillStyle = hexAlpha(goldDark, 0.90 * alpha);
+      ctx.fillStyle = hexAlpha(goldDark, 0.94 * alpha);
       fillEllipse(ctx, top.x, top.y, ro, ry);
       ctx.fillStyle = hexAlpha(goldMid, alpha);
       fillEllipse(ctx, top.x, top.y, ro * 0.92, ry * 0.92);
-      ctx.fillStyle = hexAlpha(goldHi, 0.32 * alpha);
-      fillEllipse(ctx, top.x - ro * 0.16, top.y - ry * 0.20, ro * 0.40, ry * 0.26);
-      ctx.strokeStyle = hexAlpha(goldDark, 0.50 * alpha);
-      ctx.lineWidth = 0.8;
+      ctx.strokeStyle = hexAlpha(goldDark, 0.65 * alpha);
+      ctx.lineWidth = Math.max(0.9, (ro - ri) * 0.24);
+      strokeEllipse(ctx, top.x, top.y, (ro + ri) * 0.5, (ry + riy) * 0.5);
+      ctx.fillStyle = hexAlpha(goldHi, 0.42 * alpha);
+      fillEllipse(ctx, top.x - ro * 0.18, top.y - ry * 0.22, ro * 0.36, ry * 0.22);
+      ctx.strokeStyle = hexAlpha(goldDark, 0.55 * alpha);
+      ctx.lineWidth = 1.0;
       strokeEllipse(ctx, top.x, top.y, ro, ry);
     } else {
       ctx.fillStyle = hexAlpha(Mat3d.FR4_EDGE, alpha);
       fillEllipse(ctx, top.x, top.y, ro, ry);
     }
-    // 顶孔只用 ri，禁止更小内圈黑斑
-    ctx.fillStyle = hexAlpha('#14120C', 0.96 * alpha);
+    ctx.fillStyle = hexAlpha('#060402', 0.98 * alpha);
     fillEllipse(ctx, top.x, top.y, ri, riy);
-    if (detail) {
-      ctx.strokeStyle = hexAlpha(goldMid, 0.45 * alpha);
-      ctx.lineWidth = Math.max(0.7, (ro - ri) * 0.15);
+    if (detail && plated) {
+      ctx.strokeStyle = hexAlpha(goldLit, 0.50 * alpha);
+      ctx.lineWidth = Math.max(0.8, (ro - ri) * 0.14);
       strokeEllipse(ctx, top.x, top.y, ri, riy);
+      ctx.strokeStyle = hexAlpha('#000000', 0.30 * alpha);
+      ctx.lineWidth = 0.6;
+      strokeEllipse(ctx, top.x, top.y, ri * 0.92, riy * 0.92);
     }
 
     if (kind === PcbViaKind.BLIND) {
-      ctx.strokeStyle = hexAlpha('#FFE870', 0.55 * alpha);
-      ctx.lineWidth = 1.0;
-      strokeEllipse(ctx, top.x, top.y, ro + 1.8, ry + 1.2);
-    } else if (kind === PcbViaKind.BURIED) {
-      ctx.strokeStyle = hexAlpha('#8890A0', 0.45 * alpha);
+      ctx.strokeStyle = hexAlpha('#FFE870', 0.50 * alpha);
       ctx.lineWidth = 0.9;
+      strokeEllipse(ctx, top.x, top.y, ro + 1.4, ry + 1.0);
+    } else if (kind === PcbViaKind.BURIED) {
+      ctx.strokeStyle = hexAlpha('#8890A0', 0.40 * alpha);
+      ctx.lineWidth = 0.8;
       ctx.setLineDash([2, 3]);
-      strokeEllipse(ctx, top.x, top.y, ro + 1.6, ry + 1.1);
+      strokeEllipse(ctx, top.x, top.y, ro + 1.2, ry + 0.9);
       ctx.setLineDash([]);
     }
 
     if (selected) {
       ctx.strokeStyle = '#00E5FF';
-      ctx.lineWidth = 2.2;
-      strokeEllipse(ctx, top.x, top.y, ro + 2.8, ry + 2.0);
+      ctx.lineWidth = 2.0;
+      strokeEllipse(ctx, top.x, top.y, ro + 2.2, ry + 1.6);
     }
   }
 
@@ -1978,7 +2064,7 @@ export class Pcb3dRenderer {
         const w = localRot(pad.pos.x, pad.pos.y, fp);
         const drill = pad.drill !== undefined ? pad.drill / 2 : Math.max(pad.size.x, pad.size.y) * 0.22;
         // 焊盘外径钳制，避免侧壁画成巨大帘幕
-        const outer = Math.min(Math.max(pad.size.x, pad.size.y) / 2, Math.max(drill * 2.2, 8));
+        const outer = Math.min(Math.max(pad.size.x, pad.size.y) / 2, Math.max(drill * 1.85, 7));
         const plated = item.kind !== 'mount' && pad.type !== PcbPadType.NPTH;
         if (drawBarrels) {
           Pcb3dRenderer.drawViaBarrel(ctx, project, w.x, w.y, 2, boardH,
@@ -1999,10 +2085,10 @@ export class Pcb3dRenderer {
         const hy = pad.size.y / 2;
         fillBoardQuad(ctx, project, fp,
           pad.pos.x - hx, pad.pos.y - hy, pad.pos.x + hx, pad.pos.y + hy,
-          item.zBase + 0.5, Mat3d.COPPER);
+          item.zBase + 0.5, Mat3d.COPPER_DIM);
         fillBoardQuad(ctx, project, fp,
           pad.pos.x - hx, pad.pos.y - hy, pad.pos.x + hx, pad.pos.y + hy,
-          z, Mat3d.HASL, Mat3d.PIN_HI);
+          z, Mat3d.ENIG, Mat3d.ENIG_LIT);
       }
     }
   }
@@ -2126,18 +2212,22 @@ export class Pcb3dRenderer {
     const z0 = item.zBase + 1.2;
     const z1 = item.zBase + item.bodyH;
     const fp = item.fp;
-    // 塑封体：略收顶面，形成斜边/倒角感
-    drawExtrudedBox(ctx, project, fp, -hw, -hh, hw, hh, z0, z1 - 1.2,
-      Mat3d.PLASTIC, '#2A2A34', '#484850');
-    drawExtrudedBox(ctx, project, fp, -hw * 0.94, -hh * 0.94, hw * 0.94, hh * 0.94,
-      z1 - 1.2, z1, Mat3d.PLASTIC_TOP, Mat3d.PLASTIC, '#585868');
+    // 塑封体：底托 + 收顶倒角 + 顶盖，三层增强体积感
+    drawExtrudedBox(ctx, project, fp, -hw, -hh, hw, hh, z0, z0 + 1.6,
+      '#2C2C36', '#22222A', '#3A3A44');
+    drawExtrudedBox(ctx, project, fp, -hw * 0.98, -hh * 0.98, hw * 0.98, hh * 0.98,
+      z0 + 1.6, z1 - 1.4, Mat3d.PLASTIC, '#2A2A34', '#484850');
+    drawExtrudedBox(ctx, project, fp, -hw * 0.90, -hh * 0.90, hw * 0.90, hh * 0.90,
+      z1 - 1.4, z1, Mat3d.PLASTIC_TOP, Mat3d.PLASTIC, '#686878');
 
     // 顶面微倒角高光（迎光一侧）
-    fillBoardQuad(ctx, project, fp, -hw * 0.88, -hh * 0.88, hw * 0.35, -hh * 0.55,
-      z1 + 0.15, 'rgba(255,255,255,0.10)');
-    // 激光刻字区（板面投影，禁止屏幕 fillRect）
-    fillBoardQuad(ctx, project, fp, -hw * 0.42, -hh * 0.28, hw * 0.55, hh * 0.28,
-      z1 + 0.22, 'rgba(210,215,225,0.07)');
+    fillBoardQuad(ctx, project, fp, -hw * 0.82, -hh * 0.82, hw * 0.28, -hh * 0.48,
+      z1 + 0.18, 'rgba(255,255,255,0.14)');
+    fillBoardQuad(ctx, project, fp, -hw * 0.78, -hh * 0.40, hw * 0.55, hh * 0.22,
+      z1 + 0.12, 'rgba(255,255,255,0.05)');
+    // 激光刻字区
+    fillBoardQuad(ctx, project, fp, -hw * 0.40, -hh * 0.26, hw * 0.52, hh * 0.26,
+      z1 + 0.24, 'rgba(210,215,225,0.09)');
 
     // 侧边 pin-1 凹槽
     const notchY = -hh * 0.25;
@@ -2161,38 +2251,47 @@ export class Pcb3dRenderer {
     ctx.fillStyle = '#0E0E14';
     ctx.fill();
 
-    // gull-wing / 短引脚：根部略粗 + 金色贴盘
+    // gull-wing：根部粗、中段弯、贴盘金
     if (!lodFar && fp.pads.length > 0) {
       for (let i = 0; i < fp.pads.length; i++) {
         const pad = fp.pads[i];
         if (pad.type === PcbPadType.TH) continue;
         const tip = localRot(pad.pos.x, pad.pos.y, fp);
-        const mid = localRot(pad.pos.x * 0.86, pad.pos.y * 0.86, fp);
-        const root = localRot(pad.pos.x * 0.72, pad.pos.y * 0.72, fp);
-        const a = project(root.x, root.y, z0 + 1.8);
-        const m = project(mid.x, mid.y, z0 + 0.6);
-        const b = project(tip.x, tip.y, item.zBase + 1.0);
-        const lw = Math.max(1.1, Math.min(pad.size.x, pad.size.y) * zoom * 0.30);
+        const mid = localRot(pad.pos.x * 0.88, pad.pos.y * 0.88, fp);
+        const root = localRot(pad.pos.x * 0.70, pad.pos.y * 0.70, fp);
+        const a = project(root.x, root.y, z0 + 2.2);
+        const m = project(mid.x, mid.y, z0 + 0.5);
+        const b = project(tip.x, tip.y, item.zBase + 0.85);
+        const lw = Math.max(1.2, Math.min(pad.size.x, pad.size.y) * zoom * 0.32);
         ctx.strokeStyle = Mat3d.PIN;
-        ctx.lineWidth = lw;
-        ctx.lineCap = 'butt';
+        ctx.lineWidth = lw * 1.15;
+        ctx.lineCap = 'round';
         ctx.beginPath();
         ctx.moveTo(a.x, a.y);
         ctx.lineTo(m.x, m.y);
         ctx.stroke();
         ctx.strokeStyle = Mat3d.ENIG;
-        ctx.lineWidth = lw * 0.92;
+        ctx.lineWidth = lw;
         ctx.beginPath();
         ctx.moveTo(m.x, m.y);
         ctx.lineTo(b.x, b.y);
         ctx.stroke();
-        // 引脚顶面微高光
         ctx.strokeStyle = Mat3d.PIN_HI;
-        ctx.lineWidth = Math.max(0.6, lw * 0.28);
+        ctx.lineWidth = Math.max(0.7, lw * 0.30);
         ctx.beginPath();
-        ctx.moveTo(a.x - 0.4, a.y);
-        ctx.lineTo(m.x - 0.4, m.y);
+        ctx.moveTo(a.x - 0.5, a.y - 0.3);
+        ctx.lineTo(m.x - 0.4, m.y - 0.2);
         ctx.stroke();
+        // 贴盘金属菱形（屏幕空间小标记，随投影点）
+        const tipHalf = Math.max(1.2, lw * 0.55);
+        ctx.fillStyle = hexAlpha(Mat3d.ENIG, 0.88);
+        ctx.beginPath();
+        ctx.moveTo(b.x, b.y - tipHalf * 0.7);
+        ctx.lineTo(b.x + tipHalf, b.y);
+        ctx.lineTo(b.x, b.y + tipHalf * 0.7);
+        ctx.lineTo(b.x - tipHalf, b.y);
+        ctx.closePath();
+        ctx.fill();
       }
     }
   }
@@ -3084,12 +3183,15 @@ export class Pcb3dRenderer {
     ctx.fillText(text, x, y);
   }
 
-  /** 阻焊层渲染：板面填充 + 渐变纹理 + 焊盘开口 */
+  /** 阻焊层：板面填充 + evenodd 焊盘/过孔开窗（嘉立创露铜观感） */
   private static drawMaskLayer(ctx: CanvasRenderingContext2D, project: ProjectFn,
-    outline: Point2D[], zBase: number, z: number, alpha: number, isTop: boolean): void {
+    doc: PcbDocument, outline: Point2D[], zBase: number, z: number, alpha: number,
+    isTop: boolean): void {
     if (alpha <= 0.03) return;
-    // 底色填充
     const baseCol = isTop ? Mat3d.MASK_TOP : Mat3d.MASK;
+    const expand = MASK_OPENING_EXPAND_MIL;
+    const seg = 14;
+
     ctx.fillStyle = hexAlpha(baseCol, alpha);
     ctx.beginPath();
     for (let i = 0; i < outline.length; i++) {
@@ -3097,9 +3199,69 @@ export class Pcb3dRenderer {
       if (i === 0) ctx.moveTo(pt.x, pt.y); else ctx.lineTo(pt.x, pt.y);
     }
     ctx.closePath();
-    ctx.fill();
 
-    // 微渐变叠加 — 模拟光照下的阻焊光泽变化
+    // 过孔开窗
+    for (let vi = 0; vi < doc.vias.length; vi++) {
+      const v = doc.vias[vi];
+      const r = v.diameter * 0.5 + expand;
+      Pcb3dRenderer.appendProjectedEllipseHole(ctx, project, v.position.x, v.position.y, z, r, seg);
+    }
+
+    // 封装焊盘开窗
+    for (let fi = 0; fi < doc.footprints.length; fi++) {
+      const fp = doc.footprints[fi];
+      const fpBottom = fp.layer === PcbLayerId.B_CU;
+      if (fpBottom === isTop) continue;
+      for (let pi = 0; pi < fp.pads.length; pi++) {
+        const pad = fp.pads[pi];
+        const wp = padWorldPosition(fp, pad);
+        if (pad.type === PcbPadType.TH || pad.type === PcbPadType.NPTH) {
+          const r = Math.max(pad.size.x, pad.size.y) * 0.5 + expand * 0.5;
+          Pcb3dRenderer.appendProjectedEllipseHole(ctx, project, wp.x, wp.y, z, r, seg);
+        } else {
+          const hx = pad.size.x * 0.5 + expand;
+          const hy = pad.size.y * 0.5 + expand;
+          const c00 = localRot(pad.pos.x - hx, pad.pos.y - hy, fp);
+          const c10 = localRot(pad.pos.x + hx, pad.pos.y - hy, fp);
+          const c11 = localRot(pad.pos.x + hx, pad.pos.y + hy, fp);
+          const c01 = localRot(pad.pos.x - hx, pad.pos.y + hy, fp);
+          const p0 = project(c00.x, c00.y, z);
+          const p1 = project(c10.x, c10.y, z);
+          const p2 = project(c11.x, c11.y, z);
+          const p3 = project(c01.x, c01.y, z);
+          // 反向绕序挖洞
+          ctx.moveTo(p0.x, p0.y);
+          ctx.lineTo(p3.x, p3.y);
+          ctx.lineTo(p2.x, p2.y);
+          ctx.lineTo(p1.x, p1.y);
+          ctx.closePath();
+        }
+      }
+    }
+
+    try {
+      ctx.fill('evenodd');
+    } catch (_e) {
+      ctx.fill();
+    }
+
+    // 开窗内补一层略暗铜底，增强露铜感
+    ctx.fillStyle = hexAlpha(Mat3d.COPPER_DIM, Math.min(0.55, alpha * 0.7));
+    for (let fi = 0; fi < doc.footprints.length; fi++) {
+      const fp = doc.footprints[fi];
+      const fpBottom = fp.layer === PcbLayerId.B_CU;
+      if (fpBottom === isTop) continue;
+      for (let pi = 0; pi < fp.pads.length; pi++) {
+        const pad = fp.pads[pi];
+        if (pad.type === PcbPadType.TH || pad.type === PcbPadType.NPTH) continue;
+        const hx = pad.size.x * 0.5 + expand * 0.6;
+        const hy = pad.size.y * 0.5 + expand * 0.6;
+        fillBoardQuad(ctx, project, fp,
+          pad.pos.x - hx, pad.pos.y - hy, pad.pos.x + hx, pad.pos.y + hy,
+          z + 0.05, hexAlpha(Mat3d.COPPER_DIM, 0.5));
+      }
+    }
+
     if (isTop && alpha > 0.15) {
       const bx = boardBoundsX_simple(outline);
       const oy = boardBoundsY_simple(outline);
@@ -3108,9 +3270,9 @@ export class Pcb3dRenderer {
       const c = project(cx, cy, z + 0.15);
       const gradR = Math.max(120, (bx.y - bx.x) * 0.48);
       const grad = ctx.createRadialGradient(c.x, c.y, gradR * 0.15, c.x, c.y, gradR);
-      grad.addColorStop(0, hexAlpha('#FFFFFF', Math.min(0.06, alpha * 0.10)));
+      grad.addColorStop(0, hexAlpha('#FFFFFF', Math.min(0.08, alpha * 0.12)));
       grad.addColorStop(0.5, 'rgba(0,0,0,0)');
-      grad.addColorStop(1, hexAlpha('#000000', Math.min(0.08, alpha * 0.14)));
+      grad.addColorStop(1, hexAlpha('#000000', Math.min(0.10, alpha * 0.16)));
       ctx.fillStyle = grad;
       ctx.beginPath();
       for (let i = 0; i < outline.length; i++) {
@@ -3120,6 +3282,22 @@ export class Pcb3dRenderer {
       ctx.closePath();
       ctx.fill();
     }
+  }
+
+  private static appendProjectedEllipseHole(ctx: CanvasRenderingContext2D, project: ProjectFn,
+    wx: number, wy: number, z: number, r: number, seg: number): void {
+    const c = project(wx, wy, z);
+    const rx = project(wx + r, wy, z);
+    const ry = project(wx, wy + r, z);
+    const ax = Math.max(1.2, Math.abs(rx.x - c.x));
+    const ay = Math.max(1.0, Math.abs(ry.y - c.y));
+    ctx.moveTo(c.x + ax, c.y);
+    for (let i = 1; i <= seg; i++) {
+      const a = (i / seg) * Math.PI * 2;
+      // 反向（顺时针）挖洞
+      ctx.lineTo(c.x + Math.cos(-a) * ax, c.y + Math.sin(-a) * ay);
+    }
+    ctx.closePath();
   }
 
   /** 丝印层渲染：板框虚线 + 封装丝印 */

@@ -235,7 +235,8 @@ struct Index {
   }
 
   onPageHide(): void {
-    void this.appService.flushProjectProtection(false);
+    // 无未保存改动时按正常退出处理，避免生成/展示多余 recovery
+    void this.appService.flushProjectProtection(!this.unsavedChanges);
   }
 
   aboutToDisappear(): void {

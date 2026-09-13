@@ -18,9 +18,9 @@
 		"bundleType":	"app",
 		"buildMode":	"debug",
 		"debug":	true,
-		"iconId":	83886082,
-		"labelId":	83886081,
-		"descriptionId":	83886080
+		"iconId":	100663298,
+		"labelId":	100663297,
+		"descriptionId":	100663296
 	},
 	"module":	{
 		"name":	"entry",
@@ -45,11 +45,11 @@
 						"entities":	["entity.system.home"],
 						"actions":	["action.system.home"]
 					}],
-				"descriptionId":	83886083,
-				"iconId":	83886179,
-				"labelId":	83886084,
-				"startWindowIconId":	83886181,
-				"startWindowBackgroundId":	83886175
+				"descriptionId":	100663299,
+				"iconId":	100663395,
+				"labelId":	100663300,
+				"startWindowIconId":	100663397,
+				"startWindowBackgroundId":	100663391
 			}],
 		"requestPermissions":	[{
 				"name":	"ohos.permission.INTERNET",
@@ -58,7 +58,7 @@
 					"abilities":	["EntryAbility"],
 					"when":	"inuse"
 				},
-				"reasonId":	83886088
+				"reasonId":	100663304
 			}, {
 				"name":	"ohos.permission.GET_NETWORK_INFO",
 				"reason":	"$string:internet_permission_reason",
@@ -66,7 +66,7 @@
 					"abilities":	["EntryAbility"],
 					"when":	"inuse"
 				},
-				"reasonId":	83886088
+				"reasonId":	100663304
 			}, {
 				"name":	"ohos.permission.READ_MEDIA",
 				"reason":	"$string:file_permission_reason",
@@ -74,7 +74,7 @@
 					"abilities":	["EntryAbility"],
 					"when":	"inuse"
 				},
-				"reasonId":	83886087
+				"reasonId":	100663303
 			}, {
 				"name":	"ohos.permission.WRITE_MEDIA",
 				"reason":	"$string:file_permission_reason",
@@ -82,7 +82,7 @@
 					"abilities":	["EntryAbility"],
 					"when":	"inuse"
 				},
-				"reasonId":	83886087
+				"reasonId":	100663303
 			}],
 		"packageName":	"entry",
 		"virtualMachine":	"ark24.0.0.0",

@@ -1079,16 +1079,14 @@ struct PcbPage {
     const editor = this.appService.schematicEditor as SchematicEditorImpl;
     editor.rebuildNetPinConnectivity();
     const sch = editor.getDocument();
-    if (!sch || sch.components.length === 0) {
-      this.statusMessage = fromExport
-        ? '原理图为空，已打开 PCB（无封装可导出）'
-        : '原理图为空，请先放置器件';
-      tracePcbOp('UPDATE_FROM_SCH', 'fail empty schematic');
+    if (!sch) {
+      this.statusMessage = '无原理图文档';
+      tracePcbOp('UPDATE_FROM_SCH', 'fail no schematic');
       return false;
     }
+    // 原理图可为空（删光教学模块后）：仍要跑标注以清掉 PCB 残留封装
     if (!this.ercGatePassed()) {
-      tracePcbOp('UPDATE_FROM_SCH', 'blocked by ERC');
-      return false;
+      tracePcbOp('UPDATE_FROM_SCH', 'ERC warn — continue annotate to prune stale fps');
     }
     if (this.appService.currentProject) {
       this.appService.currentProject.schematic = sch;
@@ -2176,7 +2174,7 @@ struct PcbPage {
         this.canvasVersion++;
         this.statusMessage = '3D 写实 PBR+IBL+MSAA';
       }},
-      { label: ap.view3dPbr === true ? '关闭真 PBR(伪3D)' : '开启真 PBR', action: () => {
+      { label: ap.view3dPbr === true ? '关闭真 PBR(回伪3D)' : '开启真 PBR(较慢)', action: () => {
         const next = !(ap.view3dPbr === true);
         this.getEditor().setView3dPbr(next);
         this.canvasVersion++;

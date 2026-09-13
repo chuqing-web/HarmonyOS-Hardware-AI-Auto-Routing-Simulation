@@ -29,11 +29,42 @@ import { buildBomCsv, BomLookup } from './internal/BomExportHelper';
 
 const SCHSIM_VERSION = '2.0.0';
 const RECENT_MAX = 50;
+/** 每个工程最多保留的 recovery 快照数（异常退出保护；正常为单文件覆盖） */
+const RECOVERY_KEEP_MAX = 1;
 const RECOVERY_DIR = 'schsim_recovery';
 const RECENT_FILES_NAME = 'recent_files.json';
 
+/** 临时/保护路径：不进最近打开、不当用户工程展示 */
+function isEphemeralProjectPath(path: string): boolean {
+  if (path.length === 0) {
+    return true;
+  }
+  const p = path.replace(/\\/g, '/');
+  if (p.indexOf(`/${RECOVERY_DIR}/`) >= 0 || p.indexOf(`${RECOVERY_DIR}/`) === 0) {
+    return true;
+  }
+  if (p.indexOf('/autosave/') >= 0) {
+    return true;
+  }
+  const base = p.substring(p.lastIndexOf('/') + 1);
+  if (base.startsWith('recovery_') || base.startsWith('backup_') || base.startsWith('autosave_')) {
+    return true;
+  }
+  return false;
+}
+
+function recoveryFixedFileName(projectName: string): string {
+  const safe = projectName.length > 0 ? projectName : 'Untitled';
+  return `recovery_${safe}.schsim`;
+}
+
 interface FilePathEventData {
   path: string;
+}
+
+interface RecoveryFileEntry {
+  name: string;
+  ts: number;
 }
 
 interface ProjectLockReleaseData {
@@ -105,7 +136,9 @@ export class FilePersistenceImpl implements IFilePersistence {
       this.sectionHashes.set(`${path}:topology`, topoHash);
       this.sectionHashes.set(`${path}:simConfig`, simHash);
       this.sectionHashes.set(`${path}:aiConfigs`, aiHash);
-      this.addRecentFile(path);
+      if (!isEphemeralProjectPath(path)) {
+        this.addRecentFile(path);
+      }
       const savedData: FilePathEventData = { path: path };
       EventBus.getInstance().publish({
         event: ModuleEvent.FILE_SAVED,
@@ -149,7 +182,9 @@ export class FilePersistenceImpl implements IFilePersistence {
       this.normalizeProjectData(data);
       this.collaboration.loadCollaborationData(data.collaboration);
       this.lastTopologyForSnapshot = data.topology;
-      this.addRecentFile(path);
+      if (!isEphemeralProjectPath(path)) {
+        this.addRecentFile(path);
+      }
       const loadedData: FilePathEventData = { path: path };
       EventBus.getInstance().publish({
         event: ModuleEvent.FILE_LOADED,
@@ -532,7 +567,7 @@ export class FilePersistenceImpl implements IFilePersistence {
   getRecentFiles(): string[] { return copyStringArray(this.recentFiles); }
 
   addRecentFile(path: string): void {
-    if (path.length === 0) {
+    if (path.length === 0 || isEphemeralProjectPath(path)) {
       return;
     }
     this.recentFiles = this.recentFiles.filter(p => p !== path);
@@ -582,6 +617,9 @@ export class FilePersistenceImpl implements IFilePersistence {
         if (typeof p !== 'string' || p.length === 0 || seen.has(p)) {
           continue;
         }
+        if (isEphemeralProjectPath(p)) {
+          continue;
+        }
         seen.add(p);
         cleaned.push(p);
         if (cleaned.length >= RECENT_MAX) {
@@ -589,6 +627,8 @@ export class FilePersistenceImpl implements IFilePersistence {
         }
       }
       this.recentFiles = cleaned;
+      // 历史里若混入 recovery_*，写回干净列表
+      this.persistRecentFiles();
     } catch (_e) {
       /* 无历史文件时保持空列表 */
     }
@@ -675,11 +715,16 @@ export class FilePersistenceImpl implements IFilePersistence {
     return result;
   }
 
-  /** 返回最近一次 recovery 快照路径 */
+  /** 返回最近一次 recovery 快照路径（固定名优先，兼容旧时间戳文件） */
   private static findLatestRecoveryFile(baseDir: string, projectName: string): string {
     const recoveryDir = `${baseDir}/${RECOVERY_DIR}`;
     try {
       fs.accessSync(recoveryDir);
+      const fixed = `${recoveryDir}/${recoveryFixedFileName(projectName)}`;
+      try {
+        fs.accessSync(fixed);
+        return fixed;
+      } catch (_eFixed) { /* fall through */ }
       const list = fs.listFileSync(recoveryDir);
       const prefix = `recovery_${projectName}_`;
       let bestPath = '';
@@ -727,9 +772,13 @@ export class FilePersistenceImpl implements IFilePersistence {
     const recoveryDir = `${this.appBaseDir}/${RECOVERY_DIR}`;
     try {
       try { fs.accessSync(recoveryDir); } catch (_e){ fs.mkdirSync(recoveryDir); }
-      const fileName = `recovery_${project.name}_${Date.now()}.schsim`;
+      // 固定文件名覆盖写入，杜绝 recovery_name_timestamp 无限堆积
+      const fileName = recoveryFixedFileName(project.name);
       const fullPath = `${recoveryDir}/${fileName}`;
-      return this.saveProject(project, fullPath);
+      const result = await this.saveProject(project, fullPath);
+      // 清掉同工程旧时间戳快照，只留这一份
+      this.pruneRecoveryFiles(project.name, RECOVERY_KEEP_MAX);
+      return result;
     } catch (e) {
       return { success: false, errCode: ErrCode.ERR_PERMISSION, error: `Recovery save failed: ${e}` };
     }
@@ -758,22 +807,141 @@ export class FilePersistenceImpl implements IFilePersistence {
   }
 
   async saveRecoveryCache(project: ProjectFile): Promise<Result<void>> {
+    return this.saveRecoveryCacheWithPath('', project);
+  }
+
+  /**
+   * 清理指定工程多余 recovery 快照。
+   * keepMax<=0 时删除该工程全部 recovery（含固定名与时间戳）。
+   * keepMax>=1 时只保留固定名 recovery_{name}.schsim，删除全部时间戳副本。
+   */
+  pruneRecoveryFiles(projectName: string, keepMax: number = RECOVERY_KEEP_MAX): number {
+    if (!this.appBaseDir || projectName.length === 0) {
+      return 0;
+    }
+    const recoveryDir = `${this.appBaseDir}/${RECOVERY_DIR}`;
+    let removed = 0;
+    try {
+      fs.accessSync(recoveryDir);
+      const list = fs.listFileSync(recoveryDir);
+      const fixedName = recoveryFixedFileName(projectName);
+      const prefixTs = `recovery_${projectName}_`;
+      for (let i = 0; i < list.length; i++) {
+        const name = list[i];
+        let shouldDelete = false;
+        if (name === fixedName) {
+          shouldDelete = keepMax <= 0;
+        } else if (name.startsWith(prefixTs) && name.endsWith('.schsim')) {
+          // 旧时间戳快照一律删除（已改为固定名覆盖）
+          shouldDelete = true;
+        } else if (name === `recovery_${projectName}.schsim` && name !== fixedName) {
+          shouldDelete = keepMax <= 0;
+        }
+        if (!shouldDelete) {
+          continue;
+        }
+        try {
+          fs.unlinkSync(`${recoveryDir}/${name}`);
+          removed++;
+        } catch (_e) {
+          /* best-effort */
+        }
+      }
+    } catch (_e) {
+      return removed;
+    }
+    return removed;
+  }
+
+  /**
+   * 启动时全局清理：去掉最近列表中的临时路径，并删除所有时间戳 recovery_*_*.schsim。
+   * 若上次正常退出，再删掉固定名 recovery，避免首页凭空出现恢复项。
+   */
+  purgeOrphanRecoveryArtifacts(closedCleanly: boolean): number {
     if (!this.appBaseDir) {
-      return { success: false, errCode: ErrCode.ERR_PERMISSION, error: 'Base dir not set' };
+      return 0;
+    }
+    let removed = 0;
+    const before = this.recentFiles.length;
+    this.recentFiles = this.recentFiles.filter((p: string) => !isEphemeralProjectPath(p));
+    if (this.recentFiles.length !== before) {
+      this.persistRecentFiles();
     }
     const recoveryDir = `${this.appBaseDir}/${RECOVERY_DIR}`;
     try {
-      try { fs.accessSync(recoveryDir); } catch (_e){ fs.mkdirSync(recoveryDir); }
-      const fileName = `recovery_${project.name}_${Date.now()}.schsim`;
-      const fullPath = `${recoveryDir}/${fileName}`;
-      return this.saveProject(project, fullPath);
-    } catch (e) {
-      return { success: false, errCode: ErrCode.ERR_PERMISSION, error: `Recovery save failed: ${e}` };
-    }
+      fs.accessSync(recoveryDir);
+      const list = fs.listFileSync(recoveryDir);
+      // 异常退出：把各工程最新时间戳快照迁到固定名，再删时间戳
+      if (!closedCleanly) {
+        const latestByProject: Map<string, RecoveryFileEntry> = new Map();
+        for (let i = 0; i < list.length; i++) {
+          const name = list[i];
+          if (!name.endsWith('.schsim') || !name.startsWith('recovery_')) {
+            continue;
+          }
+          const stem = name.substring('recovery_'.length, name.length - '.schsim'.length);
+          const m = stem.match(/^(.*)_(\d{10,})$/);
+          if (m === null) {
+            continue;
+          }
+          const proj = m[1];
+          const ts = Number(m[2]);
+          const prev = latestByProject.get(proj);
+          if (prev === undefined || ts > prev.ts) {
+            const entry: RecoveryFileEntry = { name: name, ts: ts };
+            latestByProject.set(proj, entry);
+          }
+        }
+        latestByProject.forEach((entry: RecoveryFileEntry, proj: string) => {
+          const fixed = `${recoveryDir}/${recoveryFixedFileName(proj)}`;
+          const src = `${recoveryDir}/${entry.name}`;
+          try {
+            fs.accessSync(fixed);
+          } catch (_noFixed) {
+            try {
+              // 无固定名时，把最新时间戳内容复制为固定名
+              const stat = fs.statSync(src);
+              const buf = new ArrayBuffer(stat.size);
+              const rh = fs.openSync(src, fs.OpenMode.READ_ONLY);
+              fs.readSync(rh.fd, buf);
+              fs.closeSync(rh);
+              const wh = fs.openSync(fixed, fs.OpenMode.CREATE | fs.OpenMode.WRITE_ONLY | fs.OpenMode.TRUNC);
+              fs.writeSync(wh.fd, buf);
+              fs.closeSync(wh);
+            } catch (_copyErr) { /* best-effort */ }
+          }
+        });
+      }
+      const list2 = fs.listFileSync(recoveryDir);
+      for (let i = 0; i < list2.length; i++) {
+        const name = list2[i];
+        if (!name.endsWith('.schsim') || !name.startsWith('recovery_')) {
+          continue;
+        }
+        const stem = name.substring('recovery_'.length, name.length - '.schsim'.length);
+        const hasTimestamp = /_\d{10,}$/.test(stem);
+        if (hasTimestamp || closedCleanly) {
+          try {
+            fs.unlinkSync(`${recoveryDir}/${name}`);
+            removed++;
+          } catch (_e) { /* best-effort */ }
+        }
+      }
+    } catch (_e) { /* no dir */ }
+    return removed;
+  }
+
+  /** 正常退出：删除该工程全部 recovery（有 autosave/正式文件即可） */
+  clearStaleRecoveryOnCleanExit(projectName: string): number {
+    return this.pruneRecoveryFiles(projectName, 0);
   }
 
   async loadRecoveryCache(projectName: string): Promise<Result<ProjectFile>> {
-    return this.loadProject(`${RECOVERY_DIR}/recovery_${projectName}.schsim`);
+    if (!this.appBaseDir) {
+      return { success: false, errCode: ErrCode.ERR_PERMISSION, error: 'Base dir not set' };
+    }
+    const fixed = `${this.appBaseDir}/${RECOVERY_DIR}/${recoveryFixedFileName(projectName)}`;
+    return this.loadProject(fixed);
   }
 
   // ---- internal ----

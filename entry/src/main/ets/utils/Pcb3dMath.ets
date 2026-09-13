@@ -286,6 +286,62 @@ export class Mesh3d {
     }
   }
 
+  /**
+   * 空心管（过孔/镀铜孔）：外壁 + 内壁 + 顶底环焊盘。
+   * rIn <= 0 时退化为实心圆柱。
+   */
+  addTube(cx: number, cy: number, z0: number, z1: number,
+    rOut: number, rIn: number, seg: number, wallMat: PbrMaterial, ringMat: PbrMaterial): void {
+    const ro = Math.max(rOut, 0.5);
+    const ri = Math.max(0, Math.min(rIn, ro * 0.92));
+    // 外壁
+    this.addCylinder(cx, cy, z0, z1, ro, seg, wallMat, false);
+    if (ri <= 0.2) {
+      // 近实心：顶底盖
+      this.addCylinder(cx, cy, z0, z0 + 0.01, ro, seg, ringMat, true);
+      this.addCylinder(cx, cy, z1 - 0.01, z1, ro, seg, ringMat, true);
+      return;
+    }
+    // 内壁（法线朝内）
+    for (let i = 0; i < seg; i++) {
+      const a0 = (i / seg) * Math.PI * 2;
+      const a1 = ((i + 1) / seg) * Math.PI * 2;
+      const ix0 = cx + Math.cos(a0) * ri;
+      const iy0 = cy + Math.sin(a0) * ri;
+      const ix1 = cx + Math.cos(a1) * ri;
+      const iy1 = cy + Math.sin(a1) * ri;
+      const n0 = new Vec3(0 - Math.cos(a0), 0 - Math.sin(a0), 0);
+      const n1 = new Vec3(0 - Math.cos(a1), 0 - Math.sin(a1), 0);
+      const p00 = new Vec3(ix0, iy0, z0);
+      const p10 = new Vec3(ix1, iy1, z0);
+      const p01 = new Vec3(ix0, iy0, z1);
+      const p11 = new Vec3(ix1, iy1, z1);
+      this.tris.push({ a: p00, b: p01, c: p11, na: n0, nb: n0, nc: n1, mat: PbrMats.barrelInner() });
+      this.tris.push({ a: p00, b: p11, c: p10, na: n0, nb: n1, nc: n1, mat: PbrMats.barrelInner() });
+    }
+    // 顶/底环（外径→内径）
+    for (let i = 0; i < seg; i++) {
+      const a0 = (i / seg) * Math.PI * 2;
+      const a1 = ((i + 1) / seg) * Math.PI * 2;
+      const ox0 = cx + Math.cos(a0) * ro;
+      const oy0 = cy + Math.sin(a0) * ro;
+      const ox1 = cx + Math.cos(a1) * ro;
+      const oy1 = cy + Math.sin(a1) * ro;
+      const ix0 = cx + Math.cos(a0) * ri;
+      const iy0 = cy + Math.sin(a0) * ri;
+      const ix1 = cx + Math.cos(a1) * ri;
+      const iy1 = cy + Math.sin(a1) * ri;
+      const up = new Vec3(0, 0, 1);
+      const dn = new Vec3(0, 0, -1);
+      // top ring
+      this.addTri(new Vec3(ox0, oy0, z1), new Vec3(ox1, oy1, z1), new Vec3(ix1, iy1, z1), ringMat, up);
+      this.addTri(new Vec3(ox0, oy0, z1), new Vec3(ix1, iy1, z1), new Vec3(ix0, iy0, z1), ringMat, up);
+      // bottom ring
+      this.addTri(new Vec3(ox0, oy0, z0), new Vec3(ix0, iy0, z0), new Vec3(ix1, iy1, z0), ringMat, dn);
+      this.addTri(new Vec3(ox0, oy0, z0), new Vec3(ix1, iy1, z0), new Vec3(ox1, oy1, z0), ringMat, dn);
+    }
+  }
+
   transform(m: Mat4): Mesh3d {
     const out = new Mesh3d();
     out.name = this.name;
@@ -329,43 +385,63 @@ export class Mesh3d {
   }
 }
 
-/** PBR 材质库（线性空间 albedo + GGX 粗糙度） */
+/** PBR 材质库（线性空间 albedo + GGX；色值对齐嘉立创常见观感） */
 export class PbrMats {
-  /** 绿色阻焊：低粗糙度塑料 */
+  /** 嘉立创经典绿阻焊：略提亮，避免 PBR 发灰 */
   static mask(): PbrMaterial {
-    return { albedo: hexToLin('#0B7A3E'), metallic: 0.0, roughness: 0.62 };
+    return { albedo: hexToLin('#149A52'), metallic: 0.0, roughness: 0.42 };
   }
-  /** 铜箔：高金属度、中低粗糙度 */
+  /** 阻焊下隐约可见的铜（偏暗铜色） */
+  static maskedCopper(): PbrMaterial {
+    return { albedo: hexToLin('#A87040'), metallic: 0.85, roughness: 0.38 };
+  }
+  /** 露铜 / 未盖阻焊铜箔 */
   static copper(): PbrMaterial {
-    return { albedo: hexToLin('#D08050'), metallic: 1.0, roughness: 0.28 };
+    return { albedo: hexToLin('#D88848'), metallic: 1.0, roughness: 0.24 };
   }
-  /** ENIG 沉金：高金属度、低粗糙度（镜面反射） */
+  /** ENIG 沉金焊盘 */
   static enig(): PbrMaterial {
-    return { albedo: hexToLin('#F0D050'), metallic: 1.0, roughness: 0.12 };
+    return { albedo: hexToLin('#F0D050'), metallic: 1.0, roughness: 0.10 };
   }
-  /** 塑封体：深灰、微粗糙 */
+  /** 塑封体 */
   static plastic(): PbrMaterial {
-    return { albedo: hexToLin('#222228'), metallic: 0.0, roughness: 0.65 };
+    return { albedo: hexToLin('#1A1A20'), metallic: 0.0, roughness: 0.58 };
   }
-  /** 陶瓷电容：米黄、半光泽 */
+  /** 塑封顶面（略亮） */
+  static plasticTop(): PbrMaterial {
+    return { albedo: hexToLin('#2A2A32'), metallic: 0.0, roughness: 0.50 };
+  }
+  /** 片阻本体（深棕黑） */
+  static chipBody(): PbrMaterial {
+    return { albedo: hexToLin('#1C1410'), metallic: 0.0, roughness: 0.55 };
+  }
+  /** 电感本体 */
+  static inductor(): PbrMaterial {
+    return { albedo: hexToLin('#2A3830'), metallic: 0.05, roughness: 0.52 };
+  }
+  /** 陶瓷电容 */
   static ceramic(): PbrMaterial {
-    return { albedo: hexToLin('#ECD8A0'), metallic: 0.0, roughness: 0.48 };
+    return { albedo: hexToLin('#E8D4A0'), metallic: 0.0, roughness: 0.45 };
   }
-  /** 引脚：银色金属 */
+  /** 引脚 */
   static pin(): PbrMaterial {
-    return { albedo: hexToLin('#D0D0D8'), metallic: 1.0, roughness: 0.18 };
+    return { albedo: hexToLin('#D4D4DC'), metallic: 1.0, roughness: 0.16 };
   }
-  /** FR4 基板侧边：黄褐色纤维 */
+  /** FR4 侧边 */
   static fr4(): PbrMaterial {
-    return { albedo: hexToLin('#A89068'), metallic: 0.0, roughness: 0.80 };
+    return { albedo: hexToLin('#B89860'), metallic: 0.0, roughness: 0.78 };
   }
-  /** 过孔孔壁 — 与焊盘同系金黄（ENIG） */
+  /** 过孔孔壁（略提亮，增强立体金属感） */
   static barrel(): PbrMaterial {
-    return { albedo: hexToLin('#F0D050'), metallic: 1.0, roughness: 0.18 };
+    return { albedo: hexToLin('#F0D060'), metallic: 1.0, roughness: 0.12 };
   }
-  /** 丝印白字 */
+  /** 过孔内壁略暗，形成钻孔纵深 */
+  static barrelInner(): PbrMaterial {
+    return { albedo: hexToLin('#A88828'), metallic: 0.95, roughness: 0.28 };
+  }
+  /** 丝印 */
   static silk(): PbrMaterial {
-    return { albedo: hexToLin('#F8F8F8'), metallic: 0.0, roughness: 0.60 };
+    return { albedo: hexToLin('#F5F5F5'), metallic: 0.0, roughness: 0.55 };
   }
 }
 

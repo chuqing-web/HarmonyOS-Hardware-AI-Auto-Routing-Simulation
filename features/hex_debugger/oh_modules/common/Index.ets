@@ -384,6 +384,7 @@ export {
 export { PcbFootprintLibrary, getGlobalPcbFootprintLibrary } from './src/main/ets/utils/PcbFootprintLibrary';
 
 export { PcbForwardAnnotator, ForwardAnnotateResult, forwardAnnotatePcb } from './src/main/ets/utils/PcbForwardAnnotator';
+export { schPadNumbersForLibrary, syncPadsToSchPinNumbers, syncFootprintPadsFromSchematic } from './src/main/ets/utils/PcbSchPadSync';
 
 export { ReverseAnnotateResult, reverseAnnotatePcb } from './src/main/ets/utils/PcbReverseAnnotator';
 

@@ -2948,7 +2948,12 @@ export class SchematicCanvas extends ViewPU {
                     // 最终预览写入 Path Buffer，落线只校验缓冲、不另寻路
                     const preview = editor.previewWirePath(this.wireWaypoints);
                     if (preview.blocked === true || preview.points.length < 2) {
-                        this.onStatusChange('无法布线：路径穿过器件选中区或无合法路径');
+                        this.wireWaypoints.pop();
+                        this.warDrawBlocked = true;
+                        this.warDrawPoints = [];
+                        this.lastWarPreviewEndKey = '';
+                        this.onStatusChange('无法布线：路径穿过器件选中区或无合法路径（可加点拐点绕开）');
+                        this.scheduleWireOverlayRedraw();
                         break;
                     }
                     const wireResult = editor.addWireWithPoints(this.wireWaypoints);
@@ -2979,7 +2984,11 @@ export class SchematicCanvas extends ViewPU {
                     if (nearLast && this.wireWaypoints.length >= 2) {
                         const preview = editor.previewWirePath(this.wireWaypoints);
                         if (preview.blocked === true || preview.points.length < 2) {
-                            this.onStatusChange('无法布线：路径穿过器件选中区或无合法路径');
+                            this.warDrawBlocked = true;
+                            this.warDrawPoints = [];
+                            this.lastWarPreviewEndKey = '';
+                            this.onStatusChange('无法布线：路径穿过器件选中区或无合法路径（可加点拐点绕开）');
+                            this.scheduleWireOverlayRedraw();
                             break;
                         }
                         const wireResult = editor.addWireWithPoints(this.wireWaypoints);
@@ -3559,17 +3568,34 @@ export class SchematicCanvas extends ViewPU {
         if (previewPts.length < 2) {
             return;
         }
+        // blocked：红色虚线提示不可落线，禁止再画成“可连”的蓝色预览
+        if (this.warDrawBlocked) {
+            const drawPts = this.warDrawPoints.length >= 2
+                ? this.warDrawPoints
+                : this.buildCheapOrthogonalPreview(previewPts);
+            if (drawPts.length < 2) {
+                ctx.fillStyle = '#CC3333';
+                const last = previewPts[previewPts.length - 1];
+                ctx.beginPath();
+                ctx.arc(last.x, last.y, 4, 0, Math.PI * 2);
+                ctx.fill();
+                return;
+            }
+            ctx.strokeStyle = '#CC3333';
+            ctx.lineWidth = 2;
+            ctx.setLineDash([3, 4]);
+            ctx.beginPath();
+            ctx.moveTo(drawPts[0].x, drawPts[0].y);
+            for (let i = 1; i < drawPts.length; i++) {
+                ctx.lineTo(drawPts[i].x, drawPts[i].y);
+            }
+            ctx.stroke();
+            ctx.setLineDash([]);
+            return;
+        }
         const drawPts = this.warDrawPoints.length >= 2
             ? this.warDrawPoints
             : this.buildCheapOrthogonalPreview(previewPts);
-        if (this.warDrawBlocked && this.warDrawPoints.length < 2) {
-            ctx.fillStyle = '#CC3333';
-            const last = previewPts[previewPts.length - 1];
-            ctx.beginPath();
-            ctx.arc(last.x, last.y, 4, 0, Math.PI * 2);
-            ctx.fill();
-            return;
-        }
         if (drawPts.length < 2) {
             return;
         }
@@ -3596,7 +3622,7 @@ export class SchematicCanvas extends ViewPU {
         this.lastWarPreviewEndKey = endKey;
         const previewPts = this.collectWirePreviewWaypoints();
         this.warDrawPoints = this.buildCheapOrthogonalPreview(previewPts);
-        this.warDrawBlocked = false;
+        // 跟手阶段保留上一帧 blocked 着色，等 WAR 防抖结果再更新（避免假蓝线闪烁）
         this.warDrawCorrected = false;
         this.scheduleWireOverlayRedraw();
         this.requestWarRouteUpdate();
@@ -3661,12 +3687,12 @@ export class SchematicCanvas extends ViewPU {
         const result = editor.previewWirePath(previewPts, true);
         if (result.blocked === true || result.points.length < 2) {
             this.warDrawBlocked = true;
-            // lite 失败时保留 L 线跟手，避免预览闪空
+            // 保留 L 线供红色 blocked 绘制，勿伪装成可落线蓝线
             this.warDrawPoints = this.buildCheapOrthogonalPreview(previewPts);
             this.warDrawCorrected = false;
             if (!this.lastWirePreviewCorrected) {
                 this.lastWirePreviewCorrected = true;
-                this.onStatusChange('WAR：当前无法无碰撞布线（不可穿器件选中区）');
+                this.onStatusChange('WAR：当前无法无碰撞布线（可加点拐点绕开器件）');
             }
         }
         else {

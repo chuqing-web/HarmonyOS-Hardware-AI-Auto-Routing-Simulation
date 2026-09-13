@@ -561,7 +561,7 @@ export class ProteusHomeTopBar extends ViewPU {
             Row.border({ width: { bottom: 1 }, color: ProteusHomeColors.TOP_BAR_BORDER });
         }, Row);
         this.observeComponentCreation2((elmtId, isInitialRender) => {
-            Image.create({ "id": 83886181, "type": 20000, params: [], "bundleName": "com.elecdraw.aischsim", "moduleName": "entry" });
+            Image.create({ "id": 100663397, "type": 20000, params: [], "bundleName": "com.elecdraw.aischsim", "moduleName": "entry" });
             Image.width(24);
             Image.height(24);
             Image.objectFit(ImageFit.Contain);
@@ -1896,7 +1896,7 @@ export class ProteusHomeAnnouncementPanel extends ViewPU {
                                             else {
                                                 this.ifElseBranchUpdateFunction(1, () => {
                                                     this.observeComponentCreation2((elmtId, isInitialRender) => {
-                                                        Image.create({ "id": 83886176, "type": 20000, params: [], "bundleName": "com.elecdraw.aischsim", "moduleName": "entry" });
+                                                        Image.create({ "id": 100663392, "type": 20000, params: [], "bundleName": "com.elecdraw.aischsim", "moduleName": "entry" });
                                                         Image.width('100%');
                                                         Image.layoutWeight(1);
                                                         Image.objectFit(ImageFit.Contain);
@@ -2019,7 +2019,7 @@ export class ProteusHomeAnnouncementPanel extends ViewPU {
                                                 else {
                                                     this.ifElseBranchUpdateFunction(1, () => {
                                                         this.observeComponentCreation2((elmtId, isInitialRender) => {
-                                                            Image.create({ "id": 83886176, "type": 20000, params: [], "bundleName": "com.elecdraw.aischsim", "moduleName": "entry" });
+                                                            Image.create({ "id": 100663392, "type": 20000, params: [], "bundleName": "com.elecdraw.aischsim", "moduleName": "entry" });
                                                             Image.width('100%');
                                                             Image.layoutWeight(1);
                                                             Image.objectFit(ImageFit.Contain);

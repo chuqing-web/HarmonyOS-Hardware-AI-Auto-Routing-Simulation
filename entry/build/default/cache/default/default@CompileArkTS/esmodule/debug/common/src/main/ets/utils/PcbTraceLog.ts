@@ -5,6 +5,7 @@ import { PcbLayerId } from "@bundle:com.elecdraw.aischsim/entry@common/ets/types
 import type { PcbDocument, PcbFootprintInst, PcbTrack, PcbRatsnestEdge, PcbSelectionState, PcbAppearance } from "@bundle:com.elecdraw.aischsim/entry@common/ets/types/PcbTypes";
 import { parsePinRef } from "@bundle:com.elecdraw.aischsim/entry@common/ets/utils/PinRefUtil";
 import { getGlobalPcbFootprintLibrary } from "@bundle:com.elecdraw.aischsim/entry@common/ets/utils/PcbFootprintLibrary";
+import { schPadNumbersForLibrary } from "@bundle:com.elecdraw.aischsim/entry@common/ets/utils/PcbSchPadSync";
 import { padWorldPosition, pointInPolygon } from "@bundle:com.elecdraw.aischsim/entry@common/ets/utils/PcbZoneUtil";
 import { WireConflictGeometry } from "@bundle:com.elecdraw.aischsim/entry@common/ets/utils/WireConflictGeometry";
 import { buildRatsnest } from "@bundle:com.elecdraw.aischsim/entry@common/ets/utils/PcbNetUtil";
@@ -152,7 +153,11 @@ export function tracePcbSchCompare(schematic: SchematicDocument, doc: PcbDocumen
         layoutable++;
         const fp = fpBySchId.get(comp.id);
         const pins = schPins.get(comp.id) ?? [];
-        const schPinCount = countUniqueSchPins(pins);
+        const schPinOnNetCount = countUniqueSchPins(pins);
+        const schPadNums = schPadNumbersForLibrary(comp.libraryId);
+        // 权威：原理图符号引脚数；无映射时回退到已连网脚数
+        const schPinCount = schPadNums !== null ? schPadNums.length : schPinOnNetCount;
+        const schSymbolPadCount = schPadNums !== null ? schPadNums.length : -1;
         if (fp === undefined) {
             missingOnPcb++;
             tracePcbWarn('SCH_MISSING', `${comp.refDes}[${comp.libraryId}] schPinsOnNet=${schPinCount} → PCB无封装`);
@@ -183,7 +188,12 @@ export function tracePcbSchCompare(schematic: SchematicDocument, doc: PcbDocumen
             pinDetailParts.push(`${pins[pi].pinId}/${pins[pi].pinName}→${pins[pi].netName}`);
         }
         const pinOverflow = pins.length > showPins ? `...+${pins.length - showPins}` : '';
-        if (schPinCount > padCount) {
+        if (schSymbolPadCount >= 0 && schSymbolPadCount !== padCount) {
+            pinMismatch++;
+            tracePcbWarn('PIN_COUNT', `${comp.refDes} schPads=${schSymbolPadCount} pcbPads=${padCount} onNet=${schPinOnNetCount} def=${defName} ` +
+                `bound=${bound} float=${floating} — schPads!=pcbPads`);
+        }
+        else if (schPinCount > padCount) {
             pinMismatch++;
             tracePcbWarn('PIN_COUNT', `${comp.refDes} schPinsOnNet=${schPinCount} pcbPads=${padCount} def=${defName} ` +
                 `bound=${bound} float=${floating} — 封装脚数不足`);

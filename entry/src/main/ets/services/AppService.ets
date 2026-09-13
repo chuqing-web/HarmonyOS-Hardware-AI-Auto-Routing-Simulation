@@ -2076,18 +2076,27 @@ export class AppService {
   }
 
   /**
-   * 退出/切后台：写 autosave + recovery + session。
-   * closedCleanly=true 表示正常退出；false 表示异常/编辑中，下次启动走恢复。
+   * 退出/切后台：写 autosave + session；仅异常路径写 recovery。
+   * closedCleanly=true：正常退出，删除 recovery，不展示恢复项。
+   * closedCleanly=false：覆盖写入单一 recovery_{name}.schsim。
    */
   async flushProjectProtection(closedCleanly: boolean): Promise<void> {
     if (this.currentProject === null || !this.hasDiskBackedProject()) {
       return;
     }
     await this.persistWorkingCopy();
-    await this.saveRecoveryCache();
     const projectName = this.currentProject.name.length > 0
       ? this.currentProject.name
       : 'Untitled';
+    if (closedCleanly) {
+      // 正常离开：不写 recovery，并删掉已有快照（避免首页「凭空出现」）
+      try {
+        (this.filePersistence as FilePersistenceImpl).clearStaleRecoveryOnCleanExit(projectName);
+      } catch (_e) { /* best-effort */ }
+    } else {
+      // 异常保护：覆盖写入单一 recovery_{name}.schsim
+      await this.saveRecoveryCache();
+    }
     const autoPath = this.getWorkingAutoSavePath();
     await this.saveSession(
       this.currentProjectPath,
@@ -2129,7 +2138,14 @@ export class AppService {
   }
 
   async checkRecoveryFiles(): Promise<string[]> {
-    return (this.filePersistence as FilePersistenceImpl).checkRecoveryFiles();
+    const impl = this.filePersistence as FilePersistenceImpl;
+    // 先清最近列表里的 recovery_*，并按 session 清理磁盘垃圾
+    try {
+      const session = await this.loadSession();
+      const clean = session === null || session.closedCleanly === true;
+      impl.purgeOrphanRecoveryArtifacts(clean);
+    } catch (_e) { /* best-effort */ }
+    return impl.checkRecoveryFiles();
   }
 
   async saveRecoveryCache(): Promise<void> {

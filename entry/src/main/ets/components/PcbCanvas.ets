@@ -75,6 +75,9 @@ export struct PcbCanvas {
   private viewHeight: number = 0;
   private redrawScheduled: boolean = false;
   private isTouchActive: boolean = false;
+  /** 3D 交互草稿节流（拖拽时 30fps Canvas，松手后再 PBR） */
+  private last3dDraftRedrawMs: number = 0;
+  private hq3dPending: boolean = false;
   /** 最近一次有效触点（Touch Up 时 touches 可能为空） */
   private lastTouchX: number = 0;
   private lastTouchY: number = 0;
@@ -121,10 +124,25 @@ export struct PcbCanvas {
   private scheduleRedraw(): void {
     if (this.redrawScheduled) return;
     this.redrawScheduled = true;
+    const editor = this.getEditor();
+    const draft3d = editor.getAppearance().show3d &&
+      (this.orbiting3d || this.panning);
+    const delay = draft3d ? 33 : 16;
     setTimeout(() => {
       this.redrawScheduled = false;
       this.drawAll();
-    }, 16);
+    }, delay);
+  }
+
+  /** 松手后延迟一帧跑高质量 PBR */
+  private scheduleHighQuality3d(): void {
+    if (this.hq3dPending) return;
+    this.hq3dPending = true;
+    setTimeout(() => {
+      this.hq3dPending = false;
+      if (this.orbiting3d || this.panning) return;
+      this.scheduleRedraw();
+    }, 80);
   }
 
   private drawAll(): void {
@@ -146,7 +164,10 @@ export struct PcbCanvas {
     const appearance = editor.getAppearance();
     if (appearance.show3d) {
       this.drawSimple3d(ctx, doc, vp);
-      this.emitView3dInstrTrace(doc, false);
+      // 拖拽草稿帧不写 instr 审计，减负
+      if (!(this.orbiting3d || this.panning)) {
+        this.emitView3dInstrTrace(doc, false);
+      }
       return;
     }
 
@@ -826,7 +847,8 @@ export struct PcbCanvas {
       measurePts: this.measure3dPts,
       showInterference: ap.view3dShowInterference === true,
       usePbr: ap.view3dPbr === true && mode === Pcb3dDisplayMode.REALISTIC,
-      msaa: ap.view3dMsaa >= 4 ? 4 : 1,
+      msaa: 1,
+      draftMode: this.orbiting3d || this.panning,
       activeLayer: editor.getActiveLayer(),
       appearanceMode: ap.mode !== undefined ? ap.mode : PcbAppearanceMode.OVERLAY
     });
@@ -859,7 +881,8 @@ export struct PcbCanvas {
       measurePts: this.measure3dPts,
       showInterference: ap.view3dShowInterference === true,
       usePbr: ap.view3dPbr === true && mode === Pcb3dDisplayMode.REALISTIC,
-      msaa: ap.view3dMsaa >= 4 ? 4 : 1,
+      msaa: 1,
+      draftMode: this.orbiting3d || this.panning,
       activeLayer: editor.getActiveLayer(),
       appearanceMode: ap.mode !== undefined ? ap.mode : PcbAppearanceMode.OVERLAY
     };
@@ -2212,7 +2235,7 @@ export struct PcbCanvas {
       this.panning = false;
       this.orbiting3d = false;
       this.orbitMoved3d = false;
-      this.scheduleRedraw();
+      this.scheduleHighQuality3d();
       return;
     }
 
@@ -2247,11 +2270,16 @@ export struct PcbCanvas {
     }
 
     this.pointerDown = false;
+    const was3dInteract = this.panning || this.orbiting3d;
     this.panning = false;
     this.orbiting3d = false;
     this.draggingItems = false;
     this.lastSnapPoint = null;
-    this.scheduleRedraw();
+    if (was3dInteract && this.getEditor().getAppearance().show3d) {
+      this.scheduleHighQuality3d();
+    } else {
+      this.scheduleRedraw();
+    }
   }
 
   private handlePointerHover(sx: number, sy: number): void {

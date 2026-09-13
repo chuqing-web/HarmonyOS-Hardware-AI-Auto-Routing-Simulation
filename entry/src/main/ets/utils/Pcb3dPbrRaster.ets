@@ -64,35 +64,33 @@ interface Light {
 
 export class Pcb3dPbrRaster {
   static render(mesh: Mesh3d, p: PbrRenderParams): number[] {
-    // 分辨率提升至 55% 视口（上限 500px 保证性能）
-    const scale = 0.55;
-    const w = Math.max(80, Math.min(500, Math.floor(p.width * scale)));
-    const h = Math.max(60, Math.min(340, Math.floor(p.height * scale)));
+    // 调用方已缩放过；此处不再二次降采样
+    const w = Math.max(80, Math.min(1280, Math.floor(p.width)));
+    const h = Math.max(60, Math.min(900, Math.floor(p.height)));
 
     const color = new Array<number>(w * h * 4);
     const depth = new Array<number>(w * h);
 
-    // 三点光源系统：主光 + 补光 + 边缘光
+    // 三点光 + 更强环境（提亮，接近嘉立创工作室）
     const keyLight: Light = {
-      dir: new Vec3(-0.48, 0.35, 0.78).normalize(),
-      color: new Vec3(1.0, 0.95, 0.88),
-      intensity: 1.15
+      dir: new Vec3(-0.35, 0.42, 0.84).normalize(),
+      color: new Vec3(1.0, 0.98, 0.94),
+      intensity: 1.85
     };
     const fillLight: Light = {
-      dir: new Vec3(0.40, -0.25, 0.42).normalize(),
-      color: new Vec3(0.55, 0.62, 0.78),
-      intensity: 0.35
+      dir: new Vec3(0.62, -0.12, 0.55).normalize(),
+      color: new Vec3(0.72, 0.80, 0.95),
+      intensity: 0.75
     };
     const rimLight: Light = {
-      dir: new Vec3(0.0, -0.65, 0.35).normalize(),
-      color: new Vec3(0.75, 0.78, 0.90),
-      intensity: 0.28
+      dir: new Vec3(-0.10, -0.55, 0.45).normalize(),
+      color: new Vec3(0.85, 0.88, 0.98),
+      intensity: 0.55
     };
     const lights: Light[] = [keyLight, fillLight, rimLight];
 
-    // 环境光上色：上方偏冷、下方偏暖（模拟天空/地面）
-    const skyCol = new Vec3(0.18, 0.22, 0.32);
-    const groundCol = new Vec3(0.15, 0.12, 0.08);
+    const skyCol = new Vec3(0.42, 0.48, 0.58);
+    const groundCol = new Vec3(0.28, 0.26, 0.22);
 
     // 初始化深度缓冲 + 渐变背景
     for (let i = 0; i < w * h; i++) {
@@ -121,9 +119,9 @@ export class Pcb3dPbrRaster {
     const syaw = Math.sin(yaw);
     const cp = Math.cos(pitch);
     const sp = Math.sin(pitch);
-    const ox = w / 2 + p.panX * scale;
-    const oy = h / 2 + p.panY * scale;
-    const zoom = Math.max(p.zoom * scale, 0.03);
+    const ox = w / 2 + p.panX;
+    const oy = h / 2 + p.panY;
+    const zoom = Math.max(p.zoom, 0.03);
 
     const project = (wx: number, wy: number, wz: number, out: Vec3): void => {
       const x0 = wx - p.boardCx;
@@ -251,13 +249,12 @@ export class Pcb3dPbrRaster {
     // 视线方向 = (0,0,1) 在相机空间中，近似为正面
     const V = new Vec3(0.18, 0.08, 0.98).normalize();
 
-    // SSAO 近似：朝下的面更暗（地面遮蔽）
+    // SSAO 近似：减弱，避免整板发灰
     const ndotUp = N.z;
-    const ao = 0.55 + 0.45 * saturate(ndotUp * 0.5 + 0.5);
-    // 边缘接触阴影：低角度面更暗
-    const edgeAo = 0.7 + 0.3 * saturate(Math.abs(N.z));
+    const ao = 0.78 + 0.22 * saturate(ndotUp * 0.5 + 0.5);
+    const edgeAo = 0.88 + 0.12 * saturate(Math.abs(N.z));
 
-    // 环境光：天空/地面半球
+    // 环境光：天空/地面半球（提高基线亮度）
     const envUp = Math.max(0, N.z);
     const envDown = Math.max(0, -N.z);
     const ambient = new Vec3(
@@ -266,10 +263,10 @@ export class Pcb3dPbrRaster {
       skyCol.z * envUp + groundCol.z * envDown
     );
 
-    // 累加所有光源
-    let litR = ambient.x * 0.55;
-    let litG = ambient.y * 0.55;
-    let litB = ambient.z * 0.55;
+    // 累加所有光源（抬高环境系数）
+    let litR = ambient.x * 1.15 + varAlbedo.x * 0.12 * (1 - metallic);
+    let litG = ambient.y * 1.15 + varAlbedo.y * 0.12 * (1 - metallic);
+    let litB = ambient.z * 1.15 + varAlbedo.z * 0.12 * (1 - metallic);
 
     for (let li = 0; li < lights.length; li++) {
       const L = lights[li];
@@ -326,13 +323,14 @@ export class Pcb3dPbrRaster {
     litG *= aoFinal;
     litB *= aoFinal;
 
-    // 胶片色调映射（ACES 近似）
-    const tmR = Pcb3dPbrRaster.acesApprox(litR);
-    const tmG = Pcb3dPbrRaster.acesApprox(litG);
-    const tmB = Pcb3dPbrRaster.acesApprox(litB);
+    // 曝光 + 胶片色调（先提亮再 ACES，避免发闷）
+    const exposure = 1.55;
+    const tmR = Pcb3dPbrRaster.acesApprox(litR * exposure);
+    const tmG = Pcb3dPbrRaster.acesApprox(litG * exposure);
+    const tmB = Pcb3dPbrRaster.acesApprox(litB * exposure);
 
-    // 轻微 Gamma
-    const gamma = 0.95;
+    // 略抬升中灰（gamma < 1 会更亮）
+    const gamma = 0.88;
     const fr = saturate(Math.pow(tmR, gamma)) * 255;
     const fg = saturate(Math.pow(tmG, gamma)) * 255;
     const fb = saturate(Math.pow(tmB, gamma)) * 255;
@@ -352,10 +350,10 @@ export class Pcb3dPbrRaster {
     const sbx = sb.x; const sby = sb.y; const sbz = sb.z;
     const scx = sc.x; const scy = sc.y; const scz = sc.z;
 
-    // 覆盖抗锯齿：每个像素 4 个子样本
-    const subSamples = 4;
-    const subOffX = [0.25, 0.75, 0.25, 0.75];
-    const subOffY = [0.25, 0.25, 0.75, 0.75];
+    // 单采样覆盖（CPU 光栅 4x 过慢；静止分辨率已足够）
+    const subSamples = 1;
+    const subOffX = [0.5];
+    const subOffY = [0.5];
 
     for (let y = minY; y <= maxY; y++) {
       const row = y * w;

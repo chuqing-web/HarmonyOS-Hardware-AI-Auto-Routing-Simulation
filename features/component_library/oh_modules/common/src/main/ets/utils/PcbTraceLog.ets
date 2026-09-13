@@ -10,6 +10,7 @@ import {
 } from '../types/PcbTypes';
 import { parsePinRef } from './PinRefUtil';
 import { getGlobalPcbFootprintLibrary } from './PcbFootprintLibrary';
+import { schPadNumbersForLibrary } from './PcbSchPadSync';
 import { padWorldPosition, pointInPolygon } from './PcbZoneUtil';
 import { WireConflictGeometry } from './WireConflictGeometry';
 import { buildRatsnest } from './PcbNetUtil';
@@ -182,7 +183,11 @@ export function tracePcbSchCompare(schematic: SchematicDocument, doc: PcbDocumen
     layoutable++;
     const fp = fpBySchId.get(comp.id);
     const pins = schPins.get(comp.id) ?? [];
-    const schPinCount = countUniqueSchPins(pins);
+    const schPinOnNetCount = countUniqueSchPins(pins);
+    const schPadNums = schPadNumbersForLibrary(comp.libraryId);
+    // 权威：原理图符号引脚数；无映射时回退到已连网脚数
+    const schPinCount = schPadNums !== null ? schPadNums.length : schPinOnNetCount;
+    const schSymbolPadCount = schPadNums !== null ? schPadNums.length : -1;
 
     if (fp === undefined) {
       missingOnPcb++;
@@ -217,7 +222,12 @@ export function tracePcbSchCompare(schematic: SchematicDocument, doc: PcbDocumen
     }
     const pinOverflow = pins.length > showPins ? `...+${pins.length - showPins}` : '';
 
-    if (schPinCount > padCount) {
+    if (schSymbolPadCount >= 0 && schSymbolPadCount !== padCount) {
+      pinMismatch++;
+      tracePcbWarn('PIN_COUNT',
+        `${comp.refDes} schPads=${schSymbolPadCount} pcbPads=${padCount} onNet=${schPinOnNetCount} def=${defName} ` +
+        `bound=${bound} float=${floating} — schPads!=pcbPads`);
+    } else if (schPinCount > padCount) {
       pinMismatch++;
       tracePcbWarn('PIN_COUNT',
         `${comp.refDes} schPinsOnNet=${schPinCount} pcbPads=${padCount} def=${defName} ` +

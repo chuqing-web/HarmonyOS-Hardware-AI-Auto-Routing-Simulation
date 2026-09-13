@@ -1782,16 +1782,14 @@ class PcbPage extends ViewPU {
         const editor = this.appService.schematicEditor as SchematicEditorImpl;
         editor.rebuildNetPinConnectivity();
         const sch = editor.getDocument();
-        if (!sch || sch.components.length === 0) {
-            this.statusMessage = fromExport
-                ? '原理图为空，已打开 PCB（无封装可导出）'
-                : '原理图为空，请先放置器件';
-            tracePcbOp('UPDATE_FROM_SCH', 'fail empty schematic');
+        if (!sch) {
+            this.statusMessage = '无原理图文档';
+            tracePcbOp('UPDATE_FROM_SCH', 'fail no schematic');
             return false;
         }
+        // 原理图可为空（删光教学模块后）：仍要跑标注以清掉 PCB 残留封装
         if (!this.ercGatePassed()) {
-            tracePcbOp('UPDATE_FROM_SCH', 'blocked by ERC');
-            return false;
+            tracePcbOp('UPDATE_FROM_SCH', 'ERC warn — continue annotate to prune stale fps');
         }
         if (this.appService.currentProject) {
             this.appService.currentProject.schematic = sch;
@@ -2331,7 +2329,7 @@ class PcbPage extends ViewPU {
                                     onAutoRoute: () => { this.requestAutoRoute(); },
                                     onCopy: () => { this.doCopy(); },
                                     onPaste: () => { this.doPaste(); }
-                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/PcbPage.ets", line: 1591, col: 11 });
+                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/PcbPage.ets", line: 1589, col: 11 });
                                 ViewPU.create(componentCall);
                                 let paramsLambda = () => {
                                     return {
@@ -2396,7 +2394,7 @@ class PcbPage extends ViewPU {
                                     onPreset: (preset: string) => {
                                         this.applyLayerPreset(preset);
                                     }
-                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/PcbPage.ets", line: 1620, col: 11 });
+                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/PcbPage.ets", line: 1618, col: 11 });
                                 ViewPU.create(componentCall);
                                 let paramsLambda = () => {
                                     return {
@@ -2434,7 +2432,7 @@ class PcbPage extends ViewPU {
                     {
                         this.observeComponentCreation2((elmtId, isInitialRender) => {
                             if (isInitialRender) {
-                                let componentCall = new ProteusResizer(this, { onDrag: (dx: number) => { this.leftPanelWidth = Math.max(140, this.leftPanelWidth + dx); } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/PcbPage.ets", line: 1644, col: 9 });
+                                let componentCall = new ProteusResizer(this, { onDrag: (dx: number) => { this.leftPanelWidth = Math.max(140, this.leftPanelWidth + dx); } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/PcbPage.ets", line: 1642, col: 9 });
                                 ViewPU.create(componentCall);
                                 let paramsLambda = () => {
                                     return {
@@ -2499,7 +2497,7 @@ class PcbPage extends ViewPU {
                                     onToolModeRequest: (mode: PcbToolMode) => {
                                         this.setToolMode(mode);
                                     }
-                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/PcbPage.ets", line: 1647, col: 11 });
+                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/PcbPage.ets", line: 1645, col: 11 });
                                 ViewPU.create(componentCall);
                                 let paramsLambda = () => {
                                     return {
@@ -2625,7 +2623,7 @@ class PcbPage extends ViewPU {
                     {
                         this.observeComponentCreation2((elmtId, isInitialRender) => {
                             if (isInitialRender) {
-                                let componentCall = new ProteusResizer(this, { onDrag: (dx: number) => { this.rightPanelWidth = Math.max(180, this.rightPanelWidth - dx); } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/PcbPage.ets", line: 1730, col: 9 });
+                                let componentCall = new ProteusResizer(this, { onDrag: (dx: number) => { this.rightPanelWidth = Math.max(180, this.rightPanelWidth - dx); } }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/PcbPage.ets", line: 1728, col: 9 });
                                 ViewPU.create(componentCall);
                                 let paramsLambda = () => {
                                     return {
@@ -2725,7 +2723,7 @@ class PcbPage extends ViewPU {
                                         this.statusMessage =
                                             `已插入 PCB 实验模板（${this.copperCount} 层铜）`;
                                     }
-                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/PcbPage.ets", line: 1732, col: 9 });
+                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/PcbPage.ets", line: 1730, col: 9 });
                                 ViewPU.create(componentCall);
                                 let paramsLambda = () => {
                                     return {
@@ -2851,7 +2849,7 @@ class PcbPage extends ViewPU {
                                     gridSize: this.getEditor().getDocument()?.metadata.gridSize ?? 5,
                                     gridVisible: this.gridVisible,
                                     hoverNetName: this.hoverNetName
-                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/PcbPage.ets", line: 1821, col: 7 });
+                                }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/PcbPage.ets", line: 1819, col: 7 });
                                 ViewPU.create(componentCall);
                                 let paramsLambda = () => {
                                     return {
@@ -2925,7 +2923,7 @@ class PcbPage extends ViewPU {
                                             tooltip: this.fromSchematic ? '返回原理图' : '返回首页',
                                             showLabel: false,
                                             onAction: () => { this.goBack(); }
-                                        }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/PcbPage.ets", line: 1852, col: 9 });
+                                        }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/PcbPage.ets", line: 1850, col: 9 });
                                         ViewPU.create(componentCall);
                                         let paramsLambda = () => {
                                             return {
@@ -2947,7 +2945,7 @@ class PcbPage extends ViewPU {
                                 }, { name: "ProteusToolButton" });
                             }
                         }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/PcbPage.ets", line: 1851, col: 7 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/PcbPage.ets", line: 1849, col: 7 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -2961,7 +2959,7 @@ class PcbPage extends ViewPU {
                                                 tooltip: this.fromSchematic ? '返回原理图' : '返回首页',
                                                 showLabel: false,
                                                 onAction: () => { this.goBack(); }
-                                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/PcbPage.ets", line: 1852, col: 9 });
+                                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/PcbPage.ets", line: 1850, col: 9 });
                                             ViewPU.create(componentCall);
                                             let paramsLambda = () => {
                                                 return {
@@ -3008,7 +3006,7 @@ class PcbPage extends ViewPU {
                                             tooltip: '保存 (Ctrl+S)',
                                             showLabel: false,
                                             onAction: () => { void this.saveProject(); }
-                                        }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/PcbPage.ets", line: 1860, col: 9 });
+                                        }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/PcbPage.ets", line: 1858, col: 9 });
                                         ViewPU.create(componentCall);
                                         let paramsLambda = () => {
                                             return {
@@ -3030,7 +3028,7 @@ class PcbPage extends ViewPU {
                                 }, { name: "ProteusToolButton" });
                             }
                         }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/PcbPage.ets", line: 1859, col: 7 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/PcbPage.ets", line: 1857, col: 7 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -3044,7 +3042,7 @@ class PcbPage extends ViewPU {
                                                 tooltip: '保存 (Ctrl+S)',
                                                 showLabel: false,
                                                 onAction: () => { void this.saveProject(); }
-                                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/PcbPage.ets", line: 1860, col: 9 });
+                                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/PcbPage.ets", line: 1858, col: 9 });
                                             ViewPU.create(componentCall);
                                             let paramsLambda = () => {
                                                 return {
@@ -3091,7 +3089,7 @@ class PcbPage extends ViewPU {
                                             tooltip: '撤销 (Ctrl+Z)',
                                             showLabel: false,
                                             onAction: () => { this.doUndo(); }
-                                        }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/PcbPage.ets", line: 1868, col: 9 });
+                                        }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/PcbPage.ets", line: 1866, col: 9 });
                                         ViewPU.create(componentCall);
                                         let paramsLambda = () => {
                                             return {
@@ -3120,7 +3118,7 @@ class PcbPage extends ViewPU {
                                             tooltip: '重做 (Ctrl+Y)',
                                             showLabel: false,
                                             onAction: () => { this.doRedo(); }
-                                        }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/PcbPage.ets", line: 1874, col: 9 });
+                                        }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/PcbPage.ets", line: 1872, col: 9 });
                                         ViewPU.create(componentCall);
                                         let paramsLambda = () => {
                                             return {
@@ -3152,7 +3150,7 @@ class PcbPage extends ViewPU {
                                                 this.deleteSelected();
                                                 this.statusMessage = '已删除';
                                             }
-                                        }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/PcbPage.ets", line: 1880, col: 9 });
+                                        }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/PcbPage.ets", line: 1878, col: 9 });
                                         ViewPU.create(componentCall);
                                         let paramsLambda = () => {
                                             return {
@@ -3177,7 +3175,7 @@ class PcbPage extends ViewPU {
                                 }, { name: "ProteusToolButton" });
                             }
                         }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/PcbPage.ets", line: 1867, col: 7 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/PcbPage.ets", line: 1865, col: 7 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -3191,7 +3189,7 @@ class PcbPage extends ViewPU {
                                                 tooltip: '撤销 (Ctrl+Z)',
                                                 showLabel: false,
                                                 onAction: () => { this.doUndo(); }
-                                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/PcbPage.ets", line: 1868, col: 9 });
+                                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/PcbPage.ets", line: 1866, col: 9 });
                                             ViewPU.create(componentCall);
                                             let paramsLambda = () => {
                                                 return {
@@ -3220,7 +3218,7 @@ class PcbPage extends ViewPU {
                                                 tooltip: '重做 (Ctrl+Y)',
                                                 showLabel: false,
                                                 onAction: () => { this.doRedo(); }
-                                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/PcbPage.ets", line: 1874, col: 9 });
+                                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/PcbPage.ets", line: 1872, col: 9 });
                                             ViewPU.create(componentCall);
                                             let paramsLambda = () => {
                                                 return {
@@ -3252,7 +3250,7 @@ class PcbPage extends ViewPU {
                                                     this.deleteSelected();
                                                     this.statusMessage = '已删除';
                                                 }
-                                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/PcbPage.ets", line: 1880, col: 9 });
+                                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/PcbPage.ets", line: 1878, col: 9 });
                                             ViewPU.create(componentCall);
                                             let paramsLambda = () => {
                                                 return {
@@ -3302,7 +3300,7 @@ class PcbPage extends ViewPU {
                                             tooltip: '复制 (Ctrl+C)',
                                             showLabel: false,
                                             onAction: () => { this.doCopy(); }
-                                        }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/PcbPage.ets", line: 1891, col: 9 });
+                                        }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/PcbPage.ets", line: 1889, col: 9 });
                                         ViewPU.create(componentCall);
                                         let paramsLambda = () => {
                                             return {
@@ -3331,7 +3329,7 @@ class PcbPage extends ViewPU {
                                             tooltip: '粘贴 (Ctrl+V)',
                                             showLabel: false,
                                             onAction: () => { this.doPaste(); }
-                                        }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/PcbPage.ets", line: 1897, col: 9 });
+                                        }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/PcbPage.ets", line: 1895, col: 9 });
                                         ViewPU.create(componentCall);
                                         let paramsLambda = () => {
                                             return {
@@ -3360,7 +3358,7 @@ class PcbPage extends ViewPU {
                                             tooltip: '旋转 (R)',
                                             showLabel: false,
                                             onAction: () => { this.doRotate(); }
-                                        }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/PcbPage.ets", line: 1903, col: 9 });
+                                        }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/PcbPage.ets", line: 1901, col: 9 });
                                         ViewPU.create(componentCall);
                                         let paramsLambda = () => {
                                             return {
@@ -3389,7 +3387,7 @@ class PcbPage extends ViewPU {
                                             tooltip: '镜像 (F)',
                                             showLabel: false,
                                             onAction: () => { this.doFlip(); }
-                                        }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/PcbPage.ets", line: 1909, col: 9 });
+                                        }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/PcbPage.ets", line: 1907, col: 9 });
                                         ViewPU.create(componentCall);
                                         let paramsLambda = () => {
                                             return {
@@ -3411,7 +3409,7 @@ class PcbPage extends ViewPU {
                                 }, { name: "ProteusToolButton" });
                             }
                         }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/PcbPage.ets", line: 1890, col: 7 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/PcbPage.ets", line: 1888, col: 7 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -3425,7 +3423,7 @@ class PcbPage extends ViewPU {
                                                 tooltip: '复制 (Ctrl+C)',
                                                 showLabel: false,
                                                 onAction: () => { this.doCopy(); }
-                                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/PcbPage.ets", line: 1891, col: 9 });
+                                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/PcbPage.ets", line: 1889, col: 9 });
                                             ViewPU.create(componentCall);
                                             let paramsLambda = () => {
                                                 return {
@@ -3454,7 +3452,7 @@ class PcbPage extends ViewPU {
                                                 tooltip: '粘贴 (Ctrl+V)',
                                                 showLabel: false,
                                                 onAction: () => { this.doPaste(); }
-                                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/PcbPage.ets", line: 1897, col: 9 });
+                                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/PcbPage.ets", line: 1895, col: 9 });
                                             ViewPU.create(componentCall);
                                             let paramsLambda = () => {
                                                 return {
@@ -3483,7 +3481,7 @@ class PcbPage extends ViewPU {
                                                 tooltip: '旋转 (R)',
                                                 showLabel: false,
                                                 onAction: () => { this.doRotate(); }
-                                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/PcbPage.ets", line: 1903, col: 9 });
+                                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/PcbPage.ets", line: 1901, col: 9 });
                                             ViewPU.create(componentCall);
                                             let paramsLambda = () => {
                                                 return {
@@ -3512,7 +3510,7 @@ class PcbPage extends ViewPU {
                                                 tooltip: '镜像 (F)',
                                                 showLabel: false,
                                                 onAction: () => { this.doFlip(); }
-                                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/PcbPage.ets", line: 1909, col: 9 });
+                                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/PcbPage.ets", line: 1907, col: 9 });
                                             ViewPU.create(componentCall);
                                             let paramsLambda = () => {
                                                 return {
@@ -3559,7 +3557,7 @@ class PcbPage extends ViewPU {
                                             tooltip: '放大 (+)',
                                             showLabel: false,
                                             onAction: () => { this.doZoom(1.12); }
-                                        }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/PcbPage.ets", line: 1917, col: 9 });
+                                        }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/PcbPage.ets", line: 1915, col: 9 });
                                         ViewPU.create(componentCall);
                                         let paramsLambda = () => {
                                             return {
@@ -3588,7 +3586,7 @@ class PcbPage extends ViewPU {
                                             tooltip: '缩小 (-)',
                                             showLabel: false,
                                             onAction: () => { this.doZoom(1 / 1.12); }
-                                        }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/PcbPage.ets", line: 1923, col: 9 });
+                                        }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/PcbPage.ets", line: 1921, col: 9 });
                                         ViewPU.create(componentCall);
                                         let paramsLambda = () => {
                                             return {
@@ -3617,7 +3615,7 @@ class PcbPage extends ViewPU {
                                             tooltip: '适应窗口 (Ctrl+0)',
                                             showLabel: false,
                                             onAction: () => { this.doFit(); }
-                                        }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/PcbPage.ets", line: 1929, col: 9 });
+                                        }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/PcbPage.ets", line: 1927, col: 9 });
                                         ViewPU.create(componentCall);
                                         let paramsLambda = () => {
                                             return {
@@ -3650,7 +3648,7 @@ class PcbPage extends ViewPU {
                                                 this.gridVisible = !this.gridVisible;
                                                 this.canvasVersion++;
                                             }
-                                        }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/PcbPage.ets", line: 1935, col: 9 });
+                                        }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/PcbPage.ets", line: 1933, col: 9 });
                                         ViewPU.create(componentCall);
                                         let paramsLambda = () => {
                                             return {
@@ -3677,7 +3675,7 @@ class PcbPage extends ViewPU {
                                 }, { name: "ProteusToolButton" });
                             }
                         }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/PcbPage.ets", line: 1916, col: 7 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/PcbPage.ets", line: 1914, col: 7 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -3691,7 +3689,7 @@ class PcbPage extends ViewPU {
                                                 tooltip: '放大 (+)',
                                                 showLabel: false,
                                                 onAction: () => { this.doZoom(1.12); }
-                                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/PcbPage.ets", line: 1917, col: 9 });
+                                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/PcbPage.ets", line: 1915, col: 9 });
                                             ViewPU.create(componentCall);
                                             let paramsLambda = () => {
                                                 return {
@@ -3720,7 +3718,7 @@ class PcbPage extends ViewPU {
                                                 tooltip: '缩小 (-)',
                                                 showLabel: false,
                                                 onAction: () => { this.doZoom(1 / 1.12); }
-                                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/PcbPage.ets", line: 1923, col: 9 });
+                                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/PcbPage.ets", line: 1921, col: 9 });
                                             ViewPU.create(componentCall);
                                             let paramsLambda = () => {
                                                 return {
@@ -3749,7 +3747,7 @@ class PcbPage extends ViewPU {
                                                 tooltip: '适应窗口 (Ctrl+0)',
                                                 showLabel: false,
                                                 onAction: () => { this.doFit(); }
-                                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/PcbPage.ets", line: 1929, col: 9 });
+                                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/PcbPage.ets", line: 1927, col: 9 });
                                             ViewPU.create(componentCall);
                                             let paramsLambda = () => {
                                                 return {
@@ -3782,7 +3780,7 @@ class PcbPage extends ViewPU {
                                                     this.gridVisible = !this.gridVisible;
                                                     this.canvasVersion++;
                                                 }
-                                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/PcbPage.ets", line: 1935, col: 9 });
+                                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/PcbPage.ets", line: 1933, col: 9 });
                                             ViewPU.create(componentCall);
                                             let paramsLambda = () => {
                                                 return {
@@ -3835,7 +3833,7 @@ class PcbPage extends ViewPU {
                                             showLabel: false,
                                             active: this.toolMode === PcbToolMode.SELECT,
                                             onAction: () => { this.setToolMode(PcbToolMode.SELECT); }
-                                        }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/PcbPage.ets", line: 1947, col: 9 });
+                                        }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/PcbPage.ets", line: 1945, col: 9 });
                                         ViewPU.create(componentCall);
                                         let paramsLambda = () => {
                                             return {
@@ -3867,7 +3865,7 @@ class PcbPage extends ViewPU {
                                             showLabel: false,
                                             active: this.toolMode === PcbToolMode.ROUTE,
                                             onAction: () => { this.setToolMode(PcbToolMode.ROUTE); }
-                                        }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/PcbPage.ets", line: 1954, col: 9 });
+                                        }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/PcbPage.ets", line: 1952, col: 9 });
                                         ViewPU.create(componentCall);
                                         let paramsLambda = () => {
                                             return {
@@ -3899,7 +3897,7 @@ class PcbPage extends ViewPU {
                                             showLabel: false,
                                             active: this.toolMode === PcbToolMode.VIA,
                                             onAction: () => { this.setToolMode(PcbToolMode.VIA); }
-                                        }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/PcbPage.ets", line: 1961, col: 9 });
+                                        }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/PcbPage.ets", line: 1959, col: 9 });
                                         ViewPU.create(componentCall);
                                         let paramsLambda = () => {
                                             return {
@@ -3931,7 +3929,7 @@ class PcbPage extends ViewPU {
                                             showLabel: false,
                                             active: this.toolMode === PcbToolMode.ZONE_POLY,
                                             onAction: () => { this.setToolMode(PcbToolMode.ZONE_POLY); }
-                                        }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/PcbPage.ets", line: 1968, col: 9 });
+                                        }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/PcbPage.ets", line: 1966, col: 9 });
                                         ViewPU.create(componentCall);
                                         let paramsLambda = () => {
                                             return {
@@ -3963,7 +3961,7 @@ class PcbPage extends ViewPU {
                                             showLabel: false,
                                             active: this.toolMode === PcbToolMode.POUR,
                                             onAction: () => { this.setToolMode(PcbToolMode.POUR); }
-                                        }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/PcbPage.ets", line: 1975, col: 9 });
+                                        }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/PcbPage.ets", line: 1973, col: 9 });
                                         ViewPU.create(componentCall);
                                         let paramsLambda = () => {
                                             return {
@@ -3995,7 +3993,7 @@ class PcbPage extends ViewPU {
                                             showLabel: false,
                                             active: this.toolMode === PcbToolMode.PLACE_FP,
                                             onAction: () => { this.setToolMode(PcbToolMode.PLACE_FP); }
-                                        }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/PcbPage.ets", line: 1982, col: 9 });
+                                        }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/PcbPage.ets", line: 1980, col: 9 });
                                         ViewPU.create(componentCall);
                                         let paramsLambda = () => {
                                             return {
@@ -4027,7 +4025,7 @@ class PcbPage extends ViewPU {
                                             showLabel: false,
                                             active: this.toolMode === PcbToolMode.MEASURE,
                                             onAction: () => { this.setToolMode(PcbToolMode.MEASURE); }
-                                        }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/PcbPage.ets", line: 1989, col: 9 });
+                                        }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/PcbPage.ets", line: 1987, col: 9 });
                                         ViewPU.create(componentCall);
                                         let paramsLambda = () => {
                                             return {
@@ -4059,7 +4057,7 @@ class PcbPage extends ViewPU {
                                             showLabel: false,
                                             active: this.toolMode === PcbToolMode.OUTLINE,
                                             onAction: () => { this.setToolMode(PcbToolMode.OUTLINE); }
-                                        }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/PcbPage.ets", line: 1996, col: 9 });
+                                        }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/PcbPage.ets", line: 1994, col: 9 });
                                         ViewPU.create(componentCall);
                                         let paramsLambda = () => {
                                             return {
@@ -4083,7 +4081,7 @@ class PcbPage extends ViewPU {
                                 }, { name: "ProteusToolButton" });
                             }
                         }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/PcbPage.ets", line: 1946, col: 7 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/PcbPage.ets", line: 1944, col: 7 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -4098,7 +4096,7 @@ class PcbPage extends ViewPU {
                                                 showLabel: false,
                                                 active: this.toolMode === PcbToolMode.SELECT,
                                                 onAction: () => { this.setToolMode(PcbToolMode.SELECT); }
-                                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/PcbPage.ets", line: 1947, col: 9 });
+                                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/PcbPage.ets", line: 1945, col: 9 });
                                             ViewPU.create(componentCall);
                                             let paramsLambda = () => {
                                                 return {
@@ -4130,7 +4128,7 @@ class PcbPage extends ViewPU {
                                                 showLabel: false,
                                                 active: this.toolMode === PcbToolMode.ROUTE,
                                                 onAction: () => { this.setToolMode(PcbToolMode.ROUTE); }
-                                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/PcbPage.ets", line: 1954, col: 9 });
+                                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/PcbPage.ets", line: 1952, col: 9 });
                                             ViewPU.create(componentCall);
                                             let paramsLambda = () => {
                                                 return {
@@ -4162,7 +4160,7 @@ class PcbPage extends ViewPU {
                                                 showLabel: false,
                                                 active: this.toolMode === PcbToolMode.VIA,
                                                 onAction: () => { this.setToolMode(PcbToolMode.VIA); }
-                                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/PcbPage.ets", line: 1961, col: 9 });
+                                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/PcbPage.ets", line: 1959, col: 9 });
                                             ViewPU.create(componentCall);
                                             let paramsLambda = () => {
                                                 return {
@@ -4194,7 +4192,7 @@ class PcbPage extends ViewPU {
                                                 showLabel: false,
                                                 active: this.toolMode === PcbToolMode.ZONE_POLY,
                                                 onAction: () => { this.setToolMode(PcbToolMode.ZONE_POLY); }
-                                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/PcbPage.ets", line: 1968, col: 9 });
+                                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/PcbPage.ets", line: 1966, col: 9 });
                                             ViewPU.create(componentCall);
                                             let paramsLambda = () => {
                                                 return {
@@ -4226,7 +4224,7 @@ class PcbPage extends ViewPU {
                                                 showLabel: false,
                                                 active: this.toolMode === PcbToolMode.POUR,
                                                 onAction: () => { this.setToolMode(PcbToolMode.POUR); }
-                                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/PcbPage.ets", line: 1975, col: 9 });
+                                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/PcbPage.ets", line: 1973, col: 9 });
                                             ViewPU.create(componentCall);
                                             let paramsLambda = () => {
                                                 return {
@@ -4258,7 +4256,7 @@ class PcbPage extends ViewPU {
                                                 showLabel: false,
                                                 active: this.toolMode === PcbToolMode.PLACE_FP,
                                                 onAction: () => { this.setToolMode(PcbToolMode.PLACE_FP); }
-                                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/PcbPage.ets", line: 1982, col: 9 });
+                                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/PcbPage.ets", line: 1980, col: 9 });
                                             ViewPU.create(componentCall);
                                             let paramsLambda = () => {
                                                 return {
@@ -4290,7 +4288,7 @@ class PcbPage extends ViewPU {
                                                 showLabel: false,
                                                 active: this.toolMode === PcbToolMode.MEASURE,
                                                 onAction: () => { this.setToolMode(PcbToolMode.MEASURE); }
-                                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/PcbPage.ets", line: 1989, col: 9 });
+                                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/PcbPage.ets", line: 1987, col: 9 });
                                             ViewPU.create(componentCall);
                                             let paramsLambda = () => {
                                                 return {
@@ -4322,7 +4320,7 @@ class PcbPage extends ViewPU {
                                                 showLabel: false,
                                                 active: this.toolMode === PcbToolMode.OUTLINE,
                                                 onAction: () => { this.setToolMode(PcbToolMode.OUTLINE); }
-                                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/PcbPage.ets", line: 1996, col: 9 });
+                                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/PcbPage.ets", line: 1994, col: 9 });
                                             ViewPU.create(componentCall);
                                             let paramsLambda = () => {
                                                 return {
@@ -4371,7 +4369,7 @@ class PcbPage extends ViewPU {
                                             tooltip: '更新 PCB (U)',
                                             showLabel: false,
                                             onAction: () => { void this.updateFromSchematic(); }
-                                        }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/PcbPage.ets", line: 2005, col: 9 });
+                                        }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/PcbPage.ets", line: 2003, col: 9 });
                                         ViewPU.create(componentCall);
                                         let paramsLambda = () => {
                                             return {
@@ -4400,7 +4398,7 @@ class PcbPage extends ViewPU {
                                             tooltip: 'DRC (F7)',
                                             showLabel: false,
                                             onAction: () => { this.runDrc(); }
-                                        }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/PcbPage.ets", line: 2011, col: 9 });
+                                        }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/PcbPage.ets", line: 2009, col: 9 });
                                         ViewPU.create(componentCall);
                                         let paramsLambda = () => {
                                             return {
@@ -4429,7 +4427,7 @@ class PcbPage extends ViewPU {
                                             tooltip: '自动布线（五 Agent）',
                                             showLabel: false,
                                             onAction: () => { this.requestAutoRoute(); }
-                                        }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/PcbPage.ets", line: 2017, col: 9 });
+                                        }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/PcbPage.ets", line: 2015, col: 9 });
                                         ViewPU.create(componentCall);
                                         let paramsLambda = () => {
                                             return {
@@ -4471,7 +4469,7 @@ class PcbPage extends ViewPU {
                                                     : '已关闭 3D 预览';
                                                 tracePcb3d(next ? 'UI_TOGGLE_ON' : 'UI_TOGGLE_OFF', 'toolbar');
                                             }
-                                        }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/PcbPage.ets", line: 2023, col: 9 });
+                                        }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/PcbPage.ets", line: 2021, col: 9 });
                                         ViewPU.create(componentCall);
                                         let paramsLambda = () => {
                                             return {
@@ -4513,7 +4511,7 @@ class PcbPage extends ViewPU {
                                             tooltip: '原理图编辑器',
                                             showLabel: false,
                                             onAction: () => { this.goToSchematic(); }
-                                        }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/PcbPage.ets", line: 2042, col: 9 });
+                                        }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/PcbPage.ets", line: 2040, col: 9 });
                                         ViewPU.create(componentCall);
                                         let paramsLambda = () => {
                                             return {
@@ -4535,7 +4533,7 @@ class PcbPage extends ViewPU {
                                 }, { name: "ProteusToolButton" });
                             }
                         }
-                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/PcbPage.ets", line: 2004, col: 7 });
+                    }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/PcbPage.ets", line: 2002, col: 7 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -4549,7 +4547,7 @@ class PcbPage extends ViewPU {
                                                 tooltip: '更新 PCB (U)',
                                                 showLabel: false,
                                                 onAction: () => { void this.updateFromSchematic(); }
-                                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/PcbPage.ets", line: 2005, col: 9 });
+                                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/PcbPage.ets", line: 2003, col: 9 });
                                             ViewPU.create(componentCall);
                                             let paramsLambda = () => {
                                                 return {
@@ -4578,7 +4576,7 @@ class PcbPage extends ViewPU {
                                                 tooltip: 'DRC (F7)',
                                                 showLabel: false,
                                                 onAction: () => { this.runDrc(); }
-                                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/PcbPage.ets", line: 2011, col: 9 });
+                                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/PcbPage.ets", line: 2009, col: 9 });
                                             ViewPU.create(componentCall);
                                             let paramsLambda = () => {
                                                 return {
@@ -4607,7 +4605,7 @@ class PcbPage extends ViewPU {
                                                 tooltip: '自动布线（五 Agent）',
                                                 showLabel: false,
                                                 onAction: () => { this.requestAutoRoute(); }
-                                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/PcbPage.ets", line: 2017, col: 9 });
+                                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/PcbPage.ets", line: 2015, col: 9 });
                                             ViewPU.create(componentCall);
                                             let paramsLambda = () => {
                                                 return {
@@ -4649,7 +4647,7 @@ class PcbPage extends ViewPU {
                                                         : '已关闭 3D 预览';
                                                     tracePcb3d(next ? 'UI_TOGGLE_ON' : 'UI_TOGGLE_OFF', 'toolbar');
                                                 }
-                                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/PcbPage.ets", line: 2023, col: 9 });
+                                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/PcbPage.ets", line: 2021, col: 9 });
                                             ViewPU.create(componentCall);
                                             let paramsLambda = () => {
                                                 return {
@@ -4691,7 +4689,7 @@ class PcbPage extends ViewPU {
                                                 tooltip: '原理图编辑器',
                                                 showLabel: false,
                                                 onAction: () => { this.goToSchematic(); }
-                                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/PcbPage.ets", line: 2042, col: 9 });
+                                            }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/PcbPage.ets", line: 2040, col: 9 });
                                             ViewPU.create(componentCall);
                                             let paramsLambda = () => {
                                                 return {
@@ -4745,7 +4743,7 @@ class PcbPage extends ViewPU {
         {
             this.observeComponentCreation2((elmtId, isInitialRender) => {
                 if (isInitialRender) {
-                    let componentCall = new ProteusIcon(this, { name: ProteusIconName.LAYER, iconSize: 14, color: ProteusColors.SELECTED }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/PcbPage.ets", line: 2062, col: 7 });
+                    let componentCall = new ProteusIcon(this, { name: ProteusIconName.LAYER, iconSize: 14, color: ProteusColors.SELECTED }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/PcbPage.ets", line: 2060, col: 7 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -4774,7 +4772,7 @@ class PcbPage extends ViewPU {
         {
             this.observeComponentCreation2((elmtId, isInitialRender) => {
                 if (isInitialRender) {
-                    let componentCall = new ProteusMenuTrigger(this, { label: '文件', entries: this.fileMenuEntries() }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/PcbPage.ets", line: 2068, col: 7 });
+                    let componentCall = new ProteusMenuTrigger(this, { label: '文件', entries: this.fileMenuEntries() }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/PcbPage.ets", line: 2066, col: 7 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -4794,7 +4792,7 @@ class PcbPage extends ViewPU {
         {
             this.observeComponentCreation2((elmtId, isInitialRender) => {
                 if (isInitialRender) {
-                    let componentCall = new ProteusMenuTrigger(this, { label: '视图', entries: this.viewMenuEntries() }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/PcbPage.ets", line: 2069, col: 7 });
+                    let componentCall = new ProteusMenuTrigger(this, { label: '视图', entries: this.viewMenuEntries() }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/PcbPage.ets", line: 2067, col: 7 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -4814,7 +4812,7 @@ class PcbPage extends ViewPU {
         {
             this.observeComponentCreation2((elmtId, isInitialRender) => {
                 if (isInitialRender) {
-                    let componentCall = new ProteusMenuTrigger(this, { label: '工具', entries: this.toolMenuEntries() }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/PcbPage.ets", line: 2070, col: 7 });
+                    let componentCall = new ProteusMenuTrigger(this, { label: '工具', entries: this.toolMenuEntries() }, undefined, elmtId, () => { }, { page: "entry/src/main/ets/pages/PcbPage.ets", line: 2068, col: 7 });
                     ViewPU.create(componentCall);
                     let paramsLambda = () => {
                         return {
@@ -4939,7 +4937,7 @@ class PcbPage extends ViewPU {
                     this.canvasVersion++;
                     this.statusMessage = '3D 写实 PBR+IBL+MSAA';
                 } },
-            { label: ap.view3dPbr === true ? '关闭真 PBR(伪3D)' : '开启真 PBR', action: () => {
+            { label: ap.view3dPbr === true ? '关闭真 PBR(回伪3D)' : '开启真 PBR(较慢)', action: () => {
                     const next = !(ap.view3dPbr === true);
                     this.getEditor().setView3dPbr(next);
                     this.canvasVersion++;

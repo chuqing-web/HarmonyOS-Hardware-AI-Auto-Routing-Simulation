@@ -87,6 +87,7 @@ export type { PcbPad, PcbFootprintDef, PcbFootprintInst, PcbTrack, PcbVia, PcbZo
 export { PcbFootprintLibrary, getGlobalPcbFootprintLibrary } from "@bundle:com.elecdraw.aischsim/entry@common/ets/utils/PcbFootprintLibrary";
 export { PcbForwardAnnotator, forwardAnnotatePcb } from "@bundle:com.elecdraw.aischsim/entry@common/ets/utils/PcbForwardAnnotator";
 export type { ForwardAnnotateResult } from "@bundle:com.elecdraw.aischsim/entry@common/ets/utils/PcbForwardAnnotator";
+export { schPadNumbersForLibrary, syncPadsToSchPinNumbers, syncFootprintPadsFromSchematic } from "@bundle:com.elecdraw.aischsim/entry@common/ets/utils/PcbSchPadSync";
 export { reverseAnnotatePcb } from "@bundle:com.elecdraw.aischsim/entry@common/ets/utils/PcbReverseAnnotator";
 export type { ReverseAnnotateResult } from "@bundle:com.elecdraw.aischsim/entry@common/ets/utils/PcbReverseAnnotator";
 export { exportPcbGerber } from "@bundle:com.elecdraw.aischsim/entry@common/ets/utils/PcbGerberExporter";
