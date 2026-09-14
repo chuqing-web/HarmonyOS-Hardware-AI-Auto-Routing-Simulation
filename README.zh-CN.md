@@ -7,7 +7,7 @@
 [English](./README.md) | 简体中文
 
 **比赛材料：** [作品说明文档](./docs/作品说明文档.md)  
-**官网：** [HarmonyOS Hardware AI Auto-Routing Simulation](https://chuqing-web.github.io/HarmonyOS-Hardware-AI-Auto-Routing-Simulation-Web/)  
+**官网：** [HarmonyOS Hardware AI Auto-Routing Simulation](https://chuqing-web.github.io/HarmonyOS-Hardware-AI-Auto-Routing-Simulation-Web-Announcement-Page/)  
 **源码 / 发布：** [GitHub](https://github.com/chuqing-web/AI-Auto-Routing-Hardware-Simulation)
 
 <p align="center">

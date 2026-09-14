@@ -39,7 +39,7 @@ export class HomeAnnouncementService {
      * 期望 GET 返回 JSON：双语 title_zh/en、body_zh/en，以及兼容字段 title/body、imageUrl…
      * 本迭代优先映射中文到 HomeAnnouncement.title/body。
      */
-    static endpoint: string = 'https://chuqing-web.github.io/HarmonyOS-Hardware-AI-Auto-Routing-Simulation-Web/api/announcement.json';
+    static endpoint: string = 'https://chuqing-web.github.io/HarmonyOS-Hardware-AI-Auto-Routing-Simulation-Web-Announcement-Page/api/announcement.json';
     static defaultAnnouncement(): HomeAnnouncement {
         return {
             id: 'local-default',

@@ -26,7 +26,7 @@ export interface HomeAboutSnapshot {
 
 /** 官方公告 / 产品站（GitHub Pages） */
 export const HOME_OFFICIAL_WEBSITE_HOST: string =
-  'chuqing-web.github.io/HarmonyOS-Hardware-AI-Auto-Routing-Simulation-Web';
+  'chuqing-web.github.io/HarmonyOS-Hardware-AI-Auto-Routing-Simulation-Web-Announcement-Page';
 
 export const HOME_OFFICIAL_WEBSITE_URL: string =
   `https://${HOME_OFFICIAL_WEBSITE_HOST}/`;

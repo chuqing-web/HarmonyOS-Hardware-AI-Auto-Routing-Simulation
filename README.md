@@ -7,7 +7,7 @@ Native HarmonyOS mixed-signal editing and simulation—8051/STM32 HEX debugging,
 [简体中文](./README.zh-CN.md) | English
 
 **Competition materials:** [作品说明文档 (Project Brief)](./docs/作品说明文档.md)  
-**Official website:** [HarmonyOS Hardware AI Auto-Routing Simulation](https://chuqing-web.github.io/HarmonyOS-Hardware-AI-Auto-Routing-Simulation-Web/)  
+**Official website:** [HarmonyOS Hardware AI Auto-Routing Simulation](https://chuqing-web.github.io/HarmonyOS-Hardware-AI-Auto-Routing-Simulation-Web-Announcement-Page/)  
 **Source / releases:** [GitHub](https://github.com/chuqing-web/AI-Auto-Routing-Hardware-Simulation)
 
 <p align="center">
