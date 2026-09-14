@@ -244,7 +244,7 @@ PCB 工作区（`features/pcb_editor` + `entry` 的 `PcbPage` / `PcbCanvas`）�
 | 图层 | F.Cu / B.Cu、In1…In6、丝印 / 阻焊 / 钢网、Edge.Cuts；铜层数可配（2 / 4 / 6 / 8） |
 | 编辑工具 | 选择、布线（90° / 45° / 弧）、过孔（通孔 / 盲 / 埋）、铺铜与多边形区、板框、测量、放置封装 |
 | SCH↔PCB | `forwardAnnotateFromSchematic` / `reverseAnnotateToSchematic`；飞线；焊盘–网络绑定（`PcbPinBindUtil`） |
-| 自动布线 | **经典栈**：`runAutoRoute` → `orchestratePcbAutoRoute`（可选 agents）或 **`autoRoutePcb`**；迷宫 + L 链候选；Cu≥4 时 H/V 分铜层 + 拐角过孔；间隙（`PcbClearanceOracle`）；拥塞撕线 / 布局微挪；异步切片让出主线程 |
+| 自动布线 | **通道引擎**：`runAutoRoute` → **`channelAutoRoutePcb`**（本地优先 / 长跑换层+via / ClearanceOracle）；可选 `orchestratePcbAutoRoute`；**无需 LLM**；硬超时优雅收尾 |
 | DRC | 间隙、短路、未连；`pcb_route/` 内教学辅助（如 `ensureAllCopperUsed`） |
 | 2D 视图 | 单层 / 变暗 / 叠层、网络高亮、推挤与蛇形辅助 |
 | 3D 视图 | 轨道 / 预设 / 正交；真实 · 透视 · 爆炸 · 剖切 · 高度图；可选 STEP 绑定与 PBR/MSAA |
@@ -400,21 +400,20 @@ PCB 自动布线路径（非 LLM）：`PcbPage` → `PcbEditorImpl.runAutoRoute`
 PcbDocument（正向标注后 / 加载 .pcbsim）
     │
     ▼
-PcbPage 确认铜层数（可选）
+PcbPage 确认铜层（可选）
     │
     ▼
-runAutoRoute → orchestratePcbAutoRoute? / autoRoutePcb
-    · 按网聚合焊盘；最近邻 / escape 排序
-    · 迷宫 + 正交 L 链候选 + ClearanceOracle
-    · Cu≥4：水平 / 垂直分铜层 + 拐角过孔
-    · 拥塞撕线 / 布局微挪；需要时 MCU 列布局辅助
-    · 异步切片（yield）保持 UI 响应
+runAutoRoute → autoRoutePcb → channelAutoRoutePcb
+    · 清铜后按网 Prim 生长
+    · 预分配 X/Y 通道；本地 F.Cu，长跑换层+via
+    · ClearanceOracle 逐段校验；硬超时优雅收尾
+    · 无需 LLM；同板可复现
     │
     ▼
 可布 PcbDocument（2D 编辑 + 3D 预览 + DRC / Gerber）
 ```
 
-配套工具链（经经典路径接入）：`pcb_route/PcbMazeRouter`、`PcbClearanceOracle`、`PcbRouteOrchestrator`、`PcbCongestion*`、`PcbMcuColumnPlacer` / `PcbMcuHandCopper`、`PcbLocalStrategy`、几何落铜辅助等。**无**生产 LLM 铜箔管线。
+配套：`pcb_route/PcbChannelAutoRouter`（生产主路径）、`PcbClearanceOracle`、以及保留的迷宫工具链（`autoRoutePcbLegacyMaze` 对照）。**无**生产 LLM 铜箔管线。
 
 ### 6.4 API 摘要
 

@@ -308,7 +308,7 @@ export function tracePcbNetRoutingSummary(doc: PcbDocument): void {
             }
             else if (cnt >= 2) {
                 unrouted++;
-                tracePcbWarn('NET_UNROUTED', `${nm} pads=${cnt} — 电源网无走线/铺铜`);
+                tracePcbWarn('NET_UNROUTED', `${nm} pads=${cnt} — 电源网无走线（勿用整面铺铜冒充）`);
             }
             else {
                 singlePad++;
@@ -1302,7 +1302,10 @@ export function tracePcbView2dAudit(doc: PcbDocument, p: PcbView2dTraceParams, r
         return;
     }
     const now = Date.now();
-    if (!force && now - gLastView2dTraceMs < 2800) {
+    // 大板整页 dump 走线会拖死主线程；加长节流并少打明细
+    const heavy = doc.tracks.length > 200 || doc.footprints.length > 24;
+    const minGap = force ? 0 : (heavy ? 6000 : 2800);
+    if (!force && now - gLastView2dTraceMs < minGap) {
         return;
     }
     gLastView2dTraceMs = now;
@@ -1394,6 +1397,7 @@ export function tracePcbView2dAudit(doc: PcbDocument, p: PcbView2dTraceParams, r
     let zeroLen = 0;
     let shortTrk = 0;
     let noNetTrk = 0;
+    const trackLogCap = heavy ? 12 : 60;
     for (let i = 0; i < doc.tracks.length; i++) {
         const t = doc.tracks[i];
         const len = Math.hypot(t.end.x - t.start.x, t.end.y - t.start.y);
@@ -1403,7 +1407,7 @@ export function tracePcbView2dAudit(doc: PcbDocument, p: PcbView2dTraceParams, r
             shortTrk++;
         if (!t.netId || t.netId.length === 0)
             noNetTrk++;
-        if (i < 60 || len < 0.5 || !t.netId) {
+        if (i < trackLogCap || (!heavy && (len < 0.5 || !t.netId))) {
             const tag = (len < 0.5 || !t.netId) ? 'VIEW2D_TRACK_BAD' : 'VIEW2D_TRACK';
             const detail = `id=${t.id} net=${t.netName || t.netId || '(none)'} layer=${t.layer} ` +
                 `(${Math.round(t.start.x)},${Math.round(t.start.y)})→` +
@@ -1416,8 +1420,8 @@ export function tracePcbView2dAudit(doc: PcbDocument, p: PcbView2dTraceParams, r
             }
         }
     }
-    if (doc.tracks.length > 60) {
-        tracePcb('VIEW2D_TRACK', `...+${doc.tracks.length - 60} tracks (only first 60 + bad listed)`);
+    if (doc.tracks.length > trackLogCap) {
+        tracePcb('VIEW2D_TRACK', `...+${doc.tracks.length - trackLogCap} tracks (only first ${trackLogCap} + bad listed)`);
     }
     for (let i = 0; i < doc.vias.length && i < 40; i++) {
         const v = doc.vias[i];
@@ -1429,14 +1433,20 @@ export function tracePcbView2dAudit(doc: PcbDocument, p: PcbView2dTraceParams, r
     const sel = p.selection;
     tracePcb('VIEW2D_SEL', `kind=${sel.kind} fp=${sel.footprintIds.length} trk=${sel.trackIds.length} ` +
         `via=${sel.viaIds.length} zone=${sel.zoneIds.length}`);
-    const crossScan = scanSameLayerTrackConflicts(doc.tracks, false);
-    if (crossScan.crossCount > 0 || crossScan.overlapCount > 0) {
-        tracePcbWarn('VIEW2D_TRACK_CROSS', `cross=${crossScan.crossCount} overlap=${crossScan.overlapCount} ` +
-            `pairsChecked=${crossScan.pairsChecked} — 详见 AUTO_ROUTE/FULL_STATE 的 TRACK_CROSS`);
+    let crossCount = 0;
+    let overlapCount = 0;
+    if (!heavy) {
+        const crossScan = scanSameLayerTrackConflicts(doc.tracks, false);
+        crossCount = crossScan.crossCount;
+        overlapCount = crossScan.overlapCount;
+        if (crossCount > 0 || overlapCount > 0) {
+            tracePcbWarn('VIEW2D_TRACK_CROSS', `cross=${crossCount} overlap=${overlapCount} ` +
+                `pairsChecked=${crossScan.pairsChecked} — 详见 AUTO_ROUTE/FULL_STATE 的 TRACK_CROSS`);
+        }
     }
     tracePcb('VIEW2D_SUMMARY', `fpInView=${inView} fpOutView=${outView} hiddenLayersWithCu=${hiddenWithContent} ` +
         `zeroLenTrk=${zeroLen} shortTrk=${shortTrk} noNetTrk=${noNetTrk} ` +
-        `trackCross=${crossScan.crossCount} trackOverlap=${crossScan.overlapCount} ` +
+        `trackCross=${crossCount} trackOverlap=${overlapCount} ` +
         `fp=${doc.footprints.length} trk=${doc.tracks.length} via=${doc.vias.length} ` +
         `rats=${p.ratsnestCount} drc=${p.drcCount}`);
     Logger.info(INSTR_TRACE_TAG, `[PCB] ---------- VIEW2D AUDIT END ----------`);
@@ -1636,13 +1646,13 @@ export function tracePcbView3dAudit(doc: PcbDocument, p: PcbView3dTraceParams, r
             `kind=${v.kind ?? 'through'} layers=[${layersStr}] z=${zBot.toFixed(0)}..${boardH} ` +
             `willDraw=${viaDraw}`);
     }
-    // 诊断结论
+    // 诊断结论：底层应有走线；仅靠铺铜视为缺口提示
     const hasBotTrk = (byLayer.get('B.Cu') ?? byLayer.get(PcbLayerId.B_CU) ?? 0) > 0;
     if (zoneBot > 0 && !hasBotTrk) {
-        tracePcb3d('VIEW3D_DIAG', `底层连接依赖 B.Cu 铺铜(zones=${zoneBot}) 而非走线；若看不到绿色铺铜，检查 hideZones/ACTIVE_ONLY/opacity/板透明度`);
+        tracePcbWarn('VIEW3D_DIAG', `底层无走线、仅有铺铜(zones=${zoneBot}) — 自动布线应以 B.Cu 轨道连通，勿依赖整面参考平面`);
     }
-    if (apMode === 'active_only' && activeLy.indexOf('F.Cu') >= 0 && zoneBot > 0) {
-        tracePcbWarn('VIEW3D_DIAG', `当前 ACTIVE_ONLY=F.Cu，B.Cu 铺铜被过滤 — 点左栏 B.Cu 或「全部」才能看到过孔后底层`);
+    if (apMode === 'active_only' && activeLy.indexOf('F.Cu') >= 0 && zoneBot > 0 && !hasBotTrk) {
+        tracePcbWarn('VIEW3D_DIAG', `当前 ACTIVE_ONLY=F.Cu，B.Cu 铺铜被过滤 — 点左栏 B.Cu 或「全部」查看`);
     }
     if (p.usePbr) {
         tracePcbWarn('VIEW3D_DIAG', `usePbr=true 走 Z-Buffer 轻量路径，铺铜/分色可能不完整；可关 PBR 用写实 Canvas 路径排查颜色`);

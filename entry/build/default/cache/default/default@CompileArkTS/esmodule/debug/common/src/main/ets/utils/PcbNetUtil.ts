@@ -427,8 +427,30 @@ export function buildRatsnest(doc: PcbDocument): PcbRatsnestEdge[] {
     return edges;
 }
 /** 简化连通：同网铜皮图元端点网格并查集（含 Zone 覆铜） */
-function padsCopperConnected(doc: PcbDocument, netId: string, a: Point2D, b: Point2D): boolean {
+export function padsCopperConnected(doc: PcbDocument, netId: string, a: Point2D, b: Point2D): boolean {
+    if (!netId || netId.length === 0) {
+        return false;
+    }
     return padsConnectedInUnion(buildCopperUnion(doc, netId), a, b);
+}
+/**
+ * 用一次铜并查集合并已连通的焊盘索引（避免 O(焊盘²) 次重建并查集）。
+ */
+export function reunitePadsByCopper(doc: PcbDocument, netId: string, pads: Point2D[], alreadyUnited: (i: number, j: number) => boolean, unite: (i: number, j: number) => void): void {
+    if (!netId || netId.length === 0 || pads.length < 2) {
+        return;
+    }
+    const uf = buildCopperUnion(doc, netId);
+    for (let i = 0; i < pads.length; i++) {
+        for (let j = i + 1; j < pads.length; j++) {
+            if (alreadyUnited(i, j)) {
+                continue;
+            }
+            if (padsConnectedInUnion(uf, pads[i], pads[j])) {
+                unite(i, j);
+            }
+        }
+    }
 }
 /** 焊盘是否能接到指定铜层（通孔焊盘默认双面） */
 function padTouchesZoneLayer(layers: string[] | undefined | null, padType: string, zoneLayer: string): boolean {

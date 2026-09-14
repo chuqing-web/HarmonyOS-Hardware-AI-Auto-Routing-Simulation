@@ -787,7 +787,12 @@ function splitTrackAtPoint(doc: PcbDocument, index: number, pt: Point2D, endTol:
 function splitSameNetTrackJunctions(doc: PcbDocument): number {
     let splits = 0;
     const endTol = 3;
-    const maxPass = 40;
+    const n0 = doc.tracks.length;
+    // 大板 O(n²)×多轮会卡主线程（THREAD_BLOCK）；稠密板跳过或少轮
+    if (n0 > 300) {
+        return 0;
+    }
+    const maxPass = n0 > 220 ? 4 : (n0 > 120 ? 10 : 40);
     for (let pass = 0; pass < maxPass; pass++) {
         let did = false;
         const n = doc.tracks.length;
@@ -867,7 +872,12 @@ function splitSameNetTrackJunctions(doc: PcbDocument): number {
 function splitTracksThroughPads(doc: PcbDocument): number {
     let splits = 0;
     const endTol = 3;
-    const maxPass = 60;
+    const n0 = doc.tracks.length;
+    // tracks×pads×多轮；大板会叠在 COPPER_HEAL 上卡主线程
+    if (n0 > 350) {
+        return 0;
+    }
+    const maxPass = n0 > 200 ? 8 : (n0 > 100 ? 20 : 60);
     for (let pass = 0; pass < maxPass; pass++) {
         let did = false;
         for (let ti = 0; ti < doc.tracks.length; ti++) {
@@ -962,6 +972,10 @@ function splitTracksThroughPads(doc: PcbDocument): number {
  * 使「交叉即连通」「压焊盘即连通」在几何上成立。
  */
 export function healSameLayerCopperTopology(doc: PcbDocument): number {
+    // 大板整次 heal 仍可能百毫秒级；与 refreshConnectivity 冷却配合
+    if (doc.tracks.length > 400) {
+        return 0;
+    }
     const j = splitSameNetTrackJunctions(doc);
     const p = splitTracksThroughPads(doc);
     const s = snapTrackEndpointsToPads(doc);

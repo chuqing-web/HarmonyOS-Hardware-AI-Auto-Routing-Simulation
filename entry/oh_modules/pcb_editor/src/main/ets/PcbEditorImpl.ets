@@ -17,7 +17,6 @@ import {
   collectFootprintPadPositions, updateTracksForFootprintTransform, padSnapTolerance,
   snapTrackEndpointsToPads, snapTrackEndpointsNearFootprints, syncMovedTrackJunctions,
   lockTrackEndpointsToPads, doglegPadToPadSelectedTracks, shoveForeignTracksByLReroute,
-  healSameLayerCopperTopology,
   TrackEndpointSnapshot,
   tracePcbAutoRoute, tracePcbManualRoute, tracePcbManualRouteReject,
   tracePcbTrackAdded, tracePcbDrc, tracePcbNetRoutingSummary,
@@ -2823,8 +2822,7 @@ export class PcbEditorImpl implements IPcbEditor {
 
   private refreshConnectivity(): void {
     if (!this.document) return;
-    // 同层交叉/T 接/过焊盘 → 拆段成结点，再重建网络与飞线
-    healSameLayerCopperTopology(this.document);
+    // 连通以 pad→pad 连续走线为准；不把交叉/T 接拆成多段结点（避免「两段独立铜」）
     rebuildPcbNets(this.document);
     this.ratsnestCache = buildRatsnest(this.document);
     this.spatialDirty = true;

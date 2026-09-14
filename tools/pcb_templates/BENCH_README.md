@@ -26,4 +26,4 @@ const e2e = await runAutorouteE2EBenchmark();
 
 ## 注意
 
-探针偏乐观；E2E 更接近产品 F8。真实工程板仍需人工板金样。
+探针偏乐观；E2E 更接近产品 F8。**F8 主路径现为确定性通道引擎**（`channelAutoRoutePcb`），不再依赖 LLM/迷宫墙钟。真实工程板仍需人工板金样。

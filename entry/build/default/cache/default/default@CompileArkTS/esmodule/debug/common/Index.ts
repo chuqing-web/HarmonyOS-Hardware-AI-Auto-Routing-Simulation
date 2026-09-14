@@ -94,9 +94,11 @@ export { exportPcbGerber } from "@bundle:com.elecdraw.aischsim/entry@common/ets/
 export type { GerberLayerFile, GerberExportResult } from "@bundle:com.elecdraw.aischsim/entry@common/ets/utils/PcbGerberExporter";
 export { exportPcbKiCad } from "@bundle:com.elecdraw.aischsim/entry@common/ets/utils/PcbKiCadExporter";
 export type { KiCadPcbExportResult } from "@bundle:com.elecdraw.aischsim/entry@common/ets/utils/PcbKiCadExporter";
-export { autoRoutePcb, rerouteNets } from "@bundle:com.elecdraw.aischsim/entry@common/ets/utils/PcbAutoRouter";
+export { autoRoutePcb, autoRoutePcbLegacyMaze, rerouteNets } from "@bundle:com.elecdraw.aischsim/entry@common/ets/utils/PcbAutoRouter";
 export type { AutoRouteResult, RerouteResult } from "@bundle:com.elecdraw.aischsim/entry@common/ets/utils/PcbAutoRouter";
 export { orchestratePcbAutoRoute } from "@bundle:com.elecdraw.aischsim/entry@common/ets/utils/pcb_route/PcbRouteOrchestrator";
+export { channelAutoRoutePcb } from "@bundle:com.elecdraw.aischsim/entry@common/ets/utils/pcb_route/PcbChannelAutoRouter";
+export type { ChannelRouteResult } from "@bundle:com.elecdraw.aischsim/entry@common/ets/utils/pcb_route/PcbChannelAutoRouter";
 export { ensureBoardAccessories, clearCopperForNets, accessoryHintsFromSchematicNets } from "@bundle:com.elecdraw.aischsim/entry@common/ets/utils/PcbBoardAccessories";
 export type { BoardAccessoriesResult, AccessoryNetHint } from "@bundle:com.elecdraw.aischsim/entry@common/ets/utils/PcbBoardAccessories";
 export { runPcbGeometryRoute } from "@bundle:com.elecdraw.aischsim/entry@common/ets/utils/pcb_route/PcbGeometryRouter";

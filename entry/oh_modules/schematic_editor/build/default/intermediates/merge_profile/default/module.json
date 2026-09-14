@@ -1,7 +1,7 @@
 {
 	"app": {
 		"bundleName": "com.elecdraw.aischsim",
-		"debug": false,
+		"debug": true,
 		"versionCode": 1001001,
 		"versionName": "1.1.1",
 		"minAPIVersion": 60101024,
@@ -13,7 +13,7 @@
 		"compileSdkType": "HarmonyOS",
 		"appEnvironments": [],
 		"bundleType": "app",
-		"buildMode": "release"
+		"buildMode": "debug"
 	},
 	"module": {
 		"name": "schematic_editor",

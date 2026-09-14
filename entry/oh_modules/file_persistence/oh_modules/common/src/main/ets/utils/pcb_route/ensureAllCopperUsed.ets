@@ -1,5 +1,6 @@
 /**
- * 硬门禁：Cu 栈每一铜层须有 track（可选计 zone）
+ * 硬门禁：Cu 栈每一铜层须有真实 track（最多 8 层）
+ * 默认 zone/整面铺铜不算「已用」——禁止用参考平面冒充走线。
  * filler 短段须过 clearance，否则跳过（勿注入短路）
  */
 import {
@@ -17,7 +18,7 @@ import { tracePcbWarn } from '../PcbTraceLog';
 export function ensureAllCopperUsed(
   doc: PcbDocument,
   tracks: PcbTrack[],
-  zonesCountAsUsed: boolean = true
+  zonesCountAsUsed: boolean = false
 ): PcbLayerId[] {
   const copper = copperLayersFromStack(doc.layerStack);
   const used: Set<string> = new Set();
@@ -148,9 +149,13 @@ export function fillUnusedCopperLayers(
       mi * grid * 6 + grid * 20,
       0 - mi * grid * 6 - grid * 16,
       grid * 30,
-      0 - grid * 30
+      0 - grid * 30,
+      mi * grid * 8 + grid * 40,
+      0 - mi * grid * 8 - grid * 40,
+      mi * grid * 12 + grid * 50,
+      0 - mi * grid * 12 - grid * 50
     ];
-    const xBases = [0, grid * 12, 0 - grid * 12, grid * 24, 0 - grid * 24];
+    const xBases = [0, grid * 12, 0 - grid * 12, grid * 24, 0 - grid * 24, grid * 36, 0 - grid * 36];
     for (let yi = 0; yi < yBases.length && !placed; yi++) {
       for (let xi = 0; xi < xBases.length && !placed; xi++) {
         const yOff = yBases[yi];

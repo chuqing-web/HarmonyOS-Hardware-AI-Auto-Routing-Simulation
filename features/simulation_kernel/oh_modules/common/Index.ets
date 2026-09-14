@@ -392,8 +392,13 @@ export { GerberLayerFile, GerberExportResult, exportPcbGerber } from './src/main
 
 export { KiCadPcbExportResult, exportPcbKiCad } from './src/main/ets/utils/PcbKiCadExporter';
 
-export { autoRoutePcb, AutoRouteResult, rerouteNets, RerouteResult } from './src/main/ets/utils/PcbAutoRouter';
+export {
+  autoRoutePcb, autoRoutePcbLegacyMaze, AutoRouteResult, rerouteNets, RerouteResult
+} from './src/main/ets/utils/PcbAutoRouter';
 export { orchestratePcbAutoRoute } from './src/main/ets/utils/pcb_route/PcbRouteOrchestrator';
+export {
+  channelAutoRoutePcb, ChannelRouteResult
+} from './src/main/ets/utils/pcb_route/PcbChannelAutoRouter';
 
 export { ensureBoardAccessories, clearCopperForNets, BoardAccessoriesResult, AccessoryNetHint,
   accessoryHintsFromSchematicNets

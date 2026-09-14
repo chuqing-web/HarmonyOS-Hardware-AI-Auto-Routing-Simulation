@@ -511,6 +511,12 @@ export function runPcbGeometryRoute(
   }
 
   const copper = copperLayersFromStack(doc.layerStack);
+  // 禁止整面铺铜参考面：forcePour → forceTrack
+  for (let i = 0; i < netPlan.nets.length; i++) {
+    if (netPlan.nets[i].routeMode === 'forcePour') {
+      netPlan.nets[i].routeMode = 'forceTrack';
+    }
+  }
   const missingRoles = policyCoversCopperLayers(policy, copper);
   if (missingRoles.length > 0) {
     empty.reason = `LLM layerRoles missing copper: ${missingRoles.join(',')}`;
@@ -969,10 +975,11 @@ export function runPcbGeometryRoute(
     }
   }
 
-  let missingCopper = ensureAllCopperUsed(doc, tracks);
+  // zones 不算已用：每层须有真实走线（最多 8 层）
+  let missingCopper = ensureAllCopperUsed(doc, tracks, false);
   if (missingCopper.length > 0) {
     fillUnusedCopperLayers(doc, policy, netPlan, tracks, vias, routed, missingCopper);
-    missingCopper = ensureAllCopperUsed(doc, tracks);
+    missingCopper = ensureAllCopperUsed(doc, tracks, false);
   }
 
   if (failed.length > 0) {

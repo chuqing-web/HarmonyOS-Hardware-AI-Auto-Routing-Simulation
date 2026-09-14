@@ -524,11 +524,11 @@ export function applyLlmPcbGeometry(
   const routed: string[] = setToArray(routedSet);
   const failed: string[] = setToArray(failedSet);
 
-  // 仅在无失败网时补缺铜层（且 filler 自身做 clearance）
-  let missingCopper = ensureAllCopperUsed(doc, tracks);
+  // 仅在无失败网时补缺铜层；zones 不算已用（每层真实走线）
+  let missingCopper = ensureAllCopperUsed(doc, tracks, false);
   if (failed.length === 0 && missingCopper.length > 0) {
     fillUnusedCopperLayers(doc, policy, netPlan, tracks, vias, routed, missingCopper);
-    missingCopper = ensureAllCopperUsed(doc, tracks);
+    missingCopper = ensureAllCopperUsed(doc, tracks, false);
   }
 
   tracePcb('AI_LLM_GEO',

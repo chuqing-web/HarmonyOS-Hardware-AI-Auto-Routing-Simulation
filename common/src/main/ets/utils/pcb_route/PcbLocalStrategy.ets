@@ -38,7 +38,7 @@ function padCountForNet(doc: PcbDocument, netId: string): number {
 }
 
 /**
- * 本地网络计划：按网名分类，pads≥2 一律 forceTrack（Cu=2 不用 forcePour）。
+ * 本地网络计划：按网名分类，pads≥2 一律 forceTrack（永不 forcePour；最多 8 层均走线）。
  */
 export function buildLocalNetPlan(doc: PcbDocument): PcbNetPlanResult {
   const nets: PcbNetPlanEntry[] = [];
@@ -125,7 +125,8 @@ function assignRolesForCopper(
     }
     return roles;
   }
-  // Cu≥3：每层都参与走线 — 首层 stub，中间 H/V（Cu=3 中间用 signal_v），末层 power_h
+  // Cu≥3（含 4/6/8）：每层真实走线角色，禁止内电层当整面参考平面
+  // 首层 stub，中间交替 H/V，末层 power_h（Cu=3 中间用 signal_v）
   for (let i = 0; i < copper.length; i++) {
     const lid = copper[i] as string;
     if (i === 0) {

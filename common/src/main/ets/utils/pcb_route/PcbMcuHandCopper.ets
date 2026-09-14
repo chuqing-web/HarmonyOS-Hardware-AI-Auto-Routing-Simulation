@@ -270,9 +270,9 @@ function resolveLayers(copper: PcbLayerId[]): LayerMap | null {
 }
 
 /**
- * MCU 手布层角色（供 Strategy / LocalPolicy）。
- * Cu≥6：F stub；In1 vcc_bus；In2 gnd_bus；In3/In4 power_v；B power_h。
- * Cu=4：F stub；In1 power_h；In2 power_v；B signal_h（满足 H/V 校验且不闲置内层）。
+ * MCU 手布层角色（供 Strategy / LocalPolicy）— 每层均为走线角色，非整面参考平面。
+ * Cu≥6/8：F stub；In1 vcc_bus；In2 gnd_bus；In3/In4 power_v；其余 H/V；B power_h。
+ * Cu=4：F stub；In1 power_h；In2 power_v；B signal_h。
  */
 export function buildMcuHandLayerRoles(copper: PcbLayerId[]): Record<string, PcbLayerRole> {
   const roles: Record<string, PcbLayerRole> = {};

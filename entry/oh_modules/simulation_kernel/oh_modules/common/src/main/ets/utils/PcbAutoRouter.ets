@@ -70,6 +70,7 @@ import { WarRouteOrder, WarOrderPin } from './WarRouteOrder';
 import { buildRatsnest, findNetClass, routeOrtho45Points } from './PcbNetUtil';
 import { resolveViaGeometry } from './pcb_route/PcbViaCostModel';
 import { routePolyRoom } from './pcb_route/PcbPolyRoom';
+import { channelAutoRoutePcb } from './pcb_route/PcbChannelAutoRouter';
 
 /** 异网焊盘障碍（圆形近似，与 ClearanceOracle 一致） */
 interface PadObstacle {
@@ -6477,11 +6478,50 @@ export function rerouteNets(doc: PcbDocument, layer: PcbLayerId, netIds: Set<str
 }
 
 /**
- * 对未布线网络执行自动正交布线（跳过已有走线的网络）
- * 流水线：Global 拥塞 → Detail(差分优先+Steiner) → Rip-up → Post(捷径+指标)
- * @param agent 可选 Strategy/Routing 引擎钩子（由 Orchestrator 注入）
+ * 对未布线网络执行自动正交布线
+ * 主路径：确定性通道布线（MCP 策略本地化）；不再默认跑迷宫+LLM 重型流水线。
+ * @param agent 保留参数兼容 Orchestrator；通道引擎忽略几何侧 agent 钩子
  */
 export async function autoRoutePcb(doc: PcbDocument, layer: PcbLayerId,
+  schNets?: AccessoryNetHint[],
+  agent?: PcbRouteEngineHooks | null): Promise<AutoRouteResult> {
+  setPcbInstrAuditPaused(true);
+  activeAgentLayerRoles = null;
+  activeAgentCorridorBias = null;
+  activeAgentForceHv = null;
+  activeSignalLayerPairs = [];
+  signalPairUseCount = [];
+  agentPairFailDigests = [];
+  try {
+    // 确定性通道主路径：可复现、有硬超时、无 LLM
+    const chan = await channelAutoRoutePcb(doc, layer, schNets);
+    const result: AutoRouteResult = {
+      trackCount: chan.trackCount,
+      netCount: chan.netCount,
+      messages: chan.messages,
+      completionRate: chan.completionRate,
+      totalWireLength: chan.totalWireLength,
+      viaCount: chan.viaCount,
+      drcErrorCount: chan.drcErrorCount,
+      metrics: chan.metrics
+    };
+    if (agent !== undefined && agent !== null) {
+      tracePcb('AUTO_CHAN', 'agent hooks present but skipped (channel engine)');
+    }
+    return result;
+  } finally {
+    activeAgentLayerRoles = null;
+    activeAgentCorridorBias = null;
+    activeAgentForceHv = null;
+    activeSignalLayerPairs = [];
+    signalPairUseCount = [];
+    agentPairFailDigests = [];
+    setPcbInstrAuditPaused(false);
+  }
+}
+
+/** 旧迷宫+Agent 流水线（对照/调试）；生产 F8 走 channelAutoRoutePcb */
+export async function autoRoutePcbLegacyMaze(doc: PcbDocument, layer: PcbLayerId,
   schNets?: AccessoryNetHint[],
   agent?: PcbRouteEngineHooks | null): Promise<AutoRouteResult> {
   setPcbInstrAuditPaused(true);
@@ -7071,7 +7111,7 @@ async function autoRoutePcbInner(doc: PcbDocument, layer: PcbLayerId,
   }
   tracePcb('AUTO_STAGE_END', 'routingSalvage');
 
-  // 模板库硬门禁：每一铜层必须有 track/zone；缺层则补短段（过 clearance 才写入）
+  // 模板库硬门禁：每一铜层必须有真实 track（zone 不算）；缺层则补短段（过 clearance 才写入）
   tracePcb('AUTO_STAGE_BEGIN', 'ensureAllCopper');
   try {
     const netPlan = buildLocalNetPlan(doc);

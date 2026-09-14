@@ -6,7 +6,7 @@ import { IdUtil } from "@bundle:com.elecdraw.aischsim/entry@common/ets/utils/IdU
 import { pathClearBlockReason, trackWidthForNet, viaClearAt } from "@bundle:com.elecdraw.aischsim/entry@common/ets/utils/pcb_route/PcbClearanceOracle";
 import { resolveViaGeometry } from "@bundle:com.elecdraw.aischsim/entry@common/ets/utils/pcb_route/PcbViaCostModel";
 import { tracePcbWarn } from "@bundle:com.elecdraw.aischsim/entry@common/ets/utils/PcbTraceLog";
-export function ensureAllCopperUsed(doc: PcbDocument, tracks: PcbTrack[], zonesCountAsUsed: boolean = true): PcbLayerId[] {
+export function ensureAllCopperUsed(doc: PcbDocument, tracks: PcbTrack[], zonesCountAsUsed: boolean = false): PcbLayerId[] {
     const copper = copperLayersFromStack(doc.layerStack);
     const used: Set<string> = new Set();
     for (let i = 0; i < tracks.length; i++) {
@@ -120,9 +120,13 @@ export function fillUnusedCopperLayers(doc: PcbDocument, policy: PcbRoutePolicy,
             mi * grid * 6 + grid * 20,
             0 - mi * grid * 6 - grid * 16,
             grid * 30,
-            0 - grid * 30
+            0 - grid * 30,
+            mi * grid * 8 + grid * 40,
+            0 - mi * grid * 8 - grid * 40,
+            mi * grid * 12 + grid * 50,
+            0 - mi * grid * 12 - grid * 50
         ];
-        const xBases = [0, grid * 12, 0 - grid * 12, grid * 24, 0 - grid * 24];
+        const xBases = [0, grid * 12, 0 - grid * 12, grid * 24, 0 - grid * 24, grid * 36, 0 - grid * 36];
         for (let yi = 0; yi < yBases.length && !placed; yi++) {
             for (let xi = 0; xi < xBases.length && !placed; xi++) {
                 const yOff = yBases[yi];

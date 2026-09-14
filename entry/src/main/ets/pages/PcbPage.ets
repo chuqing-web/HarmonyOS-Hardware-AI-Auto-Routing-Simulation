@@ -34,7 +34,6 @@ import { ProjectPaths } from '../utils/ProjectPaths';
 import { exportPcbSimpleStep } from '../utils/Pcb3dSceneUtil';
 import { Pcb3dRenderer } from '../utils/Pcb3dRenderer';
 import { importStepAndBind } from '../utils/PcbStepImporter';
-import { createPcbRouteAgents, hasPcbAutoRouteApiKey } from '../utils/PcbAutoRouteAgent';
 
 interface PcbLaunchParams {
   launchMode?: string;
@@ -428,16 +427,10 @@ struct PcbPage {
     return 2;
   }
 
-  /** 工具栏：须已配置 LLM API；先确认铜层，再执行五 Agent 编排 */
+  /** 工具栏：确认铜层后执行确定性通道自动布线（无需 LLM） */
   private requestAutoRoute(): void {
     if (this.autoRouteBusy) {
       this.statusMessage = '自动布线进行中…';
-      return;
-    }
-    if (!hasPcbAutoRouteApiKey(this.appService.aiApiManager)) {
-      this.statusMessage = '自动布线需要 LLM API Key（请在右侧 AI 面板配置默认接口）';
-      this.aiFocusTick++;
-      tracePcbUi('AUTO_ROUTE', 'blocked_no_api_key');
       return;
     }
     const cur = this.getEditor().getLayerStackCopperCount();
@@ -458,13 +451,6 @@ struct PcbPage {
     if (this.autoRouteBusy) {
       return;
     }
-    if (!hasPcbAutoRouteApiKey(this.appService.aiApiManager)) {
-      this.showAutoRouteLayerConfirm = false;
-      this.statusMessage = '自动布线需要 LLM API Key（请在右侧 AI 面板配置默认接口）';
-      this.aiFocusTick++;
-      tracePcbUi('AUTO_ROUTE', 'confirm_blocked_no_api_key');
-      return;
-    }
     const target = this.normalizeAutoRouteCopper(this.autoRouteConfirmCopper);
     const prev = this.autoRouteBoardCopper;
     this.showAutoRouteLayerConfirm = false;
@@ -482,7 +468,7 @@ struct PcbPage {
     // 立即占位，防止确认连点；实际计算推迟到下一任务，先让 MMITask 结束
     this.autoRouteBusy = true;
     this.getEditor().setReadOnly(true);
-    this.statusMessage = `自动布线中（五 Agent + 本地几何，Cu=${target}）…`;
+    this.statusMessage = `通道自动布线中（Cu=${target}）…`;
     this.focusAiPanel(`自动布线 Cu=${target}`);
     setTimeout((): void => {
       this.runAutoRoute(target);
@@ -495,31 +481,32 @@ struct PcbPage {
       : this.getEditor().getLayerStackCopperCount();
     this.autoRouteBusy = true;
     this.getEditor().setReadOnly(true);
-    this.statusMessage = `自动布线中（五 Agent + 本地几何，Cu=${cu}）…`;
+    this.statusMessage = `通道自动布线中（Cu=${cu}）…`;
     this.focusAiPanel(`自动布线 Cu=${cu}`);
-    tracePcbUi('AUTO_ROUTE', `start Cu=${cu}`);
+    tracePcbUi('AUTO_ROUTE', `start channel Cu=${cu}`);
     try {
-      const agents = createPcbRouteAgents(this.appService.aiApiManager);
-      if (agents === null) {
-        this.statusMessage = '自动布线需要 LLM API Key（请在右侧 AI 面板配置默认接口）';
-        this.aiFocusTick++;
-        tracePcbOp('AUTO_ROUTE', 'fail no_api_key');
-        return;
-      }
-      tracePcbUi('AUTO_ROUTE', 'agents=5 (place/strategy/routing/critic/knowledge)');
-      const result = await this.getEditor().runAutoRoute(agents);
+      // 无 LLM：确定性通道引擎（PcbChannelAutoRouter）
+      const result = await this.getEditor().runAutoRoute(null);
       if (result.success && result.data !== undefined) {
         this.syncPcbToProject();
         this.canvasVersion++;
         const d = result.data;
         const hint = d.messages.length > 0 ? d.messages[0] : '';
+        const rate = d.completionRate !== undefined
+          ? ` · ${(d.completionRate * 100).toFixed(0)}%`
+          : '';
         this.statusMessage =
-          `自动布线: ${d.netCount} 网络, ${d.trackCount} 段 · Cu=${cu}` +
+          `自动布线: ${d.netCount} 网络, ${d.trackCount} 段${rate} · Cu=${cu}` +
           `${hint.length > 0 ? ' — ' + hint : ''}`;
         this.unsavedChanges = true;
         this.aiProgress = 100;
         this.aiStage = '自动布线完成';
-        tracePcbOp('AUTO_ROUTE', `ok nets=${d.netCount} tracks=${d.trackCount} Cu=${cu}`);
+        // 未全通时打开飞线，避免「缺线看不见」
+        if (d.completionRate !== undefined && d.completionRate < 0.999) {
+          this.getEditor().setShowRatsnest(true);
+        }
+        tracePcbOp('AUTO_ROUTE',
+          `ok nets=${d.netCount} tracks=${d.trackCount} Cu=${cu} channel=1`);
       } else {
         this.statusMessage = result.error ?? '自动布线失败';
         this.aiStage = '自动布线失败';
@@ -557,7 +544,7 @@ struct PcbPage {
           .maxLines(2)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
 
-        Text('LLM 负责层角色/网序/重试策略 · 本地 maze 负责走线几何')
+        Text('确定性通道 · F 出焊盘 · In1..In6/B 长跑走线 · 最多 8 层 · 无需 LLM')
           .fontSize(9)
           .fontColor(ProteusColors.TEXT_SECONDARY)
           .width('100%')
@@ -576,7 +563,7 @@ struct PcbPage {
         }
         .width('100%')
 
-        Text('≥4 层时水平/垂直分铜层布线 · 须已配置默认 LLM API')
+        Text('每铜层真实轨道（非整面铺铜参考面）· 同板可复现')
           .fontSize(9)
           .fontColor(ProteusColors.TEXT_SECONDARY)
           .width('100%')
@@ -785,7 +772,7 @@ struct PcbPage {
         }
       }
       editor.setAppearanceMode(PcbAppearanceMode.DIM_INACTIVE);
-      // 内电层常为整面铺铜、无走线：自动选中该层覆铜，避免「点了层却看不到线高亮」
+      // 该层无走线但有覆铜时才选中 zone（自动布线以走线为主，非整面参考面）
       let trackN = 0;
       let zoneId = '';
       let zoneNet = '';
@@ -813,7 +800,7 @@ struct PcbPage {
         this.refreshStackHighlightFromSelection();
         this.refreshSelectedInfo();
         this.statusMessage =
-          `活动铜 ${id}：内电层铺铜（无走线）· 已选中覆铜 ${zoneNet.length > 0 ? zoneNet : zoneId}`;
+          `活动铜 ${id}：无走线 · 已选中覆铜 ${zoneNet.length > 0 ? zoneNet : zoneId}（建议走线占层）`;
       } else if (trackN === 0) {
         this.statusMessage = `活动铜 ${id}：该层无走线/覆铜`;
       } else {
@@ -2060,7 +2047,7 @@ struct PcbPage {
         })
         ProteusToolButton({
           iconName: ProteusIconName.WIRE,
-          tooltip: '自动布线（五 Agent）',
+          tooltip: '自动布线（通道引擎）',
           showLabel: false,
           onAction: () => { this.requestAutoRoute(); }
         })
